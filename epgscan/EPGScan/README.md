@@ -281,6 +281,8 @@ automatycznie.
 
 ### 8.3 Kanały do decyzji
 
+![Okno decyzji SatWatch – kandydaci i podgląd](../../docs/img/07-satwatch-decyzja.png)
+
 **Menu → Kanały → SatWatch → Kanały do decyzji**: lista kanałów, a po wybraniu – ekran decyzji:
 
 - u góry dane dawnego kanału (nazwa, nadawca, transponder, SID, typ, gdzie w bukietach, powód),
