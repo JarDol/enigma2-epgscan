@@ -571,6 +571,10 @@ oglądania: [rozdział 8.4](#84-konfiguracja-tunerów--co-ustawić-w-systemie-a-
 **Gdzie są logi?** Info/EPG → *Log EPG Scan* i *SatWatch – log*; pliki w `/media/hdd/epgscan/`
 i `/media/hdd/satwatch/`.
 
+## Wsparcie
+
+Jeśli EPG Scan Ci się przydaje i chcesz wesprzeć dalszy rozwój: **[buycoffee.to/jardol](https://buycoffee.to/jardol)**. Dziękuję!
+
 ## Zastrzeżenie
 
 Program telewizyjny pobierany z serwisów (teleman.pl, programtv.onet.pl, pilot.wp.pl, programtv.naziemna.info) należy

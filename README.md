@@ -59,6 +59,10 @@ mkdir -p dist && zip -qr dist/epgpl-$(cat epgpl/VERSION).zip epgpl
 Wersje: EPG Scan – `VERSION` w [`epgscan/EPGScan/common.py`](epgscan/EPGScan/common.py), epgpl – plik
 [`epgpl/VERSION`](epgpl/VERSION). Tagi wydań: `epgscan-X.Y.Z`, `epgpl-X.Y.Z`. Historia: [CHANGELOG.md](CHANGELOG.md).
 
+## Wsparcie
+
+Jeśli EPG Scan Ci się przydaje i chcesz wesprzeć dalszy rozwój: **[buycoffee.to/jardol](https://buycoffee.to/jardol)**. Dziękuję!
+
 ## Zastrzeżenie
 
 Program telewizyjny pobierany z serwisów (teleman.pl, programtv.onet.pl, pilot.wp.pl, programtv.naziemna.info) należy
