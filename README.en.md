@@ -20,6 +20,8 @@ cover Polish channels.
 
 <p><img src="docs/img/01-ekran-glowny.png" alt="Main screen during a scan" width="49%"> <img src="docs/img/04-wybor-stacji.png" alt="Station selection window" width="49%"></p>
 
+<p><img src="docs/img/07-satwatch-decyzja.png" alt="SatWatch decision window" width="49%"> <img src="docs/img/06-satwatch-lista.png" alt="SatWatch list during a scan" width="49%"></p>
+
 More screenshots in the [plugin description](epgscan/EPGScan/README.en.md).
 
 The on-screen texts are in Polish; the English descriptions map every menu item.

@@ -283,6 +283,8 @@ transponder – new ones and those not in your bouquets first. Such channels are
 
 ### 8.3 Channels awaiting decision
 
+![SatWatch decision window – candidates and preview](../../docs/img/07-satwatch-decyzja.png)
+
 **Menu → *Kanały* → *SatWatch* → *Kanały do decyzji***: the list of channels; after choosing one, the decision screen:
 
 - at the top the old channel's data (name, broadcaster, transponder, SID, type, where in bouquets, reason),
