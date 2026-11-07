@@ -1,5 +1,7 @@
 # EPG Scan – pełny EPG dla Enigma2 (+ serwer epgpl)
 
+[English](README.en.md) | **Polski**
+
 **EPG Scan** to wtyczka do odbiorników z Enigma2 (sprawdzana na OpenPLi 9.x, VU+ Uno 4K SE), która składa
 pełny program telewizyjny z trzech źródeł:
 
@@ -11,11 +13,6 @@ pełny program telewizyjny z trzech źródeł:
   nadawca zmieni SID lub transponder.
 
 Do tego harmonogram (nocny przebieg w czuwaniu), kopie EPG, raporty, sprzątanie dysku i restart po nocy.
-
-*English: EPG Scan is an Enigma2 plugin that builds a complete EPG from satellite EIT scans, Polish XMLTV
-listings (on the receiver or from the optional epgpl server) and keeps bouquets in sync with satellite changes
-(SatWatch). Full English description: [epgscan/EPGScan/README.en.md](epgscan/EPGScan/README.en.md).
-Installation: see the commands below; packages are in [Releases](../../releases).*
 
 ## Zawartość repozytorium
 
