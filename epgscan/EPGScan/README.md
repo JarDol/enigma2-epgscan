@@ -1,7 +1,7 @@
 # EPG Scan
 
 Wtyczka do odbiorników Enigma2 (OpenPLi 9.x, Python 3), która sama dba o pełny i aktualny przewodnik
-programowy (EPG). Łączy trzy źródła programu i jedno narzędzie do pilnowania listy kanałów:
+programowy (EPG). *English: [README.en.md](README.en.md).* Łączy trzy źródła programu i jedno narzędzie do pilnowania listy kanałów:
 
 - **satelita** – równoległe skanowanie transponderów na wolnych tunerach (EIT),
 - **program z internetu** – pobieranie polskiego programu TV bezpośrednio na dekoderze
@@ -380,8 +380,8 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 
 ## 11. Menu Kanały
 
-1. **SatWatch** – lista akcji SatWatch: sprawdzenie, skan, kanały do decyzji (rozdział 8.3), zrzut, kopie, ustawienia
-   (raporty i log SatWatch – w Raportach).
+1. **SatWatch** – lista akcji SatWatch: sprawdzenie, skan, kanały do decyzji (rozdział 8.3), zrzut, kopie, konfiguracja
+   tunerów (ustawienia – w Ustawieniach, raporty i log SatWatch – w Raportach).
 2. **Dopasowanie kanałów: dekoder** – lista kanałów z bukietów i przypisanych stacji.
    Klawisze: **OK** – wskaż źródło (okno wyboru stacji), **Menu** – sortowanie (zgodnie z bukietami / alfabetycznie) i pobieranie programu (na serwerze, gotowy plik, na dekoderze),
    **Info/EPG** – różnice z drugą mapą i synchronizacja (niżej), czerwony – zamknij, zielony – odśwież,
@@ -559,9 +559,10 @@ zgodnie z opcjami w grupie *Satelita*.
 *Dopasowanie kanałów: dekoder* (filtr *bez programu*). Można wskazać stację ręcznie i zobaczyć
 podgląd jej programu przed zapisem.
 
-**Oglądam, a SatWatch czeka na tuner.** Przy oglądaniu Enigma2 może nie dać tunera do skanu
-transpondera. SatWatch czeka (najwyżej 15 min w przebiegu), a gdy nie ma zmian – w ogóle nie
-sięga po tuner. Najlepiej zostawić to nocy.
+**Oglądam, a SatWatch czeka na tuner.** Przy oglądaniu, szybkim przełączaniu (FCC) albo streamingu Enigma2 może nie
+dać tunera do skanu – zwłaszcza przy tunerze FBC z jednym wejściem antenowym. SatWatch czeka (najwyżej 15 min
+w przebiegu), a gdy nie ma zmian – w ogóle nie sięga po tuner. Jak ustawić tunery, żeby skan działał także podczas
+oglądania: [rozdział 8.4](#84-konfiguracja-tunerów--co-ustawić-w-systemie-a-co-we-wtyczce).
 
 **Kanał zniknął z bukietu po zmianie na satelicie.** Menu → Kanały → SatWatch → *Kanały do decyzji*.
 

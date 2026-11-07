@@ -14,7 +14,8 @@ Do tego harmonogram (nocny przebieg w czuwaniu), kopie EPG, raporty, sprzątanie
 
 *English: EPG Scan is an Enigma2 plugin that builds a complete EPG from satellite EIT scans, Polish XMLTV
 listings (on the receiver or from the optional epgpl server) and keeps bouquets in sync with satellite changes
-(SatWatch). The documentation is in Polish; an English description is planned.*
+(SatWatch). Full English description: [epgscan/EPGScan/README.en.md](epgscan/EPGScan/README.en.md).
+Installation: see the commands below; packages are in [Releases](../../releases).*
 
 ## Zawartość repozytorium
 
