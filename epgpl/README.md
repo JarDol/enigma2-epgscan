@@ -2,6 +2,8 @@
 
 epgpl to serwer dla sieci domowej (Debian/Ubuntu), który raz dziennie pobiera polski program TV z czterech serwisów, dopasowuje go do kanałów z Twoich bukietów i udostępnia dekoderowi gotowy plik XMLTV. Dekoder z wtyczką EPG Scan importuje go jako źródło **„EPG PL (epgpl)”** – jako zapas dla własnego pobierania albo zawsze.
 
+*English: [README.en.md](README.en.md).*
+
 Serwer jest opcjonalny: EPG Scan potrafi pobierać program sam. Serwer przydaje się, gdy dekoder ma słaby procesor albo mało pamięci, gdy chcesz pobierać rzadziej z dekodera, albo gdy kilka elementów ma pracować w nocy równolegle.
 
 ## Spis treści
