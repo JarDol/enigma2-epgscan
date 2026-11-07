@@ -232,7 +232,15 @@ sudo tar xzf /root/epgpl-kopia-<data>.tgz -C /opt/epgpl wskazania.txt && sudo ch
 
 **Dekoder był wyłączony w nocy.** Serwer użyje ostatniej zapisanej listy kanałów – program i tak zostanie pobrany.
 
-**Serwer w internecie.** Ustaw `SERVER_IP` na adres publiczny lub domenę i otwórz port. Inni użytkownicy dostaną tylko plik programu; mapa kanałów jest zbudowana z Twoich bukietów.
+**Serwer w internecie.** Technicznie możliwe: ustaw `SERVER_IP` na adres publiczny lub domenę i otwórz port (z internetu dostępne są tylko pliki programu; mapa kanałów jest zbudowana z Twoich bukietów). Pamiętaj jednak, że udostępnianie pobranego programu innym osobom może naruszać regulaminy serwisów – zobacz *Zastrzeżenie*. Zalecane: tylko sieć domowa albo dostęp przez VPN do własnych urządzeń.
+
+## Zastrzeżenie
+
+Program telewizyjny pobierany z serwisów (teleman.pl, programtv.onet.pl, pilot.wp.pl, programtv.naziemna.info) należy
+do ich właścicieli. Wtyczka i serwer pobierają go do prywatnego użytku na własnym dekoderze – z przerwami między
+zapytaniami i ograniczoną liczbą połączeń. Użytkownik odpowiada za to, by korzystanie z nich było zgodne z regulaminami
+tych serwisów; nie udostępniaj pobranego programu innym osobom. Repozytorium zawiera wyłącznie kod i konfigurację – nie
+zawiera pobranego programu. Oprogramowanie jest dostarczane bez jakiejkolwiek gwarancji (szczegóły w licencji GPL).
 
 ## Licencja
 

@@ -285,8 +285,18 @@ through; EPG Scan also searches the subnet on port 8088. The address can be type
 
 **The receiver was off at night.** The server uses the last saved channel list – the listings are downloaded anyway.
 
-**Server on the internet.** Set `SERVER_IP` to the public address or domain and open the port. Other users get only
-the listings file; the channel map is built from your bouquets.
+**Server on the internet.** Technically possible: set `SERVER_IP` to the public address or domain and open the port
+(only the listings files are reachable from the internet; the channel map is built from your bouquets). Keep in mind
+that sharing downloaded listings with others may breach the websites' terms – see *Disclaimer*. Recommended: home
+network only, or VPN access to your own devices.
+
+## Disclaimer
+
+TV listings downloaded from the websites (teleman.pl, programtv.onet.pl, pilot.wp.pl, programtv.naziemna.info) belong to
+their owners. The plugin and the server download them for private use on your own receiver – with pauses between
+requests and a limited number of connections. You are responsible for using them in line with those websites' terms;
+do not share the downloaded listings with others. The repository contains only code and configuration – no downloaded
+listings. The software comes without any warranty (see the GPL license for details).
 
 ## License
 

@@ -5,3 +5,7 @@ dist/
 *.zip
 *.log
 .DS_Store
+# pobrany program i pliki robocze (nigdy w repozytorium) - poza listami stacji serwisow
+*.xml.xz
+*.xml
+!epgpl/sites/**/*.xml

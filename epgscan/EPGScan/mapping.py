@@ -529,7 +529,7 @@ class EPGScanLocalTest(Screen):
 			return
 		from .common import local_conns
 		self.grab = LocalGrab(st, days=int(cfg.local_days.value) + 1, conns=local_conns(), max_total=int(cfg.local_conn_max.value),
-			errlog=(self.out_dir() + "bledy.txt") if cfg.local_errlog.value else None)
+			pause=float(cfg.local_pause.value), errlog=(self.out_dir() + "bledy.txt") if cfg.local_errlog.value else None)
 		log("Pobieranie na dekoderze (test): stacji %d" % len(st))
 		self["text"].setText("Dekoder pobiera sam teleman, onet, naziemna i WP (od wczoraj, %d dni, polaczen %s), potem "
 			"porownuje wynik z plikiem programu serwera. Serwisy rownolegle.\nZamkniecie okna przerywa test.\n\nWynik bedzie tez w pliku: %s" % (

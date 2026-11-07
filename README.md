@@ -59,6 +59,14 @@ mkdir -p dist && zip -qr dist/epgpl-$(cat epgpl/VERSION).zip epgpl
 Wersje: EPG Scan – `VERSION` w [`epgscan/EPGScan/common.py`](epgscan/EPGScan/common.py), epgpl – plik
 [`epgpl/VERSION`](epgpl/VERSION). Tagi wydań: `epgscan-X.Y.Z`, `epgpl-X.Y.Z`. Historia: [CHANGELOG.md](CHANGELOG.md).
 
+## Zastrzeżenie
+
+Program telewizyjny pobierany z serwisów (teleman.pl, programtv.onet.pl, pilot.wp.pl, programtv.naziemna.info) należy
+do ich właścicieli. Wtyczka i serwer pobierają go do prywatnego użytku na własnym dekoderze – z przerwami między
+zapytaniami i ograniczoną liczbą połączeń. Użytkownik odpowiada za to, by korzystanie z nich było zgodne z regulaminami
+tych serwisów; nie udostępniaj pobranego programu innym osobom. Repozytorium zawiera wyłącznie kod i konfigurację – nie
+zawiera pobranego programu. Oprogramowanie jest dostarczane bez jakiejkolwiek gwarancji (szczegóły w licencji GPL).
+
 ## Licencja
 
 GNU GPL w wersji 2 lub (według wyboru) dowolnej późniejszej – [LICENSE](LICENSE), `SPDX-License-Identifier:

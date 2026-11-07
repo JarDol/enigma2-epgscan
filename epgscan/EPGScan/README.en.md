@@ -176,7 +176,9 @@ satellite did not provide.
 The receiver itself downloads listings of Polish stations from four websites: **teleman.pl, programtv.onet.pl,
 programtv.naziemna.info, pilot.wp.pl** – 14 days ahead by default, in the background, usually within minutes.
 
-- A separate number of connections per website and an overall limit (so the websites are not overloaded).
+- A separate number of connections per website, an overall limit and a pause after every page (1 s by default) – so
+  the websites are not overloaded. When a website rate-limits (HTTP 429/503), the pause for that website grows
+  automatically (up to 5 s).
 - Pages that failed are retried; a website having no data for a given day is not an error.
 - Result: XMLTV file `pl.xml.xz` in the backup directory (`…/epgscan/lokalne/`) and the XMLTV source
   **"EPG PL (dekoder)"**. The file is replaced only after a successful download.
@@ -493,6 +495,7 @@ below the settings list.
 | Placeholder event in gaps | no / from now to the first event / also gaps from 30 min (from now to the first event) |
 | Receiver: days ahead | (14) |
 | Connections: teleman / onet / naziemna / WP Pilot, max total | (4 / 3 / 2 / 1, 10) |
+| Pause between pages | after every page on every connection; extended automatically up to 5 s on 429/503 (1 s) |
 | Log download errors | (yes) |
 | Yellow: other XMLTV sources | tick lists, add your own addresses (blue) |
 
@@ -561,6 +564,14 @@ watch: [chapter 8.4](#84-tuner-setup--what-to-set-in-the-system-and-what-in-the-
 
 **Is the interface available in English?** Not yet – the on-screen texts are Polish. This document maps the menu
 items to English.
+
+## Disclaimer
+
+TV listings downloaded from the websites (teleman.pl, programtv.onet.pl, pilot.wp.pl, programtv.naziemna.info) belong to
+their owners. The plugin and the server download them for private use on your own receiver – with pauses between
+requests and a limited number of connections. You are responsible for using them in line with those websites' terms;
+do not share the downloaded listings with others. The repository contains only code and configuration – no downloaded
+listings. The software comes without any warranty (see the GPL license for details).
 
 ## License
 

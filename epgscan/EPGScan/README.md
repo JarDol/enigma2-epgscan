@@ -170,7 +170,8 @@ uzupełnia to, czego satelita nie dał.
 Dekoder sam pobiera program polskich stacji z czterech serwisów: **teleman.pl, programtv.onet.pl,
 programtv.naziemna.info, pilot.wp.pl** – domyślnie 14 dni do przodu, w tle, zwykle w kilka minut.
 
-- Osobna liczba połączeń dla każdego serwisu i limit łączny (żeby nie przeciążać serwisów).
+- Osobna liczba połączeń dla każdego serwisu i limit łączny oraz przerwa po każdej stronie (domyślnie 1 s) – żeby nie
+  przeciążać serwisów. Gdy serwis ogranicza zapytania (HTTP 429/503), przerwa na tym serwisie sama się wydłuża (do 5 s).
 - Strony, które się nie pobrały, są ponawiane; brak danych w serwisie na dany dzień nie jest błędem.
 - Wynik: plik XMLTV `pl.xml.xz` w katalogu kopii (`…/epgscan/lokalne/`) i źródło XMLTV
   **„EPG PL (dekoder)”**. Plik zostaje podmieniony tylko wtedy, gdy pobranie się udało.
@@ -503,6 +504,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Audycja zastępcza w przerwach | nie / od teraz do pierwszej audycji / także przerwy od 30 min (od teraz do pierwszej audycji) |
 | Dekoder: dni do przodu | (14) |
 | Połączeń: teleman / onet / naziemna / WP Pilot, maks. łącznie | (4 / 3 / 2 / 1, 10) |
+| Przerwa między stronami | po każdej stronie na każdym połączeniu; przy 429/503 wydłużana sama do 5 s (1 s) |
 | Zapisuj błędy pobierania | (tak) |
 | Żółty: pozostałe źródła XMLTV | zaznaczanie list, dodawanie własnych adresów (niebieski) |
 
@@ -568,6 +570,14 @@ oglądania: [rozdział 8.4](#84-konfiguracja-tunerów--co-ustawić-w-systemie-a-
 
 **Gdzie są logi?** Info/EPG → *Log EPG Scan* i *SatWatch – log*; pliki w `/media/hdd/epgscan/`
 i `/media/hdd/satwatch/`.
+
+## Zastrzeżenie
+
+Program telewizyjny pobierany z serwisów (teleman.pl, programtv.onet.pl, pilot.wp.pl, programtv.naziemna.info) należy
+do ich właścicieli. Wtyczka i serwer pobierają go do prywatnego użytku na własnym dekoderze – z przerwami między
+zapytaniami i ograniczoną liczbą połączeń. Użytkownik odpowiada za to, by korzystanie z nich było zgodne z regulaminami
+tych serwisów; nie udostępniaj pobranego programu innym osobom. Repozytorium zawiera wyłącznie kod i konfigurację – nie
+zawiera pobranego programu. Oprogramowanie jest dostarczane bez jakiejkolwiek gwarancji (szczegóły w licencji GPL).
 
 ## Licencja
 
