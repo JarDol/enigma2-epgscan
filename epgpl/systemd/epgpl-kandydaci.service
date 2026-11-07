@@ -1,0 +1,11 @@
+[Unit]
+Description=epgpl - program na dobe dla kandydatow z okna wyboru stacji (EPG Scan)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=epgpl
+ExecStart=/opt/epgpl/kandydaci.sh
+Nice=15
+TimeoutStartSec=3h

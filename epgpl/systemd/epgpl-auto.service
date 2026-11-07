@@ -1,0 +1,12 @@
+[Unit]
+Description=epgpl - pobranie programu z harmonogramu serwera (pomijane, gdy pobiera dekoder - TUNER_WINDOW)
+Wants=network-online.target
+After=network-online.target
+OnSuccess=epgpl-kandydaci.service
+
+[Service]
+Type=oneshot
+User=epgpl
+ExecStart=/opt/epgpl/run.sh --auto
+Nice=10
+TimeoutStartSec=6h

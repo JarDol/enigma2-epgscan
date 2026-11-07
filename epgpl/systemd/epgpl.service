@@ -1,0 +1,12 @@
+[Unit]
+Description=epgpl - pobranie polskiego programu TV i mapa kanalow
+Wants=network-online.target
+After=network-online.target
+OnSuccess=epgpl-kandydaci.service
+
+[Service]
+Type=oneshot
+User=epgpl
+ExecStart=/opt/epgpl/run.sh
+Nice=10
+TimeoutStartSec=6h
