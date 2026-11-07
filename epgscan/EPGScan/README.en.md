@@ -12,6 +12,8 @@ date on its own. It combines three listing sources and one tool that looks after
 
 Everything can run at night in standby on a schedule; in the morning you get a short summary.
 
+![Channel EPG – listings for two weeks](../../docs/img/10-epg-kanalu.png)
+
 The plugin was built with Polish channels on Hotbird 13.0E in mind, but the satellite scan, XMLTV import and
 SatWatch work with any orbital position and any bouquets.
 
@@ -89,6 +91,8 @@ Suggested order:
 
 ## 3. Main screen
 
+![Main screen during a scan](../../docs/img/01-ekran-glowny.png)
+
 At the top: number of transponders and channels, parallel scan limit, free tuners, changes since the last scan.
 Below: the latest result of each part (SatWatch, satellite, download, import), the current profile and the next
 scheduled start, then the list of transponders with their state.
@@ -113,6 +117,8 @@ appears when they finish.
 ---
 
 ## 4. Actions and profile
+
+![Actions and profile](../../docs/img/02-akcje.png)
 
 ***Akcje*** (green) is the list of steps of a run. What is ticked here is what **OK** on the main screen and the
 schedule do (after saving it with yellow as default). Green/OK inside *Akcje* runs once without changing the profile.
@@ -230,6 +236,8 @@ download; during the download the receiver tells the server it is busy, so the s
 ---
 
 ## 8. SatWatch – satellite changes and bouquets
+
+![SatWatch list during a scan](../../docs/img/06-satwatch-lista.png)
 
 ### 8.1 Checking for changes
 
@@ -377,6 +385,8 @@ item ticks/unticks it, green saves, red cancels.
 
 ## 11. Channels menu
 
+![Channel matching: receiver](../../docs/img/03-dopasowanie-dekoder.png)
+
 1. **SatWatch** – list of SatWatch actions: check, scan, channels awaiting decision (8.3), snapshot, backups, tuner
    setup (settings are in *Ustawienia*, SatWatch reports and log in *Raporty*).
 2. ***Dopasowanie kanałów: dekoder*** (channel matching: receiver) – channels from your bouquets and their assigned
@@ -396,6 +406,8 @@ item ticks/unticks it, green saves, red cancels.
    (remove the manual choice), yellow – no listings, blue – search stations, **Menu** – download listings of the
    selected station or of all candidates without listings (in the background; with a proposed change also "skip
    proposal"), **Info/EPG** – preview of the station's listings from 2 h back to 4 h ahead (green "save this source").
+
+   <p><img src="../../docs/img/04-wybor-stacji.png" alt="Station selection window" width="49%"> <img src="../../docs/img/05-podglad-programu.png" alt="Station listings preview" width="49%"></p>
 
    **Receiver / server differences:** with an epgpl server the list is compared with the other map (different station
    or a manual choice on one side only) and shows "differs from the server: N". **Info/EPG**: show differences
@@ -423,6 +435,8 @@ item ticks/unticks it, green saves, red cancels.
 ---
 
 ## 12. Reports
+
+![Report: EPG statistics](../../docs/img/09-statystyka-epg.png)
 
 **Info/EPG** on the main screen:
 
@@ -480,6 +494,9 @@ below the settings list.
 | Skip transponders without EPG / recheck every | (no / 7 days) |
 
 ### *Program z internetu* (internet listings)
+
+![Settings: internet listings (help under the option)](../../docs/img/08-ustawienia.png)
+
 | Setting | Description |
 |---|---|
 | Internet listings (XMLTV) | switches the whole internet part on (no) |
