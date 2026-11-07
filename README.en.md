@@ -16,6 +16,12 @@ Plus: a schedule (night run in standby), EPG backups, reports, disk cleanup and 
 needed. The satellite scan, XMLTV import and SatWatch work with any orbital position; the built-in internet listings
 cover Polish channels.
 
+![Channel EPG – listings for two weeks](docs/img/10-epg-kanalu.png)
+
+<p><img src="docs/img/01-ekran-glowny.png" alt="Main screen during a scan" width="49%"> <img src="docs/img/04-wybor-stacji.png" alt="Station selection window" width="49%"></p>
+
+More screenshots in the [plugin description](epgscan/EPGScan/README.en.md).
+
 The on-screen texts are in Polish; the English descriptions map every menu item.
 
 ## Repository contents

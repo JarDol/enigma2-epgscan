@@ -14,6 +14,12 @@ pełny program telewizyjny z trzech źródeł:
 
 Do tego harmonogram (nocny przebieg w czuwaniu), kopie EPG, raporty, sprzątanie dysku i restart po nocy.
 
+![EPG kanału – program na dwa tygodnie](docs/img/10-epg-kanalu.png)
+
+<p><img src="docs/img/01-ekran-glowny.png" alt="Ekran główny w trakcie skanu" width="49%"> <img src="docs/img/04-wybor-stacji.png" alt="Okno wyboru stacji" width="49%"></p>
+
+Więcej zrzutów w [opisie wtyczki](epgscan/EPGScan/README.md).
+
 ## Zawartość repozytorium
 
 | Katalog | Co to jest | Opis |

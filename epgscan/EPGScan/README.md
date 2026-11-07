@@ -12,6 +12,8 @@ programowy (EPG). *English: [README.en.md](README.en.md).* Łączy trzy źródł
 
 Całość może działać w nocy w czuwaniu, według harmonogramu, a rano pokazuje krótkie podsumowanie.
 
+![EPG kanału – program na dwa tygodnie](../../docs/img/10-epg-kanalu.png)
+
 Wtyczka jest przygotowana z myślą o polskich kanałach na Hotbird 13.0E, ale skan satelity, XMLTV
 i SatWatch działają z dowolną pozycją i dowolnymi bukietami.
 
@@ -82,6 +84,8 @@ Proponowana kolejność:
 
 ## 3. Ekran główny
 
+![Ekran główny w trakcie skanu](../../docs/img/01-ekran-glowny.png)
+
 U góry stan: liczba transponderów i kanałów, limit równoległych skanów, wolne tunery, zmiany od
 ostatniego skanu. Niżej ostatnie wyniki każdej części (SatWatch, satelita, pobieranie, import),
 aktualny profil i termin następnego startu z harmonogramu, a pod spodem lista transponderów z ich stanem.
@@ -106,6 +110,8 @@ pojawia się powiadomienie.
 ---
 
 ## 4. Akcje i profil
+
+![Akcje i profil](../../docs/img/02-akcje.png)
 
 **Akcje** (zielony) to lista kroków przebiegu. To, co jest tu zaznaczone, robi **OK** na ekranie
 głównym i harmonogram (po zapisaniu żółtym jako domyślne). Zielony/OK w Akcjach uruchamia przebieg
@@ -226,6 +232,8 @@ a okno wyboru przy mapie dekodera pokazuje także stacje, które ma tylko serwer
 ---
 
 ## 8. SatWatch – zmiany na satelicie i bukiety
+
+![Lista SatWatch w trakcie skanu](../../docs/img/06-satwatch-lista.png)
 
 ### 8.1 Sprawdzenie zmian
 
@@ -381,6 +389,8 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 
 ## 11. Menu Kanały
 
+![Dopasowanie kanałów: dekoder](../../docs/img/03-dopasowanie-dekoder.png)
+
 1. **SatWatch** – lista akcji SatWatch: sprawdzenie, skan, kanały do decyzji (rozdział 8.3), zrzut, kopie, konfiguracja
    tunerów (ustawienia – w Ustawieniach, raporty i log SatWatch – w Raportach).
 2. **Dopasowanie kanałów: dekoder** – lista kanałów z bukietów i przypisanych stacji.
@@ -400,6 +410,8 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
    niebieski – szukaj stacji, **Menu** – pobierz program zaznaczonej stacji albo wszystkich kandydatów bez programu (w tle, okno można
    zamknąć; przy propozycji zmiany także „Pomiń propozycję”), **Info/EPG** – podgląd programu stacji
    od 2 h wstecz do 4 h naprzód (z zielonym „Zapisz to źródło”).
+
+   <p><img src="../../docs/img/04-wybor-stacji.png" alt="Okno wyboru stacji" width="49%"> <img src="../../docs/img/05-podglad-programu.png" alt="Podgląd programu stacji" width="49%"></p>
 
    **Różnice dekoder / serwer:** gdy jest serwer epgpl, lista porównuje się z drugą mapą (inna stacja albo ręczne
    wskazanie tylko po jednej stronie) i pokazuje „Różni się od serwera: N” (w dopasowaniu serwera – „od dekodera”).
@@ -432,6 +444,8 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 ---
 
 ## 12. Raporty
+
+![Raport: Statystyka EPG](../../docs/img/09-statystyka-epg.png)
 
 **Info/EPG** na ekranie głównym:
 
@@ -489,6 +503,9 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Pomijaj transpondery bez EPG / sprawdzaj ponownie co | (nie / 7 dni) |
 
 ### Program z internetu
+
+![Ustawienia: Program z internetu (opis pod opcją)](../../docs/img/08-ustawienia.png)
+
 | Ustawienie | Opis |
 |---|---|
 | Program z internetu (XMLTV) | włącza całą część internetową (nie) |

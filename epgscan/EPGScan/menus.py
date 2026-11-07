@@ -178,6 +178,8 @@ def md_text(md):
 		s = ln.rstrip()
 		if re.match(r"^\s*\|?\s*:?-{3,}", s) or s.strip() == "---" or s.strip().startswith("```"):
 			continue                                   # separator tabeli, linia pozioma, ramka kodu
+		if re.match(r"^\s*(!\[|<p><img|<img)", s):
+			continue                                   # zrzuty ekranu (tylko na GitHubie)
 		m = re.match(r"^(#{1,6})\s+(.*)$", s)
 		if m:
 			t = m.group(2).strip()
