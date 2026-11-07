@@ -565,6 +565,10 @@ watch: [chapter 8.4](#84-tuner-setup--what-to-set-in-the-system-and-what-in-the-
 **Is the interface available in English?** Not yet – the on-screen texts are Polish. This document maps the menu
 items to English.
 
+## Support
+
+If EPG Scan is useful to you and you'd like to support its development: **[buycoffee.to/jardol](https://buycoffee.to/jardol)**. Thank you!
+
 ## Disclaimer
 
 TV listings downloaded from the websites (teleman.pl, programtv.onet.pl, pilot.wp.pl, programtv.naziemna.info) belong to

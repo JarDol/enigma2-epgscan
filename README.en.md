@@ -69,6 +69,10 @@ Versions: EPG Scan – `VERSION` in [`epgscan/EPGScan/common.py`](epgscan/EPGSca
 [Issues](../../issues) – please include the plugin version, image and receiver model, tuner type and the log
 (Info/EPG → *Raporty* → *Log EPG Scan*).
 
+## Support
+
+If EPG Scan is useful to you and you'd like to support its development: **[buycoffee.to/jardol](https://buycoffee.to/jardol)**. Thank you!
+
 ## Disclaimer
 
 TV listings downloaded from the websites (teleman.pl, programtv.onet.pl, pilot.wp.pl, programtv.naziemna.info) belong to
