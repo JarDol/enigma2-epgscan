@@ -1,0 +1,38 @@
+# epgpl - dopasowania dostarczane z pakietem (nadpisywane przy aktualizacji)
+# Wlasne dopasowania dopisuj do /opt/epgpl/aliases.txt - maja pierwszenstwo przed tym plikiem.
+#
+# Dwie postacie:
+#   Nazwa na satelicie = Nazwa w serwisach        -> zrodlo wybierane wg kolejnosci SITES (zalecane)
+#   Nazwa na satelicie = zrodlo:site_id           -> na sztywno jeden serwis (onet, tm, wp, naz, cp)
+#   Nazwa na satelicie = -                        -> swiadomie bez programu
+# Wielkosc liter, spacje, HD/4K/Poland/TV w nazwie nie maja znaczenia.
+
+Discovery Poland HD = Discovery Channel
+Science Poland HD = Discovery Science
+Animal Planet Poland HD = Animal Planet
+ID Poland HD = ID
+NATIONAL GEO HD = tm:National-Geographic
+National Geographic Wild HD = tm:Nat-Geo-Wild
+Polsat Comedy Central Extra = tm:Comedy-Central-Family
+Cartoonito Poland HD = Cartoonito
+Cartoon Network Poland HD = Cartoon Network
+Eurosport 1 Poland HD = Eurosport 1
+Eurosport 2 Poland HD = Eurosport 2
+Museum 4K = Museum TV
+Sundance HD = Sundance TV
+Golf Zone = Golf Channel
+wPolsce24 = wPolsce.pl
+Extreme Sports HD = Extreme Channel
+WarnerTV HD = Warner TV
+TVP 3 Gorzów = TVP 3 Gorzów Wielkopolski
+Turbo Xtra Poland HD = DTX
+Historia Poland = tm:Discovery-Historia
+
+# kanaly bez polskiego programu w zrodlach (EPG z satelity albo Rytec)
+HotBird 4K1 = -
+Insight TV UHD = -
+World Fishing Network = -
+Radio Italia Tv HD = -
+BBC News Europe = -
+Bloomberg European TV = -
+TGCOM24 HD = -

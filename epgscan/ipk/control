@@ -1,0 +1,10 @@
+Package: enigma2-plugin-extensions-epgscan
+Version: @VERSION@
+Description: EPG Scan - pelny EPG: skan satelity, program PL z internetu (XMLTV), SatWatch
+Section: extra
+Priority: optional
+Maintainer: EPG Scan
+License: GPL-2.0-or-later
+Architecture: all
+Installed-Size: @SIZE@
+Recommends: enigma2-plugin-extensions-epgimport-sources

@@ -1,0 +1,9 @@
+# epgpl - Twoje dopasowania (nie sa nadpisywane przy aktualizacji, maja pierwszenstwo przed aliases.dist)
+# Format: Nazwa kanalu na satelicie = Nazwa w serwisach   (zrodlo wg kolejnosci SITES)
+#     albo Nazwa kanalu na satelicie = onet:site_id / tm:site_id / wp:site_id / naz:site_id   (na sztywno)
+#   site_id to koncowka adresu strony kanalu, np. https://programtv.onet.pl/program-tv/polsat-sport-hd-96 -> onet:polsat-sport-hd-96
+#   dla teleman: https://www.teleman.pl/program-tv/stacje/Polsat-Sport-2 -> tm:Polsat-Sport-2
+#   dla WP Pilot: https://pilot.wp.pl/program-tv/kanal/szlagier-tv -> wp:szlagier-tv
+#   "= -" oznacza: swiadomie bez programu (znika z raportu)
+# Przyklad:
+# Polsat Sport 2 = onet:polsat-sport-2-123

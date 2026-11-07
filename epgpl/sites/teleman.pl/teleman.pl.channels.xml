@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<channels>
+  <channel site="teleman.pl" site_id="13-Ulica" lang="pl" xmltv_id="">13 Ulica</channel>
+  <channel site="teleman.pl" site_id="Ale-Kino" lang="pl" xmltv_id="">ale kino+</channel>
+  <channel site="teleman.pl" site_id="AMC" lang="pl" xmltv_id="">AMC</channel>
+  <channel site="teleman.pl" site_id="Animal-Planet-HD" lang="pl" xmltv_id="">Animal Planet</channel>
+  <channel site="teleman.pl" site_id="Antena-HD" lang="pl" xmltv_id="">Antena HD</channel>
+  <channel site="teleman.pl" site_id="AXN" lang="pl" xmltv_id="">AXN</channel>
+  <channel site="teleman.pl" site_id="AXN-Black" lang="pl" xmltv_id="">AXN Black</channel>
+  <channel site="teleman.pl" site_id="AXN-Spin" lang="pl" xmltv_id="">AXN Spin</channel>
+  <channel site="teleman.pl" site_id="AXN-White" lang="pl" xmltv_id="">AXN White</channel>
+  <channel site="teleman.pl" site_id="BBC-Brit" lang="pl" xmltv_id="">BBC Brit</channel>
+  <channel site="teleman.pl" site_id="BBC-Earth" lang="pl" xmltv_id="">BBC Earth</channel>
+  <channel site="teleman.pl" site_id="BBC-First" lang="pl" xmltv_id="">BBC First</channel>
+  <channel site="teleman.pl" site_id="BBC-Lifestyle" lang="pl" xmltv_id="">BBC Lifestyle</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-1" lang="pl" xmltv_id="">CANAL+ 1</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-360" lang="pl" xmltv_id="">CANAL+ 360</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-4K" lang="pl" xmltv_id="">CANAL+ 4K</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Dokument" lang="pl" xmltv_id="">CANAL+ Dokument</channel>
+  <channel site="teleman.pl" site_id="Domo" lang="pl" xmltv_id="">CANAL+ Domo</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Extra-1" lang="pl" xmltv_id="">CANAL+ Extra 1</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Extra-2" lang="pl" xmltv_id="">CANAL+ Extra 2</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Extra-3" lang="pl" xmltv_id="">CANAL+ Extra 3</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Extra-4" lang="pl" xmltv_id="">CANAL+ Extra 4</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Film" lang="pl" xmltv_id="">CANAL+ Film</channel>
+  <channel site="teleman.pl" site_id="Kuchnia-TV" lang="pl" xmltv_id="">CANAL+ Kuchnia</channel>
+  <channel site="teleman.pl" site_id="CanalPlus" lang="pl" xmltv_id="">CANAL+ Premium</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Seriale" lang="pl" xmltv_id="">CANAL+ Seriale</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Sport" lang="pl" xmltv_id="">CANAL+ Sport</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Sport-2" lang="pl" xmltv_id="">CANAL+ Sport 2</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Sport-3" lang="pl" xmltv_id="">CANAL+ Sport 3</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Sport-4" lang="pl" xmltv_id="">CANAL+ Sport 4</channel>
+  <channel site="teleman.pl" site_id="CanalPlus-Sport-5" lang="pl" xmltv_id="">CANAL+ Sport 5</channel>
+  <channel site="teleman.pl" site_id="Cartoon-Network" lang="pl" xmltv_id="">Cartoon Network</channel>
+  <channel site="teleman.pl" site_id="Cartoonito" lang="pl" xmltv_id="">Cartoonito</channel>
+  <channel site="teleman.pl" site_id="CBS-Reality" lang="pl" xmltv_id="">CBS Reality</channel>
+  <channel site="teleman.pl" site_id="Crime-Investigation-Network" lang="pl" xmltv_id="">CI Polsat</channel>
+  <channel site="teleman.pl" site_id="Cinemax" lang="pl" xmltv_id="">Cinemax</channel>
+  <channel site="teleman.pl" site_id="Cinemax2" lang="pl" xmltv_id="">Cinemax 2</channel>
+  <channel site="teleman.pl" site_id="Comedy-Central" lang="pl" xmltv_id="">Comedy Central</channel>
+  <channel site="teleman.pl" site_id="Discovery-Channel" lang="pl" xmltv_id="">Discovery Channel</channel>
+  <channel site="teleman.pl" site_id="Discovery-Historia" lang="pl" xmltv_id="">Discovery Historia</channel>
+  <channel site="teleman.pl" site_id="Discovery-Life" lang="pl" xmltv_id="">Discovery Life</channel>
+  <channel site="teleman.pl" site_id="Discovery-Science" lang="pl" xmltv_id="">Discovery Science</channel>
+  <channel site="teleman.pl" site_id="Disney-Channel" lang="pl" xmltv_id="">Disney Channel</channel>
+  <channel site="teleman.pl" site_id="Disney-Junior" lang="pl" xmltv_id="">Disney Junior</channel>
+  <channel site="teleman.pl" site_id="Disney-XD" lang="pl" xmltv_id="">Disney XD</channel>
+  <channel site="teleman.pl" site_id="DTX" lang="pl" xmltv_id="">DTX</channel>
+  <channel site="teleman.pl" site_id="Eleven-Sports-1" lang="pl" xmltv_id="">Eleven Sports 1</channel>
+  <channel site="teleman.pl" site_id="Eleven-Sports-2" lang="pl" xmltv_id="">Eleven Sports 2</channel>
+  <channel site="teleman.pl" site_id="Eleven-Sports-3" lang="pl" xmltv_id="">Eleven Sports 3</channel>
+  <channel site="teleman.pl" site_id="Eleven-4" lang="pl" xmltv_id="">Eleven Sports 4</channel>
+  <channel site="teleman.pl" site_id="Eurosport" lang="pl" xmltv_id="">Eurosport 1</channel>
+  <channel site="teleman.pl" site_id="Eurosport-2" lang="pl" xmltv_id="">Eurosport 2</channel>
+  <channel site="teleman.pl" site_id="Extreme" lang="pl" xmltv_id="">Extreme Channel</channel>
+  <channel site="teleman.pl" site_id="Film-Cafe" lang="pl" xmltv_id="">Film Cafe</channel>
+  <channel site="teleman.pl" site_id="Filmbox-Action" lang="pl" xmltv_id="">FILMBOX+ Action</channel>
+  <channel site="teleman.pl" site_id="Filmbox-Family" lang="pl" xmltv_id="">FILMBOX+ Comedy</channel>
+  <channel site="teleman.pl" site_id="Filmbox-Extra-HD" lang="pl" xmltv_id="">FILMBOX+ Emotion</channel>
+  <channel site="teleman.pl" site_id="FilmBox-Arthouse" lang="pl" xmltv_id="">FILMBOX+ Festival</channel>
+  <channel site="teleman.pl" site_id="Filmbox-Premium" lang="pl" xmltv_id="">FILMBOX+ Hits</channel>
+  <channel site="teleman.pl" site_id="Kino%20TV" lang="pl" xmltv_id="">FILMBOX+ One</channel>
+  <channel site="teleman.pl" site_id="Fokus-TV" lang="pl" xmltv_id="">Fokus TV</channel>
+  <channel site="teleman.pl" site_id="Food-Network" lang="pl" xmltv_id="">Food Network</channel>
+  <channel site="teleman.pl" site_id="FOX" lang="pl" xmltv_id="">FX</channel>
+  <channel site="teleman.pl" site_id="FOX-Comedy" lang="pl" xmltv_id="">FX Comedy</channel>
+  <channel site="teleman.pl" site_id="HBO" lang="pl" xmltv_id="">HBO</channel>
+  <channel site="teleman.pl" site_id="HBO2" lang="pl" xmltv_id="">HBO 2</channel>
+  <channel site="teleman.pl" site_id="HBO3" lang="pl" xmltv_id="">HBO 3</channel>
+  <channel site="teleman.pl" site_id="HGTV" lang="pl" xmltv_id="">HGTV</channel>
+  <channel site="teleman.pl" site_id="History" lang="pl" xmltv_id="">HISTORY</channel>
+  <channel site="teleman.pl" site_id="H2" lang="pl" xmltv_id="">HISTORY 2</channel>
+  <channel site="teleman.pl" site_id="ID" lang="pl" xmltv_id="">ID</channel>
+  <channel site="teleman.pl" site_id="Kino-Polska" lang="pl" xmltv_id="">Kino Polska</channel>
+  <channel site="teleman.pl" site_id="Lifetime" lang="pl" xmltv_id="">Lifetime</channel>
+  <channel site="teleman.pl" site_id="Metro-TV" lang="pl" xmltv_id="">Metro TV</channel>
+  <channel site="teleman.pl" site_id="Mezzo" lang="pl" xmltv_id="">Mezzo</channel>
+  <channel site="teleman.pl" site_id="MiniMini" lang="pl" xmltv_id="">MiniMini+</channel>
+  <channel site="teleman.pl" site_id="MTV-Polska" lang="pl" xmltv_id="">MTV Polska</channel>
+  <channel site="teleman.pl" site_id="Nat-Geo-People" lang="pl" xmltv_id="">Nat Geo People</channel>
+  <channel site="teleman.pl" site_id="National-Geographic" lang="pl" xmltv_id="">National Geo.</channel>
+  <channel site="teleman.pl" site_id="Nat-Geo-Wild" lang="pl" xmltv_id="">Nat. Geo. Wild</channel>
+  <channel site="teleman.pl" site_id="Nickelodeon" lang="pl" xmltv_id="">Nickelodeon</channel>
+  <channel site="teleman.pl" site_id="Nicktoons" lang="pl" xmltv_id="">Nicktoons</channel>
+  <channel site="teleman.pl" site_id="Nowa-TV" lang="pl" xmltv_id="">Nowa TV</channel>
+  <channel site="teleman.pl" site_id="Paramount-Network" lang="pl" xmltv_id="">Paramount Network</channel>
+  <channel site="teleman.pl" site_id="Planete" lang="pl" xmltv_id="">PLANETE+</channel>
+  <channel site="teleman.pl" site_id="Polonia-1" lang="pl" xmltv_id="">Polonia 1</channel>
+  <channel site="teleman.pl" site_id="Polsat" lang="pl" xmltv_id="">Polsat</channel>
+  <channel site="teleman.pl" site_id="Polsat-2" lang="pl" xmltv_id="">Polsat 2</channel>
+  <channel site="teleman.pl" site_id="Polsat-Cafe" lang="pl" xmltv_id="">Polsat Cafe</channel>
+  <channel site="teleman.pl" site_id="Comedy-Central-Family" lang="pl" xmltv_id="">Polsat Comedy C. E.</channel>
+  <channel site="teleman.pl" site_id="Polsat-Doku" lang="pl" xmltv_id="">Polsat Doku</channel>
+  <channel site="teleman.pl" site_id="Polsat-Film" lang="pl" xmltv_id="">Polsat Film</channel>
+  <channel site="teleman.pl" site_id="Polsat-Film-2" lang="pl" xmltv_id="">Polsat Film 2</channel>
+  <channel site="teleman.pl" site_id="Polsat-Games" lang="pl" xmltv_id="">Polsat Games</channel>
+  <channel site="teleman.pl" site_id="Polsat-News" lang="pl" xmltv_id="">Polsat News</channel>
+  <channel site="teleman.pl" site_id="Polsat-Play" lang="pl" xmltv_id="">Polsat Play</channel>
+  <channel site="teleman.pl" site_id="Polsat-Rodzina" lang="pl" xmltv_id="">Polsat Rodzina</channel>
+  <channel site="teleman.pl" site_id="Polsat-Seriale" lang="pl" xmltv_id="">Polsat Seriale</channel>
+  <channel site="teleman.pl" site_id="Polsat-Sport" lang="pl" xmltv_id="">Polsat Sport 1</channel>
+  <channel site="teleman.pl" site_id="Polsat-Sport-2" lang="pl" xmltv_id="">Polsat Sport 2</channel>
+  <channel site="teleman.pl" site_id="Polsat-Sport-3" lang="pl" xmltv_id="">Polsat Sport 3</channel>
+  <channel site="teleman.pl" site_id="Polsat-Sport-Extra-1" lang="pl" xmltv_id="">Polsat Sport Extra 1</channel>
+  <channel site="teleman.pl" site_id="Polsat-Sport-Extra-2" lang="pl" xmltv_id="">Polsat Sport Extra 2</channel>
+  <channel site="teleman.pl" site_id="Polsat-Sport-Extra-3" lang="pl" xmltv_id="">Polsat Sport Extra 3</channel>
+  <channel site="teleman.pl" site_id="Polsat-Sport-Extra-4" lang="pl" xmltv_id="">Polsat Sport Extra 4</channel>
+  <channel site="teleman.pl" site_id="Polsat-Sport-Fight" lang="pl" xmltv_id="">Polsat Sport Fight</channel>
+  <channel site="teleman.pl" site_id="Polsat-Sport-Premium-1" lang="pl" xmltv_id="">Polsat Sport Premium 1</channel>
+  <channel site="teleman.pl" site_id="Polsat-Sport-Premium-2" lang="pl" xmltv_id="">Polsat Sport Premium 2</channel>
+  <channel site="teleman.pl" site_id="Viasat-Explorer" lang="pl" xmltv_id="">Polsat Viasat Explore</channel>
+  <channel site="teleman.pl" site_id="Viasat-History" lang="pl" xmltv_id="">Polsat Viasat History</channel>
+  <channel site="teleman.pl" site_id="Viasat-Nature" lang="pl" xmltv_id="">Polsat Viasat Nature</channel>
+  <channel site="teleman.pl" site_id="TV-Republika" lang="pl" xmltv_id="">Republika</channel>
+  <channel site="teleman.pl" site_id="Romance-TV" lang="pl" xmltv_id="">Romance TV</channel>
+  <channel site="teleman.pl" site_id="SCI-FI" lang="pl" xmltv_id="">SCI FI</channel>
+  <channel site="teleman.pl" site_id="Show-TV" lang="pl" xmltv_id="">Show TV</channel>
+  <channel site="teleman.pl" site_id="SportKlub" lang="pl" xmltv_id="">SportKlub</channel>
+  <channel site="teleman.pl" site_id="Stopklatka-TV" lang="pl" xmltv_id="">Stopklatka</channel>
+  <channel site="teleman.pl" site_id="Sundance-Channel-HD" lang="pl" xmltv_id="">Sundance TV</channel>
+  <channel site="teleman.pl" site_id="Super-Polsat" lang="pl" xmltv_id="">Super Polsat</channel>
+  <channel site="teleman.pl" site_id="Tele-5" lang="pl" xmltv_id="">Tele 5</channel>
+  <channel site="teleman.pl" site_id="TLC" lang="pl" xmltv_id="">TLC</channel>
+  <channel site="teleman.pl" site_id="Travel-Channel" lang="pl" xmltv_id="">Travel</channel>
+  <channel site="teleman.pl" site_id="TTV" lang="pl" xmltv_id="">TTV</channel>
+  <channel site="teleman.pl" site_id="TV4" lang="pl" xmltv_id="">TV 4</channel>
+  <channel site="teleman.pl" site_id="TV6" lang="pl" xmltv_id="">TV 6</channel>
+  <channel site="teleman.pl" site_id="Puls" lang="pl" xmltv_id="">TV Puls</channel>
+  <channel site="teleman.pl" site_id="Puls-2" lang="pl" xmltv_id="">TV Puls 2</channel>
+  <channel site="teleman.pl" site_id="TV-Trwam" lang="pl" xmltv_id="">TV Trwam</channel>
+  <channel site="teleman.pl" site_id="TVN" lang="pl" xmltv_id="">TVN</channel>
+  <channel site="teleman.pl" site_id="TVN-Siedem" lang="pl" xmltv_id="">TVN 7</channel>
+  <channel site="teleman.pl" site_id="TVN-Fabula" lang="pl" xmltv_id="">TVN Fabuła</channel>
+  <channel site="teleman.pl" site_id="TVN-Style" lang="pl" xmltv_id="">TVN Style</channel>
+  <channel site="teleman.pl" site_id="TVN-Turbo" lang="pl" xmltv_id="">TVN Turbo</channel>
+  <channel site="teleman.pl" site_id="TVN24" lang="pl" xmltv_id="">TVN24</channel>
+  <channel site="teleman.pl" site_id="TVN-24-Biznes-i-Swiat" lang="pl" xmltv_id="">TVN24 BiS</channel>
+  <channel site="teleman.pl" site_id="TVP-1" lang="pl" xmltv_id="">TVP 1</channel>
+  <channel site="teleman.pl" site_id="TVP-2" lang="pl" xmltv_id="">TVP 2</channel>
+  <channel site="teleman.pl" site_id="TVP-ABC" lang="pl" xmltv_id="">TVP ABC</channel>
+  <channel site="teleman.pl" site_id="tvp-dokument" lang="pl" xmltv_id="">TVP Dokument</channel>
+  <channel site="teleman.pl" site_id="TVP-HD" lang="pl" xmltv_id="">TVP HD</channel>
+  <channel site="teleman.pl" site_id="TVP-Historia" lang="pl" xmltv_id="">TVP Historia</channel>
+  <channel site="teleman.pl" site_id="tvp-historia-2" lang="pl" xmltv_id="">TVP Historia 2</channel>
+  <channel site="teleman.pl" site_id="TVP-Info" lang="pl" xmltv_id="">TVP Info</channel>
+  <channel site="teleman.pl" site_id="TVP-Kobieta" lang="pl" xmltv_id="">TVP Kobieta</channel>
+  <channel site="teleman.pl" site_id="TVP-Kultura" lang="pl" xmltv_id="">TVP Kultura</channel>
+  <channel site="teleman.pl" site_id="tvp-kultura-2" lang="pl" xmltv_id="">TVP Kultura 2</channel>
+  <channel site="teleman.pl" site_id="TVP-Nauka" lang="pl" xmltv_id="">TVP Nauka</channel>
+  <channel site="teleman.pl" site_id="TVP-Polonia" lang="pl" xmltv_id="">TVP Polonia</channel>
+  <channel site="teleman.pl" site_id="TVP-Rozrywka" lang="pl" xmltv_id="">TVP Rozrywka</channel>
+  <channel site="teleman.pl" site_id="TVP-Seriale" lang="pl" xmltv_id="">TVP Seriale</channel>
+  <channel site="teleman.pl" site_id="TVP-Sport" lang="pl" xmltv_id="">TVP Sport</channel>
+  <channel site="teleman.pl" site_id="TVS" lang="pl" xmltv_id="">TVS</channel>
+  <channel site="teleman.pl" site_id="Epic-Drama" lang="pl" xmltv_id="">Viasat Epic Drama</channel>
+  <channel site="teleman.pl" site_id="Warner-TV" lang="pl" xmltv_id="">Warner TV</channel>
+  <channel site="teleman.pl" site_id="WP" lang="pl" xmltv_id="">WP</channel>
+  <channel site="teleman.pl" site_id="Wydarzenia24" lang="pl" xmltv_id="">Wydarzenia 24</channel>
+  <channel site="teleman.pl" site_id="Zoom-TV" lang="pl" xmltv_id="">ZOOM</channel>
+</channels>

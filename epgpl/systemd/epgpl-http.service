@@ -1,0 +1,11 @@
+[Unit]
+Description=epgpl - serwer HTTP dla odbiornika (pliki EPG, mapa kanalow, wskazania z tunera)
+After=network-online.target
+
+[Service]
+User=epgpl
+ExecStart=/usr/bin/python3 -I /opt/epgpl/server.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

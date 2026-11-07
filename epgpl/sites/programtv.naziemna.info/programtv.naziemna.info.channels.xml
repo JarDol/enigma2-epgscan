@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<channels>
+  <channel site="programtv.naziemna.info" site_id="tvp1" lang="pl" xmltv_id="">TVP1 HD</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp2" lang="pl" xmltv_id="">TVP2 HD</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp3" lang="pl" xmltv_id="">TVP3</channel>
+  <channel site="programtv.naziemna.info" site_id="polsat" lang="pl" xmltv_id="">Polsat</channel>
+  <channel site="programtv.naziemna.info" site_id="tvn" lang="pl" xmltv_id="">TVN</channel>
+  <channel site="programtv.naziemna.info" site_id="tv4" lang="pl" xmltv_id="">TV4</channel>
+  <channel site="programtv.naziemna.info" site_id="tvpuls" lang="pl" xmltv_id="">TV Puls</channel>
+  <channel site="programtv.naziemna.info" site_id="tvn7" lang="pl" xmltv_id="">TVN 7</channel>
+  <channel site="programtv.naziemna.info" site_id="puls2" lang="pl" xmltv_id="">PULS 2</channel>
+  <channel site="programtv.naziemna.info" site_id="tv6" lang="pl" xmltv_id="">TV6</channel>
+  <channel site="programtv.naziemna.info" site_id="superpolsat" lang="pl" xmltv_id="">Super Polsat</channel>
+  <channel site="programtv.naziemna.info" site_id="stopklatka" lang="pl" xmltv_id="">Stopklatka TV</channel>
+  <channel site="programtv.naziemna.info" site_id="eskatv" lang="pl" xmltv_id="">ESKA TV</channel>
+  <channel site="programtv.naziemna.info" site_id="ttv" lang="pl" xmltv_id="">TTV</channel>
+  <channel site="programtv.naziemna.info" site_id="polotv" lang="pl" xmltv_id="">POLO TV</channel>
+  <channel site="programtv.naziemna.info" site_id="antenatv" lang="pl" xmltv_id="">ANTENA TV</channel>
+  <channel site="programtv.naziemna.info" site_id="tvpkultura" lang="pl" xmltv_id="">TVP Kultura</channel>
+  <channel site="programtv.naziemna.info" site_id="tvphistoria" lang="pl" xmltv_id="">TVP Historia</channel>
+  <channel site="programtv.naziemna.info" site_id="tvpsport" lang="pl" xmltv_id="">TVP Sport</channel>
+  <channel site="programtv.naziemna.info" site_id="tvppolonia" lang="pl" xmltv_id="">TVP Polonia</channel>
+  <channel site="programtv.naziemna.info" site_id="tvprozrywka" lang="pl" xmltv_id="">TVP Rozrywka</channel>
+  <channel site="programtv.naziemna.info" site_id="tvpdokument" lang="pl" xmltv_id="">TVP Dokument</channel>
+  <channel site="programtv.naziemna.info" site_id="tvpnauka" lang="pl" xmltv_id="">TVP Nauka</channel>
+  <channel site="programtv.naziemna.info" site_id="alfatvp" lang="pl" xmltv_id="">ALFA TVP</channel>
+  <channel site="programtv.naziemna.info" site_id="tvpinfo" lang="pl" xmltv_id="">TVP INFO</channel>
+  <channel site="programtv.naziemna.info" site_id="tvpkobieta" lang="pl" xmltv_id="">TVP Kobieta</channel>
+  <channel site="programtv.naziemna.info" site_id="tvtrwam" lang="pl" xmltv_id="">TV Trwam</channel>
+  <channel site="programtv.naziemna.info" site_id="tvpabc" lang="pl" xmltv_id="">TVP ABC</channel>
+  <channel site="programtv.naziemna.info" site_id="fokustv" lang="pl" xmltv_id="">FOKUS TV</channel>
+  <channel site="programtv.naziemna.info" site_id="nowatv" lang="pl" xmltv_id="">Nowa TV</channel>
+  <channel site="programtv.naziemna.info" site_id="wp" lang="pl" xmltv_id="">Telewizja WP</channel>
+  <channel site="programtv.naziemna.info" site_id="wydarzenia24" lang="pl" xmltv_id="">Wydarzenia24</channel>
+  <channel site="programtv.naziemna.info" site_id="republika" lang="pl" xmltv_id="">Republika</channel>
+  <channel site="programtv.naziemna.info" site_id="tvpseriale" lang="pl" xmltv_id="">TVP Seriale</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatfilm" lang="pl" xmltv_id="">Polsat Film</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatfilm2" lang="pl" xmltv_id="">Polsat Film 2</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatseriale" lang="pl" xmltv_id="">Polsat Seriale</channel>
+  <channel site="programtv.naziemna.info" site_id="kinopolska" lang="pl" xmltv_id="">Kino Polska</channel>
+  <channel site="programtv.naziemna.info" site_id="comedycentral" lang="pl" xmltv_id="">Comedy Central</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatcomedycentralextra" lang="pl" xmltv_id="">Polsat Comedy Central Extra</channel>
+  <channel site="programtv.naziemna.info" site_id="paramountchannel" lang="pl" xmltv_id="">Paramount Channel Polska</channel>
+  <channel site="programtv.naziemna.info" site_id="axn" lang="pl" xmltv_id="">AXN</channel>
+  <channel site="programtv.naziemna.info" site_id="axnblack" lang="pl" xmltv_id="">AXN Black</channel>
+  <channel site="programtv.naziemna.info" site_id="axnspin" lang="pl" xmltv_id="">AXN Spin</channel>
+  <channel site="programtv.naziemna.info" site_id="axnwhite" lang="pl" xmltv_id="">AXN White</channel>
+  <channel site="programtv.naziemna.info" site_id="fox" lang="pl" xmltv_id="">FX (d. FOX)</channel>
+  <channel site="programtv.naziemna.info" site_id="foxcomedy" lang="pl" xmltv_id="">FX Comedy (d. FOX Comedy)</channel>
+  <channel site="programtv.naziemna.info" site_id="tvnfabula" lang="pl" xmltv_id="">TVN Fabuła</channel>
+  <channel site="programtv.naziemna.info" site_id="alekinoplus" lang="pl" xmltv_id="">Ale kino+</channel>
+  <channel site="programtv.naziemna.info" site_id="amc" lang="pl" xmltv_id="">AMC</channel>
+  <channel site="programtv.naziemna.info" site_id="cbseuropa" lang="pl" xmltv_id="">CBS Europa</channel>
+  <channel site="programtv.naziemna.info" site_id="filmcafe" lang="pl" xmltv_id="">Film Cafe</channel>
+  <channel site="programtv.naziemna.info" site_id="sundancechannel" lang="pl" xmltv_id="">Sundance TV</channel>
+  <channel site="programtv.naziemna.info" site_id="13ulica" lang="pl" xmltv_id="">13 Ulica</channel>
+  <channel site="programtv.naziemna.info" site_id="scifi" lang="pl" xmltv_id="">SciFi</channel>
+  <channel site="programtv.naziemna.info" site_id="warnertv" lang="pl" xmltv_id="">Warner TV (d. TNT)</channel>
+  <channel site="programtv.naziemna.info" site_id="epicdrama" lang="pl" xmltv_id="">Epic Drama</channel>
+  <channel site="programtv.naziemna.info" site_id="hbo" lang="pl" xmltv_id="">HBO</channel>
+  <channel site="programtv.naziemna.info" site_id="hbo2" lang="pl" xmltv_id="">HBO2</channel>
+  <channel site="programtv.naziemna.info" site_id="hbo3" lang="pl" xmltv_id="">HBO3</channel>
+  <channel site="programtv.naziemna.info" site_id="cinemax" lang="pl" xmltv_id="">Cinemax</channel>
+  <channel site="programtv.naziemna.info" site_id="cinemax2" lang="pl" xmltv_id="">Cinemax2</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplus" lang="pl" xmltv_id="">CANAL+ PREMIUM</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplus1" lang="pl" xmltv_id="">CANAL+ 1</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplus4kultrahd" lang="pl" xmltv_id="">CANAL+ 4K ULTRA HD</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusfamily" lang="pl" xmltv_id="">CANAL+ FAMILY</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplus360" lang="pl" xmltv_id="">CANAL+ 360</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusfilm" lang="pl" xmltv_id="">CANAL+ FILM</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusseriale" lang="pl" xmltv_id="">CANAL+ SERIALE</channel>
+  <channel site="programtv.naziemna.info" site_id="novelasplus" lang="pl" xmltv_id="">NOVELAS+</channel>
+  <channel site="programtv.naziemna.info" site_id="novelasplus1" lang="pl" xmltv_id="">NOVELAS+1 (d. DIZI)</channel>
+  <channel site="programtv.naziemna.info" site_id="filmboxplusone" lang="pl" xmltv_id="">FILMBOX+ One (d. Kino TV)</channel>
+  <channel site="programtv.naziemna.info" site_id="filmboxplushits" lang="pl" xmltv_id="">FILMBOX+ Hits</channel>
+  <channel site="programtv.naziemna.info" site_id="filmboxplusemotion" lang="pl" xmltv_id="">FILMBOX+ Emotion</channel>
+  <channel site="programtv.naziemna.info" site_id="filmboxpluscomedy" lang="pl" xmltv_id="">FILMBOX+ Comedy</channel>
+  <channel site="programtv.naziemna.info" site_id="filmboxplusfestival" lang="pl" xmltv_id="">FILMBOX+ Festival</channel>
+  <channel site="programtv.naziemna.info" site_id="filmboxplusaction" lang="pl" xmltv_id="">FILMBOX+ Action</channel>
+  <channel site="programtv.naziemna.info" site_id="novelatv" lang="pl" xmltv_id="">Novela TV</channel>
+  <channel site="programtv.naziemna.info" site_id="romancetv" lang="pl" xmltv_id="">Romance TV</channel>
+  <channel site="programtv.naziemna.info" site_id="bbcfirst" lang="pl" xmltv_id="">BBC First</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatsport1" lang="pl" xmltv_id="">Polsat Sport 1</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatsport2" lang="pl" xmltv_id="">Polsat Sport 2</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatsport3" lang="pl" xmltv_id="">Polsat Sport 3</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatsportfight" lang="pl" xmltv_id="">Polsat Sport Fight</channel>
+  <channel site="programtv.naziemna.info" site_id="eurosport1" lang="pl" xmltv_id="">Eurosport 1</channel>
+  <channel site="programtv.naziemna.info" site_id="eurosport2" lang="pl" xmltv_id="">Eurosport 2</channel>
+  <channel site="programtv.naziemna.info" site_id="eurosport3" lang="pl" xmltv_id="">Eurosport 3</channel>
+  <channel site="programtv.naziemna.info" site_id="eurosport4" lang="pl" xmltv_id="">Eurosport 4</channel>
+  <channel site="programtv.naziemna.info" site_id="elevensports1" lang="pl" xmltv_id="">ELEVEN SPORTS 1</channel>
+  <channel site="programtv.naziemna.info" site_id="elevensports2" lang="pl" xmltv_id="">ELEVEN SPORTS 2</channel>
+  <channel site="programtv.naziemna.info" site_id="elevensports3" lang="pl" xmltv_id="">ELEVEN SPORTS 3</channel>
+  <channel site="programtv.naziemna.info" site_id="elevensports4" lang="pl" xmltv_id="">ELEVEN SPORTS 4</channel>
+  <channel site="programtv.naziemna.info" site_id="viaplay" lang="pl" xmltv_id="">Viaplay</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplussport" lang="pl" xmltv_id="">CANAL+ SPORT</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplussport2" lang="pl" xmltv_id="">CANAL+ SPORT 2</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplussport3" lang="pl" xmltv_id="">CANAL+ SPORT 3</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplussport4" lang="pl" xmltv_id="">CANAL+ SPORT 4</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplussport5" lang="pl" xmltv_id="">CANAL+ SPORT 5</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplussport6" lang="pl" xmltv_id="">CANAL+ SPORT 6</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplussport7" lang="pl" xmltv_id="">CANAL+ SPORT 7</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusextra1" lang="pl" xmltv_id="">CANAL+ EXTRA 1</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusextra2" lang="pl" xmltv_id="">CANAL+ EXTRA 2</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusextra3" lang="pl" xmltv_id="">CANAL+ EXTRA 3</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusextra4" lang="pl" xmltv_id="">CANAL+ EXTRA 4</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusextra5" lang="pl" xmltv_id="">CANAL+ EXTRA 5</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusextra6" lang="pl" xmltv_id="">CANAL+ EXTRA 6</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusextra7" lang="pl" xmltv_id="">CANAL+ EXTRA 7</channel>
+  <channel site="programtv.naziemna.info" site_id="fightklub" lang="pl" xmltv_id="">FightKlub</channel>
+  <channel site="programtv.naziemna.info" site_id="sportklub" lang="pl" xmltv_id="">SportKlub</channel>
+  <channel site="programtv.naziemna.info" site_id="fightbox" lang="pl" xmltv_id="">FightBox</channel>
+  <channel site="programtv.naziemna.info" site_id="gametoonhd" lang="pl" xmltv_id="">Gametoon HD</channel>
+  <channel site="programtv.naziemna.info" site_id="animalplanet" lang="pl" xmltv_id="">Animal Planet</channel>
+  <channel site="programtv.naziemna.info" site_id="discoverychannel" lang="pl" xmltv_id="">Discovery Channel</channel>
+  <channel site="programtv.naziemna.info" site_id="discoveryhistoria" lang="pl" xmltv_id="">Discovery Historia</channel>
+  <channel site="programtv.naziemna.info" site_id="discoveryscience" lang="pl" xmltv_id="">Discovery Science</channel>
+  <channel site="programtv.naziemna.info" site_id="natgeopeople" lang="pl" xmltv_id="">Nat Geo People</channel>
+  <channel site="programtv.naziemna.info" site_id="nationalgeographicwild" lang="pl" xmltv_id="">National Geographic Wild</channel>
+  <channel site="programtv.naziemna.info" site_id="nationalgeographicchannel" lang="pl" xmltv_id="">National Geographic</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatdoku" lang="pl" xmltv_id="">Polsat Doku</channel>
+  <channel site="programtv.naziemna.info" site_id="planeteplus" lang="pl" xmltv_id="">Planete+</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatviasatexplore" lang="pl" xmltv_id="">Polsat Viasat Explore</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatviasathistory" lang="pl" xmltv_id="">Polsat Viasat History</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatviasatnature" lang="pl" xmltv_id="">Polsat Viasat Nature</channel>
+  <channel site="programtv.naziemna.info" site_id="viasattruecrime" lang="pl" xmltv_id="">Viasat True Crime</channel>
+  <channel site="programtv.naziemna.info" site_id="id" lang="pl" xmltv_id="">ID</channel>
+  <channel site="programtv.naziemna.info" site_id="history" lang="pl" xmltv_id="">HISTORY</channel>
+  <channel site="programtv.naziemna.info" site_id="history2" lang="pl" xmltv_id="">HISTORY2</channel>
+  <channel site="programtv.naziemna.info" site_id="cipolsat" lang="pl" xmltv_id="">CI Polsat</channel>
+  <channel site="programtv.naziemna.info" site_id="bbcearth" lang="pl" xmltv_id="">BBC Earth</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusdokument" lang="pl" xmltv_id="">CANAL+ DOKUMENT</channel>
+  <channel site="programtv.naziemna.info" site_id="waterplanet" lang="pl" xmltv_id="">Water Planet</channel>
+  <channel site="programtv.naziemna.info" site_id="docubox" lang="pl" xmltv_id="">DocuBox</channel>
+  <channel site="programtv.naziemna.info" site_id="tvn24" lang="pl" xmltv_id="">TVN24</channel>
+  <channel site="programtv.naziemna.info" site_id="tvn24bis" lang="pl" xmltv_id="">TVN24 BiS</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatnews" lang="pl" xmltv_id="">Polsat News</channel>
+  <channel site="programtv.naziemna.info" site_id="superstacja" lang="pl" xmltv_id="">Superstacja</channel>
+  <channel site="programtv.naziemna.info" site_id="tvnstyle" lang="pl" xmltv_id="">TVN Style</channel>
+  <channel site="programtv.naziemna.info" site_id="tvnturbo" lang="pl" xmltv_id="">TVN Turbo</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatcafe" lang="pl" xmltv_id="">Polsat Cafe</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatplay" lang="pl" xmltv_id="">Polsat Play</channel>
+  <channel site="programtv.naziemna.info" site_id="foodnetwork" lang="pl" xmltv_id="">Food Network</channel>
+  <channel site="programtv.naziemna.info" site_id="hgtv" lang="pl" xmltv_id="">HGTV</channel>
+  <channel site="programtv.naziemna.info" site_id="travelchannel" lang="pl" xmltv_id="">Travel Channel</channel>
+  <channel site="programtv.naziemna.info" site_id="domoplus" lang="pl" xmltv_id="">CANAL+ DOMO</channel>
+  <channel site="programtv.naziemna.info" site_id="kuchniaplus" lang="pl" xmltv_id="">CANAL+ KUCHNIA</channel>
+  <channel site="programtv.naziemna.info" site_id="discoverylife" lang="pl" xmltv_id="">Discovery Life</channel>
+  <channel site="programtv.naziemna.info" site_id="bbcbrit" lang="pl" xmltv_id="">BBC Brit</channel>
+  <channel site="programtv.naziemna.info" site_id="bbclifestyle" lang="pl" xmltv_id="">BBC Lifestyle</channel>
+  <channel site="programtv.naziemna.info" site_id="lifetime" lang="pl" xmltv_id="">Lifetime</channel>
+  <channel site="programtv.naziemna.info" site_id="tlc" lang="pl" xmltv_id="">TLC</channel>
+  <channel site="programtv.naziemna.info" site_id="discoveryturboxtra" lang="pl" xmltv_id="">DTX</channel>
+  <channel site="programtv.naziemna.info" site_id="motowizja" lang="pl" xmltv_id="">Motowizja</channel>
+  <channel site="programtv.naziemna.info" site_id="golfzone" lang="pl" xmltv_id="">GOLF ZONE</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatgames" lang="pl" xmltv_id="">Polsat Games</channel>
+  <channel site="programtv.naziemna.info" site_id="cbsreality" lang="pl" xmltv_id="">CBS Reality</channel>
+  <channel site="programtv.naziemna.info" site_id="eentertainment" lang="pl" xmltv_id="">E!</channel>
+  <channel site="programtv.naziemna.info" site_id="redcarpettv" lang="pl" xmltv_id="">RED CARPET TV</channel>
+  <channel site="programtv.naziemna.info" site_id="redtoptv" lang="pl" xmltv_id="">RED TOP TV</channel>
+  <channel site="programtv.naziemna.info" site_id="vidoctv" lang="pl" xmltv_id="">ViDocTV (d. CTV9)</channel>
+  <channel site="programtv.naziemna.info" site_id="kabarettv" lang="pl" xmltv_id="">Kabaret TV</channel>
+  <channel site="programtv.naziemna.info" site_id="polsat1" lang="pl" xmltv_id="">Polsat 1 (ONE)</channel>
+  <channel site="programtv.naziemna.info" site_id="tvphd" lang="pl" xmltv_id="">TVP HD</channel>
+  <channel site="programtv.naziemna.info" site_id="tvpwilno" lang="pl" xmltv_id="">TVP Wilno</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp4k" lang="pl" xmltv_id="">TVP 4K</channel>
+  <channel site="programtv.naziemna.info" site_id="metro" lang="pl" xmltv_id="">METRO</channel>
+  <channel site="programtv.naziemna.info" site_id="zoomtv" lang="pl" xmltv_id="">ZOOM</channel>
+  <channel site="programtv.naziemna.info" site_id="polonia1" lang="pl" xmltv_id="">Polonia 1</channel>
+  <channel site="programtv.naziemna.info" site_id="tele5" lang="pl" xmltv_id="">Tele5</channel>
+  <channel site="programtv.naziemna.info" site_id="tbnpolska" lang="pl" xmltv_id="">TBN Polska HD</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatrodzina" lang="pl" xmltv_id="">Polsat Rodzina</channel>
+  <channel site="programtv.naziemna.info" site_id="polsat2" lang="pl" xmltv_id="">Polsat 2</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatreality" lang="pl" xmltv_id="">Polsat Reality</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatx" lang="pl" xmltv_id="">Polsat X</channel>
+  <channel site="programtv.naziemna.info" site_id="nickjr" lang="pl" xmltv_id="">Nick Jr.</channel>
+  <channel site="programtv.naziemna.info" site_id="nickelodeon" lang="pl" xmltv_id="">Nickelodeon</channel>
+  <channel site="programtv.naziemna.info" site_id="nicktoons" lang="pl" xmltv_id="">NickToons</channel>
+  <channel site="programtv.naziemna.info" site_id="cartoonito" lang="pl" xmltv_id="">Cartoonito (d. Boomerang)</channel>
+  <channel site="programtv.naziemna.info" site_id="cartoonnetwork" lang="pl" xmltv_id="">Cartoon Network</channel>
+  <channel site="programtv.naziemna.info" site_id="disneychannel" lang="pl" xmltv_id="">Disney Channel</channel>
+  <channel site="programtv.naziemna.info" site_id="disneyjunior" lang="pl" xmltv_id="">Disney Junior</channel>
+  <channel site="programtv.naziemna.info" site_id="disneyxd" lang="pl" xmltv_id="">Disney XD</channel>
+  <channel site="programtv.naziemna.info" site_id="miniminiplus" lang="pl" xmltv_id="">MiniMini+</channel>
+  <channel site="programtv.naziemna.info" site_id="teletoonplus" lang="pl" xmltv_id="">teleTOON+</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatjimjam" lang="pl" xmltv_id="">POLSAT JimJam</channel>
+  <channel site="programtv.naziemna.info" site_id="bbccbeebies" lang="pl" xmltv_id="">BBC CBeebies</channel>
+  <channel site="programtv.naziemna.info" site_id="juniorchannel" lang="pl" xmltv_id="">Junior Channel</channel>
+  <channel site="programtv.naziemna.info" site_id="davinci" lang="pl" xmltv_id="">Da Vinci</channel>
+  <channel site="programtv.naziemna.info" site_id="mtvpolska" lang="pl" xmltv_id="">MTV Polska</channel>
+  <channel site="programtv.naziemna.info" site_id="mtv00s" lang="pl" xmltv_id="">MTV 00s</channel>
+  <channel site="programtv.naziemna.info" site_id="teennick" lang="pl" xmltv_id="">TeenNick</channel>
+  <channel site="programtv.naziemna.info" site_id="vh1" lang="pl" xmltv_id="">VH1</channel>
+  <channel site="programtv.naziemna.info" site_id="kinopolskamuzyka" lang="pl" xmltv_id="">Kino Polska Muzyka</channel>
+  <channel site="programtv.naziemna.info" site_id="starstv" lang="pl" xmltv_id="">STARS.TV</channel>
+  <channel site="programtv.naziemna.info" site_id="discopolomusic" lang="pl" xmltv_id="">Disco Polo Music</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatmusic" lang="pl" xmltv_id="">Polsat Music</channel>
+  <channel site="programtv.naziemna.info" site_id="voxmusictv" lang="pl" xmltv_id="">VOX Music TV</channel>
+  <channel site="programtv.naziemna.info" site_id="eskatvextra" lang="pl" xmltv_id="">ESKA TV Extra</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_bialystok" lang="pl" xmltv_id="">TVP3 Białystok</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_bydgoszcz" lang="pl" xmltv_id="">TVP3 Bydgoszcz</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_gdansk" lang="pl" xmltv_id="">TVP3 Gdańsk</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_gorzow" lang="pl" xmltv_id="">TVP3 Gorzów Wlkp.</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_katowice" lang="pl" xmltv_id="">TVP3 Katowice</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_kielce" lang="pl" xmltv_id="">TVP3 Kielce</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_krakow" lang="pl" xmltv_id="">TVP3 Kraków</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_lublin" lang="pl" xmltv_id="">TVP3 Lublin</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_lodz" lang="pl" xmltv_id="">TVP3 Łódź</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_olsztyn" lang="pl" xmltv_id="">TVP3 Olsztyn</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_opole" lang="pl" xmltv_id="">TVP3 Opole</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_poznan" lang="pl" xmltv_id="">TVP3 Poznań</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_rzeszow" lang="pl" xmltv_id="">TVP3 Rzeszów</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_szczecin" lang="pl" xmltv_id="">TVP3 Szczecin</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_warszawa" lang="pl" xmltv_id="">TVP3 Warszawa</channel>
+  <channel site="programtv.naziemna.info" site_id="tvp_wroclaw" lang="pl" xmltv_id="">TVP3 Wrocław</channel>
+  <channel site="programtv.naziemna.info" site_id="tvs" lang="pl" xmltv_id="">TVS</channel>
+  <channel site="programtv.naziemna.info" site_id="tvc" lang="pl" xmltv_id="">TVC</channel>
+  <channel site="programtv.naziemna.info" site_id="tvcreality" lang="pl" xmltv_id="">TVC Reality</channel>
+  <channel site="programtv.naziemna.info" site_id="tvcsuper" lang="pl" xmltv_id="">TVC Super</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatsportpremium1" lang="pl" xmltv_id="">Polsat Sport Premium 1</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatsportpremium2" lang="pl" xmltv_id="">Polsat Sport Premium 2</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatsportextra1" lang="pl" xmltv_id="">Polsat Sport Extra 1</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatsportextra2" lang="pl" xmltv_id="">Polsat Sport Extra 2</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatsportextra3" lang="pl" xmltv_id="">Polsat Sport Extra 3</channel>
+  <channel site="programtv.naziemna.info" site_id="polsatsportextra4" lang="pl" xmltv_id="">Polsat Sport Extra 4</channel>
+  <channel site="programtv.naziemna.info" site_id="canalplusnow" lang="pl" xmltv_id="">CANAL+ NOW</channel>
+  <channel site="programtv.naziemna.info" site_id="tvokazje" lang="pl" xmltv_id="">TV Okazje</channel>
+  <channel site="programtv.naziemna.info" site_id="adventure" lang="pl" xmltv_id="">Adventure</channel>
+  <channel site="programtv.naziemna.info" site_id="nutatv" lang="pl" xmltv_id="">NUTA.TV</channel>
+  <channel site="programtv.naziemna.info" site_id="powertv" lang="pl" xmltv_id="">Power TV</channel>
+  <channel site="programtv.naziemna.info" site_id="topkids" lang="pl" xmltv_id="">TOP KIDS</channel>
+  <channel site="programtv.naziemna.info" site_id="juniormusic" lang="pl" xmltv_id="">Junior Music</channel>
+  <channel site="programtv.naziemna.info" site_id="filmax" lang="pl" xmltv_id="">FILMAX</channel>
+  <channel site="programtv.naziemna.info" site_id="filmaxcafe" lang="pl" xmltv_id="">FILMAX Cafe</channel>
+  <channel site="programtv.naziemna.info" site_id="hometv" lang="pl" xmltv_id="">Home TV</channel>
+  <channel site="programtv.naziemna.info" site_id="xtremetv" lang="pl" xmltv_id="">XTREME TV</channel>
+  <channel site="programtv.naziemna.info" site_id="extremesportschannel" lang="pl" xmltv_id="">Extreme Sports Channel</channel>
+  <channel site="programtv.naziemna.info" site_id="activefamily" lang="pl" xmltv_id="">Active Family</channel>
+  <channel site="programtv.naziemna.info" site_id="atmrozrywka" lang="pl" xmltv_id="">ATM Rozrywka</channel>
+</channels>
