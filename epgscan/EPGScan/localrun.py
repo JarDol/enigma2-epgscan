@@ -159,7 +159,7 @@ class LocalJob(object):
 							st.append((tag, sid, xid, names[xid]))
 				from .common import local_conns
 				self.grab = LocalGrab(st, days=days, conns=local_conns(), max_total=int(cfg.local_conn_max.value),
-					errlog=(d + "bledy.txt") if cfg.local_errlog.value else None)
+					pause=float(cfg.local_pause.value), errlog=(d + "bledy.txt") if cfg.local_errlog.value else None)
 				if self.cancelled:
 					raise Exception("przerwane przez uzytkownika - plik programu nie podmieniony")
 				self.grab.run()
@@ -182,6 +182,9 @@ class LocalJob(object):
 				self.msgs.append("gotowe w %d:%02d: audycji %d dla %d stacji, stron %d (bez danych w serwisie %d), ponowionych %d, "
 					"bledow %d (%s)" % (took // 60, took % 60, n, len(self.grab.result), self.grab.total, self.grab.missing,
 					self.grab.retried, self.grab.errors, self.grab.progress()))
+				if getattr(self.grab, "slowed", None):
+					log("Pobieranie na dekoderze: serwis ograniczal zapytania (429/503) - przerwa wydluzona: %s" % ", ".join(
+						"%s %.0f s" % (t, v) for t, v in sorted(self.grab.slowed.items())))
 				self.ok = True
 				self.stat = {"days": int(cfg.local_days.value), "channels": len(self.grab.result), "total": len(st)}
 			except Exception as e:

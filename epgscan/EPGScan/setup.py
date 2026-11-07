@@ -24,7 +24,7 @@ def all_items():
 		cfg.sched_skip_rec, cfg.sched_wakeup, cfg.sched_deep_after, cfg.notify, cfg.backup, cfg.backup_dir,
 		cfg.backup_keep, cfg.restore, cfg.log_place, cfg.xmltv, cfg.xmltv_mode, cfg.xmltv_copies, cfg.epgpl_grab, cfg.xmltv_bouquets, cfg.xmltv_gaps,
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
-		cfg.local_conn_max, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
+		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
 		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_every,
 		cfg.topup, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
 
@@ -178,6 +178,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 					e("  Polaczen: naziemna", cfg.local_conn_naz),
 					e("  Polaczen: WP Pilot", cfg.local_conn_wp),
 					e("  Maks. polaczen lacznie", cfg.local_conn_max),
+					e("  Przerwa miedzy stronami", cfg.local_pause),
 					e("  Zapisuj bledy pobierania", cfg.local_errlog)]
 		elif sec == "sched":
 			lst.append(e("Harmonogram wlaczony", cfg.sched_on))
@@ -289,6 +290,10 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		elif item in (cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp, cfg.local_conn_max):
 			txt = "Ile stron naraz z danego serwisu (serwisy pobierane rownolegle) i ile lacznie ze wszystkich. Wiecej = " \
 				"szybciej, ale wieksze ryzyko blokady (onet odpowiada wtedy 429 - strony sa ponawiane na koncu, wolniej)."
+		elif item is cfg.local_pause:
+			txt = "Przerwa po kazdej stronie na kazdym polaczeniu - zeby nie obciazac serwisow. Gdy serwis odpowiada 429/503 " \
+				"(ogranicza zapytania), pobieranie samo wydluza przerwe (do 5 s), a nieudane strony ponawia na koncu, wolniej. " \
+				"1 s: pelne pobieranie kilka - kilkanascie minut. 0,3 s szybciej, ale wieksze ryzyko blokady."
 		elif item is cfg.local_errlog:
 			from .common import backup_dir
 			txt = "Kazda nieudana proba pobrania strony (kod, Retry-After, adres, poczatek odpowiedzi) trafia do %slokalne/bledy.txt " \

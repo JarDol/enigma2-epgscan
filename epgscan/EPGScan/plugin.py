@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-2.0-or-later
-# EPG Scan 2.11.2 - rownolegle odswiezanie EPG dla Enigma2 (OpenPLi)
+# EPG Scan 2.11.3 - rownolegle odswiezanie EPG dla Enigma2 (OpenPLi)
 #
 # 1.1.0: postep liczony dla wszystkich kanalow z bukietow na danym transponderze
 # 1.2.0: dynamiczny przydzial tunerow (rezerwa wolnych), wspoldzielenie tunerow
@@ -50,6 +50,7 @@
 # 1.7.7: statystyka: podsumowanie, z niego zielony = kanaly od najkrotszego EPG, zolty = duble
 # 1.7.8: naprawiony restart Enigma2 przy otwieraniu statystyki (konflikt nazwy metody keys)
 # 2.2.1: sprzatanie dysku (timeshift, crash logi)
+# 2.11.3: kultura zapytan - przerwa miedzy stronami przy pobieraniu na dekoderze (domyslnie 1 s, ustawienie), samoczynne wydluzanie przerwy na serwisie po 429/503 (do 5 s); zastrzezenie o danych z serwisow w opisie; opis po angielsku (README.en.md)
 # 2.11.2: listy bukietow jednakowe w calej wtyczce (ten sam uklad okna); SatWatch bez grup alternatyw na liscie, bukiety radiowe z dopiskiem (radio)
 # 2.11.1: jednolity wybor bukietow "Kanaly z bukietow (OK - lista)" w Satelita - EPG, Programie z internetu i SatWatch (bez zoltego w Satelicie); sprzatanie dysku - kilka katalogow z listy (nosniki, timeshift i crash logi z Enigma2, wlasne)
 # 2.11.0: SatWatch 0.4.0 - pozycje, bukiety i adres satellites.xml wybierane z listy; lista SatWatch: dlugie akcje w tle z postepem odswiezanym na zywo, krotkie z komunikatem, przywracanie kopii bez okna posredniego, bez ustawien (sa w Ustawieniach); kolejnosc grup ustawien (SatWatch pierwszy); opisy sprzatania i restartu bez odniesien do crona

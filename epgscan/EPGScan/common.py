@@ -17,7 +17,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.11.2"
+VERSION = "2.11.3"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 TP_STATS = "/etc/enigma2/epgscan_tps.json"
@@ -127,6 +127,8 @@ cfg.local_conn_onet = ConfigSelection(default="3", choices=_CONN)
 cfg.local_conn_naz = ConfigSelection(default="2", choices=_CONN)
 cfg.local_conn_wp = ConfigSelection(default="1", choices=_CONN)
 cfg.local_conn_max = ConfigSelection(default="10", choices=[(str(x), str(x)) for x in (2, 4, 6, 8, 10, 12, 16, 20)])
+# przerwa po kazdej stronie na kazdym polaczeniu (kultura zapytan; przy 429/503 pobieranie samo zwalnia)
+cfg.local_pause = ConfigSelection(default="1", choices=[("0.3", "0,3 s"), ("0.5", "0,5 s"), ("1", "1 s"), ("2", "2 s"), ("3", "3 s")])
 cfg.local_errlog = ConfigYesNo(default=True)
 
 

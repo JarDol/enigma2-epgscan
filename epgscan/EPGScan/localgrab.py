@@ -242,6 +242,7 @@ class LocalGrab(object):
 			except Exception:
 				self.errlog = None
 		self.pause = pause
+		self.site_pause = {}                  # przerwa na serwis - wydluzana po 429/503
 		self.done = self.errors = self.missing = 0      # missing: strony 404 (dzien poza zasiegiem serwisu)
 		self.site_done, self.site_total, self.site_err = {}, {}, {}
 		self.result = {}
@@ -300,6 +301,8 @@ class LocalGrab(object):
 						pages.setdefault(xid, []).append((d, items))
 				except Exception as e:
 					with self.lock:
+						if getattr(e, "code", 0) in (429, 503):
+							self.slow_down(tag)       # serwis ogranicza zapytania - dluzsze przerwy na tym serwisie
 						if getattr(e, "code", 0) == 404:
 							self.missing += 1         # brak strony = brak danych na ten dzien, nie blad
 							if idx > 0:
@@ -310,7 +313,7 @@ class LocalGrab(object):
 				with self.lock:
 					self.done += 1
 					self.site_done[tag] = self.site_done.get(tag, 0) + 1
-				time.sleep(self.pause)
+				time.sleep(self.site_pause.get(tag, self.pause))
 		ths = [threading.Thread(target=worker, args=(q,)) for t, q in queues.items()
 			for _ in range(min(int(self.conns.get(t, 2)), len(q)))]
 		for t in ths:
@@ -355,6 +358,15 @@ class LocalGrab(object):
 			lst.sort(key=lambda x: x[0])
 			self.result[xid] = merge([x[1] for x in lst])
 		self.t_end = time.time()
+
+	def slow_down(self, tag):
+		"""Po 429/503: dwa razy dluzsza przerwa na tym serwisie (najwyzej 5 s); wywolywane pod self.lock."""
+		cur = self.site_pause.get(tag, self.pause) or 0.5
+		new = min(5.0, max(1.0, cur * 2))
+		if new != self.site_pause.get(tag):
+			self.site_pause[tag] = new
+			self.slowed = getattr(self, "slowed", {})
+			self.slowed[tag] = new
 
 	def log_err(self, url, attempt, code, ra, body, err):
 		if not self.errlog:

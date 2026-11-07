@@ -69,6 +69,14 @@ Versions: EPG Scan – `VERSION` in [`epgscan/EPGScan/common.py`](epgscan/EPGSca
 [Issues](../../issues) – please include the plugin version, image and receiver model, tuner type and the log
 (Info/EPG → *Raporty* → *Log EPG Scan*).
 
+## Disclaimer
+
+TV listings downloaded from the websites (teleman.pl, programtv.onet.pl, pilot.wp.pl, programtv.naziemna.info) belong to
+their owners. The plugin and the server download them for private use on your own receiver – with pauses between
+requests and a limited number of connections. You are responsible for using them in line with those websites' terms;
+do not share the downloaded listings with others. The repository contains only code and configuration – no downloaded
+listings. The software comes without any warranty (see the GPL license for details).
+
 ## License
 
 GNU GPL version 2 or (at your option) any later version – [LICENSE](LICENSE), `SPDX-License-Identifier:
