@@ -71,7 +71,7 @@ object PinLock {
 object Tools {
     private val ui = Handler(Looper.getMainLooper())
 
-    fun logName() = "e2stream-" + Build.MODEL.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".log"
+    fun logName(prefs: Prefs) = "e2stream-${prefs.fileTag}.log"
 
     fun uploadLog(prefs: Prefs, manual: Boolean, msg: (String) -> Unit) {
         if (!prefs.logFtp && !manual) return
@@ -80,7 +80,7 @@ object Tools {
         val user = prefs.ftpUser
         val pass = prefs.ftpPass
         val dir = prefs.ftpDir
-        val name = logName()
+        val name = logName(prefs)
         val data = AppLog.snapshot()
         Thread {
             try {

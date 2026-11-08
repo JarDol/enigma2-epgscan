@@ -53,7 +53,7 @@ class SettingsActivity : Activity() {
 
     private fun buildItems(): List<Item> = listOf(
         Item.Header("Diagnostyka i zapis"),
-        Item.Action("Wyślij log na dekoder", { "${p.ftpDir}/${Tools.logName()}" }) { Tools.uploadLog(p, true) { toast(it) } },
+        Item.Action("Wyślij log na dekoder", { "${p.ftpDir}/${Tools.logName(p)}" }) { Tools.uploadLog(p, true) { toast(it) } },
         Item.Action("Wyślij zrzuty TS na dekoder") { Tools.uploadDumps(this, p) { toast(it) } },
         Item.Action("Sprawdź aktualizację", { "wersja ${Tools.appVersion(this)}" }) { Tools.checkUpdate(this, true) { toast(it) } },
         Item.Toggle("Statystyki na ekranie", { p.showStats }, { p.showStats = it }),
@@ -74,7 +74,7 @@ class SettingsActivity : Activity() {
 
         Item.Header("Synchronizacja z dekoderem"),
         Item.Toggle("Synchronizuj ustawienia i dane kanałów", { p.channelSync }, { p.channelSync = it }),
-        Item.Text("Nazwa tego odbiornika", { p.deviceName }, { p.deviceName = it.trim().ifEmpty { android.os.Build.MODEL } },
+        Item.Text("Nazwa tego odbiornika", { p.deviceName }, { p.deviceName = it.trim().ifEmpty { "${android.os.Build.MODEL} (${p.deviceTag})" } },
             hint = "np. Salon – Philips"),
         Item.Action("Synchronizuj teraz", { syncStatus() }) { syncNow() },
         Item.Action("Przenieś ustawienia z innego odbiornika") { chooseProfile() },

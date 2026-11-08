@@ -130,7 +130,7 @@ class PlayerActivity : Activity() {
             override fun zapTo(ref: String) = this@PlayerActivity.zapTo(ref)
             override fun message(t: String) = showMessage(t, 4000)
         })
-        AppLog.i("=== Start E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) | ekran: ${displayInfo()}")
+        AppLog.i("=== Start E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} [${prefs.deviceTag}] | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) | ekran: ${displayInfo()}")
 
         playerView = findViewById(R.id.playerView)
         panel = findViewById(R.id.panel)
@@ -177,7 +177,7 @@ class PlayerActivity : Activity() {
             AlertDialog.Builder(this)
                 .setTitle("Poprzednie uruchomienie zakończyło się błędem")
                 .setMessage(crash.lines().take(14).joinToString("\n") +
-                    "\n\nLog z pełnym opisem wysłano na dekoder (${prefs.ftpDir}/${Tools.logName()}).")
+                    "\n\nLog z pełnym opisem wysłano na dekoder (${prefs.ftpDir}/${Tools.logName(prefs)}).")
                 .setPositiveButton("Kontynuuj") { _, _ -> safeMode = false; settingsVersion = -1; startUp() }
                 .setNeutralButton("Ustawienia") { _, _ -> openSettings() }
                 .setNegativeButton("Zamknij") { _, _ -> finish() }
@@ -1135,7 +1135,7 @@ class PlayerActivity : Activity() {
         val ch = playList.getOrNull(playIndex)
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
         val safe = (ch?.name ?: "kanal").replace(Regex("[^A-Za-z0-9_-]"), "_").take(30)
-        val name = "stall-$stamp-$safe.ts"
+        val name = "stall-$stamp-${prefs.fileTag}-$safe.ts"
         val dir = Storage.dir(this, prefs)
         val ftp = prefs.tsFtp
         val host = prefs.host

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 
 class Prefs(ctx: Context) {
+    private val app: Context = ctx.applicationContext ?: ctx
     private val sp: SharedPreferences =
         ctx.getSharedPreferences("e2stream", Context.MODE_PRIVATE)
 
@@ -154,8 +155,22 @@ class Prefs(ctx: Context) {
 
     /** Nazwa tego odbiornika w synchronizacji (np. „Salon – Philips”). */
     var deviceName: String
-        get() = s("deviceName", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+        get() = s("deviceName", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (${deviceTag})")
         set(v) = putS("deviceName", v)
+
+    /** Krótki znacznik tego urządzenia (4 znaki z ANDROID_ID) — odróżnia te same modele w sieci. */
+    val deviceTag: String
+        get() {
+            val id = try {
+                android.provider.Settings.Secure.getString(app.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
+            } catch (_: Exception) { null } ?: ""
+            val hex = id.filter { it.isLetterOrDigit() }.uppercase()
+            return if (hex.length >= 4) hex.takeLast(4) else "0000"
+        }
+
+    /** Nazwa do plików na dekoderze: model + znacznik, np. MIBOX4-3F2A. */
+    val fileTag: String
+        get() = android.os.Build.MODEL.replace(Regex("[^A-Za-z0-9_-]"), "_") + "-" + deviceTag
 
     /** Synchronizacja ustawień i danych kanałów z dekoderem (FTP). */
     var channelSync: Boolean
