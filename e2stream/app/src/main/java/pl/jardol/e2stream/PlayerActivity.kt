@@ -276,7 +276,7 @@ class PlayerActivity : Activity() {
 
         // Bez AudioTrack PlaybackParams: przy tunelowaniu zmiana prędkości przez AudioTrack psuła płynność
         // obrazu (MiBox), więc zwolnienie działa tylko bez tunelowania (procesor dźwięku Sonic).
-        val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
+        val renderers = E2RenderersFactory(this).setEnableDecoderFallback(true)
 
         // Dwa bufory: krótki na start (szybki obraz) i zapas w trakcie oglądania. Strumień na żywo
         // przychodzi w tempie odtwarzania, więc zapas rośnie tylko przy lekko zwolnionym odtwarzaniu
@@ -323,6 +323,13 @@ class PlayerActivity : Activity() {
             }
 
             override fun onTracksChanged(tracks: Tracks) {
+                val aud = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+                if (aud.isNotEmpty() && aud.none { it.isSelected }) {
+                    AppLog.i("dźwięk: żadna ścieżka nie jest odtwarzana (" + aud.joinToString { g ->
+                        val f = g.getTrackFormat(0)
+                        "${f.sampleMimeType} ${if (g.isTrackSupported(0)) "obsługiwana" else "brak dekodera"}"
+                    } + ")")
+                }
                 applySavedAudio()
             }
         })

@@ -11,8 +11,8 @@ android {
         applicationId = "pl.jardol.e2stream"
         minSdk = 21
         targetSdk = 35
-        versionCode = 34
-        versionName = "0.9.2"
+        versionCode = 35
+        versionName = "0.9.3"
     }
 
     // Stały klucz w repo => każda kolejna wersja instaluje się jako aktualizacja.
@@ -54,4 +54,6 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-ui:$media3")
     implementation("androidx.core:core:1.13.1")
+    // programowy dekoder MP2 (dźwięk MPEG Layer II) dla urządzeń bez sprzętowego, np. Mi Box 4
+    implementation("com.googlecode.soundlibs:jlayer:1.0.1.4")
 }
