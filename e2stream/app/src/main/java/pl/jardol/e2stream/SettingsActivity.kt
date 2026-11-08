@@ -305,7 +305,7 @@ class SettingsActivity : Activity() {
 
     private val hwIds = arrayOf("auto", "off", "dec", "full")
     private fun hwName(id: String) = when (id) {
-        "off" -> "wyłączona"; "dec" -> "dekodowanie (obraz przez VLC)"; "full" -> "pełna"; else -> "automatyczna (jak DreamTV)"
+        "off" -> "wyłączona"; "dec" -> "dekodowanie (obraz przez VLC)"; "full" -> "pełna"; else -> "automatyczna (zalecane)"
     }
 
     private fun chooseHw() {
@@ -317,7 +317,7 @@ class SettingsActivity : Activity() {
 
     private fun chooseChroma() {
         val ids = arrayOf("RV32", "RV16", "YV12")
-        val names = arrayOf("RGB 32-bit (jak DreamTV)", "RGB 16-bit", "YUV (YV12)")
+        val names = arrayOf("RGB 32-bit (zalecane)", "RGB 16-bit", "YUV (YV12)")
         AlertDialog.Builder(this).setTitle("VLC: format obrazu")
             .setSingleChoiceItems(names, ids.indexOf(p.vlcChroma).coerceAtLeast(0)) { d, w ->
                 p.vlcChroma = ids[w]; d.dismiss(); markChanged("VLC chroma = ${ids[w]}")
@@ -326,7 +326,7 @@ class SettingsActivity : Activity() {
 
     private val deintIds = arrayOf("default", "auto", "off", "yadif", "yadif2x", "bob", "linear", "blend", "x")
     private fun deintName(id: String) = when (id) {
-        "default" -> "domyślne VLC (jak DreamTV)"; "auto" -> "automatycznie"; "off" -> "wyłączone"; "yadif2x" -> "yadif 2x (50 kl./s)"; "bob" -> "bob (50 kl./s)"
+        "default" -> "domyślne VLC (zalecane)"; "auto" -> "automatycznie"; "off" -> "wyłączone"; "yadif2x" -> "yadif 2x (50 kl./s)"; "bob" -> "bob (50 kl./s)"
         else -> id
     }
 
