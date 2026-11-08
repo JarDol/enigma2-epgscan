@@ -162,6 +162,16 @@ class PlayerActivity : Activity() {
         playerView.setOnClickListener { if (panel.visibility == View.VISIBLE) hidePanel() else showPanel() }
         playerView.setOnLongClickListener { showQuickMenu(); true }
         list.setOnItemClickListener { _, _, pos, _ -> onPanelPick(pos) }
+        // karuzela: z ostatniego kanału w dół na pierwszy, z pierwszego w górę na ostatni
+        list.setOnKeyListener { _, code, ev ->
+            if (ev.action != KeyEvent.ACTION_DOWN || panelList.isEmpty()) return@setOnKeyListener false
+            val pos = list.selectedItemPosition
+            when {
+                code == KeyEvent.KEYCODE_DPAD_DOWN && pos >= panelList.size - 1 -> { list.setSelection(0); true }
+                code == KeyEvent.KEYCODE_DPAD_UP && pos == 0 -> { list.setSelection(panelList.size - 1); true }
+                else -> false
+            }
+        }
         // długie OK na liście: opis bieżącej audycji zaznaczonego kanału
         list.isLongClickable = true
         list.setOnItemLongClickListener { _, _, pos, _ ->
