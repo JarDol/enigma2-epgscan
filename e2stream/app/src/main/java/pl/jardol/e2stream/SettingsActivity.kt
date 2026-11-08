@@ -117,8 +117,9 @@ class SettingsActivity : Activity() {
         Item.Toggle("Wznawiaj zawieszony obraz (watchdog)", { p.watchdog }, { p.watchdog = it }),
         Item.Toggle("Wznawiaj przy zacinaniu (utrata klatek)", { p.dropRestart }, { p.dropRestart = it }),
         num("Zawieszenie po (s bez nowych klatek)", { p.stallSec }, { p.stallSec = it }, 1..30),
-        num("Bufor startowy (ms)", { p.bufferMs }, { p.bufferMs = it }, 250..10_000),
-        num("Zapas po niedoborze bufora (ms)", { p.rebufferMs }, { p.rebufferMs = it }, 500..10_000),
+        num("Bufor startowy (ms) — szybki obraz", { p.bufferMs }, { p.bufferMs = it }, 250..10_000),
+        num("Zapas w trakcie oglądania (ms)", { p.rebufferMs }, { p.rebufferMs = it }, 1000..15_000),
+        Item.Toggle("Dobuduj zapas lekkim zwolnieniem (5%)", { p.cushionSlow }, { p.cushionSlow = it }),
         Item.Action("Odświeżanie ekranu", { afrName(p.afrMode) }) { chooseAfr() },
 
         Item.Header("Dźwięk"),

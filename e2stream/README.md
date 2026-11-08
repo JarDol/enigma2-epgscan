@@ -59,7 +59,8 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 * adres dekodera, port OpenWebif (80), port streamingu (8001), login/hasło,
 * tunelowanie (domyślnie włączone),
 * watchdog i próg zawieszenia (domyślnie 3 s),
-* bufor startowy (domyślnie 700 ms),
+* bufor startowy – szybki obraz po przełączeniu (domyślnie 700 ms),
+* zapas w trakcie oglądania (domyślnie 4000 ms): po starcie odtwarzanie jest lekko zwalniane (0,95×, wysokość dźwięku bez zmian), aż bufor dojdzie do zapasu; przerwy w paczkach z dekodera nie powodują wtedy czkawki. Gdy urządzenie nie zwalnia (np. przy tunelowaniu), zapas buduje się po pierwszym niedoborze,
 * odświeżanie ekranu (bez zmian / 50 Hz / automatycznie),
 * preferowany język dźwięku i AC3,
 * log przez FTP: użytkownik (root), hasło, katalog na dekoderze.

@@ -216,10 +216,18 @@ class Prefs(ctx: Context) {
         get() = s("lastCrash")
         set(v) = sp.edit().putString("lastCrash", v).commit().let { }
 
-    /** Zapas bufora wymagany po niedoborze (ms). */
+    /**
+     * Zapas w trakcie oglądania (ms): do tylu odtwarzacz dobudowuje bufor po szybkim starcie
+     * (lekkie zwolnienie) i tyle czeka po niedoborze. Klucz „rebufferMs” zostaje dla synchronizacji.
+     */
     var rebufferMs: Int
-        get() = sp.getInt("rebufferMs", 2000)
+        get() = sp.getInt("rebufferMs", 4000)
         set(v) = putI("rebufferMs", v)
+
+    /** Dobudowywanie zapasu przez lekkie zwolnienie odtwarzania (niesłyszalne, wysokość dźwięku bez zmian). */
+    var cushionSlow: Boolean
+        get() = sp.getBoolean("cushionSlow", true)
+        set(v) = putB("cushionSlow", v)
 
     /** Statystyki widoczne na ekranie. */
     var showStats: Boolean
@@ -290,6 +298,11 @@ class Prefs(ctx: Context) {
             if (sp.getString("ftpDir", null) == "/tmp") putS("ftpDir", DEFAULT_FTP_DIR)
             if (sp.getInt("bufferMs", -1) == 1500) putI("bufferMs", 700)
             putI("prefsVer", 2)
+        }
+        if (v < 3) {
+            // 0.8.2: zapas w trakcie oglądania osobno od bufora startowego (stary domyślny 2000 -> 4000)
+            if (sp.getInt("rebufferMs", -1) == 2000) putI("rebufferMs", 4000)
+            putI("prefsVer", 3)
         }
     }
 

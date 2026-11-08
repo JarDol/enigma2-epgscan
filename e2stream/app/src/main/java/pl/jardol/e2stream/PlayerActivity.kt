@@ -23,6 +23,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
@@ -273,17 +274,22 @@ class PlayerActivity : Activity() {
         }
         trackSelector.setParameters(params.build())
 
+        // przy tunelowaniu prędkość zmienia AudioTrack (procesor dźwięku jest wtedy pomijany)
         val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
+            .setEnableAudioTrackPlaybackParams(prefs.tunneling && prefs.cushionSlow)
 
+        // Dwa bufory: krótki na start (szybki obraz) i zapas w trakcie oglądania. Strumień na żywo
+        // przychodzi w tempie odtwarzania, więc zapas rośnie tylko przy lekko zwolnionym odtwarzaniu
+        // (cushionTick) albo po niedoborze — wtedy odtwarzacz czeka na pełny zapas.
         val start = prefs.bufferMs.coerceIn(250, 10_000)
-        val rebuffer = maxOf(start, prefs.rebufferMs.coerceIn(500, 10_000))
+        val reserve = maxOf(start, prefs.rebufferMs.coerceIn(1000, 15_000))
         // ExoPlayer wymaga: minBuffer ≥ bufor startowy i ≥ bufor po niedoborze
-        val minBuf = maxOf(start * 2, rebuffer, 2000)
+        val minBuf = maxOf(start * 2, reserve + 5000, 10_000)
         val load = DefaultLoadControl.Builder()
-            // Enigma2 wysyła dane paczkami (~0,5 MB): na kanałach SD przerwy między paczkami
-            // to nawet 3–4 s, więc po niedoborze bufora czekamy na zapas, który je pokryje.
-            .setBufferDurationsMs(minBuf, maxOf(minBuf, 15_000), start, rebuffer)
+            // Enigma2 wysyła dane paczkami (~0,5 MB) z przerwami do ~1,5 s (SD: nawet 3–4 s)
+            .setBufferDurationsMs(minBuf, maxOf(minBuf, 20_000), start, reserve)
             .build()
+        cushionTarget = reserve.toLong()
 
         val p = ExoPlayer.Builder(this, renderers)
             .setTrackSelector(trackSelector)
@@ -383,7 +389,7 @@ class PlayerActivity : Activity() {
             watchdog = StreamWatchdog(
                 player = p,
                 stallMs = stall,
-                bufferingMs = maxOf(stall * 2, 8000L),
+                bufferingMs = maxOf(stall * 2, cushionTarget + 6000L, 8000L),
                 onStall = { reason -> scheduleRestart(reason) },
                 onHealthy = { failStreak = 0 },
                 dropRestart = prefs.dropRestart,
@@ -393,6 +399,8 @@ class PlayerActivity : Activity() {
         ui.post(statsTick)
         ui.removeCallbacks(tsTick)
         ui.postDelayed(tsTick, 10_000)
+        ui.removeCallbacks(cushionTick)
+        ui.postDelayed(cushionTick, 1000)
         ui.removeCallbacks(pmtCheck)
         ui.postDelayed(pmtCheck, 500)
     }
@@ -459,6 +467,79 @@ class PlayerActivity : Activity() {
     private var lastRendered = -1L
     private var lastDropped = -1L
 
+    // ---------------------------------------------------------------- zapas w trakcie oglądania
+
+    private var cushionTarget = 4000L
+    private var cushionSpeed = 1f
+    private var cushionSlowSince = 0L
+    private var cushionSlowFrom = 0L
+    private var cushionDisabled = false     // zwolnienie nie działa na tym urządzeniu (sesja)
+    private var cushionReached = false
+    private var cushionLowStreak = 0
+    private val cushionHist = LongArray(4)
+    private var cushionN = 0
+
+    private fun cushionReset() {
+        cushionSlowSince = 0
+        cushionReached = false
+        cushionLowStreak = 0
+        cushionN = 0
+        cushionSetSpeed(1f)
+    }
+
+    private fun cushionSetSpeed(v: Float) {
+        if (v == cushionSpeed) return
+        cushionSpeed = v
+        try { player?.playbackParameters = PlaybackParameters(v, 1f) } catch (_: Exception) {}
+    }
+
+    /** Raz na sekundę: gdy zapas (minimum z ostatnich 4 s — paczki z dekodera) mniejszy od docelowego, odtwarzanie 0,95×. */
+    private val cushionTick = object : Runnable {
+        override fun run() {
+            ui.postDelayed(this, 1000)
+            val p = player ?: return
+            if (p.playbackState != Player.STATE_READY || !p.playWhenReady) {
+                if (p.playbackState == Player.STATE_BUFFERING) cushionSlowSince = 0
+                return
+            }
+            cushionHist[cushionN % cushionHist.size] = p.totalBufferedDuration
+            cushionN++
+            if (cushionN < cushionHist.size) return
+            val low = cushionHist.minOrNull() ?: return
+            val now = SystemClock.elapsedRealtime()
+            if (!prefs.cushionSlow || cushionDisabled) { cushionSetSpeed(1f); return }
+            if (low >= cushionTarget) {
+                if (cushionSpeed != 1f) {
+                    cushionSetSpeed(1f)
+                    if (!cushionReached) {
+                        cushionReached = true
+                        AppLog.i("zapas: ${low} ms po ${(now - streamStartAt) / 1000} s od startu — normalna prędkość")
+                    }
+                }
+                cushionSlowSince = 0
+                return
+            }
+            // poniżej celu (z małą histerezą, żeby nie przełączać przy każdej paczce)
+            if (cushionSpeed == 1f && (!cushionReached || low < cushionTarget - 1500)) {
+                cushionSetSpeed(0.95f)
+                cushionSlowSince = now
+                cushionSlowFrom = low
+            }
+            // kontrola: po 40 s zwolnienia zapas powinien urosnąć o ~2 s; jeśli nie — urządzenie nie zwalnia
+            if (cushionSpeed != 1f && cushionSlowSince > 0 && now - cushionSlowSince > 40_000) {
+                if (low - cushionSlowFrom < 600) {
+                    cushionDisabled = true
+                    cushionSetSpeed(1f)
+                    AppLog.i("zapas: zwolnienie nie działa na tym urządzeniu" +
+                        (if (prefs.tunneling) " (tunelowanie)" else "") + " — zapas tylko po niedoborze (${cushionTarget} ms)")
+                } else {
+                    cushionSlowSince = now
+                    cushionSlowFrom = low
+                }
+            }
+        }
+    }
+
     private val tsTick = object : Runnable {
         override fun run() {
             val c = player?.videoDecoderCounters
@@ -489,6 +570,7 @@ class PlayerActivity : Activity() {
         ui.removeCallbacks(restartRunnable)
         ui.removeCallbacks(statsTick)
         ui.removeCallbacks(tsTick)
+        ui.removeCallbacks(cushionTick)
         ui.removeCallbacks(pmtCheck)
         restartPending = false
         playerView.player = null
@@ -521,6 +603,7 @@ class PlayerActivity : Activity() {
         streamGen++
         streamStartAt = SystemClock.elapsedRealtime()
         readyLogged = false
+        cushionReset()
         lastStartMs = -1
         // SID serwisu = 4. pole referencji (hex), np. 1:0:19:3DD2:640:13E:820000:0:0:0:
         val sid = url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
@@ -861,7 +944,9 @@ class PlayerActivity : Activity() {
                 } ?: "-")
             )
             appendLine("Tunelowanie: " + if (prefs.tunneling) "włączone" else "wyłączone")
-            appendLine("Bufor: ${p.totalBufferedDuration} ms   start obrazu: " + (if (lastStartMs >= 0) "$lastStartMs ms" else "-"))
+            appendLine("Bufor: ${p.totalBufferedDuration} ms / zapas $cushionTarget ms" +
+                (if (cushionSpeed != 1f) " (dobudowuję, ${"%.2f".format(cushionSpeed)}×)" else if (cushionDisabled) " (bez zwolnienia)" else "") +
+                "   start obrazu: " + (if (lastStartMs >= 0) "$lastStartMs ms" else "-"))
             analyzer?.let { a ->
                 appendLine("TS: %.2f Mb/s  odczyt maks. ${a.maxGapMs} ms".format(a.bitrateKbps / 1000.0))
                 appendLine("TS paczki: przerwy ~${a.burstAvgMs} ms   wyczyszczone: ${a.cleaned}   poprawione PTS: ${a.tsFixed}")
