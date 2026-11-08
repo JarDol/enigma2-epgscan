@@ -60,7 +60,7 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 * tunelowanie (domyślnie włączone),
 * watchdog i próg zawieszenia (domyślnie 3 s),
 * bufor startowy – szybki obraz po przełączeniu (domyślnie 700 ms),
-* zapas w trakcie oglądania (domyślnie 4000 ms): po starcie odtwarzanie jest lekko zwalniane (0,95×, wysokość dźwięku bez zmian), aż bufor dojdzie do zapasu; przerwy w paczkach z dekodera nie powodują wtedy czkawki. Gdy urządzenie nie zwalnia (np. przy tunelowaniu), zapas buduje się po pierwszym niedoborze,
+* zapas w trakcie oglądania (domyślnie 4000 ms): po starcie odtwarzanie jest lekko zwalniane (0,95×, wysokość dźwięku bez zmian), aż bufor dojdzie do zapasu; przerwy w paczkach z dekodera nie powodują wtedy czkawki. Przy tunelowaniu zwolnienia nie ma (zmiana prędkości psuła płynność obrazu) – wtedy o płynności decyduje bufor startowy (na MiBox 4 zalecane 2500 ms), a zapas buduje się po pierwszym niedoborze,
 * odświeżanie ekranu (bez zmian / 50 Hz / automatycznie),
 * preferowany język dźwięku i AC3,
 * log przez FTP: użytkownik (root), hasło, katalog na dekoderze.

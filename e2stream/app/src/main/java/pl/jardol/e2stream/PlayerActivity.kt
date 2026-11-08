@@ -274,9 +274,9 @@ class PlayerActivity : Activity() {
         }
         trackSelector.setParameters(params.build())
 
-        // przy tunelowaniu prędkość zmienia AudioTrack (procesor dźwięku jest wtedy pomijany)
+        // Bez AudioTrack PlaybackParams: przy tunelowaniu zmiana prędkości przez AudioTrack psuła płynność
+        // obrazu (MiBox), więc zwolnienie działa tylko bez tunelowania (procesor dźwięku Sonic).
         val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
-            .setEnableAudioTrackPlaybackParams(prefs.tunneling && prefs.cushionSlow)
 
         // Dwa bufory: krótki na start (szybki obraz) i zapas w trakcie oglądania. Strumień na żywo
         // przychodzi w tempie odtwarzania, więc zapas rośnie tylko przy lekko zwolnionym odtwarzaniu
@@ -507,7 +507,7 @@ class PlayerActivity : Activity() {
             if (cushionN < cushionHist.size) return
             val low = cushionHist.minOrNull() ?: return
             val now = SystemClock.elapsedRealtime()
-            if (!prefs.cushionSlow || cushionDisabled) { cushionSetSpeed(1f); return }
+            if (!prefs.cushionSlow || prefs.tunneling || cushionDisabled) { cushionSetSpeed(1f); return }
             if (low >= cushionTarget) {
                 if (cushionSpeed != 1f) {
                     cushionSetSpeed(1f)
@@ -945,7 +945,7 @@ class PlayerActivity : Activity() {
             )
             appendLine("Tunelowanie: " + if (prefs.tunneling) "włączone" else "wyłączone")
             appendLine("Bufor: ${p.totalBufferedDuration} ms / zapas $cushionTarget ms" +
-                (if (cushionSpeed != 1f) " (dobudowuję, ${"%.2f".format(cushionSpeed)}×)" else if (cushionDisabled) " (bez zwolnienia)" else "") +
+                (if (cushionSpeed != 1f) " (dobudowuję, ${"%.2f".format(cushionSpeed)}×)" else if (cushionDisabled || prefs.tunneling || !prefs.cushionSlow) " (bez zwolnienia)" else "") +
                 "   start obrazu: " + (if (lastStartMs >= 0) "$lastStartMs ms" else "-"))
             analyzer?.let { a ->
                 appendLine("TS: %.2f Mb/s  odczyt maks. ${a.maxGapMs} ms".format(a.bitrateKbps / 1000.0))

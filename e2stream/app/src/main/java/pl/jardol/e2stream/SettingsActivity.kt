@@ -119,7 +119,7 @@ class SettingsActivity : Activity() {
         num("Zawieszenie po (s bez nowych klatek)", { p.stallSec }, { p.stallSec = it }, 1..30),
         num("Bufor startowy (ms) — szybki obraz", { p.bufferMs }, { p.bufferMs = it }, 250..10_000),
         num("Zapas w trakcie oglądania (ms)", { p.rebufferMs }, { p.rebufferMs = it }, 1000..15_000),
-        Item.Toggle("Dobuduj zapas lekkim zwolnieniem (5%)", { p.cushionSlow }, { p.cushionSlow = it }),
+        Item.Toggle("Dobuduj zapas lekkim zwolnieniem (5%, tylko bez tunelowania)", { p.cushionSlow }, { p.cushionSlow = it }),
         Item.Action("Odświeżanie ekranu", { afrName(p.afrMode) }) { chooseAfr() },
 
         Item.Header("Dźwięk"),
