@@ -130,7 +130,7 @@ class PlayerActivity : Activity() {
             override fun zapTo(ref: String) = this@PlayerActivity.zapTo(ref)
             override fun message(t: String) = showMessage(t, 4000)
         })
-        AppLog.i("=== Start E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} [${prefs.deviceTag}] | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) | ekran: ${displayInfo()}")
+        AppLog.i("=== Start E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} | ${prefs.displayName} | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) | ekran: ${displayInfo()}")
 
         playerView = findViewById(R.id.playerView)
         panel = findViewById(R.id.panel)

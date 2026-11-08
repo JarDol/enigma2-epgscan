@@ -222,7 +222,7 @@ object SyncManager {
             myData.put(k, JSONObject().put("v", j).put("t", meta.getLong("t_$k", 0)))
         }
         val myFile = JSONObject()
-            .put("device", JSONObject().put("id", deviceId()).put("name", prefs.deviceName)
+            .put("device", JSONObject().put("id", deviceId()).put("name", prefs.displayName)
                 .put("model", "${Build.MANUFACTURER} ${Build.MODEL}").put("app", Tools.appVersion(app)).put("updated", now))
             .put("data", myData)
 

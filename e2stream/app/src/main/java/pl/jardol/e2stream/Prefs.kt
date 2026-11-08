@@ -155,7 +155,7 @@ class Prefs(ctx: Context) {
 
     /** Nazwa tego odbiornika w synchronizacji (np. „Salon – Philips”). */
     var deviceName: String
-        get() = s("deviceName", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (${deviceTag})")
+        get() = s("deviceName", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         set(v) = putS("deviceName", v)
 
     /** Krótki znacznik tego urządzenia (4 znaki z ANDROID_ID) — odróżnia te same modele w sieci. */
@@ -168,9 +168,19 @@ class Prefs(ctx: Context) {
             return if (hex.length >= 4) hex.takeLast(4) else "0000"
         }
 
-    /** Nazwa do plików na dekoderze: model + znacznik, np. MIBOX4-3F2A. */
+    /** Nazwa odbiornika ze znacznikiem, np. „Salon [3F2A]” — w listach odbiorników. */
+    val displayName: String
+        get() = "$deviceName [$deviceTag]"
+
+    /** Nazwa do plików na dekoderze: nazwa odbiornika + znacznik, np. Salon-3F2A. */
     val fileTag: String
-        get() = android.os.Build.MODEL.replace(Regex("[^A-Za-z0-9_-]"), "_") + "-" + deviceTag
+        get() {
+            val pl = mapOf('ą' to 'a', 'ć' to 'c', 'ę' to 'e', 'ł' to 'l', 'ń' to 'n', 'ó' to 'o', 'ś' to 's', 'ź' to 'z', 'ż' to 'z',
+                'Ą' to 'A', 'Ć' to 'C', 'Ę' to 'E', 'Ł' to 'L', 'Ń' to 'N', 'Ó' to 'O', 'Ś' to 'S', 'Ź' to 'Z', 'Ż' to 'Z')
+            val slug = deviceName.map { pl[it] ?: it }.joinToString("")
+                .replace(Regex("[^A-Za-z0-9_-]+"), "_").trim('_').take(24).ifEmpty { android.os.Build.MODEL }
+            return "$slug-$deviceTag"
+        }
 
     /** Synchronizacja ustawień i danych kanałów z dekoderem (FTP). */
     var channelSync: Boolean

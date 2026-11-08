@@ -74,7 +74,7 @@ class SettingsActivity : Activity() {
 
         Item.Header("Synchronizacja z dekoderem"),
         Item.Toggle("Synchronizuj ustawienia i dane kanałów", { p.channelSync }, { p.channelSync = it }),
-        Item.Text("Nazwa tego odbiornika", { p.deviceName }, { p.deviceName = it.trim().ifEmpty { "${android.os.Build.MODEL} (${p.deviceTag})" } },
+        Item.Text("Nazwa tego odbiornika (znacznik ${p.deviceTag})", { p.deviceName }, { p.deviceName = it.trim().removeSuffix("[${p.deviceTag}]").trim().ifEmpty { android.os.Build.MODEL } },
             hint = "np. Salon – Philips"),
         Item.Action("Synchronizuj teraz", { syncStatus() }) { syncNow() },
         Item.Action("Przenieś ustawienia z innego odbiornika") { chooseProfile() },
