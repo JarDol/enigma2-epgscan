@@ -316,7 +316,7 @@ def _resource():
 					except Exception:
 						model = ""
 					return self._json(request, {"name": "EPG Scan", "version": VERSION, "api": API,
-						"features": ["services", "pids", "sync"], "model": model, "time": int(time.time())})
+						"features": ["services", "pids", "sync", "pack"], "model": model, "time": int(time.time())})
 				if path == "/api/bouquets":
 					return self._json(request, {"bouquets": bouquets()})
 				if path == "/api/services":
@@ -328,6 +328,19 @@ def _resource():
 					return self._json(request, push(self._arg(request, "id"), body))
 				if path == "/api/sync/devices":
 					return self._json(request, {"devices": devices()})
+				if path == "/api/pack/info":
+					from .clientpack import info as pack_info, running as pack_running
+					return self._json(request, dict(pack_info(), building=pack_running()))
+				if path.startswith("/api/pack/"):
+					from .clientpack import file_path
+					fp = file_path(path[len("/api/pack/"):])
+					if not fp:
+						return self._json(request, {"error": "brak paczki"}, 404)
+					with open(fp, "rb") as f:
+						data = f.read()
+					request.setHeader(b"Content-Type", b"application/octet-stream")
+					request.setHeader(b"Content-Length", str(len(data)).encode())
+					return data
 				return self._json(request, {"error": "not found"}, 404)
 			except Exception as e:
 				log("Klienci: blad %s: %s" % (path, e))

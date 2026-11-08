@@ -76,8 +76,9 @@ object EpgSync {
     /** true, gdy od ostatniego terminu harmonogramu EPG nie było pobierane. */
     fun due(prefs: Prefs): Boolean {
         if (running || prefs.host.isBlank()) return false
-        // z wtyczką EPG Scan: pierwsze uruchomienie w danym dniu pobiera wszystko (bez harmonogramu w aplikacji)
-        if (prefs.pluginOk) return prefs.lastEpgFetch < startOfToday()
+        // z wtyczką EPG Scan: pierwsze uruchomienie w danym dniu i co 3 h sprawdzenie, czy jest nowsza paczka
+        if (prefs.pluginOk) return prefs.lastEpgFetch < startOfToday() ||
+            System.currentTimeMillis() - prefs.packCheckAt > 3 * 3600_000L
         return prefs.epgDaily && prefs.lastEpgFetch < lastScheduled(prefs.epgHour)
     }
 
@@ -87,12 +88,95 @@ object EpgSync {
         return c.timeInMillis
     }
 
-    fun run(ctx: Context, prefs: Prefs, store: EpgStore, progress: (String) -> Unit, done: (String) -> Unit) {
+    /**
+     * Dane z paczki wtyczki. Zwraca opis wyniku albo null, gdy paczki nie ma (wtedy pobieranie kanał po kanale).
+     * Paczka nie nowsza od zastosowanej — nic do zrobienia (chyba że ręcznie).
+     */
+    private fun fromPack(ctx: Context, prefs: Prefs, store: EpgStore, manual: Boolean, progress: (String) -> Unit): String? {
+        val api = PluginApi(prefs)
+        val info = api.packInfo() ?: return null
+        val at = info.optLong("at")
+        if (at <= 0) return null
+        prefs.packCheckAt = System.currentTimeMillis()
+        if (at <= prefs.packAt && !manual) {
+            prefs.lastEpgFetch = System.currentTimeMillis()
+            return "paczka EPG Scan bez zmian (${fmt(at)})"
+        }
+        val t0 = SystemClock.elapsedRealtime()
+        val tmp = File(ctx.cacheDir, "pack").also { it.mkdirs() }
+        // EPG
+        progress("EPG z dekodera…")
+        var chans = 0
+        var events = 0
+        val epgF = File(tmp, "epg.json.gz")
+        if (api.packFile("epg.json.gz", epgF)) {
+            val js = java.util.zip.GZIPInputStream(epgF.inputStream()).bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
+            val ch = js.optJSONObject("ch") ?: JSONObject()
+            for (k in ch.keys()) {
+                val o = ch.optJSONObject(k) ?: continue
+                val name = o.optString("n")
+                val arr = o.optJSONArray("e") ?: continue
+                val ev = ArrayList<EpgEvent>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val e = arr.optJSONArray(i) ?: continue
+                    ev.add(EpgEvent(e.optInt(0), e.optLong(1), e.optLong(2), e.optString(3), e.optString(4), e.optString(5), k, name))
+                }
+                store.write(k, ev)
+                chans++
+                events += ev.size
+            }
+            epgF.delete()
+        }
+        // ikony
+        var icons = 0
+        if (prefs.picons) {
+            progress("Ikony z dekodera…")
+            val zf = File(tmp, "picons.zip")
+            if (api.packFile("picons.zip", zf)) {
+                icons = Picons.importZip(ctx, zf)
+                zf.delete()
+            }
+        }
+        // zamiany referencji (np. kanał przeniesiony na inny transponder)
+        var moved = ""
+        val rf = File(tmp, "refs.json")
+        if (api.packFile("refs.json", rf)) {
+            val remap = JSONObject(rf.readText()).optJSONObject("remap") ?: JSONObject()
+            fun mapped(ref: String): String? =
+                remap.optJSONObject(OpenWebif.key(ref))?.optString("to")?.takeIf { it.isNotBlank() }?.let { "$it:" }
+            mapped(prefs.startChannel)?.let { prefs.startChannel = it; moved += " kanał startowy," }
+            mapped(prefs.lastChannel)?.let { prefs.lastChannel = it; moved += " ostatni kanał," }
+            rf.delete()
+        }
+        prefs.packAt = at
+        prefs.lastEpgFetch = System.currentTimeMillis()
+        return "paczka EPG Scan (${fmt(at)}): EPG $chans kanałów / $events audycji, ikon $icons" +
+            (if (moved.isNotEmpty()) ", nowa referencja:" + moved.trimEnd(',') else "") +
+            " (${(SystemClock.elapsedRealtime() - t0) / 1000} s)"
+    }
+
+    private fun fmt(sec: Long) = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(java.util.Date(sec * 1000))
+
+    fun run(ctx: Context, prefs: Prefs, store: EpgStore, progress: (String) -> Unit, done: (String) -> Unit) =
+        run(ctx, prefs, store, false, progress, done)
+
+    fun run(ctx: Context, prefs: Prefs, store: EpgStore, manual: Boolean, progress: (String) -> Unit, done: (String) -> Unit) {
         if (running) { done("Pobieranie EPG już trwa"); return }
         running = true
         Thread {
             val t0 = SystemClock.elapsedRealtime()
             var result: String
+            // 1) paczka z wtyczki EPG Scan (EPG, ikony, zamiany referencji — przygotowane po nocnym skanie)
+            if (prefs.pluginOk) {
+                val r = try { fromPack(ctx, prefs, store, manual, progress) } catch (e: Exception) {
+                    AppLog.i("paczka EPG Scan: błąd $e"); null
+                }
+                if (r != null) {
+                    running = false
+                    done(r)
+                    return@Thread
+                }
+            }
             try {
                 val api = OpenWebif(prefs)
                 val hidden = prefs.hiddenBouquets

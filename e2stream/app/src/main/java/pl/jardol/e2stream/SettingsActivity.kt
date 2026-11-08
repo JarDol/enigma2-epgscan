@@ -368,7 +368,7 @@ class SettingsActivity : Activity() {
         if (reloadIcons) { Picons.clear(this); p.picons = true }
         status = "pobieranie…"
         refresh()
-        EpgSync.run(applicationContext, p, store, { msg -> runOnUiThread { status = msg; refresh() } }) { r ->
+        EpgSync.run(applicationContext, p, store, true, { msg -> runOnUiThread { status = msg; refresh() } }) { r ->
             runOnUiThread { status = ""; toast(r); markChanged("EPG/ikony pobrane") }
         }
     }

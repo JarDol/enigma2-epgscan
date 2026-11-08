@@ -113,7 +113,7 @@ object Picons {
     }
 
     private fun snp(name: String): String {
-        val n = Normalizer.normalize(name.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{M}"), "")
+        val n = Normalizer.normalize(name.lowercase().replace('ł', 'l'), Normalizer.Form.NFD).replace(Regex("\\p{M}"), "")
         return n.replace("&", "and").replace("+", "plus").replace("*", "star").replace(Regex("[^a-z0-9]"), "")
     }
 
@@ -224,6 +224,24 @@ object Picons {
     }
 
     /** Pobiera brakujące ikony; zwraca liczbę ikon dostępnych po pobraniu. */
+    /** Ikony z paczki wtyczki (nazwy plików już w formacie aplikacji). */
+    fun importZip(ctx: Context, zip: File): Int {
+        val d = dir(ctx)
+        var n = 0
+        java.util.zip.ZipInputStream(zip.inputStream()).use { z ->
+            while (true) {
+                val e = z.nextEntry ?: break
+                val name = File(e.name).name
+                if (e.isDirectory || !name.endsWith(".png")) continue
+                File(d, name).outputStream().use { z.copyTo(it) }
+                n++
+            }
+        }
+        synchronized(missing) { missing.clear() }
+        mem.evictAll()
+        return n
+    }
+
     fun fetch(ctx: Context, prefs: Prefs, chans: List<Channel>, progress: (String) -> Unit): Int {
         val d = dir(ctx)
         var left: List<Channel> = chans.filter { !File(d, localName(it.ref)).exists() }

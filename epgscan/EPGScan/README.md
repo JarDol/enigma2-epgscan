@@ -554,6 +554,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Profilaktycznie co [dni], próg wolnej pamięci | (nie, 100 MB) |
 | Aktualizacja automatyczna | (nie) raz na dobę nowa wersja z wydań GitHub; restart Enigma2 tylko w czuwaniu, bez nagrań i pracy wtyczki |
 | Aktualizuj teraz | OK – sprawdzenie i instalacja najnowszej wersji (zawsze, także przy wyłączonej automatycznej) |
+| Dane dla aplikacji po harmonogramie | (tak) ostatni krok pracy z harmonogramu: paczka EPG (wszystkie bukiety TV), ikon kanałów i zamian referencji dla E2Stream; *Przygotuj dane teraz* (OK) – od razu |
 | Serwer dla aplikacji E2Stream | (tak) API dla klientów streamingu w sieci lokalnej: bukiety, kanały z PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników; port (8770), token (puste = bez) |
 | Sprzątanie dysku | (nie); katalogi (OK – lista: nośniki, katalog timeshift i crash logów z ustawień Enigma2, własne – żółty dodaj, niebieski usuń; `/media/hdd`), timeshift starszy niż (6 h), zostaw crash logów – łącznie (10), co ile minut (15) |
 

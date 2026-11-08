@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-2.0-or-later
-# EPG Scan 2.13.0 - rownolegle odswiezanie EPG dla Enigma2 (OpenPLi)
+# EPG Scan 2.14.0 - rownolegle odswiezanie EPG dla Enigma2 (OpenPLi)
 #
 # 1.1.0: postep liczony dla wszystkich kanalow z bukietow na danym transponderze
 # 1.2.0: dynamiczny przydzial tunerow (rezerwa wolnych), wspoldzielenie tunerow

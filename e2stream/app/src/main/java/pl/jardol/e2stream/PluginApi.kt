@@ -78,6 +78,22 @@ class PluginApi(private val p: Prefs) {
         return out
     }
 
+    /** Paczka danych (EPG, ikony, referencje) przygotowana przez wtyczkę; at = 0, gdy jej nie ma. */
+    fun packInfo(): JSONObject? = try { get("/api/pack/info", 5000) } catch (_: Exception) { null }
+
+    /** Pobiera plik paczki do [dest]; false, gdy go nie ma. */
+    fun packFile(name: String, dest: java.io.File): Boolean {
+        val c = open("/api/pack/$name", 120_000)
+        try {
+            if (c.responseCode != 200) return false
+            val tmp = java.io.File(dest.path + ".tmp")
+            c.inputStream.use { inp -> tmp.outputStream().use { inp.copyTo(it) } }
+            return tmp.renameTo(dest)
+        } finally {
+            c.disconnect()
+        }
+    }
+
     fun syncState(id: String): JSONObject = get("/api/sync/state?id=" + enc(id))
 
     fun syncPush(id: String, body: JSONObject): JSONObject = post("/api/sync/push?id=" + enc(id), body)

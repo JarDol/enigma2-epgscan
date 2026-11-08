@@ -1034,6 +1034,17 @@ class ScanEngine(object):
 			self.note = ("Kopia EPG: %s" % dst) if dst else "Kopia EPG nieudana - szczegoly w logu"
 			self.notify()
 		self.sw_changed = False
+		# ostatni krok pracy z harmonogramu: dane dla aplikacji E2Stream (aktualny skan i gotowe EPG)
+		if self.auto and not getattr(self, "topup", False) and cfg.cli_api.value and cfg.cli_pack.value:
+			try:
+				from .clientpack import build
+				if build(lambda res: self.after_backup()):
+					return
+			except Exception as e:
+				log("Dane dla E2Stream: %s" % e)
+		self.after_backup()
+
+	def after_backup(self):
 		if self.auto:
 			self.night_notes()
 			from .health import maybe_restart

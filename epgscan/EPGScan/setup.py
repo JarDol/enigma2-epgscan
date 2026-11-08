@@ -25,7 +25,7 @@ def all_items():
 		cfg.backup_keep, cfg.restore, cfg.log_place, cfg.xmltv, cfg.xmltv_mode, cfg.xmltv_copies, cfg.epgpl_grab, cfg.xmltv_bouquets, cfg.xmltv_gaps,
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
-		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.upd_auto,
+		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto,
 		cfg.topup, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
 
 
@@ -87,6 +87,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		self.setTitle("EPG Scan %s - %s" % (VERSION, self.TITLES.get(section, "ustawienia")))
 		self["help"] = Label("")
 		init_keys(self)
+		self.p_pack = NoSave(ConfigSelection(choices=[("v", "OK - przygotuj teraz")]))   # paczka dla E2Stream recznie
 		self.p_upd = NoSave(ConfigSelection(choices=[("v", "OK - sprawdz i zainstaluj")]))   # reczna aktualizacja
 		self.p_cldirs = NoSave(ConfigSelection(choices=[("v", cl_dirs_text())]))   # katalogi sprzatania - wybor z listy (OK)
 		ConfigListScreen.__init__(self, [], session=session, on_change=self.changed)
@@ -221,7 +222,9 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			lst += [e("Aktualizacja automatyczna", cfg.upd_auto), e("Aktualizuj teraz (wersja %s)" % VERSION, self.p_upd)]
 			lst.append(e("Serwer dla aplikacji E2Stream (klienci streamingu)", cfg.cli_api))
 			if cfg.cli_api.value:
-				lst += [e("  Port", cfg.cli_port), e("  Token (puste = bez, siec lokalna)", cfg.cli_token)]
+				lst += [e("  Port", cfg.cli_port), e("  Token (puste = bez, siec lokalna)", cfg.cli_token),
+					e("  Dane dla aplikacji po harmonogramie (EPG, ikony, referencje)", cfg.cli_pack),
+					e("  Przygotuj dane teraz", self.p_pack)]
 			lst.append(e("Sprzatanie dysku (timeshift, crash logi)", cfg.cl_on))
 			if cfg.cl_on.value:
 				lst += [e("  Katalogi (OK - lista)", self.p_cldirs), e("  Timeshift starszy niz [h]", cfg.cl_ts_hours),
@@ -253,6 +256,12 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"'Aktualizuj teraz' (OK) dziala zawsze - takze przy wylaczonej automatycznej (pyta o restart)."
 			if cfg.upd_pending.value and cfg.upd_pending.value != VERSION:
 				txt += " Zainstalowana %s czeka na restart Enigma2." % cfg.upd_pending.value
+		elif item in (cfg.cli_pack, self.p_pack):
+			from .clientpack import last_text, pack_dir
+			txt = "Ostatni krok pracy z harmonogramu (po skanie satelity i imporcie EPG): paczka dla E2Stream - EPG kanalow " \
+				"ze wszystkich bukietow TV, ikony kanalow i zamiany referencji (np. po zmianach SatWatch). Aplikacja pobiera ja " \
+				"przy pierwszym uruchomieniu w danym dniu i gdy pojawi sie nowsza. OK na 'Przygotuj dane teraz' - od razu. " \
+				"Katalog: %s. Ostatnio: %s" % (pack_dir(), last_text())
 		elif item in (cfg.cli_api, cfg.cli_port, cfg.cli_token):
 			try:
 				from .clients import summary
@@ -482,6 +491,14 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			return
 		if cur and cur[1] is self.p_upd:
 			self.upd_check()
+			return
+		if cur and cur[1] is self.p_pack:
+			from .clientpack import build
+			if build(lambda res: (self.session.open(MessageBox, "Dane dla E2Stream: %s" % res, MessageBox.TYPE_INFO, timeout=10),
+					self.update_help())):
+				self["help"].setText("Przygotowywanie danych dla E2Stream (EPG, ikony, referencje)...")
+			else:
+				self.session.open(MessageBox, "Dane dla E2Stream sa wlasnie przygotowywane.", MessageBox.TYPE_INFO, timeout=5)
 			return
 		if cur and cur[1] is cfg.backup_dir:
 			from Screens.LocationBox import LocationBox

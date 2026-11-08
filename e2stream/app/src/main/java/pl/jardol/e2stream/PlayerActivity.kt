@@ -235,8 +235,7 @@ class PlayerActivity : Activity() {
     private val epgTick = object : Runnable {
         override fun run() {
             if (EpgSync.due(prefs)) {
-                AppLog.i(if (prefs.pluginOk) "EPG: pierwsze uruchomienie dnia — pobieranie danych z dekodera (EPG, ikony, kanały)"
-                    else "EPG: pobieranie wg harmonogramu (${prefs.epgHour})")
+                if (!prefs.pluginOk) AppLog.i("EPG: pobieranie wg harmonogramu (${prefs.epgHour})")
                 EpgSync.run(applicationContext, prefs, epgStore, { }) { r ->
                     runOnUiThread { epg.clearMemory(); adapter.notifyDataSetChanged(); AppLog.i(r) }
                 }

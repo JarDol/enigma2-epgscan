@@ -222,6 +222,15 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("epgDays", 3)
         set(v) = putI("epgDays", v)
 
+    /** Czas (s) paczki z wtyczki zastosowanej ostatnio i ostatnie sprawdzenie (ms). */
+    var packAt: Long
+        get() = sp.getLong("packAt", 0)
+        set(v) = sp.edit().putLong("packAt", v).apply()
+
+    var packCheckAt: Long
+        get() = sp.getLong("packCheckAt", 0)
+        set(v) = sp.edit().putLong("packCheckAt", v).apply()
+
     var lastEpgFetch: Long
         get() = sp.getLong("lastEpgFetch", 0)
         set(v) = sp.edit().putLong("lastEpgFetch", v).apply()
