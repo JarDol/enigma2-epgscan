@@ -32,6 +32,25 @@ class Mp2Decoder(format: Format) :
         arrayOfNulls<SimpleDecoderOutputBuffer>(16) as Array<SimpleDecoderOutputBuffer>,
     ) {
 
+    /**
+     * JLayer trzyma odwołanie do strumienia z pierwszej ramki, więc wszystkie ramki muszą iść przez
+     * ten sam Bitstream — „karmimy” go kolejnymi próbkami z odtwarzacza (Feed).
+     */
+    private class Feed : java.io.InputStream() {
+        var b = ByteArray(0); var p = 0; var l = 0
+        fun set(d: ByteArray, n: Int) { b = d; p = 0; l = n }
+        override fun read(): Int = if (p < l) b[p++].toInt() and 0xff else -1
+        override fun read(o: ByteArray, off: Int, n: Int): Int {
+            if (p >= l) return -1
+            val k = minOf(n, l - p)
+            System.arraycopy(b, p, o, off, k); p += k
+            return k
+        }
+        override fun available() = l - p
+    }
+
+    private val feed = Feed()
+    private var bs: javazoom.jl.decoder.Bitstream? = null
     private var dec = javazoom.jl.decoder.Decoder()
     @Volatile var channels = format.channelCount.takeIf { it > 0 } ?: 2
         private set
@@ -51,28 +70,30 @@ class Mp2Decoder(format: Format) :
 
     override fun createUnexpectedDecodeException(error: Throwable) = DecoderException("MP2: nieoczekiwany błąd", error)
 
+    private fun restart() {
+        bs = null
+        dec = javazoom.jl.decoder.Decoder()
+    }
+
     override fun decode(input: DecoderInputBuffer, output: SimpleDecoderOutputBuffer, reset: Boolean): DecoderException? {
-        if (reset) dec = javazoom.jl.decoder.Decoder()
+        if (reset) restart()
         val data = input.data ?: run { output.shouldBeSkipped = true; return null }
         val n = data.remaining()
         if (buf.size < n) buf = ByteArray(n)
         data.get(buf, 0, n)
+        feed.set(buf, n)
         return try {
-            val bs = javazoom.jl.decoder.Bitstream(ByteArrayInputStream(buf, 0, n))
+            val stream = bs ?: javazoom.jl.decoder.Bitstream(feed).also { bs = it }
             var outBytes: java.nio.ByteBuffer? = null
-            while (true) {
-                val h = bs.readFrame() ?: break
-                val sb = dec.decodeFrame(h, bs) as javazoom.jl.decoder.SampleBuffer
-                bs.closeFrame()
+            while (feed.available() > 0) {
+                val h = stream.readFrame() ?: break
+                val sb = dec.decodeFrame(h, stream) as javazoom.jl.decoder.SampleBuffer
+                stream.closeFrame()
                 channels = sb.channelCount
                 sampleRate = sb.sampleFrequency
                 val len = sb.bufferLength
                 val pcm = sb.buffer
-                val ob = outBytes?.let { prev ->
-                    // kilka ramek w jednej próbce (rzadkie) — powiększ bufor
-                    val bigger = output.grow(prev.position() + len * 2)
-                    bigger
-                } ?: output.init(input.timeUs, len * 2)
+                val ob = outBytes?.let { output.grow(it.position() + len * 2) } ?: output.init(input.timeUs, len * 2)
                 ob.order(ByteOrder.LITTLE_ENDIAN)
                 for (i in 0 until len) ob.putShort(pcm[i])
                 outBytes = ob
@@ -80,8 +101,9 @@ class Mp2Decoder(format: Format) :
             val ob = outBytes
             if (ob == null) output.shouldBeSkipped = true else ob.flip()
             null
-        } catch (e: Exception) {
-            // uszkodzona ramka — jak MediaCodec: pomijamy bez przerywania odtwarzania
+        } catch (e: Throwable) {
+            // uszkodzona ramka — jak MediaCodec: pomijamy bez przerywania odtwarzania, dekoder od nowa
+            restart()
             output.shouldBeSkipped = true
             null
         }
