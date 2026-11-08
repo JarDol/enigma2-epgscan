@@ -54,6 +54,11 @@ opkg install /tmp/enigma2-plugin-extensions-epgscan_X.Y.Z_all.ipk && init 4; sle
 rm -rf /usr/lib/enigma2/python/Plugins/Extensions/EPGScan;cd /tmp && unzip -o epgscan-X.Y.Z.zip -d /usr/lib/enigma2/python/Plugins/Extensions/;init 4; sleep 2; init 3
 ```
 
+**Aktualizacja**: *Ustawienia → Kopie EPG, log… → Aktualizuj teraz* (OK) pobiera najnowsze wydanie z GitHub
+i pyta o restart Enigma2 – działa zawsze. Opcja *Aktualizacja automatyczna* (domyślnie nie) sprawdza raz na dobę,
+instaluje nową wersję, a Enigma2 restartuje dopiero w czuwaniu, gdy nic nie nagrywa i nie trwa praca wtyczki.
+Poprzednia wersja zostaje w `/tmp/EPGScan.poprzednia` (do restartu dekodera).
+
 Wtyczka pojawia się w **Menu → Rozszerzenia** i na liście wtyczek jako **EPG Scan**.
 
 Opcjonalnie: pakiet `enigma2-plugin-extensions-epgimport-sources` (listy źródeł XMLTV Rytec i inne).
@@ -547,6 +552,8 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Zapisuj log | w katalogu kopii / w `/tmp` (w katalogu kopii) |
 | Restart po nocnym przebiegu | nigdy / gdy potrzebny / zawsze (gdy potrzebny) |
 | Profilaktycznie co [dni], próg wolnej pamięci | (nie, 100 MB) |
+| Aktualizacja automatyczna | (nie) raz na dobę nowa wersja z wydań GitHub; restart Enigma2 tylko w czuwaniu, bez nagrań i pracy wtyczki |
+| Aktualizuj teraz | OK – sprawdzenie i instalacja najnowszej wersji (zawsze, także przy wyłączonej automatycznej) |
 | Serwer dla aplikacji E2Stream | (tak) API dla klientów streamingu w sieci lokalnej: bukiety, kanały z PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników; port (8770), token (puste = bez) |
 | Sprzątanie dysku | (nie); katalogi (OK – lista: nośniki, katalog timeshift i crash logów z ustawień Enigma2, własne – żółty dodaj, niebieski usuń; `/media/hdd`), timeshift starszy niż (6 h), zostaw crash logów – łącznie (10), co ile minut (15) |
 

@@ -2,6 +2,7 @@
 
 ## EPG Scan (wtyczka Enigma2)
 
+- **2.13.0** – aktualizacja wtyczki z wydań GitHub: *Aktualizuj teraz* (działa zawsze, pyta o restart) i opcja *Aktualizacja automatyczna* (raz na dobę; instaluje, a Enigma2 restartuje dopiero w czuwaniu, bez nagrań i pracy wtyczki); ustawienia w grupie *Kopie EPG, log…*
 - **2.12.0** – serwer dla klientów streamingu (aplikacja E2Stream na Android TV / tablet / telefon): API w sieci lokalnej (port 8770, opcjonalny token) – bukiety, kanały z rozwiązanymi alternatywami i PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników (`/etc/enigma2/epgscan/clients/`: część wspólna + plik każdego odbiornika); ustawienie w grupie *Kopie EPG, log…*
 - **2.11.3** – kultura zapytań: przerwa między stronami przy pobieraniu na dekoderze (domyślnie 1 s, ustawienie), samoczynne wydłużanie przerwy na serwisie po 429/503 (do 5 s); zastrzeżenie o danych z serwisów w opisie; opis po angielsku (README.en.md)
 - **2.11.2** – listy bukietow jednakowe w calej wtyczce (ten sam uklad okna); SatWatch bez grup alternatyw na liscie, bukiety radiowe z dopiskiem (radio)
@@ -138,4 +139,4 @@
 
 ## epgpl (serwer)
 
-Wersja bieżąca: 0.19.4. Opis funkcji i zmian w działaniu: [epgpl/README.md](epgpl/README.md).
+Wersja bieżąca: 0.20.0. Opis funkcji i zmian w działaniu: [epgpl/README.md](epgpl/README.md).

@@ -134,7 +134,7 @@ mkdir -p $BASE
 [ "$NEW" = 1 ] && todo "pliki programu -> $BASE" || todo "aktualizacja plikow programu w $BASE ($(cat $BASE/VERSION) -> $VER)"
 install -m 755 "$SRC/run.sh" "$SRC/sources.sh" "$SRC/build_map.py" "$SRC/site_channels.py" "$SRC/alternatives.py" "$SRC/stacje.sh" "$SRC/kandydaci.py" "$SRC/kandydaci.sh" "$SRC/jedno_miejsce.py" "$SRC/check_guide.py" "$SRC/fix_guide.py" \
 	"$SRC/grab_tools.py" "$SRC/server.py" "$SRC/mapa.sh" "$SRC/migrate_aliases.py" "$SRC/tuner_skip.py" "$SRC/carry_over.py" \
-	"$SRC/timer.sh" "$SRC/configure.sh" "$SRC/common.sh" "$SRC/uninstall.sh" $BASE/
+	"$SRC/timer.sh" "$SRC/update.sh" "$SRC/configure.sh" "$SRC/common.sh" "$SRC/uninstall.sh" $BASE/
 mkdir -p $BASE/sites $BASE/tools && install -m 755 "$SRC"/tools/*.py $BASE/tools/
 # grabbery (config.js) zawsze z paczki; listy stacji (channels.xml) tylko gdy ich brak - odswiezone ze stron sa nowsze
 for d in "$SRC"/sites/*/; do
@@ -230,6 +230,8 @@ new_feature() {     # klucz wersja "opis" "pytanie" T|N
 }
 new_feature KANDYDACI 0.16.0 "program na dobe dla kandydatow z okna wyboru stacji w EPG Scan (po nocnym pobieraniu, ok. 1000 stacji, tylko podglad; ustawienie z EPG Scan ma pierwszenstwo)" \
 	"Wlaczyc codzienny program kandydatow?" N
+new_feature AUTOUPDATE 0.20.0 "automatyczna aktualizacja skryptow z wydan GitHub (codziennie ok. 12:40, nie w trakcie pobierania; ustawienia zostaja). Recznie zawsze: sudo bash $BASE/update.sh" \
+	"Wlaczyc automatyczna aktualizacje?" T
 
 # wskazania kanalow z dekodera (EPG Scan): przy nowej instalacji albo pustych wskazaniach - przez OpenWebif
 REC=$(conf_get RECEIVER)
@@ -267,12 +269,13 @@ fi
 # ----------------------------------------------------------------------------- 7. uslugi systemd
 head1 "7. Uslugi systemd (serwer HTTP i codzienne pobieranie)"
 CHANGED=0
-for u in epgpl.service epgpl-auto.service epgpl-http.service epgpl-kandydaci.service; do
+for u in epgpl.service epgpl-auto.service epgpl-http.service epgpl-kandydaci.service epgpl-update.service epgpl-update.timer; do
 	if cmp -s "$SRC/systemd/$u" /etc/systemd/system/$u; then ok "$u"; else todo "$u - nowa / zmieniona"; CHANGED=1; fi
 done
 if [ "$CHANGED" = 1 ]; then
 	ask "Zainstalowac uslugi systemd?" || die "uslugi sa wymagane"
-	install -m 644 "$SRC"/systemd/epgpl.service "$SRC"/systemd/epgpl-auto.service "$SRC"/systemd/epgpl-http.service "$SRC"/systemd/epgpl-kandydaci.service /etc/systemd/system/
+	install -m 644 "$SRC"/systemd/epgpl.service "$SRC"/systemd/epgpl-auto.service "$SRC"/systemd/epgpl-http.service "$SRC"/systemd/epgpl-kandydaci.service \
+		"$SRC"/systemd/epgpl-update.service "$SRC"/systemd/epgpl-update.timer /etc/systemd/system/
 	state_add "systemd"
 fi
 systemctl daemon-reload
@@ -280,6 +283,9 @@ systemctl enable epgpl-http.service >/dev/null 2>&1
 systemctl restart epgpl-http.service
 ok "serwer HTTP dziala (port $PORT)"
 bash $BASE/timer.sh >/dev/null
+systemctl enable --now epgpl-update.timer >/dev/null 2>&1 || true
+if [ "$(conf_get AUTOUPDATE)" = 1 ]; then ok "aktualizacja automatyczna: wlaczona (epgpl-update.timer; wylaczenie: AUTOUPDATE=0 w $BASE/config.env)"
+else ok "aktualizacja automatyczna: wylaczona (wlaczenie: AUTOUPDATE=1 w $BASE/config.env); recznie: sudo bash $BASE/update.sh"; fi
 ok "pobieranie codziennie o $(conf_get GRAB_TIME) (epgpl.timer)"
 if [ -s $BASE/work/guide.xml ] && [ -s $BASE/work/grab.channels.xml ]; then
 	sudo -u epgpl python3 -I $BASE/check_guide.py $BASE/work/guide.xml $BASE/work/grab.channels.xml $BASE/work/empty.json >/dev/null || true
@@ -445,5 +451,6 @@ echo "  od zera, z usunieciem poprzedniej:            sudo bash $BASE/uninstall.
 echo
 echo "${C_H}Przydatne${C_0}:"
 echo "  pobranie teraz:   sudo systemctl start --no-block epgpl.service;  postep: tail -f $BASE/work/grab.log"
+echo "  aktualizacja:     sudo bash $BASE/update.sh   (automatyczna: AUTOUPDATE=1 w config.env)"
 echo "  stan uslug:       systemctl status epgpl-http epgpl.timer;  logi pobierania: $BASE/log/"
 echo "  wlasne dopasowania kanalow: $BASE/aliases.txt  (z dekodera: EPG Scan -> Kanaly -> Dopasowanie: serwer)"

@@ -15,7 +15,7 @@ PORT=$(conf_get PORT); PORT=${PORT:-8088}
 echo "${C_H}epgpl - usuniecie serwera i konfiguracji${C_0}"
 head1 "Co jest zainstalowane"
 FOUND=0
-for u in epgpl.service epgpl-auto.service epgpl-http.service epgpl-kandydaci.service epgpl.timer; do
+for u in epgpl.service epgpl-auto.service epgpl-http.service epgpl-kandydaci.service epgpl.timer epgpl-update.timer epgpl-update.service; do
 	[ -f /etc/systemd/system/$u ] && { info "usluga $u"; FOUND=1; }
 done
 [ -f /etc/sudoers.d/epgpl ] && { info "regula sudo /etc/sudoers.d/epgpl"; FOUND=1; }
@@ -46,7 +46,7 @@ if [ -d $BASE ]; then
 fi
 
 head1 "Usuwanie"
-for u in epgpl.timer epgpl-http.service epgpl-kandydaci.service epgpl-auto.service epgpl.service; do
+for u in epgpl-update.timer epgpl-update.service epgpl.timer epgpl-http.service epgpl-kandydaci.service epgpl-auto.service epgpl.service; do
 	systemctl stop $u >/dev/null 2>&1
 	systemctl disable $u >/dev/null 2>&1
 	[ -f /etc/systemd/system/$u ] && rm -f /etc/systemd/system/$u && ok "usluga $u"

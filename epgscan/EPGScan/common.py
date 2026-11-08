@@ -17,7 +17,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.12.0"
+VERSION = "2.13.0"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 TP_STATS = "/etc/enigma2/epgscan_tps.json"
@@ -134,6 +134,10 @@ cfg.local_errlog = ConfigYesNo(default=True)
 cfg.cli_api = ConfigYesNo(default=True)
 cfg.cli_port = ConfigInteger(default=8770, limits=(1024, 65535))
 cfg.cli_token = ConfigText(default="", fixed_size=False)
+# aktualizacja wtyczki z wydan GitHub (reczna dziala zawsze)
+cfg.upd_auto = ConfigYesNo(default=False)
+cfg.upd_last = ConfigInteger(default=0, limits=(0, 4000000000))      # ostatnie sprawdzenie automatyczne
+cfg.upd_pending = ConfigText(default="", fixed_size=False)           # zainstalowana wersja czekajaca na restart
 
 
 def local_conns():

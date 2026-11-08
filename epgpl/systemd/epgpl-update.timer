@@ -1,0 +1,10 @@
+[Unit]
+Description=epgpl - codzienne sprawdzenie aktualizacji
+
+[Timer]
+OnCalendar=*-*-* 12:40
+RandomizedDelaySec=40min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

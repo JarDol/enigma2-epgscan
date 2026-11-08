@@ -1,12 +1,13 @@
-epgpl 0.19.4 - polski program TV (teleman.pl, onet.pl, pilot.wp.pl, programtv.naziemna.info) w formacie XMLTV dla EPG Scan
+epgpl 0.20.0 - polski program TV (teleman.pl, onet.pl, pilot.wp.pl, programtv.naziemna.info) w formacie XMLTV dla EPG Scan
 
 Instalacja / aktualizacja na serwerze (Debian / Ubuntu):
-  cd /tmp && rm -rf epgpl && unzip -o epgpl-0.19.4.zip && cd epgpl && sudo bash install.sh
+  cd /tmp && rm -rf epgpl && unzip -o epgpl-0.20.0.zip && cd epgpl && sudo bash install.sh
   Instalator sprawdza kolejno: system, pakiety, Node.js 22, uzytkownika epgpl, grabber, konfiguracje, uslugi systemd,
   regule sudo, zapore (ufw / firewalld), Avahi. Co jest spelnione - [OK]; co trzeba zmienic - pyta (T/n).
   Przy pierwszej instalacji pyta o adres dekodera (sprawdza, czy OpenWebif odpowiada), port i godzine pobierania.
   Bez pytan: sudo bash install.sh -y --dekoder 192.168.1.20      Opcje: --bez-avahi  --bez-zapory
 
+Aktualizacja z GitHub (ustawienia zostaja):  sudo bash /opt/epgpl/update.sh   (automatycznie: AUTOUPDATE=1 w /opt/epgpl/config.env)
 Zmiana ustawien:  sudo bash /opt/epgpl/configure.sh   (--podstawowe: dekoder, port, godzina, adres;  --pobieranie: kolejnosc serwisow, opoznienie, polaczenia, dni)
 Usuniecie razem z konfiguracja (kopia ustawien w /root):  sudo bash /opt/epgpl/uninstall.sh
   (dla instalacji sprzed 0.13.0: sudo bash uninstall.sh z rozpakowanej paczki)

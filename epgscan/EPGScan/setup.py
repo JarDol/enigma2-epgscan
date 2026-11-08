@@ -25,7 +25,7 @@ def all_items():
 		cfg.backup_keep, cfg.restore, cfg.log_place, cfg.xmltv, cfg.xmltv_mode, cfg.xmltv_copies, cfg.epgpl_grab, cfg.xmltv_bouquets, cfg.xmltv_gaps,
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
-		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token,
+		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.upd_auto,
 		cfg.topup, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
 
 
@@ -87,6 +87,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		self.setTitle("EPG Scan %s - %s" % (VERSION, self.TITLES.get(section, "ustawienia")))
 		self["help"] = Label("")
 		init_keys(self)
+		self.p_upd = NoSave(ConfigSelection(choices=[("v", "OK - sprawdz i zainstaluj")]))   # reczna aktualizacja
 		self.p_cldirs = NoSave(ConfigSelection(choices=[("v", cl_dirs_text())]))   # katalogi sprzatania - wybor z listy (OK)
 		ConfigListScreen.__init__(self, [], session=session, on_change=self.changed)
 		self["actions"] = ActionMap(["SetupActions", "ColorActions"], {
@@ -217,6 +218,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				e("Restart po nocnym przebiegu", cfg.rs_mode)]
 			if cfg.rs_mode.value == "need":
 				lst += [e("  Profilaktycznie co [dni]", cfg.rs_days), e("  Gdy wolnej pamieci mniej niz [MB]", cfg.rs_mem)]
+			lst += [e("Aktualizacja automatyczna", cfg.upd_auto), e("Aktualizuj teraz (wersja %s)" % VERSION, self.p_upd)]
 			lst.append(e("Serwer dla aplikacji E2Stream (klienci streamingu)", cfg.cli_api))
 			if cfg.cli_api.value:
 				lst += [e("  Port", cfg.cli_port), e("  Token (puste = bez, siec lokalna)", cfg.cli_token)]
@@ -245,7 +247,13 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		nb = len(selected_bouquets())
 		allb = len(list_bouquets())
 		txt = "Bukiety: %s.  Plik EPG: %s" % ("wszystkie (%d)" % allb if cfg.scope.value == "all" else "%d z %d" % (nb, allb), epg_path())
-		if item in (cfg.cli_api, cfg.cli_port, cfg.cli_token):
+		if item in (cfg.upd_auto, self.p_upd):
+			txt = "Nowe wersje wtyczki pobierane z wydan GitHub (JarDol/enigma2-epgscan). Automatycznie: raz na dobe sprawdza, " \
+				"instaluje, a Enigma2 restartuje dopiero w czuwaniu, gdy nic nie nagrywa i nie trwa skan. " \
+				"'Aktualizuj teraz' (OK) dziala zawsze - takze przy wylaczonej automatycznej (pyta o restart)."
+			if cfg.upd_pending.value and cfg.upd_pending.value != VERSION:
+				txt += " Zainstalowana %s czeka na restart Enigma2." % cfg.upd_pending.value
+		elif item in (cfg.cli_api, cfg.cli_port, cfg.cli_token):
 			try:
 				from .clients import summary
 				st = summary()
@@ -472,9 +480,53 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		if cur and cur[1] is self.p_cldirs:
 			self.session.openWithCallback(self.cl_dirs_done, EPGScanDirs)
 			return
+		if cur and cur[1] is self.p_upd:
+			self.upd_check()
+			return
 		if cur and cur[1] is cfg.backup_dir:
 			from Screens.LocationBox import LocationBox
 			self.session.openWithCallback(self.dir_cb, LocationBox, text="Katalog kopii EPG", currDir=cfg.backup_dir.value)
+
+	# ------------------------------------------------------------ aktualizacja reczna
+	def upd_check(self):
+		from .updater import check_async
+		self["help"].setText("Sprawdzanie wydan na GitHub...")
+		check_async(self.upd_checked)
+
+	def upd_checked(self, info):
+		from .updater import newer
+		if not info:
+			self.session.open(MessageBox, "Nie udalo sie sprawdzic wydan (brak internetu lub GitHub). Szczegoly w logu.",
+				MessageBox.TYPE_ERROR, timeout=8)
+			self.update_help()
+			return
+		ver, url = info
+		if newer(ver, VERSION):
+			q = "Dostepna wersja %s (zainstalowana %s). Zainstalowac?" % (ver, VERSION)
+		else:
+			q = "Masz najnowsza wersje (%s). Zainstalowac ja ponownie?" % VERSION
+		self.update_help()
+		self.session.openWithCallback(lambda yes: yes and self.upd_install(url, ver), MessageBox, q, MessageBox.TYPE_YESNO,
+			default=newer(ver, VERSION))
+
+	def upd_install(self, url, ver):
+		from .updater import install_async
+		self["help"].setText("Pobieranie i instalacja EPG Scan %s..." % ver)
+		install_async(url, ver, lambda err: self.upd_done(err, ver))
+
+	def upd_done(self, err, ver):
+		self.update_help()
+		if err:
+			self.session.open(MessageBox, "Instalacja nieudana: %s" % err, MessageBox.TYPE_ERROR, timeout=10)
+			return
+		self.session.openWithCallback(self.upd_restart, MessageBox,
+			"Zainstalowano EPG Scan %s. Zrestartowac teraz Enigma2?\n(Nie - nowa wersja zadziala po najblizszym restarcie.)" % ver,
+			MessageBox.TYPE_YESNO, default=True)
+
+	def upd_restart(self, yes):
+		if yes:
+			from .updater import restart_gui
+			restart_gui(self.session)
 
 	def bq_done(self, item, saved):
 		"""Po zapisie listy bukietow: tryb 'wybrane bukiety' (wybor ma dzialac od razu)."""

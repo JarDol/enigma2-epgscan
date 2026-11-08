@@ -200,6 +200,8 @@ Polecenia (`/api/…`) serwer przyjmuje **tylko z adresów sieci lokalnej**. Z i
 
 | Co | Komenda |
 |---|---|
+| Aktualizacja z GitHub (ustawienia zostają, działa zawsze) | `sudo bash /opt/epgpl/update.sh` (`--check` – tylko sprawdź, `-y` – bez pytań, `--force` – ponownie ta sama wersja) |
+| Aktualizacja automatyczna | `AUTOUPDATE=1` w `/opt/epgpl/config.env` – codziennie ok. 12:40 (`epgpl-update.timer`), nie w trakcie pobierania programu; log: `/opt/epgpl/log/update.log` |
 | Aktualizacja / naprawa (ustawienia zostają) | `sudo bash install.sh` z rozpakowanej paczki → **1** (pytania tylko o nowe funkcje) |
 | Aktualizacja ze wszystkimi pytaniami | `sudo bash install.sh --rekonfiguracja` (albo **2** na początku) |
 | Tylko zmiana parametrów | `sudo bash /opt/epgpl/configure.sh` |

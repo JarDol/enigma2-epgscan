@@ -1,0 +1,10 @@
+[Unit]
+Description=epgpl - automatyczna aktualizacja z wydan GitHub (tylko gdy AUTOUPDATE=1 w config.env)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=EPGPL_WAIT=120
+ExecStart=/bin/bash /opt/epgpl/update.sh --auto
+TimeoutStartSec=3h
