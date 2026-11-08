@@ -25,7 +25,7 @@ def all_items():
 		cfg.backup_keep, cfg.restore, cfg.log_place, cfg.xmltv, cfg.xmltv_mode, cfg.xmltv_copies, cfg.epgpl_grab, cfg.xmltv_bouquets, cfg.xmltv_gaps,
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
-		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto,
+		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto,
 		cfg.topup, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
 
 
@@ -228,7 +228,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			lst.append(e("Sprzatanie dysku (timeshift, crash logi)", cfg.cl_on))
 			if cfg.cl_on.value:
 				lst += [e("  Katalogi (OK - lista)", self.p_cldirs), e("  Timeshift starszy niz [h]", cfg.cl_ts_hours),
-					e("  Zostaw crash logow", cfg.cl_crash_keep), e("  Co ile minut", cfg.cl_every)]
+					e("  Zostaw crash logow", cfg.cl_crash_keep), e("  Zrzuty TS z E2Stream starsze niz [dni]", cfg.cl_e2s_days),
+					e("  Co ile minut", cfg.cl_every)]
 		self["config"].list = lst
 		self["config"].l.setList(lst)
 		if cur is not None:
@@ -381,7 +382,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"satellites.xml bez przeladowania (restart Enigma2), dekoder dziala dluzej niz podana liczba dni (pelny restart). " \
 				"Powod w logu i w podsumowaniu nocy. Teraz: wolne %d MB, dziala %.1f dnia." % (
 				mem_available_mb(), uptime_days())
-		elif item in (cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_every, self.p_cldirs):
+		elif item in (cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, self.p_cldirs):
 			try:
 				from .cleanup import run_cleanup
 				n, mb, _ = run_cleanup(dry=True)
@@ -390,7 +391,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				now = ""
 			txt = "Co podana liczbe minut wtyczka usuwa z zaznaczonych katalogow pliki timeshift starsze niz podana liczba " \
 				"godzin (aktywny timeshift jest pomijany) i nadmiar plikow enigma2_crash_*.log - zostaje tyle najnowszych " \
-				"(lacznie), ile ustawiono. Katalogi: OK - lista (nosniki, katalog timeshift i crash logow z ustawien Enigma2, " \
+				"(lacznie), ile ustawiono, oraz zrzuty TS aplikacji E2Stream (stall-*.ts w jej katalogu na dekoderze) starsze niz " \
+				"podana liczba dni. Katalogi: OK - lista (nosniki, katalog timeshift i crash logow z ustawien Enigma2, " \
 				"wlasne). Kazde usuniecie jest zapisywane w logu EPG Scan. %s" % now
 		elif item in (cfg.rs_days, cfg.rs_mem):
 			txt = "Profilaktycznie: pelny restart, gdy odbiornik dziala dluzej niz tyle dni (nie = wylaczone). Pamiec: restart " \

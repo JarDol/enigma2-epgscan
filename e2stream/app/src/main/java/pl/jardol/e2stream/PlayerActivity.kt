@@ -1213,7 +1213,7 @@ class PlayerActivity : Activity() {
         Thread {
             try {
                 File(dir, name).writeBytes(data)
-                Storage.prune(dir, "stall-", 10)
+                Storage.prune(dir, "stall-", 3)
                 AppLog.i("zrzut TS: ${dir.absolutePath}/$name (${data.size / 1024} kB)")
             } catch (e: Exception) {
                 AppLog.i("zrzut TS nieudany: $e")
@@ -1221,7 +1221,8 @@ class PlayerActivity : Activity() {
             if (ftp) {
                 try {
                     FtpUpload.upload(host, 21, user, pass, ftpDir, name, data)
-                    AppLog.i("zrzut TS wysłany na dekoder: $ftpDir/$name")
+                    File(dir, name).delete()   // jest na dekoderze — na urządzeniu nie trzymamy kopii
+                    AppLog.i("zrzut TS wysłany na dekoder: $ftpDir/$name (kopia lokalna usunięta)")
                 } catch (e: Exception) {
                     AppLog.i("wysyłanie zrzutu TS nieudane: $e")
                 }

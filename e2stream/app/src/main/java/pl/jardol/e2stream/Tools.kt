@@ -111,6 +111,7 @@ object Tools {
             for (f in files) {
                 try {
                     FtpUpload.upload(host, 21, user, pass, dir, f.name, f.readBytes())
+                    f.delete()      // wysłany — miejsce na urządzeniu wolne
                     ok++
                     AppLog.i("zrzut TS wysłany na dekoder: $dir/${f.name}")
                 } catch (e: Exception) {

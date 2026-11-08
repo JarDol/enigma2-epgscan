@@ -17,7 +17,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.14.0"
+VERSION = "2.14.1"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 TP_STATS = "/etc/enigma2/epgscan_tps.json"
@@ -215,6 +215,7 @@ cfg.cl_dir = ConfigText(default="/media/hdd")      # katalogi sprzatania, rozdzi
 cfg.cl_dirs_own = ConfigText(default="")         # katalogi dopisane recznie (lista wyboru), "|"
 cfg.cl_ts_hours = ConfigSelection(default="6", choices=[(str(x), str(x)) for x in (1, 2, 3, 6, 12, 24)])
 cfg.cl_crash_keep = ConfigSelection(default="10", choices=[(str(x), str(x)) for x in (3, 5, 10, 20, 50)])
+cfg.cl_e2s_days = ConfigSelection(default="7", choices=[("0", "nie usuwaj")] + [(str(x), str(x)) for x in (1, 3, 7, 14, 30)])  # zrzuty TS z E2Stream
 cfg.cl_every = ConfigSelection(default="15", choices=[(str(x), str(x)) for x in (5, 15, 30, 60)])
 cfg.map_mode = ConfigSelection(default="dekoder", choices=[   # skad dekoder bierze mape kanalow
 	("serwer", "z serwera epgpl (kopia na dysku)"), ("dekoder", "budowana na dekoderze")])
