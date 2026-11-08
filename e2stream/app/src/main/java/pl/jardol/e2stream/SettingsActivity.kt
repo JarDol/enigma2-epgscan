@@ -92,6 +92,13 @@ class SettingsActivity : Activity() {
         Item.Action("VLC: akceleracja sprzętowa", { hwName(p.vlcHwMode) }) { chooseHw() },
         Item.Action("VLC: format obrazu (chroma)", { p.vlcChroma }) { chooseChroma() },
         Item.Toggle("Tunelowanie wideo (ExoPlayer)", { p.tunneling }, { p.tunneling = it }),
+        Item.Action("ExoPlayer: liczba klatek dla dekodera (eksperyment)", { if (p.exoFps > 0) "${p.exoFps} kl./s" else "nie podawaj" }) {
+            val ids = intArrayOf(0, 25, 50)
+            AlertDialog.Builder(this).setTitle("Liczba klatek dla dekodera (eksperyment)")
+                .setSingleChoiceItems(arrayOf("nie podawaj", "25 kl./s", "50 kl./s"), ids.indexOf(p.exoFps).coerceAtLeast(0)) { d, w ->
+                    p.exoFps = ids[w]; d.dismiss(); markChanged("ExoPlayer fps = ${ids[w]}")
+                }.show()
+        },
         Item.Toggle("Wznawiaj zawieszony obraz (watchdog)", { p.watchdog }, { p.watchdog = it }),
         Item.Toggle("Wznawiaj przy zacinaniu (utrata klatek)", { p.dropRestart }, { p.dropRestart = it }),
         num("Zawieszenie po (s bez nowych klatek)", { p.stallSec }, { p.stallSec = it }, 1..30),

@@ -130,8 +130,43 @@ class Mp2AudioRenderer(handler: Handler?, listener: AudioRendererEventListener?,
         Util.getPcmFormat(C.ENCODING_PCM_16BIT, decoder.channels, decoder.sampleRate)
 }
 
+/**
+ * Obraz z podpowiedzią liczby klatek dla dekodera (eksperyment): strumień TS nie niesie fps
+ * (w logu „fps=-1”), a niektóre dekodery (Amlogic) inaczej traktują wtedy obraz z przeplotem.
+ */
+class FpsVideoRenderer(
+    ctx: Context, factory: androidx.media3.exoplayer.mediacodec.MediaCodecAdapter.Factory, selector: MediaCodecSelector,
+    joiningMs: Long, fallback: Boolean, handler: Handler, listener: androidx.media3.exoplayer.video.VideoRendererEventListener,
+    private val fps: Float,
+) : androidx.media3.exoplayer.video.MediaCodecVideoRenderer(ctx, factory, selector, joiningMs, fallback, handler, listener, 50) {
+    override fun onInputFormatChanged(formatHolder: androidx.media3.exoplayer.FormatHolder): androidx.media3.exoplayer.DecoderReuseEvaluation? {
+        val f = formatHolder.format
+        if (f != null && fps > 0f && f.frameRate <= 0f) formatHolder.format = f.buildUpon().setFrameRate(fps).build()
+        return super.onInputFormatChanged(formatHolder)
+    }
+}
+
 /** Fabryka rendererów: systemowe + programowy MP2 na końcu (gdy systemowego dekodera MP2 brak). */
-class E2RenderersFactory(ctx: Context) : DefaultRenderersFactory(ctx) {
+class E2RenderersFactory(ctx: Context, private val fps: Float = 0f) : DefaultRenderersFactory(ctx) {
+    override fun buildVideoRenderers(
+        context: Context,
+        extensionRendererMode: Int,
+        mediaCodecSelector: MediaCodecSelector,
+        enableDecoderFallback: Boolean,
+        eventHandler: Handler,
+        eventListener: androidx.media3.exoplayer.video.VideoRendererEventListener,
+        allowedVideoJoiningTimeMs: Long,
+        out: ArrayList<Renderer>,
+    ) {
+        super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback,
+            eventHandler, eventListener, allowedVideoJoiningTimeMs, out)
+        if (fps > 0f) {
+            val i = out.indexOfFirst { it is androidx.media3.exoplayer.video.MediaCodecVideoRenderer }
+            if (i >= 0) out[i] = FpsVideoRenderer(context, codecAdapterFactory, mediaCodecSelector, allowedVideoJoiningTimeMs,
+                enableDecoderFallback, eventHandler, eventListener, fps)
+        }
+    }
+
     override fun buildAudioRenderers(
         context: Context,
         extensionRendererMode: Int,

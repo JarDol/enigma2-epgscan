@@ -279,6 +279,11 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("uiBannerIcon", 100)
         set(v) = putI("uiBannerIcon", v)
 
+    /** ExoPlayer: podpowiedź liczby klatek dla dekodera (eksperyment): 0 = brak, 25, 50. */
+    var exoFps: Int
+        get() = sp.getInt("exoFps", 0)
+        set(v) = putI("exoFps", v)
+
     /** Silnik odtwarzania: exo (ExoPlayer) albo vlc (libVLC). */
     var engine: String
         get() = s("engine", "exo")
