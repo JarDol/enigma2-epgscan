@@ -9,3 +9,5 @@ dist/
 *.xml.xz
 *.xml
 !epgpl/sites/**/*.xml
+# E2Stream (Android): manifest i zasoby to pliki XML
+!e2stream/**/*.xml
