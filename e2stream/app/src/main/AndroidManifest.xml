@@ -32,6 +32,7 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
+            android:theme="@style/SettingsTheme"
             android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustPan" />
 

@@ -246,6 +246,7 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        settingsOpen = false      // po powrocie i tak pełny start (onStart)
         ui.removeCallbacks(epgTick)
         releasePlayer()
         ui.removeCallbacks(logTick)
@@ -675,6 +676,26 @@ class PlayerActivity : Activity() {
         }
     }
 
+    /** Nowa lista bukietów (zmiana widocznych) bez przerywania odtwarzanego kanału. */
+    private fun reloadBouquetsKeepStream() {
+        val curRef = bouquets.getOrNull(playBouquet)?.ref
+        io.execute {
+            try {
+                val all = api.bouquets()
+                val hidden = prefs.hiddenBouquets
+                val bq = all.filter { it.ref !in hidden }.ifEmpty { all }
+                runOnUiThread {
+                    bouquets = bq
+                    val i = bq.indexOfFirst { it.ref == curRef }
+                    playBouquet = if (i >= 0) i else 0
+                    AppLog.i("bukiety: ${bq.size} z ${all.size} widocznych")
+                }
+            } catch (e: Exception) {
+                AppLog.i("bukiety: odświeżenie nieudane $e")
+            }
+        }
+    }
+
     private fun playIn(bIdx: Int, chList: List<Channel>, index: Int) {
         if (chList.isEmpty()) return
         val i = ((index % chList.size) + chList.size) % chList.size
@@ -1095,7 +1116,48 @@ class PlayerActivity : Activity() {
     }
 
     private fun openSettings() {
-        PinLock.ask(this, prefs) { startActivity(Intent(this, SettingsActivity::class.java)) }
+        PinLock.ask(this, prefs) {
+            settingsOpen = true
+            settingsSig = streamSig()
+            settingsBq = prefs.hiddenBouquets.toString()
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+    }
+
+    private var settingsOpen = false
+    private var settingsSig = ""
+    private var settingsBq = ""
+
+    /** Ustawienia, których zmiana wymaga ponownego uruchomienia strumienia. */
+    private fun streamSig(): String = listOf(
+        prefs.host, prefs.streamPort, prefs.httpPort, prefs.user, prefs.pass, prefs.tunneling, prefs.watchdog,
+        prefs.stallSec, prefs.bufferMs, prefs.rebufferMs, prefs.cushionSlow, prefs.dropRestart, prefs.audioLang,
+        prefs.preferAc3, prefs.saveTs, prefs.tsRingMb, prefs.pluginPort, prefs.pluginToken,
+    ).joinToString("|")
+
+    override fun onResume() {
+        super.onResume()
+        if (!settingsOpen) return
+        settingsOpen = false
+        if (player == null) return            // odtwarzacz był zatrzymany (onStop) — start w onStart
+        if (streamSig() != settingsSig) {
+            AppLog.i("ustawienia: zmiany dotyczące strumienia — ponowne uruchomienie")
+            releasePlayer()
+            settingsVersion = -1
+            startUp()
+            return
+        }
+        // pozostałe zmiany bez zatrzymywania strumienia
+        stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
+        keyMap = KeyMap.load(prefs)
+        applyDisplayMode()
+        epg.clearMemory()
+        adapter.notifyDataSetChanged()
+        if (prefs.hiddenBouquets.toString() != settingsBq) {
+            AppLog.i("ustawienia: zmiana bukietów — lista kanałów od nowa, strumień bez przerwy")
+            reloadBouquetsKeepStream()
+        }
+        settingsVersion = prefs.version
     }
 
     // ---------------------------------------------------------------- zrzut przy zawieszeniu

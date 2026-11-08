@@ -8,6 +8,12 @@
         <item name="android:listViewStyle">@style/TvList</item>
     </style>
 
+    <!-- Ustawienia nad odtwarzaczem: okno przezroczyste, więc odtwarzacz tylko pauzuje (onPause), strumień gra dalej -->
+    <style name="SettingsTheme" parent="AppTheme">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
+
     <style name="TvDialog" parent="android:Theme.Material.Dialog.Alert">
         <item name="android:colorAccent">#FF4FC3F7</item>
         <item name="android:buttonBarButtonStyle">@style/TvDialogButton</item>
