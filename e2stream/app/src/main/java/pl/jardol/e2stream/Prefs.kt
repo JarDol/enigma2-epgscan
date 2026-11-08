@@ -333,6 +333,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("invertUpDown", false)
         set(v) = putB("invertUpDown", v)
 
+    /** Na ile minut PIN odblokowuje ustawienia (0 = do zamknięcia aplikacji). */
+    var pinMin: Int
+        get() = sp.getInt("pinMin", 1)
+        set(v) = putI("pinMin", v)
+
     var bannerSec: Int
         get() = sp.getInt("bannerSec", 4)
         set(v) = putI("bannerSec", v)

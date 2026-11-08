@@ -149,7 +149,10 @@ class SettingsActivity : Activity() {
         Item.Toggle("Odwróć ▲ / ▼ przy zmianie kanału", { p.invertUpDown }, { p.invertUpDown = it }),
         num("Czas paska kanału (s)", { p.bannerSec }, { p.bannerSec = it }, 1..30),
         Item.Text("PIN do ustawień", { p.pin }, { p.pin = it.trim() },
-            InputType.TYPE_CLASS_NUMBER, secret = true, hint = "puste = bez blokady; odblokowanie na 1 min"),
+            InputType.TYPE_CLASS_NUMBER, secret = true, hint = "puste = bez blokady"),
+        Item.Action("Pytaj o PIN ponownie po", {
+            if (p.pin.isEmpty()) "nieaktywne (brak PIN-u)" else PinLock.label(p.pinMin) + " • wyjście z aplikacji zawsze blokuje"
+        }) { if (p.pin.isEmpty()) toast("Najpierw ustaw PIN") else choosePinTime() },
             )
 
             "Informacje i aktualizacje" -> listOf(
@@ -343,6 +346,17 @@ class SettingsActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Odświeżanie ekranu")
             .setSingleChoiceItems(opts, p.afrMode) { d, w -> p.afrMode = w; d.dismiss(); markChanged("odświeżanie = ${opts[w]}") }
             .show()
+    }
+
+    private fun choosePinTime() {
+        val mins = intArrayOf(1, 5, 15, 30, 60, 0)
+        val opts = mins.map { PinLock.label(it) }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("Po odblokowaniu PIN-em pytaj ponownie po")
+            .setSingleChoiceItems(opts, mins.indexOf(p.pinMin).coerceAtLeast(0)) { d, w ->
+                p.pinMin = mins[w]; d.dismiss()
+                if (PinLock.isUnlocked(p)) PinLock.unlock(p)      // nowy czas liczony od teraz
+                refresh()
+            }.show()
     }
 
     private fun chooseEngine() {

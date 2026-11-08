@@ -11,8 +11,8 @@ android {
         applicationId = "pl.jardol.e2stream"
         minSdk = 21
         targetSdk = 35
-        versionCode = 50
-        versionName = "0.13.0"
+        versionCode = 51
+        versionName = "0.13.1"
         // biblioteki natywne VLC tylko dla ARM (telewizory i przystawki) - mniejszy plik APK
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }

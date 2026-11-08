@@ -10,12 +10,39 @@ import android.os.SystemClock
 import android.text.InputType
 import android.widget.EditText
 
-/** Blokada ustawień PIN-em: po poprawnym PIN-ie odblokowane na 1 minutę. */
+/**
+ * Blokada ustawień PIN-em: po poprawnym PIN-ie odblokowane na czas z ustawień
+ * (lub do zamknięcia aplikacji). Wyjście z aplikacji zawsze blokuje ponownie.
+ */
 object PinLock {
-    private const val UNLOCK_MS = 60_000L
     private var unlockedUntil = 0L
 
     fun isUnlocked(prefs: Prefs) = prefs.pin.isEmpty() || SystemClock.elapsedRealtime() < unlockedUntil
+
+    fun label(min: Int) = if (min <= 0) "do wyjścia z aplikacji" else "$min min"
+
+    /** Odblokowuje na czas z ustawień, licząc od teraz. */
+    fun unlock(prefs: Prefs) {
+        val min = prefs.pinMin
+        unlockedUntil = if (min <= 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + min * 60_000L
+    }
+
+    /** Liczy widoczne ekrany aplikacji; gdy żaden nie jest widoczny (ekran główny, inna aplikacja) — blokada. */
+    fun watch(app: android.app.Application) {
+        app.registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
+            var started = 0
+            override fun onActivityStarted(a: Activity) { started++ }
+            override fun onActivityStopped(a: Activity) {
+                started = (started - 1).coerceAtLeast(0)
+                if (started == 0 && !a.isChangingConfigurations) lock()
+            }
+            override fun onActivityCreated(a: Activity, b: android.os.Bundle?) {}
+            override fun onActivityResumed(a: Activity) {}
+            override fun onActivityPaused(a: Activity) {}
+            override fun onActivitySaveInstanceState(a: Activity, b: android.os.Bundle) {}
+            override fun onActivityDestroyed(a: Activity) {}
+        })
+    }
 
     fun remainingMs() = (unlockedUntil - SystemClock.elapsedRealtime()).coerceAtLeast(0)
 
@@ -37,7 +64,7 @@ object PinLock {
             handled = true
             dlg.dismiss()
             if (et.text.toString() == pin) {
-                unlockedUntil = SystemClock.elapsedRealtime() + UNLOCK_MS
+                unlock(prefs)
                 onOk()
             } else {
                 android.widget.Toast.makeText(a, "Błędny PIN", android.widget.Toast.LENGTH_SHORT).show()
