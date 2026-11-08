@@ -239,6 +239,13 @@ class PlayerActivity : Activity() {
             }
         }
         SyncManager.syncAsync()
+        if (backgrounded) {
+            // Android trzyma aplikację w pamięci; po powrocie z ekranu głównego zachowujemy się jak przy
+            // uruchomieniu: bez otwartej listy, kanał startowy albo ostatni (wg ustawień)
+            backgrounded = false
+            if (panel.visibility == View.VISIBLE) hidePanel()
+            settingsVersion = -1
+        }
         if (settingsVersion != prefs.version || bouquets.isEmpty()) {
             settingsVersion = prefs.version
             loadBouquets()
@@ -263,6 +270,7 @@ class PlayerActivity : Activity() {
     override fun onStop() {
         super.onStop()
         settingsOpen = false      // po powrocie i tak pełny start (onStart)
+        backgrounded = true       // wyjście do ekranu głównego — po powrocie start jak przy uruchomieniu
         ui.removeCallbacks(epgTick)
         releasePlayer()
         ui.removeCallbacks(logTick)
@@ -1208,6 +1216,7 @@ class PlayerActivity : Activity() {
     }
 
     private var settingsOpen = false
+    private var backgrounded = false
     private var settingsSig = ""
     private var settingsBq = ""
 
