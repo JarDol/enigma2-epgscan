@@ -126,7 +126,9 @@ class VlcEngine(
         val l = lib ?: LibVLC(ctx, options()).also { lib = it }
         val p = mp ?: MediaPlayer(l).also { m ->
             mp = m
-            m.attachViews(layout, null, false, false)
+            // z powierzchnią napisów: bez niej VLC odrzuca wyjście android_display (bezpośrednio na warstwę
+            // wideo urządzenia, gdzie MiBox sam usuwa przeplot) i przechodzi na OpenGL — wtedy widać przeplot
+            m.attachViews(layout, null, true, false)
             m.setEventListener { ev ->
                 when (ev.type) {
                     MediaPlayer.Event.Playing -> { playing = true; onEvent("VLC: odtwarzanie") }
