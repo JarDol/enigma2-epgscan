@@ -263,15 +263,25 @@ class Prefs(ctx: Context) {
         get() = s("engine", "exo")
         set(v) = putS("engine", v)
 
-    /** VLC: usuwanie przeplotu: auto, off, yadif, yadif2x, linear, blend, bob, x. */
+    /** VLC: usuwanie przeplotu: default (jak VLC/DreamTV), auto, off, yadif, yadif2x, linear, blend, bob, x. */
     var vlcDeint: String
-        get() = s("vlcDeint", "auto")
+        get() = s("vlcDeint", "default")
         set(v) = putS("vlcDeint", v)
 
-    /** VLC: dekodowanie sprzętowe (MediaCodec). */
+    /** VLC: dekodowanie sprzętowe (MediaCodec) — zostawione dla zgodności; decyduje vlcHwMode. */
     var vlcHw: Boolean
         get() = sp.getBoolean("vlcHw", true)
         set(v) = putB("vlcHw", v)
+
+    /** VLC: akceleracja jak w VLC dla Androida: auto, off, dec (dekodowanie, obraz przez VLC), full. */
+    var vlcHwMode: String
+        get() = s("vlcHwMode", if (vlcHw) "auto" else "off")
+        set(v) = putS("vlcHwMode", v)
+
+    /** VLC: format obrazu (android-display-chroma): RV32, RV16, YV12. */
+    var vlcChroma: String
+        get() = s("vlcChroma", "RV32")
+        set(v) = putS("vlcChroma", v)
 
     /** Dobudowywanie zapasu przez lekkie zwolnienie odtwarzania (niesłyszalne, wysokość dźwięku bez zmian). */
     var cushionSlow: Boolean

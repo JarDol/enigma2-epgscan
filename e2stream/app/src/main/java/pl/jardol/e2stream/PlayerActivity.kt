@@ -655,6 +655,9 @@ class PlayerActivity : Activity() {
         vlcLastTime = -1
         vlcLastMove = SystemClock.elapsedRealtime()
         v.play(px.url())
+        ui.postDelayed({
+            Thread { vlc?.vlcLog()?.forEach { AppLog.i("VLC log: $it") } }.start()
+        }, 6000)
         ui.removeCallbacks(vlcTick)
         ui.postDelayed(vlcTick, 2000)
     }
@@ -1193,7 +1196,7 @@ class PlayerActivity : Activity() {
         prefs.host, prefs.streamPort, prefs.httpPort, prefs.user, prefs.pass, prefs.tunneling, prefs.watchdog,
         prefs.stallSec, prefs.bufferMs, prefs.rebufferMs, prefs.cushionSlow, prefs.dropRestart, prefs.audioLang,
         prefs.preferAc3, prefs.saveTs, prefs.tsRingMb, prefs.pluginPort, prefs.pluginToken,
-        prefs.engine, prefs.vlcDeint, prefs.vlcHw,
+        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma,
     ).joinToString("|")
 
     override fun onResume() {

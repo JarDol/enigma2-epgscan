@@ -108,9 +108,12 @@ class VlcEngine(
         private set
 
     private fun options(): ArrayList<String> {
-        val o = arrayListOf("--no-stats", "--network-caching=${prefs.bufferMs.coerceIn(300, 10_000)}",
-            "--clock-jitter=0", "--clock-synchro=0", "--audio-time-stretch")
+        // jak VLC dla Androida (DreamTV): te same opcje biblioteki
+        val o = arrayListOf("--audio-time-stretch", "--avcodec-skiploopfilter", "-1", "--avcodec-skip-frame", "0",
+            "--avcodec-skip-idct", "0", "--stats", "--network-caching=${prefs.bufferMs.coerceIn(300, 10_000)}",
+            "--audio-resampler", "soxr", "--android-display-chroma", prefs.vlcChroma, "-v")
         when (prefs.vlcDeint) {
+            "default" -> {}
             "off" -> o += "--deinterlace=0"
             "auto" -> o += "--deinterlace=-1"
             else -> { o += "--deinterlace=1"; o += "--deinterlace-mode=${prefs.vlcDeint}" }
@@ -135,7 +138,12 @@ class VlcEngine(
             }
         }
         val m = Media(l, Uri.parse(url))
-        m.setHWDecoderEnabled(prefs.vlcHw, false)
+        when (prefs.vlcHwMode) {
+            "off" -> m.setHWDecoderEnabled(false, false)
+            "dec" -> { m.setHWDecoderEnabled(true, true); m.addOption(":no-mediacodec-dr"); m.addOption(":no-omxil-dr") }
+            "full" -> m.setHWDecoderEnabled(true, true)
+            else -> m.setHWDecoderEnabled(true, false)
+        }
         m.addOption(":network-caching=${prefs.bufferMs.coerceIn(300, 10_000)}")
         p.media = m
         m.release()
@@ -158,6 +166,15 @@ class VlcEngine(
         playing = false
     }
 
+    /** Wpisy VLC z logcat (dekoder, wyjście obrazu, przeplot) — do logu aplikacji. */
+    fun vlcLog(): List<String> = try {
+        val pr = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "400", "-v", "brief", "VLC:V", "*:S"))
+        val lines = pr.inputStream.bufferedReader().readLines()
+        pr.destroy()
+        val keys = listOf("mediacodec", "deinterlace", "vout", "decoder", "using", "chroma", "interlace", "gles", "android_display", "avcodec")
+        lines.filter { l -> keys.any { l.contains(it, true) } }.takeLast(25)
+    } catch (_: Exception) { emptyList() }
+
     /** Czas odtwarzania (ms) — do wykrywania zawieszenia. */
     fun time(): Long = try { mp?.time ?: -1 } catch (_: Exception) { -1 }
 
@@ -165,7 +182,7 @@ class VlcEngine(
         val p = mp ?: return "-"
         return try {
             val v = p.currentVideoTrack
-            "VLC ${if (prefs.vlcHw) "sprzętowo" else "programowo"}, przeplot: ${prefs.vlcDeint}" +
+            "VLC akceleracja: ${prefs.vlcHwMode}, chroma ${prefs.vlcChroma}, przeplot: ${prefs.vlcDeint}" +
                 (v?.let { ", obraz ${it.width}x${it.height} %.2f fps".format(if (it.frameRateDen > 0) it.frameRateNum.toFloat() / it.frameRateDen else 0f) } ?: "")
         } catch (_: Exception) { "VLC" }
     }

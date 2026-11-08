@@ -115,7 +115,8 @@ class SettingsActivity : Activity() {
         Item.Header("Odtwarzanie"),
         Item.Action("Silnik odtwarzania", { if (p.engine == "vlc") "VLC" else "ExoPlayer" }) { chooseEngine() },
         Item.Action("VLC: usuwanie przeplotu", { deintName(p.vlcDeint) }) { chooseDeint() },
-        Item.Toggle("VLC: dekodowanie sprzętowe", { p.vlcHw }, { p.vlcHw = it }),
+        Item.Action("VLC: akceleracja sprzętowa", { hwName(p.vlcHwMode) }) { chooseHw() },
+        Item.Action("VLC: format obrazu (chroma)", { p.vlcChroma }) { chooseChroma() },
         Item.Toggle("Tunelowanie wideo (ExoPlayer)", { p.tunneling }, { p.tunneling = it }),
         Item.Toggle("Wznawiaj zawieszony obraz (watchdog)", { p.watchdog }, { p.watchdog = it }),
         Item.Toggle("Wznawiaj przy zacinaniu (utrata klatek)", { p.dropRestart }, { p.dropRestart = it }),
@@ -248,9 +249,30 @@ class SettingsActivity : Activity() {
             }.show()
     }
 
-    private val deintIds = arrayOf("auto", "off", "yadif", "yadif2x", "bob", "linear", "blend", "x")
+    private val hwIds = arrayOf("auto", "off", "dec", "full")
+    private fun hwName(id: String) = when (id) {
+        "off" -> "wyłączona"; "dec" -> "dekodowanie (obraz przez VLC)"; "full" -> "pełna"; else -> "automatyczna (jak DreamTV)"
+    }
+
+    private fun chooseHw() {
+        AlertDialog.Builder(this).setTitle("VLC: akceleracja sprzętowa")
+            .setSingleChoiceItems(hwIds.map { hwName(it) }.toTypedArray(), hwIds.indexOf(p.vlcHwMode).coerceAtLeast(0)) { d, w ->
+                p.vlcHwMode = hwIds[w]; d.dismiss(); markChanged("VLC akceleracja = ${hwIds[w]}")
+            }.show()
+    }
+
+    private fun chooseChroma() {
+        val ids = arrayOf("RV32", "RV16", "YV12")
+        val names = arrayOf("RGB 32-bit (jak DreamTV)", "RGB 16-bit", "YUV (YV12)")
+        AlertDialog.Builder(this).setTitle("VLC: format obrazu")
+            .setSingleChoiceItems(names, ids.indexOf(p.vlcChroma).coerceAtLeast(0)) { d, w ->
+                p.vlcChroma = ids[w]; d.dismiss(); markChanged("VLC chroma = ${ids[w]}")
+            }.show()
+    }
+
+    private val deintIds = arrayOf("default", "auto", "off", "yadif", "yadif2x", "bob", "linear", "blend", "x")
     private fun deintName(id: String) = when (id) {
-        "auto" -> "automatycznie"; "off" -> "wyłączone"; "yadif2x" -> "yadif 2x (50 kl./s)"; "bob" -> "bob (50 kl./s)"
+        "default" -> "domyślne VLC (jak DreamTV)"; "auto" -> "automatycznie"; "off" -> "wyłączone"; "yadif2x" -> "yadif 2x (50 kl./s)"; "bob" -> "bob (50 kl./s)"
         else -> id
     }
 

@@ -32,7 +32,7 @@ object SyncManager {
     /** Ustawienia synchronizowane (bez adresu dekodera, ścieżek lokalnych i stanu). */
     private val SETTINGS = setOf(
         "httpPort", "streamPort", "user", "pass",
-        "tunneling", "engine", "vlcDeint", "vlcHw", "watchdog", "stallSec", "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "dropRestart",
+        "tunneling", "engine", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "watchdog", "stallSec", "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "dropRestart",
         "audioLang", "preferAc3",
         "logFtp", "ftpUser", "ftpPass", "ftpDir", "saveTs", "tsRingMb", "tsFtp", "cleanTs",
         "hiddenBouquets", "pin", "invertUpDown", "bannerSec", "resumeLast",
