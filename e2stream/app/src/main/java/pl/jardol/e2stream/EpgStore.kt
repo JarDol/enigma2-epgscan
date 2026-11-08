@@ -110,22 +110,51 @@ object EpgSync {
         var events = 0
         val epgF = File(tmp, "epg.json.gz")
         if (api.packFile("epg.json.gz", epgF)) {
-            val js = java.util.zip.GZIPInputStream(epgF.inputStream()).bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
-            val ch = js.optJSONObject("ch") ?: JSONObject()
-            for (k in ch.keys()) {
-                val o = ch.optJSONObject(k) ?: continue
-                val name = o.optString("n")
-                val arr = o.optJSONArray("e") ?: continue
-                val ev = ArrayList<EpgEvent>(arr.length())
-                for (i in 0 until arr.length()) {
-                    val e = arr.optJSONArray(i) ?: continue
-                    ev.add(EpgEvent(e.optInt(0), e.optLong(1), e.optLong(2), e.optString(3), e.optString(4), e.optString(5), k, name))
+            val nowS = System.currentTimeMillis() / 1000
+            val untilS = nowS + prefs.epgDays.coerceIn(1, 14) * 86_400L
+            // strumieniowo (cały plik jako tekst to dziesiątki MB — za dużo dla pamięci aplikacji na TV)
+            try {
+                android.util.JsonReader(java.io.InputStreamReader(
+                    java.util.zip.GZIPInputStream(epgF.inputStream().buffered(64 * 1024)), Charsets.UTF_8)).use { r ->
+                    r.beginObject()
+                    while (r.hasNext()) {
+                        if (r.nextName() != "ch") { r.skipValue(); continue }
+                        r.beginObject()
+                        while (r.hasNext()) {
+                            val k = r.nextName()
+                            var name = ""
+                            val ev = ArrayList<EpgEvent>()
+                            r.beginObject()
+                            while (r.hasNext()) {
+                                when (r.nextName()) {
+                                    "n" -> name = r.nextString()
+                                    "e" -> {
+                                        r.beginArray()
+                                        while (r.hasNext()) {
+                                            r.beginArray()
+                                            val id = r.nextInt(); val b = r.nextLong(); val d = r.nextLong()
+                                            val t = r.nextString(); val sd = r.nextString(); val ld = r.nextString()
+                                            while (r.hasNext()) r.skipValue()
+                                            r.endArray()
+                                            if (b + d > nowS && b < untilS) ev.add(EpgEvent(id, b, d, t, sd, ld, k, ""))
+                                        }
+                                        r.endArray()
+                                    }
+                                    else -> r.skipValue()
+                                }
+                            }
+                            r.endObject()
+                            store.write(k, if (name.isEmpty()) ev else ev.map { it.copy(sname = name) })
+                            chans++
+                            events += ev.size
+                        }
+                        r.endObject()
+                    }
+                    r.endObject()
                 }
-                store.write(k, ev)
-                chans++
-                events += ev.size
+            } finally {
+                epgF.delete()
             }
-            epgF.delete()
         }
         // ikony
         var icons = 0
@@ -168,7 +197,7 @@ object EpgSync {
             var result: String
             // 1) paczka z wtyczki EPG Scan (EPG, ikony, zamiany referencji — przygotowane po nocnym skanie)
             if (prefs.pluginOk) {
-                val r = try { fromPack(ctx, prefs, store, manual, progress) } catch (e: Exception) {
+                val r = try { fromPack(ctx, prefs, store, manual, progress) } catch (e: Throwable) {
                     AppLog.i("paczka EPG Scan: błąd $e"); null
                 }
                 if (r != null) {
