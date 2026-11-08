@@ -258,6 +258,27 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("rebufferMs", 4000)
         set(v) = putI("rebufferMs", v)
 
+    /** Wygląd (%): lista kanałów — czcionka i ikony, EPG, pasek kanału. */
+    var uiListFont: Int
+        get() = sp.getInt("uiListFont", 80)
+        set(v) = putI("uiListFont", v)
+
+    var uiListIcon: Int
+        get() = sp.getInt("uiListIcon", 80)
+        set(v) = putI("uiListIcon", v)
+
+    var uiEpgFont: Int
+        get() = sp.getInt("uiEpgFont", 100)
+        set(v) = putI("uiEpgFont", v)
+
+    var uiBannerFont: Int
+        get() = sp.getInt("uiBannerFont", 100)
+        set(v) = putI("uiBannerFont", v)
+
+    var uiBannerIcon: Int
+        get() = sp.getInt("uiBannerIcon", 100)
+        set(v) = putI("uiBannerIcon", v)
+
     /** Silnik odtwarzania: exo (ExoPlayer) albo vlc (libVLC). */
     var engine: String
         get() = s("engine", "exo")

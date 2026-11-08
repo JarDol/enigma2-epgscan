@@ -51,68 +51,41 @@ class SettingsActivity : Activity() {
         Item.Text(label, { get().toString() }, { v -> v.trim().toIntOrNull()?.let { set(it.coerceIn(range)) } },
             InputType.TYPE_CLASS_NUMBER, hint = "${range.first}–${range.last}")
 
-    private fun buildItems(): List<Item> = listOf(
-        Item.Header("Diagnostyka i zapis"),
-        Item.Action("Wyślij log na dekoder", { "${p.ftpDir}/${Tools.logName(p)}" }) { Tools.uploadLog(p, true) { toast(it) } },
-        Item.Action("Wyślij zrzuty TS na dekoder") { Tools.uploadDumps(this, p) { toast(it) } },
-        Item.Action("Sprawdź aktualizację", { "wersja ${Tools.appVersion(this)}" }) { Tools.checkUpdate(this, true) { toast(it) } },
-        Item.Toggle("Statystyki na ekranie", { p.showStats }, { p.showStats = it }),
-        Item.Action("Miejsce zapisu logów i zrzutów", { Storage.dir(this, p).absolutePath }) { chooseStorage() },
-        Item.Toggle("Czyść strumień (uszkodzone pakiety, błędne znaczniki czasu)", { p.cleanTs }, { p.cleanTs = it }),
-        Item.Toggle("Zapisuj zrzut TS przy zawieszeniu", { p.saveTs }, { p.saveTs = it }),
-        num("Rozmiar zrzutu TS (MB)", { p.tsRingMb }, { p.tsRingMb = it }, 2..64),
-        Item.Toggle("Wysyłaj log na dekoder (co 2 min)", { p.logFtp }, { p.logFtp = it }),
-        Item.Toggle("Wysyłaj zrzuty TS na dekoder", { p.tsFtp }, { p.tsFtp = it }),
-        Item.Text("FTP — użytkownik", { p.ftpUser }, { p.ftpUser = it.trim().ifEmpty { "root" } }),
-        Item.Text("FTP — hasło", { p.ftpPass }, { p.ftpPass = it }, secret = true),
-        Item.Text("FTP — katalog na dekoderze", { p.ftpDir }, { p.ftpDir = it.trim().ifEmpty { Prefs.DEFAULT_FTP_DIR } }),
+    /** Sekcje ustawień (pierwszy ekran) — po wejściu lista pozycji danej sekcji. */
+    private var section: String? = null
 
-        Item.Header("Wtyczka EPG Scan na dekoderze"),
-        Item.Action("Stan wtyczki", { if (p.pluginOk) "jest — ${p.pluginVersion}" else "brak (OpenWebif + FTP)" }) { checkPlugin() },
-        num("Port wtyczki", { p.pluginPort }, { p.pluginPort = it }, 1024..65535),
-        Item.Text("Token wtyczki", { p.pluginToken }, { p.pluginToken = it.trim() }, secret = true, hint = "puste = bez (sieć lokalna)"),
+    private val sections = listOf(
+        "Dekoder Enigma2" to "adres, porty, logowanie, wtyczka EPG Scan, synchronizacja",
+        "Odtwarzanie i obraz" to "silnik (ExoPlayer / VLC), przeplot, bufory, watchdog, odświeżanie ekranu, dźwięk",
+        "Wygląd" to "wielkość czcionek i ikon: lista kanałów, EPG, pasek kanału",
+        "EPG i ikony kanałów" to "pobieranie EPG, ikony z dekodera",
+        "Ogólne" to "bukiety, kanał startowy, pilot, PIN, aktualizacja, statystyki",
+        "Logi i zrzuty" to "diagnostyka: log, zrzuty TS, FTP, miejsce zapisu",
+    )
 
-        Item.Header("Synchronizacja z dekoderem"),
-        Item.Toggle("Synchronizuj ustawienia i dane kanałów", { p.channelSync }, { p.channelSync = it }),
-        Item.Text("Nazwa tego odbiornika (znacznik ${p.deviceTag})", { p.deviceName }, { p.deviceName = it.trim().removeSuffix("[${p.deviceTag}]").trim().ifEmpty { android.os.Build.MODEL } },
-            hint = "np. Salon – Philips"),
-        Item.Action("Synchronizuj teraz", { syncStatus() }) { syncNow() },
-        Item.Action("Przenieś ustawienia z innego odbiornika") { chooseProfile() },
-
-        Item.Header("Dekoder"),
+    private fun buildItems(): List<Item> {
+        val sec = section ?: return sections.map { (name, desc) -> Item.Action(name, { desc }) { openSection(name) } }
+        return listOf<Item>(Item.Header(sec)) + when (sec) {
+            "Dekoder Enigma2" -> listOf(
+                Item.Header("Dekoder"),
         Item.Text("Adres IP dekodera", { p.host }, { p.host = it.trim() }, hint = "np. 192.168.1.20"),
         Item.Action("Szukaj dekoderów w sieci") { discover() },
         num("Port OpenWebif", { p.httpPort }, { p.httpPort = it }, 1..65535),
         num("Port streamingu", { p.streamPort }, { p.streamPort = it }, 1..65535),
         Item.Text("Użytkownik OpenWebif", { p.user }, { p.user = it.trim() }, hint = "puste = bez logowania"),
         Item.Text("Hasło OpenWebif", { p.pass }, { p.pass = it }, secret = true),
-
-        Item.Header("Ogólne"),
-        Item.Action("Widoczne bukiety", { if (p.hiddenBouquets.isEmpty()) "wszystkie" else "ukryte: ${p.hiddenBouquets.size}" }) { chooseBouquets() },
-        Item.Action("Mapowanie klawiszy pilota") { showKeyMap() },
-        Item.Toggle("Po uruchomieniu wróć do ostatniego kanału", { p.resumeLast }, { p.resumeLast = it }),
-        Item.Action("Po uruchomieniu przełącz na kanał", {
-            if (p.resumeLast) "nieaktywne (włączony powrót do ostatniego)" else p.startChannelName.ifBlank { "pierwszy kanał" }
-        }) { if (p.resumeLast) toast("Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”") else chooseStartChannel() },
-        Item.Toggle("Odwróć ▲ / ▼ przy zmianie kanału", { p.invertUpDown }, { p.invertUpDown = it }),
-        num("Czas paska kanału (s)", { p.bannerSec }, { p.bannerSec = it }, 1..30),
-        Item.Toggle("Automatyczna aktualizacja", { p.autoUpdate }, { p.autoUpdate = it }),
-        Item.Text("PIN do ustawień", { p.pin }, { p.pin = it.trim() },
-            InputType.TYPE_CLASS_NUMBER, secret = true, hint = "puste = bez blokady; odblokowanie na 1 min"),
-
-        Item.Header("EPG i ikony kanałów"),
-        Item.Toggle("Pobieraj EPG codziennie (bez wtyczki EPG Scan)", { p.epgDaily }, { p.epgDaily = it }),
-        Item.Text("Godzina pobierania EPG", { p.epgHour },
-            { v -> if (Regex("^\\d{1,2}:\\d{2}$").matches(v.trim())) p.epgHour = v.trim() else toast("Format HH:MM") },
-            InputType.TYPE_CLASS_DATETIME or InputType.TYPE_DATETIME_VARIATION_TIME, hint = "HH:MM"),
-        num("EPG na ile dni do przodu", { p.epgDays }, { p.epgDays = it }, 1..14),
-        Item.Toggle("Ikony kanałów z dekodera", { p.picons }, { p.picons = it }),
-        Item.Text("Katalog picon na dekoderze", { p.piconDir }, { p.piconDir = it.trim().trimEnd('/') },
-            hint = "puste = odczytaj z ustawień Enigmy2"),
-        Item.Action("Pobierz EPG i ikony teraz", { status.ifBlank { epgStatus() } }) { sync(false) },
-        Item.Action("Pobierz ikony od nowa") { sync(true) },
-
-        Item.Header("Odtwarzanie"),
+                Item.Header("Wtyczka EPG Scan na dekoderze"),
+        Item.Action("Stan wtyczki", { if (p.pluginOk) "jest — ${p.pluginVersion}" else "brak (OpenWebif + FTP)" }) { checkPlugin() },
+        num("Port wtyczki", { p.pluginPort }, { p.pluginPort = it }, 1024..65535),
+        Item.Text("Token wtyczki", { p.pluginToken }, { p.pluginToken = it.trim() }, secret = true, hint = "puste = bez (sieć lokalna)"),
+                Item.Header("Synchronizacja z dekoderem"),
+        Item.Toggle("Synchronizuj ustawienia i dane kanałów", { p.channelSync }, { p.channelSync = it }),
+        Item.Text("Nazwa tego odbiornika (znacznik ${p.deviceTag})", { p.deviceName }, { p.deviceName = it.trim().removeSuffix("[${p.deviceTag}]").trim().ifEmpty { android.os.Build.MODEL } },
+            hint = "np. Salon – Philips"),
+        Item.Action("Synchronizuj teraz", { syncStatus() }) { syncNow() },
+        Item.Action("Przenieś ustawienia z innego odbiornika") { chooseProfile() },
+            )
+            "Odtwarzanie i obraz" -> listOf(
         Item.Action("Silnik odtwarzania", { if (p.engine == "vlc") "VLC" else "ExoPlayer" }) { chooseEngine() },
         Item.Action("VLC: usuwanie przeplotu", { deintName(p.vlcDeint) }) { chooseDeint() },
         Item.Action("VLC: akceleracja sprzętowa", { hwName(p.vlcHwMode) }) { chooseHw() },
@@ -125,11 +98,92 @@ class SettingsActivity : Activity() {
         num("Zapas w trakcie oglądania (ms)", { p.rebufferMs }, { p.rebufferMs = it }, 1000..15_000),
         Item.Toggle("Dobuduj zapas lekkim zwolnieniem (5%, tylko bez tunelowania)", { p.cushionSlow }, { p.cushionSlow = it }),
         Item.Action("Odświeżanie ekranu", { afrName(p.afrMode) }) { chooseAfr() },
-
-        Item.Header("Dźwięk"),
+                Item.Header("Dźwięk"),
         Item.Text("Preferowany język", { p.audioLang }, { p.audioLang = it.trim().ifEmpty { "pol" } }, hint = "ISO 639-2, np. pol,eng"),
         Item.Toggle("Preferuj AC3 / E-AC3", { p.preferAc3 }, { p.preferAc3 = it }),
-    )
+            )
+            "Wygląd" -> listOf(
+                Item.Header("Lista kanałów"),
+                pctItem("Czcionka listy kanałów", { p.uiListFont }, { p.uiListFont = it }),
+                pctItem("Ikony na liście kanałów", { p.uiListIcon }, { p.uiListIcon = it }),
+                Item.Header("EPG (wydarzenia, EPG kanału, Multi EPG, szukanie)"),
+                pctItem("Czcionka okien EPG", { p.uiEpgFont }, { p.uiEpgFont = it }),
+                Item.Header("Pasek kanału"),
+                pctItem("Czcionka paska kanału", { p.uiBannerFont }, { p.uiBannerFont = it }),
+                pctItem("Ikona na pasku kanału", { p.uiBannerIcon }, { p.uiBannerIcon = it }),
+            )
+            "EPG i ikony kanałów" -> listOf(
+        Item.Toggle("Pobieraj EPG codziennie (bez wtyczki EPG Scan)", { p.epgDaily }, { p.epgDaily = it }),
+        Item.Text("Godzina pobierania EPG", { p.epgHour },
+            { v -> if (Regex("^\\d{1,2}:\\d{2}$").matches(v.trim())) p.epgHour = v.trim() else toast("Format HH:MM") },
+            InputType.TYPE_CLASS_DATETIME or InputType.TYPE_DATETIME_VARIATION_TIME, hint = "HH:MM"),
+        num("EPG na ile dni do przodu", { p.epgDays }, { p.epgDays = it }, 1..14),
+        Item.Toggle("Ikony kanałów z dekodera", { p.picons }, { p.picons = it }),
+        Item.Text("Katalog picon na dekoderze", { p.piconDir }, { p.piconDir = it.trim().trimEnd('/') },
+            hint = "puste = odczytaj z ustawień Enigmy2"),
+        Item.Action("Pobierz EPG i ikony teraz", { status.ifBlank { epgStatus() } }) { sync(false) },
+        Item.Action("Pobierz ikony od nowa") { sync(true) },
+            )
+            "Ogólne" -> listOf(
+        Item.Action("Widoczne bukiety", { if (p.hiddenBouquets.isEmpty()) "wszystkie" else "ukryte: ${p.hiddenBouquets.size}" }) { chooseBouquets() },
+        Item.Action("Mapowanie klawiszy pilota") { showKeyMap() },
+        Item.Toggle("Po uruchomieniu wróć do ostatniego kanału", { p.resumeLast }, { p.resumeLast = it }),
+        Item.Action("Po uruchomieniu przełącz na kanał", {
+            if (p.resumeLast) "nieaktywne (włączony powrót do ostatniego)" else p.startChannelName.ifBlank { "pierwszy kanał" }
+        }) { if (p.resumeLast) toast("Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”") else chooseStartChannel() },
+        Item.Toggle("Odwróć ▲ / ▼ przy zmianie kanału", { p.invertUpDown }, { p.invertUpDown = it }),
+        num("Czas paska kanału (s)", { p.bannerSec }, { p.bannerSec = it }, 1..30),
+        Item.Toggle("Automatyczna aktualizacja", { p.autoUpdate }, { p.autoUpdate = it }),
+        Item.Text("PIN do ustawień", { p.pin }, { p.pin = it.trim() },
+            InputType.TYPE_CLASS_NUMBER, secret = true, hint = "puste = bez blokady; odblokowanie na 1 min"),
+        Item.Action("Sprawdź aktualizację", { "wersja ${Tools.appVersion(this)}" }) { Tools.checkUpdate(this, true) { toast(it) } },
+        Item.Toggle("Statystyki na ekranie", { p.showStats }, { p.showStats = it }),
+            )
+            else -> listOf(
+        Item.Action("Wyślij log na dekoder", { "${p.ftpDir}/${Tools.logName(p)}" }) { Tools.uploadLog(p, true) { toast(it) } },
+        Item.Action("Wyślij zrzuty TS na dekoder") { Tools.uploadDumps(this, p) { toast(it) } },
+        Item.Action("Miejsce zapisu logów i zrzutów", { Storage.dir(this, p).absolutePath }) { chooseStorage() },
+        Item.Toggle("Czyść strumień (uszkodzone pakiety, błędne znaczniki czasu)", { p.cleanTs }, { p.cleanTs = it }),
+        Item.Toggle("Zapisuj zrzut TS przy zawieszeniu", { p.saveTs }, { p.saveTs = it }),
+        num("Rozmiar zrzutu TS (MB)", { p.tsRingMb }, { p.tsRingMb = it }, 2..64),
+        Item.Toggle("Wysyłaj log na dekoder (co 2 min)", { p.logFtp }, { p.logFtp = it }),
+        Item.Toggle("Wysyłaj zrzuty TS na dekoder", { p.tsFtp }, { p.tsFtp = it }),
+        Item.Text("FTP — użytkownik", { p.ftpUser }, { p.ftpUser = it.trim().ifEmpty { "root" } }),
+        Item.Text("FTP — hasło", { p.ftpPass }, { p.ftpPass = it }, secret = true),
+        Item.Text("FTP — katalog na dekoderze", { p.ftpDir }, { p.ftpDir = it.trim().ifEmpty { Prefs.DEFAULT_FTP_DIR } }),
+            )
+        }
+    }
+
+    private fun pctItem(label: String, get: () -> Int, set: (Int) -> Unit) =
+        Item.Action(label, { "${get()}%" }) {
+            val opts = intArrayOf(50, 60, 70, 80, 90, 100, 110, 120, 140)
+            AlertDialog.Builder(this).setTitle(label)
+                .setSingleChoiceItems(opts.map { "$it%" }.toTypedArray(), opts.indexOf(get()).coerceAtLeast(0)) { d, w ->
+                    set(opts[w]); d.dismiss(); markChanged("$label = ${opts[w]}%")
+                }.show()
+        }
+
+    private fun openSection(name: String) {
+        section = name
+        items = buildItems()
+        refresh()
+        listView.setSelection(items.indexOfFirst { it !is Item.Header }.coerceAtLeast(0))
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        val s = section
+        if (s != null) {
+            section = null
+            items = buildItems()
+            refresh()
+            listView.setSelection(sections.indexOfFirst { it.first == s }.coerceAtLeast(0))
+            return
+        }
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
+    }
 
     private fun afrName(m: Int) = when (m) { 1 -> "zawsze 50 Hz"; 2 -> "automatycznie wg treści"; else -> "bez zmian" }
 
@@ -164,7 +218,7 @@ class SettingsActivity : Activity() {
         listView = findViewById(R.id.settingsList)
         listView.adapter = adapter
         listView.setOnItemClickListener { _, _, pos, _ -> onPick(items[pos]) }
-        listView.setSelection(1)
+        listView.setSelection(0)
         listView.requestFocus()
     }
 

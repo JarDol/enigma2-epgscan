@@ -204,6 +204,7 @@ class PlayerActivity : Activity() {
         AppLog.init(this, Storage.dir(this, prefs))
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
         keyMap = KeyMap.load(prefs)
+        UiScale.apply(banner, UiScale.pct(prefs.uiBannerFont), UiScale.pct(prefs.uiBannerIcon))
         ui.removeCallbacks(epgTick)
         ui.postDelayed(epgTick, 15_000)
         ensureAnalyzer()
@@ -896,6 +897,7 @@ class PlayerActivity : Activity() {
         override fun getItemId(position: Int) = position.toLong()
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
             val v = convertView ?: layoutInflater.inflate(R.layout.item_channel, parent, false)
+            UiScale.apply(v, UiScale.pct(prefs.uiListFont), UiScale.pct(prefs.uiListIcon))
             val c = panelList[position]
             v.findViewById<TextView>(R.id.num).text = c.num.toString()
             val iv = v.findViewById<android.widget.ImageView>(R.id.icon)
@@ -1214,9 +1216,10 @@ class PlayerActivity : Activity() {
         // pozostałe zmiany bez zatrzymywania strumienia
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
         keyMap = KeyMap.load(prefs)
+        UiScale.apply(banner, UiScale.pct(prefs.uiBannerFont), UiScale.pct(prefs.uiBannerIcon))
         applyDisplayMode()
         epg.clearMemory()
-        adapter.notifyDataSetChanged()
+        list.adapter = adapter      // wiersze od nowa (np. nowa wielkość czcionki)
         if (prefs.hiddenBouquets.toString() != settingsBq) {
             AppLog.i("ustawienia: zmiana bukietów — lista kanałów od nowa, strumień bez przerwy")
             reloadBouquetsKeepStream()

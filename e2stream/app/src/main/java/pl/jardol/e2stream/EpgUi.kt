@@ -72,6 +72,7 @@ class EpgUi(
         override fun getItemId(position: Int) = position.toLong()
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
             val v = convertView ?: a.layoutInflater.inflate(R.layout.item_epg, parent, false)
+            UiScale.apply(v, UiScale.pct(Prefs(a).uiEpgFont))
             val r = rows[position]
             v.findViewById<TextView>(R.id.left).text = r.left
             val title = v.findViewById<TextView>(R.id.title)
@@ -130,13 +131,13 @@ class EpgUi(
         }
         root.addView(TextView(a).apply {
             text = head
-            textSize = 19f
+            textSize = 19f * UiScale.pct(Prefs(a).uiEpgFont)
             setTextColor(0xFFB0BEC5.toInt())
         })
         val scroll = android.widget.ScrollView(a).apply { isFocusable = true; isFocusableInTouchMode = false }
         scroll.addView(TextView(a).apply {
             text = body
-            textSize = 20f
+            textSize = 20f * UiScale.pct(Prefs(a).uiEpgFont)
             setTextColor(0xFFFFFFFF.toInt())
             setLineSpacing(px(3).toFloat(), 1f)
             setPadding(0, px(12), 0, px(12))
