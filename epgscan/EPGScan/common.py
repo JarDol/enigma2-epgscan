@@ -17,7 +17,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.14.1"
+VERSION = "2.15.0"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 TP_STATS = "/etc/enigma2/epgscan_tps.json"

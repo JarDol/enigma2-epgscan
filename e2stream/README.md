@@ -5,7 +5,7 @@ Działa też bez wtyczki — wtedy przez OpenWebif i FTP.
 
 Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV.
 
-* ExoPlayer (Media3) z **tunelowaniem wideo** – ta sama ścieżka co DreamTV z ExoPlayerem + tunelowanie
+* ExoPlayer (Media3) z **tunelowaniem wideo**
   (sprzętowy deinterlacer telewizora, płynne paski informacyjne).
 * **Watchdog** – gdy obraz się zawiesi (licznik klatek dekodera albo zegar odtwarzania stoi
   dłużej niż ustawiony limit, zbyt długie buforowanie, błąd lub zerwane połączenie),
@@ -90,7 +90,7 @@ Gdy na dekoderze działa EPG Scan 2.12.0+ z włączonym „Serwerem dla aplikacj
 
 * bukiety i kanały (z rozwiązanymi alternatywami) pobierane są z wtyczki — bez loginu do OpenWebif,
 * PID-y kanałów z `lamedb` pozwalają zbudować PMT, gdy dekoder go nie wysyła — także przy pierwszym oglądaniu kanału,
-* synchronizacja ustawień i danych kanałów idzie przez API wtyczki (bez FTP); dane na dekoderze:
+* synchronizacja ustawień i danych kanałów idzie przez API wtyczki (bez FTP), a z EPG Scan 2.15.0+ także log i zrzuty TS – FTP potrzebne jest tylko bez wtyczki; dane na dekoderze:
   `/etc/enigma2/epgscan/clients/common.json` i `device-<id>.json`,
 * pierwsze uruchomienie aplikacji w danym dniu pobiera EPG, ikony i dane kanałów (bez harmonogramu w aplikacji).
 
@@ -100,7 +100,7 @@ Gdy na dekoderze działa EPG Scan 2.12.0+ z włączonym „Serwerem dla aplikacj
 
 * bukiety i kanały (z rozwiązanymi alternatywami) pobierane są z wtyczki — bez loginu do OpenWebif,
 * PID-y kanałów z `lamedb` pozwalają zbudować PMT, gdy dekoder go nie wysyła — także przy pierwszym oglądaniu kanału,
-* synchronizacja ustawień i danych kanałów idzie przez API wtyczki (bez FTP); dane na dekoderze:
+* synchronizacja ustawień i danych kanałów idzie przez API wtyczki (bez FTP), a z EPG Scan 2.15.0+ także log i zrzuty TS – FTP potrzebne jest tylko bez wtyczki; dane na dekoderze:
   `/etc/enigma2/epgscan/clients/common.json` i `device-<id>.json`,
 * pierwsze uruchomienie aplikacji w danym dniu pobiera EPG, ikony i dane kanałów (bez harmonogramu w aplikacji).
 

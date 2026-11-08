@@ -55,12 +55,13 @@ class SettingsActivity : Activity() {
     private var section: String? = null
 
     private val sections = listOf(
-        "Dekoder Enigma2" to "adres, porty, logowanie, wtyczka EPG Scan, synchronizacja",
+        "Dekoder Enigma2" to "adres, porty, logowanie OpenWebif i FTP, synchronizacja",
         "Odtwarzanie i obraz" to "silnik (ExoPlayer / VLC), przeplot, bufory, watchdog, odświeżanie ekranu, dźwięk",
         "Wygląd" to "wielkość czcionek i ikon: lista kanałów, EPG, pasek kanału",
         "EPG i ikony kanałów" to "pobieranie EPG, ikony z dekodera",
-        "Ogólne" to "bukiety, kanał startowy, pilot, PIN, aktualizacja, statystyki",
-        "Logi i zrzuty" to "diagnostyka: log, zrzuty TS, FTP, miejsce zapisu",
+        "Ogólne" to "bukiety, kanał startowy, pilot, PIN",
+        "Wtyczka EPG Scan i aktualizacja" to "stan wtyczki na dekoderze, wersja i aktualizacja aplikacji",
+        "Logi i zrzuty" to "diagnostyka: statystyki, log, zrzuty TS, miejsce zapisu",
     )
 
     private fun buildItems(): List<Item> {
@@ -74,10 +75,10 @@ class SettingsActivity : Activity() {
         num("Port streamingu", { p.streamPort }, { p.streamPort = it }, 1..65535),
         Item.Text("Użytkownik OpenWebif", { p.user }, { p.user = it.trim() }, hint = "puste = bez logowania"),
         Item.Text("Hasło OpenWebif", { p.pass }, { p.pass = it }, secret = true),
-                Item.Header("Wtyczka EPG Scan na dekoderze"),
-        Item.Action("Stan wtyczki", { if (p.pluginOk) "jest — ${p.pluginVersion}" else "brak (OpenWebif + FTP)" }) { checkPlugin() },
-        num("Port wtyczki", { p.pluginPort }, { p.pluginPort = it }, 1024..65535),
-        Item.Text("Token wtyczki", { p.pluginToken }, { p.pluginToken = it.trim() }, secret = true, hint = "puste = bez (sieć lokalna)"),
+                Item.Header("FTP (potrzebne tylko, gdy na dekoderze nie ma wtyczki EPG Scan)"),
+        Item.Text("FTP — użytkownik", { p.ftpUser }, { p.ftpUser = it.trim().ifEmpty { "root" } }),
+        Item.Text("FTP — hasło", { p.ftpPass }, { p.ftpPass = it }, secret = true),
+        Item.Text("FTP — katalog na dekoderze", { p.ftpDir }, { p.ftpDir = it.trim().ifEmpty { Prefs.DEFAULT_FTP_DIR } }),
                 Item.Header("Synchronizacja z dekoderem"),
         Item.Toggle("Synchronizuj ustawienia i dane kanałów", { p.channelSync }, { p.channelSync = it }),
         Item.Text("Nazwa tego odbiornika (znacznik ${p.deviceTag})", { p.deviceName }, { p.deviceName = it.trim().removeSuffix("[${p.deviceTag}]").trim().ifEmpty { android.os.Build.MODEL } },
@@ -133,13 +134,23 @@ class SettingsActivity : Activity() {
         }) { if (p.resumeLast) toast("Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”") else chooseStartChannel() },
         Item.Toggle("Odwróć ▲ / ▼ przy zmianie kanału", { p.invertUpDown }, { p.invertUpDown = it }),
         num("Czas paska kanału (s)", { p.bannerSec }, { p.bannerSec = it }, 1..30),
-        Item.Toggle("Automatyczna aktualizacja", { p.autoUpdate }, { p.autoUpdate = it }),
         Item.Text("PIN do ustawień", { p.pin }, { p.pin = it.trim() },
             InputType.TYPE_CLASS_NUMBER, secret = true, hint = "puste = bez blokady; odblokowanie na 1 min"),
-        Item.Action("Sprawdź aktualizację", { "wersja ${Tools.appVersion(this)}" }) { Tools.checkUpdate(this, true) { toast(it) } },
-        Item.Toggle("Statystyki na ekranie", { p.showStats }, { p.showStats = it }),
             )
-            else -> listOf(
+
+            "Wtyczka EPG Scan i aktualizacja" -> listOf(
+                Item.Header("Wtyczka EPG Scan na dekoderze"),
+        Item.Action("Stan wtyczki", { if (p.pluginOk) "jest — ${p.pluginVersion}" else "brak (OpenWebif + FTP)" }) { checkPlugin() },
+        num("Port wtyczki", { p.pluginPort }, { p.pluginPort = it }, 1024..65535),
+        Item.Text("Token wtyczki", { p.pluginToken }, { p.pluginToken = it.trim() }, secret = true, hint = "puste = bez (sieć lokalna)"),
+                Item.Header("Aplikacja"),
+        Item.Action("Sprawdź aktualizację", { "wersja ${Tools.appVersion(this)}" }) { Tools.checkUpdate(this, true) { toast(it) } },
+        Item.Toggle("Automatyczna aktualizacja", { p.autoUpdate }, { p.autoUpdate = it }),
+            )
+            else -> listOfNotNull(
+        Item.Toggle("Statystyki na ekranie", { p.showStats }, { p.showStats = it }),
+                if (p.pluginOk) null else Item.Action("Bez wtyczki EPG Scan wysyłanie na dekoder wymaga FTP",
+                    { "ustaw w sekcji Dekoder Enigma2" }) { openSection("Dekoder Enigma2") },
         Item.Action("Wyślij log na dekoder", { "${p.ftpDir}/${Tools.logName(p)}" }) { Tools.uploadLog(p, true) { toast(it) } },
         Item.Action("Wyślij zrzuty TS na dekoder") { Tools.uploadDumps(this, p) { toast(it) } },
         Item.Action("Miejsce zapisu logów i zrzutów", { Storage.dir(this, p).absolutePath }) { chooseStorage() },
@@ -148,9 +159,6 @@ class SettingsActivity : Activity() {
         num("Rozmiar zrzutu TS (MB)", { p.tsRingMb }, { p.tsRingMb = it }, 2..64),
         Item.Toggle("Wysyłaj log na dekoder (co 2 min)", { p.logFtp }, { p.logFtp = it }),
         Item.Toggle("Wysyłaj zrzuty TS na dekoder", { p.tsFtp }, { p.tsFtp = it }),
-        Item.Text("FTP — użytkownik", { p.ftpUser }, { p.ftpUser = it.trim().ifEmpty { "root" } }),
-        Item.Text("FTP — hasło", { p.ftpPass }, { p.ftpPass = it }, secret = true),
-        Item.Text("FTP — katalog na dekoderze", { p.ftpDir }, { p.ftpDir = it.trim().ifEmpty { Prefs.DEFAULT_FTP_DIR } }),
             )
         }
     }

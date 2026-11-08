@@ -2,6 +2,7 @@
 
 ## EPG Scan (wtyczka Enigma2)
 
+- **2.15.0** – serwer dla E2Stream przyjmuje log i zrzuty TS aplikacji (zamiast FTP; tylko `e2stream-*.log` i `stall-*.ts`, tylko w katalogach na nośnikach albo /tmp) – z wtyczką aplikacja nie potrzebuje FTP
 - **2.14.1** – sprzątanie dysku: także zrzuty TS aplikacji E2Stream (`stall-*.ts` w jej katalogu na dekoderze) starsze niż N dni (domyślnie 7)
 - **2.14.0** – dane dla aplikacji E2Stream jako ostatni krok pracy z harmonogramu (po SatWatch, skanie i imporcie EPG): paczka z EPG kanałów wszystkich bukietów TV, ikonami kanałów i zamianami referencji (ta sama nazwa w bukiecie, nowa referencja – np. po zmianach na satelicie); opcja i *Przygotuj dane teraz* w ustawieniach serwera dla E2Stream; katalog obok kopii EPG (albo /tmp)
 - **2.13.0** – aktualizacja wtyczki z wydań GitHub: *Aktualizuj teraz* (działa zawsze, pyta o restart) i opcja *Aktualizacja automatyczna* (raz na dobę; instaluje, a Enigma2 restartuje dopiero w czuwaniu, bez nagrań i pracy wtyczki); ustawienia w grupie *Kopie EPG, log…*

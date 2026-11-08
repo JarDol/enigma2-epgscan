@@ -84,8 +84,8 @@ object Tools {
         val data = AppLog.snapshot()
         Thread {
             try {
-                FtpUpload.upload(host, 21, user, pass, dir, name, data)
-                if (manual) ui.post { msg("Log wysłany: $dir/$name") }
+                val where = Upload.send(prefs, name, data)
+                if (manual) ui.post { msg("Log wysłany: $where") }
             } catch (e: Exception) {
                 AppLog.markDirty()
                 if (manual) ui.post { msg("Nie udało się wysłać logu: ${e.message}") }
@@ -110,7 +110,7 @@ object Tools {
             var err = ""
             for (f in files) {
                 try {
-                    FtpUpload.upload(host, 21, user, pass, dir, f.name, f.readBytes())
+                    Upload.send(prefs, f.name, f.readBytes())
                     f.delete()      // wysłany — miejsce na urządzeniu wolne
                     ok++
                     AppLog.i("zrzut TS wysłany na dekoder: $dir/${f.name}")

@@ -279,6 +279,29 @@ def devices():
 
 # ---------------------------------------------------------------- HTTP
 
+UPLOAD_MAX = 100 * 1024 * 1024
+
+
+def upload(dirname, name, data):
+	"""Log albo zrzut TS z aplikacji E2Stream (zamiast FTP). Tylko pliki e2stream-*.log i stall-*.ts,
+	tylko w katalogach na nosnikach (/media, /hdd) albo /tmp."""
+	name = os.path.basename(name or "")
+	if not re.match(r"^(e2stream-[A-Za-z0-9_.-]+\.log|stall-[A-Za-z0-9_.-]+\.ts)$", name):
+		return {"error": "niedozwolona nazwa pliku"}
+	d = os.path.normpath(dirname or "/media/hdd/e2stream")
+	if not (d.startswith("/media/") or d.startswith("/hdd/") or d.startswith("/tmp/")) or ".." in d:
+		return {"error": "niedozwolony katalog"}
+	if len(data) > UPLOAD_MAX:
+		return {"error": "plik za duzy"}
+	if not os.path.isdir(d):
+		os.makedirs(d)
+	tmp = os.path.join(d, "." + name + ".tmp")
+	with open(tmp, "wb") as f:
+		f.write(data)
+	os.rename(tmp, os.path.join(d, name))
+	return {"ok": True, "path": os.path.join(d, name), "size": len(data)}
+
+
 def _resource():
 	from twisted.web import resource
 
@@ -316,7 +339,7 @@ def _resource():
 					except Exception:
 						model = ""
 					return self._json(request, {"name": "EPG Scan", "version": VERSION, "api": API,
-						"features": ["services", "pids", "sync", "pack"], "model": model, "time": int(time.time())})
+						"features": ["services", "pids", "sync", "pack", "upload"], "model": model, "time": int(time.time())})
 				if path == "/api/bouquets":
 					return self._json(request, {"bouquets": bouquets()})
 				if path == "/api/services":
@@ -328,6 +351,8 @@ def _resource():
 					return self._json(request, push(self._arg(request, "id"), body))
 				if path == "/api/sync/devices":
 					return self._json(request, {"devices": devices()})
+				if path == "/api/upload" and request.method == b"POST":
+					return self._json(request, upload(self._arg(request, "dir"), self._arg(request, "name"), request.content.read()))
 				if path == "/api/pack/info":
 					from .clientpack import info as pack_info, running as pack_running
 					return self._json(request, dict(pack_info(), building=pack_running()))

@@ -108,7 +108,7 @@ class VlcEngine(
         private set
 
     private fun options(): ArrayList<String> {
-        // jak VLC dla Androida (DreamTV): te same opcje biblioteki
+        // te same opcje biblioteki co VLC dla Androida
         val o = arrayListOf("--audio-time-stretch", "--avcodec-skiploopfilter", "-1", "--avcodec-skip-frame", "0",
             "--avcodec-skip-idct", "0", "--stats", "--network-caching=${prefs.bufferMs.coerceIn(300, 10_000)}",
             "--audio-resampler", "soxr", "--android-display-chroma", prefs.vlcChroma, "-v")

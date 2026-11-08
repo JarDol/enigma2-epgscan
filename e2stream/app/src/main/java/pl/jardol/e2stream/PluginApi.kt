@@ -94,6 +94,23 @@ class PluginApi(private val p: Prefs) {
         }
     }
 
+    /** Log / zrzut TS do katalogu aplikacji na dekoderze (zamiast FTP). */
+    fun upload(dir: String, name: String, data: ByteArray) {
+        val c = open("/api/upload?dir=" + enc(dir) + "&name=" + enc(name), 120_000)
+        try {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.setFixedLengthStreamingMode(data.size)
+            c.setRequestProperty("Content-Type", "application/octet-stream")
+            c.outputStream.use { it.write(data) }
+            if (c.responseCode != 200) throw IOException("EPG Scan HTTP ${c.responseCode}")
+            val js = JSONObject(c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+            if (!js.optBoolean("ok")) throw IOException("EPG Scan: ${js.optString("error")}")
+        } finally {
+            c.disconnect()
+        }
+    }
+
     fun syncState(id: String): JSONObject = get("/api/sync/state?id=" + enc(id))
 
     fun syncPush(id: String, body: JSONObject): JSONObject = post("/api/sync/push?id=" + enc(id), body)

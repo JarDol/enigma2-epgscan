@@ -36,7 +36,7 @@ class Prefs(ctx: Context) {
         get() = s("pass")
         set(v) = putS("pass", v)
 
-    /** Tunelowanie wideo (jak w DreamTV/ExoPlayer). */
+    /** Tunelowanie wideo (ExoPlayer). */
     var tunneling: Boolean
         get() = sp.getBoolean("tunneling", true)
         set(v) = putB("tunneling", v)
@@ -284,7 +284,7 @@ class Prefs(ctx: Context) {
         get() = s("engine", "exo")
         set(v) = putS("engine", v)
 
-    /** VLC: usuwanie przeplotu: default (jak VLC/DreamTV), auto, off, yadif, yadif2x, linear, blend, bob, x. */
+    /** VLC: usuwanie przeplotu: default (bez wymuszania, jak VLC), auto, off, yadif, yadif2x, linear, blend, bob, x. */
     var vlcDeint: String
         get() = s("vlcDeint", "default")
         set(v) = putS("vlcDeint", v)

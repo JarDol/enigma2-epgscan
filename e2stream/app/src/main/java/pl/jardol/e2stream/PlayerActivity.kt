@@ -1280,9 +1280,9 @@ class PlayerActivity : Activity() {
             }
             if (ftp) {
                 try {
-                    FtpUpload.upload(host, 21, user, pass, ftpDir, name, data)
+                    val where = Upload.send(prefs, name, data)
                     File(dir, name).delete()   // jest na dekoderze — na urządzeniu nie trzymamy kopii
-                    AppLog.i("zrzut TS wysłany na dekoder: $ftpDir/$name (kopia lokalna usunięta)")
+                    AppLog.i("zrzut TS wysłany na dekoder: $where (kopia lokalna usunięta)")
                 } catch (e: Exception) {
                     AppLog.i("wysyłanie zrzutu TS nieudane: $e")
                 }
