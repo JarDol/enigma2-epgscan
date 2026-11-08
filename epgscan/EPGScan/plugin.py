@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-2.0-or-later
-# EPG Scan 2.11.3 - rownolegle odswiezanie EPG dla Enigma2 (OpenPLi)
+# EPG Scan 2.12.0 - rownolegle odswiezanie EPG dla Enigma2 (OpenPLi)
 #
 # 1.1.0: postep liczony dla wszystkich kanalow z bukietow na danym transponderze
 # 1.2.0: dynamiczny przydzial tunerow (rezerwa wolnych), wspoldzielenie tunerow
@@ -50,6 +50,7 @@
 # 1.7.7: statystyka: podsumowanie, z niego zielony = kanaly od najkrotszego EPG, zolty = duble
 # 1.7.8: naprawiony restart Enigma2 przy otwieraniu statystyki (konflikt nazwy metody keys)
 # 2.2.1: sprzatanie dysku (timeshift, crash logi)
+# 2.12.0: serwer dla klientow streamingu (aplikacja E2Stream): API w sieci lokalnej (port 8770) - bukiety, kanaly z rozwiazanymi alternatywami i PID-ami z lamedb, synchronizacja ustawien i danych kanalow odbiornikow (czesc wspolna + plik kazdego odbiornika)
 # 2.11.3: kultura zapytan - przerwa miedzy stronami przy pobieraniu na dekoderze (domyslnie 1 s, ustawienie), samoczynne wydluzanie przerwy na serwisie po 429/503 (do 5 s); zastrzezenie o danych z serwisow w opisie; opis po angielsku (README.en.md)
 # 2.11.2: listy bukietow jednakowe w calej wtyczce (ten sam uklad okna); SatWatch bez grup alternatyw na liscie, bukiety radiowe z dopiskiem (radio)
 # 2.11.1: jednolity wybor bukietow "Kanaly z bukietow (OK - lista)" w Satelita - EPG, Programie z internetu i SatWatch (bez zoltego w Satelicie); sprzatanie dysku - kilka katalogow z listy (nosniki, timeshift i crash logi z Enigma2, wlasne)
@@ -264,6 +265,12 @@ def sessionstart(reason, session=None, **kwargs):
 			cleanup_start()
 		except Exception:
 			pass
+		try:
+			from .clients import start as clients_start
+			clients_start()
+		except Exception as e:
+			from .common import log
+			log("Serwer dla klientow: %s" % e)
 		from .schedule import start_scheduler
 		start_scheduler(session)
 

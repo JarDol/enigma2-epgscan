@@ -17,7 +17,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.11.3"
+VERSION = "2.12.0"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 TP_STATS = "/etc/enigma2/epgscan_tps.json"
@@ -130,6 +130,10 @@ cfg.local_conn_max = ConfigSelection(default="10", choices=[(str(x), str(x)) for
 # przerwa po kazdej stronie na kazdym polaczeniu (kultura zapytan; przy 429/503 pobieranie samo zwalnia)
 cfg.local_pause = ConfigSelection(default="1", choices=[("0.3", "0,3 s"), ("0.5", "0,5 s"), ("1", "1 s"), ("2", "2 s"), ("3", "3 s")])
 cfg.local_errlog = ConfigYesNo(default=True)
+# serwer dla klientow streamingu (aplikacja E2Stream)
+cfg.cli_api = ConfigYesNo(default=True)
+cfg.cli_port = ConfigInteger(default=8770, limits=(1024, 65535))
+cfg.cli_token = ConfigText(default="", fixed_size=False)
 
 
 def local_conns():

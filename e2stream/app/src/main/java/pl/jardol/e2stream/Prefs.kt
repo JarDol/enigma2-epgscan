@@ -1,0 +1,296 @@
+package pl.jardol.e2stream
+
+import android.content.Context
+import android.content.SharedPreferences
+
+class Prefs(ctx: Context) {
+    private val sp: SharedPreferences =
+        ctx.getSharedPreferences("e2stream", Context.MODE_PRIVATE)
+
+    private fun s(k: String, d: String = "") = sp.getString(k, d) ?: d
+    private fun putS(k: String, v: String) = sp.edit().putString(k, v).apply()
+    private fun putI(k: String, v: Int) = sp.edit().putInt(k, v).apply()
+    private fun putB(k: String, v: Boolean) = sp.edit().putBoolean(k, v).apply()
+
+    /** Adres IP / nazwa dekodera Enigma2. */
+    var host: String
+        get() = s("host")
+        set(v) = putS("host", v)
+
+    /** Port OpenWebif (HTTP). */
+    var httpPort: Int
+        get() = sp.getInt("httpPort", 80)
+        set(v) = putI("httpPort", v)
+
+    /** Port streamingu Enigma2 (domyślnie 8001). */
+    var streamPort: Int
+        get() = sp.getInt("streamPort", 8001)
+        set(v) = putI("streamPort", v)
+
+    var user: String
+        get() = s("user")
+        set(v) = putS("user", v)
+
+    var pass: String
+        get() = s("pass")
+        set(v) = putS("pass", v)
+
+    /** Tunelowanie wideo (jak w DreamTV/ExoPlayer). */
+    var tunneling: Boolean
+        get() = sp.getBoolean("tunneling", true)
+        set(v) = putB("tunneling", v)
+
+    /** Automatyczne wznawianie zawieszonego strumienia. */
+    var watchdog: Boolean
+        get() = sp.getBoolean("watchdog", true)
+        set(v) = putB("watchdog", v)
+
+    /** Po ilu sekundach bez nowych klatek uznać obraz za zawieszony. */
+    var stallSec: Int
+        get() = sp.getInt("stallSec", 3)
+        set(v) = putI("stallSec", v)
+
+    /** Bufor startowy w ms. */
+    var bufferMs: Int
+        get() = sp.getInt("bufferMs", 700)
+        set(v) = putI("bufferMs", v)
+
+    /** Odświeżanie ekranu: 0 = bez zmian, 1 = zawsze 50 Hz, 2 = automatycznie wg treści. */
+    var afrMode: Int
+        get() = sp.getInt("afrMode", if (sp.getBoolean("force50Hz", false)) 1 else 0)
+        set(v) = putI("afrMode", v)
+
+    /** Preferowany język dźwięku (kody ISO 639-2 oddzielone przecinkami). */
+    var audioLang: String
+        get() = s("audioLang", "pol")
+        set(v) = putS("audioLang", v)
+
+    /** Preferuj AC3 / E-AC3 (Dolby) przed MPEG stereo. */
+    var preferAc3: Boolean
+        get() = sp.getBoolean("preferAc3", false)
+        set(v) = putB("preferAc3", v)
+
+    /** Ścieżka dźwięku zapamiętana dla kanału: "id|język|mime". */
+    fun audioFor(ref: String): String = s("audio_" + OpenWebif.key(ref))
+    fun setAudioFor(ref: String, v: String) { putS("audio_" + OpenWebif.key(ref), v); chanDirty = true }
+
+    /** Wysyłanie logu na dekoder przez FTP. */
+    var logFtp: Boolean
+        get() = sp.getBoolean("logFtp", true)
+        set(v) = putB("logFtp", v)
+
+    var ftpUser: String
+        get() = s("ftpUser", "root")
+        set(v) = putS("ftpUser", v)
+
+    var ftpPass: String
+        get() = s("ftpPass")
+        set(v) = putS("ftpPass", v)
+
+    var ftpDir: String
+        get() = s("ftpDir", DEFAULT_FTP_DIR)
+        set(v) = putS("ftpDir", v)
+
+    /** Katalog zapisu logów i zrzutów TS (pusty = domyślny katalog aplikacji). */
+    var storageDir: String
+        get() = s("storageDir")
+        set(v) = putS("storageDir", v)
+
+    /** Zapis ostatnich sekund strumienia TS przy zawieszeniu. */
+    var saveTs: Boolean
+        get() = sp.getBoolean("saveTs", true)
+        set(v) = putB("saveTs", v)
+
+    /** Rozmiar bufora zrzutu TS w MB. */
+    var tsRingMb: Int
+        get() = sp.getInt("tsRingMb", 16)
+        set(v) = putI("tsRingMb", v)
+
+    /** Wysyłanie zrzutów TS także przez FTP na dekoder. */
+    var tsFtp: Boolean
+        get() = sp.getBoolean("tsFtp", false)
+        set(v) = putB("tsFtp", v)
+
+    /** Czyszczenie strumienia przed odtwarzaczem (pakiety uszkodzone / kodowane / obce PMT). */
+    var cleanTs: Boolean
+        get() = sp.getBoolean("cleanTs", true)
+        set(v) = putB("cleanTs", v)
+
+    /** Zapamiętany PMT kanału (surowe pakiety TS, Base64). */
+    fun pmtFor(sid: Int): ByteArray? = s("pmts_$sid").takeIf { it.isNotEmpty() }?.let {
+        try { android.util.Base64.decode(it, android.util.Base64.NO_WRAP) } catch (_: Exception) { null }
+    }
+    fun setPmtFor(sid: Int, b: ByteArray) {
+        val v = android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP)
+        if (s("pmts_$sid") != v) { putS("pmts_$sid", v); chanDirty = true }
+    }
+
+    /** Dane kanałów do synchronizacji z dekoderem (PMT, ścieżki dźwięku). */
+    fun channelData(): Map<String, String> =
+        sp.all.filter { isChannelKey(it.key) && it.value is String }.mapValues { it.value as String }
+
+    fun putChannelData(k: String, v: String) { if (isChannelKey(k)) putS(k, v) }
+
+    /** Wtyczka EPG Scan na dekoderze (serwer dla klientów). */
+    var pluginPort: Int
+        get() = sp.getInt("pluginPort", 8770)
+        set(v) = putI("pluginPort", v)
+
+    var pluginToken: String
+        get() = s("pluginToken")
+        set(v) = putS("pluginToken", v)
+
+    var pluginOk: Boolean
+        get() = sp.getBoolean("pluginOk", false)
+        set(v) = putB("pluginOk", v)
+
+    var pluginVersion: String
+        get() = s("pluginVersion")
+        set(v) = putS("pluginVersion", v)
+
+    /** PID-y kanału z lamedb (JSON z wtyczki). */
+    fun pidsFor(sid: Int): String? = s("pids_$sid").takeIf { it.isNotEmpty() }
+    fun setPidsFor(sid: Int, json: String) { if (s("pids_$sid") != json) putS("pids_$sid", json) }
+
+    /** Nazwa tego odbiornika w synchronizacji (np. „Salon – Philips”). */
+    var deviceName: String
+        get() = s("deviceName", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+        set(v) = putS("deviceName", v)
+
+    /** Synchronizacja ustawień i danych kanałów z dekoderem (FTP). */
+    var channelSync: Boolean
+        get() = sp.getBoolean("channelSync", true)
+        set(v) = putB("channelSync", v)
+
+    /** Są zmiany do wysłania na dekoder. */
+    var chanDirty: Boolean
+        get() = sp.getBoolean("chanDirty", false)
+        set(v) = putB("chanDirty", v)
+
+    /** Czy już zaproponowano pobranie danych kanałów z dekodera (dla danego adresu). */
+    var chanAskedHost: String
+        get() = s("chanAskedHost")
+        set(v) = putS("chanAskedHost", v)
+
+    /** Restart strumienia przy masowej utracie klatek (zacinanie). */
+    var dropRestart: Boolean
+        get() = sp.getBoolean("dropRestart", true)
+        set(v) = putB("dropRestart", v)
+
+    /** Mapowanie klawiszy: "kod=AKCJA,...". */
+    var keyMap: String
+        get() = s("keyMap")
+        set(v) = putS("keyMap", v)
+
+    /** Codzienne pobieranie EPG wg harmonogramu. */
+    var epgDaily: Boolean
+        get() = sp.getBoolean("epgDaily", true)
+        set(v) = putB("epgDaily", v)
+
+    /** Godzina codziennego pobierania EPG "HH:MM". */
+    var epgHour: String
+        get() = s("epgHour", "05:00")
+        set(v) = putS("epgHour", v)
+
+    /** Ile dni EPG do przodu zapisywać. */
+    var epgDays: Int
+        get() = sp.getInt("epgDays", 3)
+        set(v) = putI("epgDays", v)
+
+    var lastEpgFetch: Long
+        get() = sp.getLong("lastEpgFetch", 0)
+        set(v) = sp.edit().putLong("lastEpgFetch", v).apply()
+
+    /** Ikony kanałów z dekodera. */
+    var picons: Boolean
+        get() = sp.getBoolean("picons", true)
+        set(v) = putB("picons", v)
+
+    /** Katalog picon na dekoderze dla FTP (pusty = szukaj w typowych). */
+    var piconDir: String
+        get() = s("piconDir")
+        set(v) = putS("piconDir", v)
+
+    /** Ostatnia awaria aplikacji (pełny opis) — pokazywana raz przy następnym starcie. */
+    var lastCrash: String
+        get() = s("lastCrash")
+        set(v) = sp.edit().putString("lastCrash", v).commit().let { }
+
+    /** Zapas bufora wymagany po niedoborze (ms). */
+    var rebufferMs: Int
+        get() = sp.getInt("rebufferMs", 2000)
+        set(v) = putI("rebufferMs", v)
+
+    /** Statystyki widoczne na ekranie. */
+    var showStats: Boolean
+        get() = sp.getBoolean("showStats", false)
+        set(v) = putB("showStats", v)
+
+    /** Ukryte bukiety (referencje). */
+    var hiddenBouquets: Set<String>
+        get() = HashSet(sp.getStringSet("hiddenBouquets", emptySet()) ?: emptySet())
+        set(v) = sp.edit().putStringSet("hiddenBouquets", HashSet(v)).apply()
+
+    /** PIN do ustawień (pusty = bez blokady). */
+    var pin: String
+        get() = s("pin")
+        set(v) = putS("pin", v)
+
+    var invertUpDown: Boolean
+        get() = sp.getBoolean("invertUpDown", false)
+        set(v) = putB("invertUpDown", v)
+
+    var bannerSec: Int
+        get() = sp.getInt("bannerSec", 4)
+        set(v) = putI("bannerSec", v)
+
+    var resumeLast: Boolean
+        get() = sp.getBoolean("resumeLast", true)
+        set(v) = putB("resumeLast", v)
+
+    var checkUpdates: Boolean
+        get() = sp.getBoolean("checkUpdates", true)
+        set(v) = putB("checkUpdates", v)
+
+    /** Kanał startowy (gdy nie wracamy do ostatniego). */
+    var startBouquet: String
+        get() = s("startBouquet")
+        set(v) = putS("startBouquet", v)
+
+    var startChannel: String
+        get() = s("startChannel")
+        set(v) = putS("startChannel", v)
+
+    var startChannelName: String
+        get() = s("startChannelName")
+        set(v) = putS("startChannelName", v)
+
+    var lastBouquet: String
+        get() = s("lastBouquet")
+        set(v) = putS("lastBouquet", v)
+
+    var lastChannel: String
+        get() = s("lastChannel")
+        set(v) = putS("lastChannel", v)
+
+    /** Zwiększane przy każdym zapisie ustawień — odtwarzacz wie, że ma się przeładować. */
+    val version: Int
+        get() = sp.getInt("version", 0)
+
+    fun bump() = putI("version", version + 1)
+
+    /** Jednorazowe przejście ze starych wartości domyślnych na nowe. */
+    fun migrate() {
+        val v = sp.getInt("prefsVer", 1)
+        if (v < 2) {
+            if (sp.getString("ftpDir", null) == "/tmp") putS("ftpDir", DEFAULT_FTP_DIR)
+            if (sp.getInt("bufferMs", -1) == 1500) putI("bufferMs", 700)
+            putI("prefsVer", 2)
+        }
+    }
+
+    companion object {
+        const val DEFAULT_FTP_DIR = "/media/hdd/e2stream"
+        fun isChannelKey(k: String) = k.startsWith("pmts_") || k.startsWith("audio_")
+    }
+}

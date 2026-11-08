@@ -28,6 +28,7 @@ Więcej zrzutów w [opisie wtyczki](epgscan/EPGScan/README.md).
 |---|---|---|
 | [`epgscan/`](epgscan/) | wtyczka Enigma2 (`/usr/lib/enigma2/python/Plugins/Extensions/EPGScan`) | [epgscan/EPGScan/README.md](epgscan/EPGScan/README.md) |
 | [`epgpl/`](epgpl/) | **opcjonalny** serwer programu TV dla sieci domowej (Debian / Ubuntu) | [epgpl/README.md](epgpl/README.md) |
+| [`e2stream/`](e2stream/) | **E2Stream** – odtwarzacz dla Android TV / tablet / telefon, klient wtyczki (wydania `e2stream-X.Y.Z`) | [e2stream/README.md](e2stream/README.md) |
 
 Serwer nie jest potrzebny – dekoder potrafi pobierać program z internetu sam. epgpl przydaje się, gdy chcesz
 pobierać na komputerze, który i tak pracuje w nocy, albo obsłużyć kilka dekoderów.

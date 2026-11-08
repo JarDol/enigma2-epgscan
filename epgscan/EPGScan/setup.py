@@ -25,7 +25,7 @@ def all_items():
 		cfg.backup_keep, cfg.restore, cfg.log_place, cfg.xmltv, cfg.xmltv_mode, cfg.xmltv_copies, cfg.epgpl_grab, cfg.xmltv_bouquets, cfg.xmltv_gaps,
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
-		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_every,
+		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token,
 		cfg.topup, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
 
 
@@ -111,7 +111,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 	def changed(self):
 		cur = self["config"].getCurrent()
 		if cur and cur[1] in (cfg.backup, cfg.scope, cfg.sched_mode, cfg.sched_wakeup, cfg.skip_empty, cfg.xmltv, cfg.topup,
-				cfg.topup_fixed, cfg.sat_import, cfg.rs_mode, cfg.cl_on) or (cur and is_sw_full(cur[1])):
+				cfg.topup_fixed, cfg.sat_import, cfg.rs_mode, cfg.cl_on, cfg.cli_api) or (cur and is_sw_full(cur[1])):
 			self.build()
 		if cur and cur[1] is cfg.xmltv and cfg.xmltv.value:
 			self.check_sources()
@@ -217,6 +217,9 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				e("Restart po nocnym przebiegu", cfg.rs_mode)]
 			if cfg.rs_mode.value == "need":
 				lst += [e("  Profilaktycznie co [dni]", cfg.rs_days), e("  Gdy wolnej pamieci mniej niz [MB]", cfg.rs_mem)]
+			lst.append(e("Serwer dla aplikacji E2Stream (klienci streamingu)", cfg.cli_api))
+			if cfg.cli_api.value:
+				lst += [e("  Port", cfg.cli_port), e("  Token (puste = bez, siec lokalna)", cfg.cli_token)]
 			lst.append(e("Sprzatanie dysku (timeshift, crash logi)", cfg.cl_on))
 			if cfg.cl_on.value:
 				lst += [e("  Katalogi (OK - lista)", self.p_cldirs), e("  Timeshift starszy niz [h]", cfg.cl_ts_hours),
@@ -242,7 +245,16 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		nb = len(selected_bouquets())
 		allb = len(list_bouquets())
 		txt = "Bukiety: %s.  Plik EPG: %s" % ("wszystkie (%d)" % allb if cfg.scope.value == "all" else "%d z %d" % (nb, allb), epg_path())
-		if item is cfg.scope:
+		if item in (cfg.cli_api, cfg.cli_port, cfg.cli_token):
+			try:
+				from .clients import summary
+				st = summary()
+			except Exception:
+				st = "?"
+			txt = "Aplikacja E2Stream (Android TV, tablet, telefon) pobiera z dekodera bukiety, kanaly z PID-ami i zapisuje " \
+				"tu swoje ustawienia i dane kanalow (czesc wspolna dla nowych odbiornikow + plik kazdego odbiornika). " \
+				"Dziala w sieci lokalnej; token - opcjonalne zabezpieczenie (ten sam wpisz w aplikacji). Stan: %s" % st
+		elif item is cfg.scope:
 			txt = "Ktore kanaly skanowac z satelity. OK - lista bukietow do zaznaczenia (zapis ustawia 'wybrane bukiety'); " \
 				"strzalki - tryb. Wszystkie bukiety: takze bukiety dodane w przyszlosci. Wybrane: tylko zaznaczone. " \
 				"Wszystkie transpondery: cala lista kanalow (lamedb) - skan kilka razy dluzszy, wiekszy plik EPG " \
@@ -552,6 +564,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		if cfg.xmltv_bouquets.isChanged():
 			cfg.xmltv_bq_asked.value = True
 			cfg.xmltv_bq_asked.save()
+		cli_changed = cfg.cli_api.isChanged() or cfg.cli_port.isChanged() or cfg.cli_token.isChanged()
 		sync = cfg.site_order.isChanged() or cfg.xmltv_bouquets.isChanged() or cfg.one_place.isChanged() or cfg.cand_night.isChanged()
 		for x in all_items():
 			x.save()
@@ -567,6 +580,12 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			apply_eit_policy()
 		except Exception as e:
 			log("EIT: %s" % e)
+		if cli_changed:
+			try:
+				from .clients import start as clients_start
+				clients_start()
+			except Exception as e:
+				log("Serwer dla klientow: %s" % e)
 		if sync:
 			try:
 				from .mapping import sync_settings_bg

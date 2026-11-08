@@ -547,6 +547,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Zapisuj log | w katalogu kopii / w `/tmp` (w katalogu kopii) |
 | Restart po nocnym przebiegu | nigdy / gdy potrzebny / zawsze (gdy potrzebny) |
 | Profilaktycznie co [dni], próg wolnej pamięci | (nie, 100 MB) |
+| Serwer dla aplikacji E2Stream | (tak) API dla klientów streamingu w sieci lokalnej: bukiety, kanały z PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników; port (8770), token (puste = bez) |
 | Sprzątanie dysku | (nie); katalogi (OK – lista: nośniki, katalog timeshift i crash logów z ustawień Enigma2, własne – żółty dodaj, niebieski usuń; `/media/hdd`), timeshift starszy niż (6 h), zostaw crash logów – łącznie (10), co ile minut (15) |
 
 ---
@@ -563,6 +564,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | `/etc/enigma2/satellites.xml` | tylko gdy SatWatch zaktualizował transpondery |
 | `/media/hdd/epgscan/` | kopie EPG, log, `lokalne/` (pobrany program, mapa kanałów, raporty) |
 | `/media/hdd/satwatch/` | log i historia raportów SatWatch (gdy wybrano ten katalog) |
+| `/etc/enigma2/epgscan/clients/` | dane aplikacji E2Stream: `common.json` (domyślne dla nowych odbiorników, wspólne PMT kanałów), `device-<id>.json` (każdy odbiornik) |
 
 Wtyczka **nie zmienia**: bukietów (poza naprawą przez SatWatch, zawsze z kopią), ustawień tunerów,
 pliku systemowego `/etc/tuxbox/satellites.xml`, crona. Zmienia ustawienie EIT w Menu → EPG tylko
