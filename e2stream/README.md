@@ -57,7 +57,8 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 ## Ustawienia
 
 * adres dekodera, port OpenWebif (80), port streamingu (8001), login/hasło,
-* tunelowanie (domyślnie włączone),
+* silnik odtwarzania: ExoPlayer (domyślnie) albo VLC – dla każdego odbiornika osobno; przy VLC wybór usuwania przeplotu i dekodowania sprzętowego/programowego,
+* tunelowanie (ExoPlayer, domyślnie włączone),
 * watchdog i próg zawieszenia (domyślnie 3 s),
 * bufor startowy – szybki obraz po przełączeniu (domyślnie 700 ms),
 * zapas w trakcie oglądania (domyślnie 4000 ms): po starcie odtwarzanie jest lekko zwalniane (0,95×, wysokość dźwięku bez zmian), aż bufor dojdzie do zapasu; przerwy w paczkach z dekodera nie powodują wtedy czkawki. Przy tunelowaniu zwolnienia nie ma (zmiana prędkości psuła płynność obrazu) – wtedy o płynności decyduje bufor startowy (na MiBox 4 zalecane 2500 ms), a zapas buduje się po pierwszym niedoborze,
@@ -81,7 +82,7 @@ APK jest podpisywany stałym kluczem `keystore/e2stream.jks` – kolejne wersje 
 
 ## Licencja
 
-GPL-2.0-or-later. Korzysta z AndroidX Media3 (Apache-2.0).
+GPL-2.0-or-later (z Media3 na Apache-2.0 rozpowszechniana jako całość na warunkach GPL-3.0). Korzysta z AndroidX Media3 (Apache-2.0), libVLC (LGPL-2.1+) i JLayer (LGPL-2.1) – szczegóły w [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Współpraca z wtyczką EPG Scan
 

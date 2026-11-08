@@ -133,6 +133,7 @@ class PlayerActivity : Activity() {
         AppLog.i("=== Start E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} | ${prefs.displayName} | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) | ekran: ${displayInfo()}")
 
         playerView = findViewById(R.id.playerView)
+        vlcLayout = findViewById(R.id.vlcLayout)
         panel = findViewById(R.id.panel)
         panelTitle = findViewById(R.id.panelTitle)
         list = findViewById(R.id.list)
@@ -572,6 +573,9 @@ class PlayerActivity : Activity() {
     }
 
     private fun releasePlayer() {
+        ui.removeCallbacks(vlcTick)
+        vlc?.release(); vlc = null
+        proxy?.stop(); proxy = null
         watchdog?.stop()
         watchdog = null
         ui.removeCallbacks(restartRunnable)
@@ -615,6 +619,12 @@ class PlayerActivity : Activity() {
         // SID serwisu = 4. pole referencji (hex), np. 1:0:19:3DD2:640:13E:820000:0:0:0:
         val sid = url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
         analyzer?.reset(sid)
+        if (prefs.engine == "vlc") {
+            startVlc(url)
+            return
+        }
+        vlcLayout.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
             .build()
@@ -622,6 +632,48 @@ class PlayerActivity : Activity() {
         p.prepare()
         p.playWhenReady = true
         watchdog?.reset()
+    }
+
+    // ---------------------------------------------------------------- VLC
+
+    private lateinit var vlcLayout: org.videolan.libvlc.util.VLCVideoLayout
+    private var vlc: VlcEngine? = null
+    private var proxy: TsProxy? = null
+    private var vlcLastTime = -1L
+    private var vlcLastMove = 0L
+
+    private fun startVlc(url: String) {
+        player?.stop()
+        playerView.visibility = View.GONE
+        vlcLayout.visibility = View.VISIBLE
+        val px = proxy ?: TsProxy({ analyzer }, { api.authHeader() }).also { it.start(); proxy = it }
+        px.setTarget(url)
+        val v = vlc ?: VlcEngine(this, prefs, vlcLayout,
+            onEvent = { m -> if (!readyLogged) { readyLogged = true; AppLog.i("start: $m po ${SystemClock.elapsedRealtime() - streamStartAt} ms") } },
+            onFailure = { r -> scheduleRestart(r) }).also { vlc = it }
+        AppLog.i("VLC: ${v.info()}")
+        vlcLastTime = -1
+        vlcLastMove = SystemClock.elapsedRealtime()
+        v.play(px.url())
+        ui.removeCallbacks(vlcTick)
+        ui.postDelayed(vlcTick, 2000)
+    }
+
+    /** Zawieszenie przy VLC: czas odtwarzania stoi dłużej niż próg (po starcie: 15 s). */
+    private val vlcTick = object : Runnable {
+        override fun run() {
+            val v = vlc ?: return
+            if (prefs.engine != "vlc") return
+            ui.postDelayed(this, 1000)
+            val now = SystemClock.elapsedRealtime()
+            val t = v.time()
+            if (t != vlcLastTime) { vlcLastTime = t; vlcLastMove = now; return }
+            val limit = if (v.playing) prefs.stallSec.coerceIn(1, 30) * 1000L + 2000 else 15_000L
+            if (prefs.watchdog && now - vlcLastMove > limit) {
+                vlcLastMove = now
+                scheduleRestart("VLC: obraz stoi ${limit / 1000} s")
+            }
+        }
     }
 
     private val restartRunnable = Runnable { doRestart() }
@@ -970,7 +1022,8 @@ class PlayerActivity : Activity() {
                     "${it.sampleMimeType ?: "?"} ${it.channelCount}ch ${it.language ?: ""}"
                 } ?: "-")
             )
-            appendLine("Tunelowanie: " + if (prefs.tunneling) "włączone" else "wyłączone")
+            if (prefs.engine == "vlc") appendLine("Silnik: ${vlc?.info() ?: "VLC"}")
+            else appendLine("Tunelowanie: " + if (prefs.tunneling) "włączone" else "wyłączone")
             appendLine("Bufor: ${p.totalBufferedDuration} ms / zapas $cushionTarget ms" +
                 (if (cushionSpeed != 1f) " (dobudowuję, ${"%.2f".format(cushionSpeed)}×)" else if (cushionDisabled || prefs.tunneling || !prefs.cushionSlow) " (bez zwolnienia)" else "") +
                 "   start obrazu: " + (if (lastStartMs >= 0) "$lastStartMs ms" else "-"))
@@ -1140,6 +1193,7 @@ class PlayerActivity : Activity() {
         prefs.host, prefs.streamPort, prefs.httpPort, prefs.user, prefs.pass, prefs.tunneling, prefs.watchdog,
         prefs.stallSec, prefs.bufferMs, prefs.rebufferMs, prefs.cushionSlow, prefs.dropRestart, prefs.audioLang,
         prefs.preferAc3, prefs.saveTs, prefs.tsRingMb, prefs.pluginPort, prefs.pluginToken,
+        prefs.engine, prefs.vlcDeint, prefs.vlcHw,
     ).joinToString("|")
 
     override fun onResume() {

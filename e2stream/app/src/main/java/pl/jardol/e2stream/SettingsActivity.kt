@@ -113,7 +113,10 @@ class SettingsActivity : Activity() {
         Item.Action("Pobierz ikony od nowa") { sync(true) },
 
         Item.Header("Odtwarzanie"),
-        Item.Toggle("Tunelowanie wideo", { p.tunneling }, { p.tunneling = it }),
+        Item.Action("Silnik odtwarzania", { if (p.engine == "vlc") "VLC" else "ExoPlayer" }) { chooseEngine() },
+        Item.Action("VLC: usuwanie przeplotu", { deintName(p.vlcDeint) }) { chooseDeint() },
+        Item.Toggle("VLC: dekodowanie sprzętowe", { p.vlcHw }, { p.vlcHw = it }),
+        Item.Toggle("Tunelowanie wideo (ExoPlayer)", { p.tunneling }, { p.tunneling = it }),
         Item.Toggle("Wznawiaj zawieszony obraz (watchdog)", { p.watchdog }, { p.watchdog = it }),
         Item.Toggle("Wznawiaj przy zacinaniu (utrata klatek)", { p.dropRestart }, { p.dropRestart = it }),
         num("Zawieszenie po (s bez nowych klatek)", { p.stallSec }, { p.stallSec = it }, 1..30),
@@ -234,6 +237,28 @@ class SettingsActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Odświeżanie ekranu")
             .setSingleChoiceItems(opts, p.afrMode) { d, w -> p.afrMode = w; d.dismiss(); markChanged("odświeżanie = ${opts[w]}") }
             .show()
+    }
+
+    private fun chooseEngine() {
+        val ids = arrayOf("exo", "vlc")
+        val opts = arrayOf("ExoPlayer (tunelowanie, najszybszy start)", "VLC (inne usuwanie przeplotu i odmierzanie klatek)")
+        AlertDialog.Builder(this).setTitle("Silnik odtwarzania na tym odbiorniku")
+            .setSingleChoiceItems(opts, ids.indexOf(p.engine).coerceAtLeast(0)) { d, w ->
+                p.engine = ids[w]; d.dismiss(); markChanged("silnik = ${ids[w]}")
+            }.show()
+    }
+
+    private val deintIds = arrayOf("auto", "off", "yadif", "yadif2x", "bob", "linear", "blend", "x")
+    private fun deintName(id: String) = when (id) {
+        "auto" -> "automatycznie"; "off" -> "wyłączone"; "yadif2x" -> "yadif 2x (50 kl./s)"; "bob" -> "bob (50 kl./s)"
+        else -> id
+    }
+
+    private fun chooseDeint() {
+        AlertDialog.Builder(this).setTitle("VLC: usuwanie przeplotu")
+            .setSingleChoiceItems(deintIds.map { deintName(it) }.toTypedArray(), deintIds.indexOf(p.vlcDeint).coerceAtLeast(0)) { d, w ->
+                p.vlcDeint = deintIds[w]; d.dismiss(); markChanged("VLC przeplot = ${deintIds[w]}")
+            }.show()
     }
 
     private fun chooseStorage() {

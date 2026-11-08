@@ -17,6 +17,14 @@
         app:surface_type="surface_view"
         app:use_controller="false" />
 
+    <!-- obraz z VLC (silnik odtwarzania „VLC” w ustawieniach odbiornika) -->
+    <org.videolan.libvlc.util.VLCVideoLayout
+        android:id="@+id/vlcLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:focusable="false"
+        android:visibility="gone" />
+
     <!-- Lista kanałów: cały ekran, 3/4 lista, 1/4 bieżąca audycja zaznaczonego kanału -->
     <LinearLayout
         android:id="@+id/panel"

@@ -258,6 +258,21 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("rebufferMs", 4000)
         set(v) = putI("rebufferMs", v)
 
+    /** Silnik odtwarzania: exo (ExoPlayer) albo vlc (libVLC). */
+    var engine: String
+        get() = s("engine", "exo")
+        set(v) = putS("engine", v)
+
+    /** VLC: usuwanie przeplotu: auto, off, yadif, yadif2x, linear, blend, bob, x. */
+    var vlcDeint: String
+        get() = s("vlcDeint", "auto")
+        set(v) = putS("vlcDeint", v)
+
+    /** VLC: dekodowanie sprzętowe (MediaCodec). */
+    var vlcHw: Boolean
+        get() = sp.getBoolean("vlcHw", true)
+        set(v) = putB("vlcHw", v)
+
     /** Dobudowywanie zapasu przez lekkie zwolnienie odtwarzania (niesłyszalne, wysokość dźwięku bez zmian). */
     var cushionSlow: Boolean
         get() = sp.getBoolean("cushionSlow", true)
