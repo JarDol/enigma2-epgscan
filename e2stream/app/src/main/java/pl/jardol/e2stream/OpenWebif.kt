@@ -80,7 +80,12 @@ class OpenWebif(private val p: Prefs) {
         authHeader()?.let { c.setRequestProperty("Authorization", it) }
         try {
             val code = c.responseCode
-            if (code != 200) throw IOException("HTTP $code")
+            if (code != 200) {
+                // treść błędu z OpenWebif (np. ślad wyjątku Pythona) — do logu
+                val err = try { c.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } } catch (_: Exception) { null }
+                val brief = err?.replace(Regex("<[^>]+>"), " ")?.replace(Regex("\\s+"), " ")?.trim()?.takeLast(300)
+                throw IOException("HTTP $code" + (brief?.let { " — $it" } ?: ""))
+            }
             val body = c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             return JSONObject(body)
         } finally {
@@ -189,10 +194,25 @@ class OpenWebif(private val p: Prefs) {
     /** Wyszukiwanie w EPG po tytule. */
     fun epgSearch(q: String): List<EpgEvent> = events(get("/api/epgsearch?search=" + enc(q)))
 
-    /** Nagranie audycji na dekoderze (timer z EPG). */
-    fun timerAdd(ref: String, eventId: Int): Pair<Boolean, String> {
-        val js = get("/api/timeraddbyeventid?sRef=" + enc(ref) + "&eventid=" + eventId)
-        return js.optBoolean("result") to js.optString("message")
+    /**
+     * Nagranie audycji na dekoderze (timer z EPG): najpierw po identyfikatorze audycji (z marginesami
+     * z ustawień Enigmy2), a gdy OpenWebif tego nie przyjmie — z czasem i tytułem audycji.
+     */
+    fun timerAdd(ref: String, ev: EpgEvent): Pair<Boolean, String> {
+        val first = try {
+            val js = get("/api/timeraddbyeventid?sRef=" + enc(ref) + "&eventid=" + ev.id)
+            js.optBoolean("result") to js.optString("message")
+        } catch (e: Exception) {
+            false to (e.message ?: e.toString())
+        }
+        if (first.first) return first
+        AppLog.i("nagranie po identyfikatorze audycji nieudane (${first.second}) — z czasem i tytułem")
+        val before = 120L
+        val after = 300L
+        val js = get("/api/timeradd?sRef=" + enc(ref) + "&begin=" + (ev.begin - before) + "&end=" + (ev.end + after) +
+            "&name=" + enc(ev.title) + "&description=" + enc(ev.shortDesc.ifBlank { ev.longDesc }.take(200)) +
+            "&eit=" + ev.id + "&disabled=0&justplay=0&afterevent=3")
+        return js.optBoolean("result") to (js.optString("message") + " (margines 2 min przed, 5 min po)")
     }
 
     fun streamUrl(c: Channel): String =

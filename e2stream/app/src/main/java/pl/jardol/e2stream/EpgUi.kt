@@ -105,7 +105,8 @@ class EpgUi(
     // ------------------------------------------------------------ audycja
 
     fun showEvent(ev: EpgEvent, ch: Channel?) {
-        val ref = ev.sref.ifBlank { ch?.ref ?: "" }
+        // referencja w pełnej postaci z listy kanałów (z paczki EPG przychodzi skrócona: bez końcowego „:”)
+        val ref = (ch?.ref?.takeIf { it.isNotBlank() } ?: ev.sref).let { if (it.count { c -> c == ':' } == 9) "$it:" else it }
         val name = ev.sname.ifBlank { ch?.name ?: "" }
         val running = ev.begin <= now() && ev.end > now()
         val head = buildString {
@@ -179,7 +180,7 @@ class EpgUi(
 
     private fun record(ref: String, ev: EpgEvent) {
         io.execute {
-            val r = try { api.timerAdd(ref, ev.id) } catch (e: Exception) { false to (e.message ?: e.toString()) }
+            val r = try { api.timerAdd(ref, ev) } catch (e: Exception) { false to (e.message ?: e.toString()) }
             AppLog.i("nagranie: ${ev.title} ${d(ev.begin)} ${t(ev.begin)} -> ${r.first} ${r.second}")
             a.runOnUiThread {
                 host.message(if (r.first) "Nagranie ustawione: ${ev.title}" else "Nie udało się ustawić nagrania: ${r.second}")
