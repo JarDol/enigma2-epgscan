@@ -1347,8 +1347,10 @@ class PlayerActivity : Activity() {
             val same = d.supportedModes.filter {
                 it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight
             }
-            val exact = same.minByOrNull { abs(it.refreshRate - rate) }
-                ?.takeIf { abs(it.refreshRate - rate) < 0.1f }
+            // bieżący tryb już ma właściwe odświeżanie — nie przełączamy (MiBox po każdej zmianie trybu
+            // numeruje tryby od nowa, a kilka trybów 50 Hz bywa różnych, np. 1080p50 / 1080i50)
+            val exact = (if (abs(cur.refreshRate - rate) < 0.1f) cur else null)
+                ?: same.minByOrNull { abs(it.refreshRate - rate) }?.takeIf { abs(it.refreshRate - rate) < 0.1f }
             val multiple = same.firstOrNull {
                 val k = it.refreshRate / rate
                 k >= 1.9f && abs(k - Math.round(k)) < 0.01f
@@ -1357,9 +1359,11 @@ class PlayerActivity : Activity() {
             if (target == 0) AppLog.i("ekran: brak trybu dla $rate Hz (${displayInfo()})")
         }
         if (lp.preferredDisplayModeId != target) {
+            val cur = d.mode
             lp.preferredDisplayModeId = target
             window.attributes = lp
-            AppLog.i("ekran: preferowany tryb id=$target")
+            val modes = d.supportedModes.joinToString(" ") { "${it.modeId}:${it.physicalWidth}x${it.physicalHeight}@${"%.2f".format(it.refreshRate)}" }
+            AppLog.i("ekran: preferowany tryb id=$target (bieżący id=${cur.modeId} ${"%.2f".format(cur.refreshRate)} Hz; tryby: $modes)")
         }
     }
 }
