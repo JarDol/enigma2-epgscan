@@ -207,7 +207,7 @@ class PlayerActivity : Activity() {
         ensureAnalyzer()
         buildPlayer()
         applyDisplayMode()
-        if (prefs.checkUpdates && !updateChecked) {
+        if (!updateChecked) {
             updateChecked = true
             ui.postDelayed({ checkUpdate(false) }, 8000)
         }

@@ -96,7 +96,7 @@ class SettingsActivity : Activity() {
         }) { if (p.resumeLast) toast("Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”") else chooseStartChannel() },
         Item.Toggle("Odwróć ▲ / ▼ przy zmianie kanału", { p.invertUpDown }, { p.invertUpDown = it }),
         num("Czas paska kanału (s)", { p.bannerSec }, { p.bannerSec = it }, 1..30),
-        Item.Toggle("Sprawdzaj aktualizacje przy starcie", { p.checkUpdates }, { p.checkUpdates = it }),
+        Item.Toggle("Automatyczna aktualizacja", { p.autoUpdate }, { p.autoUpdate = it }),
         Item.Text("PIN do ustawień", { p.pin }, { p.pin = it.trim() },
             InputType.TYPE_CLASS_NUMBER, secret = true, hint = "puste = bez blokady; odblokowanie na 1 min"),
 

@@ -44,5 +44,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Ustawienie automatycznej aktualizacji dla APK Updatera -->
+        <provider
+            android:name=".UpdateInfoProvider"
+            android:authorities="${applicationId}.updateinfo"
+            android:exported="true" />
     </application>
 </manifest>

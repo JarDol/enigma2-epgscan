@@ -139,11 +139,37 @@ object Tools {
                 val cur = appVersion(a)
                 when {
                     info == null -> if (manual) msg("Nie udało się sprawdzić aktualizacji")
-                    Updater.newer(info.version, cur) ->
-                        if (manual) askUpdate(a, info, msg)
-                        else msg("Dostępna wersja ${info.version} — Ustawienia → Sprawdź aktualizację")
+                    Updater.newer(info.version, cur) -> when {
+                        manual -> askUpdate(a, info, msg)
+                        Prefs(a).autoUpdate -> {
+                            AppLog.i("aktualizacja automatyczna: ${info.version}")
+                            msg("Aktualizacja do wersji ${info.version}…")
+                            downloadAndInstall(a, info, msg)
+                        }
+                        else -> msg("Dostępna wersja ${info.version} — Ustawienia → Sprawdź aktualizację")
+                    }
                     else -> if (manual) msg("Masz najnowszą wersję ($cur)")
                 }
+            }
+        }.start()
+    }
+
+    private fun downloadAndInstall(a: Activity, info: Updater.Info, msg: (String) -> Unit) {
+        AppLog.i("aktualizacja: pobieram ${info.url}")
+        Thread {
+            try {
+                var last = -1
+                val apk = Updater.download(a, info) { pct ->
+                    if (pct / 10 != last) { last = pct / 10; ui.post { msg("Pobieranie $pct%") } }
+                }
+                ui.post {
+                    if (!Updater.install(a, apk)) {
+                        msg("Zezwól E2Stream na instalowanie aplikacji i spróbuj ponownie")
+                    }
+                }
+            } catch (e: Exception) {
+                AppLog.i("aktualizacja: błąd pobierania $e")
+                ui.post { msg("Błąd pobierania: ${e.message}") }
             }
         }.start()
     }
@@ -152,25 +178,7 @@ object Tools {
         AlertDialog.Builder(a)
             .setTitle("Aktualizacja E2Stream")
             .setMessage("Dostępna wersja ${info.version} (masz ${appVersion(a)}). Pobrać i zainstalować?")
-            .setPositiveButton("Tak") { _, _ ->
-                AppLog.i("aktualizacja: pobieram ${info.url}")
-                Thread {
-                    try {
-                        var last = -1
-                        val apk = Updater.download(a, info) { pct ->
-                            if (pct / 10 != last) { last = pct / 10; ui.post { msg("Pobieranie $pct%") } }
-                        }
-                        ui.post {
-                            if (!Updater.install(a, apk)) {
-                                msg("Zezwól E2Stream na instalowanie aplikacji i spróbuj ponownie")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        AppLog.i("aktualizacja: błąd pobierania $e")
-                        ui.post { msg("Błąd pobierania: ${e.message}") }
-                    }
-                }.start()
-            }
+            .setPositiveButton("Tak") { _, _ -> downloadAndInstall(a, info, msg) }
             .setNegativeButton("Nie", null)
             .show()
     }

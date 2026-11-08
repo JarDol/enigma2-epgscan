@@ -248,9 +248,13 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("resumeLast", true)
         set(v) = putB("resumeLast", v)
 
-    var checkUpdates: Boolean
-        get() = sp.getBoolean("checkUpdates", true)
-        set(v) = putB("checkUpdates", v)
+    /**
+     * Automatyczna aktualizacja: tak = przy starcie (i przez APK Updater w tle) nowa wersja instaluje się sama,
+     * nie = tylko informacja i ręczna aktualizacja z ustawień. APK Updater czyta to przez [UpdateInfoProvider].
+     */
+    var autoUpdate: Boolean
+        get() = sp.getBoolean("autoUpdate", true)
+        set(v) = putB("autoUpdate", v)
 
     /** Kanał startowy (gdy nie wracamy do ostatniego). */
     var startBouquet: String
