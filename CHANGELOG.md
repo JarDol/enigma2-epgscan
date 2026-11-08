@@ -2,6 +2,7 @@
 
 ## EPG Scan (wtyczka Enigma2)
 
+- **2.15.1** – dane dla E2Stream: ustawienia zależne od urządzenia (silnik odtwarzania, obraz, bufory, wygląd) nie trafiają do części wspólnej (nowy telewizor nie przejmuje ich od innego; stare wpisy usuwane); paczka ikon tylko z serwisów DVB (bez strumieni IPTV z adresami)
 - **2.15.0** – serwer dla E2Stream przyjmuje log i zrzuty TS aplikacji (zamiast FTP; tylko `e2stream-*.log` i `stall-*.ts`, tylko w katalogach na nośnikach albo /tmp) – z wtyczką aplikacja nie potrzebuje FTP
 - **2.14.1** – sprzątanie dysku: także zrzuty TS aplikacji E2Stream (`stall-*.ts` w jej katalogu na dekoderze) starsze niż N dni (domyślnie 7)
 - **2.14.0** – dane dla aplikacji E2Stream jako ostatni krok pracy z harmonogramu (po SatWatch, skanie i imporcie EPG): paczka z EPG kanałów wszystkich bukietów TV, ikonami kanałów i zamianami referencji (ta sama nazwa w bukiecie, nowa referencja – np. po zmianach na satelicie); opcja i *Przygotuj dane teraz* w ustawieniach serwera dla E2Stream; katalog obok kopii EPG (albo /tmp)

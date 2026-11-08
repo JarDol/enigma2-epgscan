@@ -69,7 +69,7 @@ class SettingsActivity : Activity() {
         return listOf<Item>(Item.Header(sec)) + when (sec) {
             "Dekoder Enigma2" -> listOf(
                 Item.Header("Dekoder"),
-        Item.Text("Adres IP dekodera", { p.host }, { p.host = it.trim() }, hint = "np. 192.168.1.20"),
+        Item.Text("Adres IP dekodera", { p.host }, { p.host = it.trim(); checkPluginQuiet() }, hint = "np. 192.168.1.20"),
         Item.Action("Szukaj dekoderów w sieci") { discover() },
         num("Port OpenWebif", { p.httpPort }, { p.httpPort = it }, 1..65535),
         num("Port streamingu", { p.streamPort }, { p.streamPort = it }, 1..65535),
@@ -92,10 +92,12 @@ class SettingsActivity : Activity() {
             )
             "Odtwarzanie i obraz" -> listOf(
         Item.Action("Silnik odtwarzania", { if (p.engine == "vlc") "VLC" else "ExoPlayer" }) { chooseEngine() },
+    ) + (if (p.engine == "vlc") listOf(
         Item.Action("VLC: usuwanie przeplotu", { deintName(p.vlcDeint) }) { chooseDeint() },
         Item.Action("VLC: akceleracja sprzętowa", { hwName(p.vlcHwMode) }) { chooseHw() },
         Item.Action("VLC: format obrazu (chroma)", { p.vlcChroma }) { chooseChroma() },
-        Item.Toggle("Tunelowanie wideo (ExoPlayer)", { p.tunneling }, { p.tunneling = it }),
+    ) else listOf(
+        Item.Toggle("Tunelowanie wideo", { p.tunneling }, { p.tunneling = it }),
         Item.Action("ExoPlayer: liczba klatek dla dekodera (eksperyment)", { if (p.exoFps > 0) "${p.exoFps} kl./s" else "nie podawaj" }) {
             val ids = intArrayOf(0, 25, 50)
             AlertDialog.Builder(this).setTitle("Liczba klatek dla dekodera (eksperyment)")
@@ -103,12 +105,13 @@ class SettingsActivity : Activity() {
                     p.exoFps = ids[w]; d.dismiss(); markChanged("ExoPlayer fps = ${ids[w]}")
                 }.show()
         },
-        Item.Toggle("Wznawiaj zawieszony obraz (watchdog)", { p.watchdog }, { p.watchdog = it }),
         Item.Toggle("Wznawiaj przy zacinaniu (utrata klatek)", { p.dropRestart }, { p.dropRestart = it }),
-        num("Zawieszenie po (s bez nowych klatek)", { p.stallSec }, { p.stallSec = it }, 1..30),
-        num("Bufor startowy (ms) — szybki obraz", { p.bufferMs }, { p.bufferMs = it }, 250..10_000),
         num("Zapas w trakcie oglądania (ms)", { p.rebufferMs }, { p.rebufferMs = it }, 1000..15_000),
         Item.Toggle("Dobuduj zapas lekkim zwolnieniem (5%, tylko bez tunelowania)", { p.cushionSlow }, { p.cushionSlow = it }),
+    )) + listOf(
+        Item.Toggle("Wznawiaj zawieszony obraz (watchdog)", { p.watchdog }, { p.watchdog = it }),
+        num("Zawieszenie po (s bez nowych klatek)", { p.stallSec }, { p.stallSec = it }, 1..30),
+        num("Bufor startowy (ms) — szybki obraz", { p.bufferMs }, { p.bufferMs = it }, 250..10_000),
         Item.Action("Odświeżanie ekranu", { afrName(p.afrMode) }) { chooseAfr() },
                 Item.Header("Dźwięk"),
         Item.Text("Preferowany język", { p.audioLang }, { p.audioLang = it.trim().ifEmpty { "pol" } }, hint = "ISO 639-2, np. pol,eng"),
@@ -196,7 +199,7 @@ class SettingsActivity : Activity() {
                     setPadding(40, 20, 40, 20); setTextIsSelectable(false)
                 }
                 val sv = android.widget.ScrollView(this).apply { addView(tv); isFocusable = true }
-                AlertDialog.Builder(this).setTitle("Opis: $title").setView(sv).setPositiveButton("Zamknij", null).show()
+                AlertDialog.Builder(this).setTitle("Opis: $title").setView(sv).setPositiveButton("Zamknij", null).show().also { fit(it) }
                 sv.requestFocus()
             }
         }.start()
@@ -213,6 +216,7 @@ class SettingsActivity : Activity() {
 
     private fun openSection(name: String) {
         section = name
+        if (name == "Dekoder Enigma2" || name == "Informacje i aktualizacje" || name == "Logi i zrzuty") checkPluginQuiet()
         items = buildItems()
         refresh()
         listView.setSelection(items.indexOfFirst { it !is Item.Header }.coerceAtLeast(0))
@@ -347,6 +351,7 @@ class SettingsActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Silnik odtwarzania na tym odbiorniku")
             .setSingleChoiceItems(opts, ids.indexOf(p.engine).coerceAtLeast(0)) { d, w ->
                 p.engine = ids[w]; d.dismiss(); markChanged("silnik = ${ids[w]}")
+                items = buildItems(); refresh()
             }.show()
     }
 
@@ -404,6 +409,7 @@ class SettingsActivity : Activity() {
                     .setItems(found.map { "${it.ip}   ${it.label}" }.toTypedArray()) { _, w ->
                         p.host = found[w].ip
                         markChanged("dekoder = ${found[w].ip} (${found[w].label})")
+                        checkPluginQuiet()
                     }
                     .show()
             }
@@ -426,7 +432,7 @@ class SettingsActivity : Activity() {
                         markChanged("bukiety: ukryte ${p.hiddenBouquets.size}")
                     }
                     .setNegativeButton("Anuluj", null)
-                    .show()
+                    .show().also { fit(it) }
             }
         }.start()
     }
@@ -458,13 +464,33 @@ class SettingsActivity : Activity() {
                                         d.dismiss()
                                         markChanged("kanał startowy = ${p.startChannelName}")
                                     }
-                                    .show()
+                                    .show().also { fit(it) }
                             }
                         }.start()
                     }
                     .show()
             }
         }.start()
+    }
+
+    /** Sprawdzenie wtyczki w tle (po wyborze dekodera i przy wejściu w sekcje) — stan od razu w ustawieniach. */
+    private fun checkPluginQuiet() {
+        if (p.host.isBlank()) return
+        Thread {
+            val was = p.pluginOk
+            val ok = PluginApi.check(p)
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                if (ok != was) AppLog.i("ustawienia: wtyczka EPG Scan ${if (ok) p.pluginVersion else "brak"}")
+                items = buildItems(); refresh()
+            }
+        }.start()
+    }
+
+    /** Okno z długą listą lub tekstem: stały rozmiar, żeby przyciski zawsze były widoczne (np. Philips). */
+    private fun fit(d: AlertDialog) {
+        val dm = resources.displayMetrics
+        d.window?.setLayout((dm.widthPixels * 0.7).toInt(), (dm.heightPixels * 0.85).toInt())
     }
 
     private fun checkPlugin() {

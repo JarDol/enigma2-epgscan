@@ -161,8 +161,11 @@ object EpgSync {
         if (prefs.picons) {
             progress("Ikony z dekodera…")
             val zf = File(tmp, "picons.zip")
-            if (api.packFile("picons.zip", zf)) {
-                icons = Picons.importZip(ctx, zf)
+            try {
+                if (api.packFile("picons.zip", zf)) icons = Picons.importZip(ctx, zf)
+            } catch (e: Exception) {
+                AppLog.i("paczka EPG Scan: ikony pominięte ($e)")
+            } finally {
                 zf.delete()
             }
         }

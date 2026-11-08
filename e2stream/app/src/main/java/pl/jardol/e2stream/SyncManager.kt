@@ -40,6 +40,17 @@ object SyncManager {
         "epgDaily", "epgHour", "epgDays", "picons", "piconDir", "showStats",
     )
 
+    /**
+     * Ustawienia zależne od urządzenia (silnik, obraz, bufory, wygląd): tylko w pliku odbiornika,
+     * nigdy jako wartości domyślne dla innych — nowy telewizor dostaje domyślne aplikacji.
+     */
+    private val DEVICE_ONLY = setOf(
+        "engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps",
+        "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon",
+        "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "stallSec", "dropRestart", "watchdog",
+        "showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3",
+    )
+
     /** Przy pierwszym uruchomieniu nie nadpisujemy tego, co użytkownik właśnie wpisał. */
     private val KEEP_ON_FIRST = setOf("ftpUser", "ftpPass", "ftpDir")
 
@@ -145,6 +156,7 @@ object SyncManager {
         var dev: JSONObject? = null
         var legacy: JSONObject? = null
         // wtyczka EPG Scan na dekoderze — przez jej API (bez FTP); inaczej pliki przez FTP
+        if (!prefs.pluginOk) PluginApi.check(prefs)
         val plugin = if (prefs.pluginOk) PluginApi(prefs) else null
         if (plugin != null) {
             val st = plugin.syncState(deviceId())
@@ -184,6 +196,7 @@ object SyncManager {
                     val src = dData ?: cData
                     for (k in src.keys()) {
                         if (!isDeviceKey(k) || k in KEEP_ON_FIRST) continue
+                        if (dData == null && k in DEVICE_ONLY) continue   // z części wspólnej tylko ustawienia ogólne
                         val e = src.optJSONObject(k) ?: continue
                         put(ed, k, e.opt("v")); metaEd.putLong("t_$k", e.optLong("t")); applied++
                         if (isSetting(k)) settingsApplied = true
@@ -234,7 +247,7 @@ object SyncManager {
             val has = cData.optJSONObject(k)
             val write = when {
                 isPmt(k) -> has == null || t > has.optLong("t")
-                isDeviceKey(k) -> has == null
+                isDeviceKey(k) -> has == null && k !in DEVICE_ONLY
                 else -> false
             }
             if (write) { cData.put(k, entry(v, t)); commonChanged = true }

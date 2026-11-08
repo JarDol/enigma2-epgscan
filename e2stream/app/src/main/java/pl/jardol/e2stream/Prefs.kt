@@ -53,7 +53,7 @@ class Prefs(ctx: Context) {
 
     /** Bufor startowy w ms. */
     var bufferMs: Int
-        get() = sp.getInt("bufferMs", 700)
+        get() = sp.getInt("bufferMs", 1500)
         set(v) = putI("bufferMs", v)
 
     /** Odświeżanie ekranu: 0 = bez zmian, 1 = zawsze 50 Hz, 2 = automatycznie wg treści. */

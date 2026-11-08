@@ -221,7 +221,20 @@ def _is_pmt(k):
 
 
 def state(dev_id):
-	return {"common": _load(COMMON, {"data": {}}), "device": _load(_dev_path(dev_id))}
+	common = _load(COMMON, {"data": {}}) or {"data": {}}
+	cd = common.get("data") or {}
+	common["data"] = dict((k, v) for k, v in cd.items() if k not in DEVICE_ONLY)
+	return {"common": common, "device": _load(_dev_path(dev_id))}
+
+
+# ustawienia zalezne od urzadzenia (silnik, obraz, bufory, wyglad) - nie trafiaja do czesci wspolnej,
+# nowy odbiornik dostaje dla nich wartosci domyslne aplikacji, a nie ustawienia innego telewizora
+DEVICE_ONLY = set([
+	"engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps",
+	"uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon",
+	"bufferMs", "rebufferMs", "cushionSlow", "afrMode", "stallSec", "dropRestart", "watchdog",
+	"showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3",
+])
 
 
 def push(dev_id, body):
@@ -248,6 +261,8 @@ def push(dev_id, body):
 	for k, e in list(data.items()) + list((body.get("common_add") or {}).items()):
 		if not isinstance(e, dict):
 			continue
+		if k in DEVICE_ONLY:
+			continue
 		old = cd.get(k)
 		if _is_pmt(k):
 			if old is None or int(e.get("t", 0)) > int(old.get("t", 0)):
@@ -256,6 +271,9 @@ def push(dev_id, body):
 		elif old is None:
 			cd[k] = e      # domyslne dla nowych odbiornikow
 			changed = True
+	for k in [k for k in cd if k in DEVICE_ONLY]:      # sprzatanie po starszych wersjach
+		del cd[k]
+		changed = True
 	if changed or "data" not in common:
 		common["data"] = cd
 		common["updated"] = _now_ms()

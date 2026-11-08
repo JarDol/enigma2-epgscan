@@ -155,7 +155,11 @@ class PackJob(object):
 				log("Dane dla E2Stream: bukiet %s: %s" % (b.get("name"), e))
 				continue
 			for s in lst:
-				k = ref_key(s.get("play") or s.get("ref"))
+				r0 = s.get("play") or s.get("ref") or ""
+				# tylko serwisy DVB (bez strumieni IPTV z adresami - nie maja EPG ani picon, a nazwy sa za dlugie)
+				if not r0.startswith("1:0:") or "http" in r0.lower() or "%3a" in r0.lower():
+					continue
+				k = ref_key(r0)
 				chs.append([s.get("name", ""), k])
 				if k not in seen:
 					seen.add(k)
