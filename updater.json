@@ -1,0 +1,10 @@
+{
+  "apps": [
+    {
+      "name": "E2Stream",
+      "package": "pl.jardol.e2stream",
+      "tag": "e2stream-",
+      "asset": "e2stream-.*\\.apk"
+    }
+  ]
+}
