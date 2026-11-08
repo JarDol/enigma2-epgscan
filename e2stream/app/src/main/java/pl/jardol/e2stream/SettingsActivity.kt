@@ -55,12 +55,12 @@ class SettingsActivity : Activity() {
     private var section: String? = null
 
     private val sections = listOf(
-        "Dekoder Enigma2" to "adres, porty, logowanie OpenWebif i FTP, synchronizacja",
+        "Dekoder Enigma2" to "adres, porty, logowanie OpenWebif, wtyczka EPG Scan, FTP, synchronizacja",
         "Odtwarzanie i obraz" to "silnik (ExoPlayer / VLC), przeplot, bufory, watchdog, odświeżanie ekranu, dźwięk",
         "Wygląd" to "wielkość czcionek i ikon: lista kanałów, EPG, pasek kanału",
         "EPG i ikony kanałów" to "pobieranie EPG, ikony z dekodera",
         "Ogólne" to "bukiety, kanał startowy, pilot, PIN",
-        "Wtyczka EPG Scan i aktualizacja" to "stan wtyczki na dekoderze, wersja i aktualizacja aplikacji",
+        "Informacje i aktualizacje" to "wersja i aktualizacja aplikacji, opis aplikacji i wtyczki EPG Scan",
         "Logi i zrzuty" to "diagnostyka: statystyki, log, zrzuty TS, miejsce zapisu",
     )
 
@@ -75,6 +75,10 @@ class SettingsActivity : Activity() {
         num("Port streamingu", { p.streamPort }, { p.streamPort = it }, 1..65535),
         Item.Text("Użytkownik OpenWebif", { p.user }, { p.user = it.trim() }, hint = "puste = bez logowania"),
         Item.Text("Hasło OpenWebif", { p.pass }, { p.pass = it }, secret = true),
+                Item.Header("Wtyczka EPG Scan na dekoderze"),
+        Item.Action("Stan wtyczki", { if (p.pluginOk) "jest — ${p.pluginVersion}" else "brak (OpenWebif + FTP)" }) { checkPlugin() },
+        num("Port wtyczki", { p.pluginPort }, { p.pluginPort = it }, 1024..65535),
+        Item.Text("Token wtyczki", { p.pluginToken }, { p.pluginToken = it.trim() }, secret = true, hint = "puste = bez (sieć lokalna)"),
                 Item.Header("FTP (potrzebne tylko, gdy na dekoderze nie ma wtyczki EPG Scan)"),
         Item.Text("FTP — użytkownik", { p.ftpUser }, { p.ftpUser = it.trim().ifEmpty { "root" } }),
         Item.Text("FTP — hasło", { p.ftpPass }, { p.ftpPass = it }, secret = true),
@@ -145,14 +149,14 @@ class SettingsActivity : Activity() {
             InputType.TYPE_CLASS_NUMBER, secret = true, hint = "puste = bez blokady; odblokowanie na 1 min"),
             )
 
-            "Wtyczka EPG Scan i aktualizacja" -> listOf(
-                Item.Header("Wtyczka EPG Scan na dekoderze"),
-        Item.Action("Stan wtyczki", { if (p.pluginOk) "jest — ${p.pluginVersion}" else "brak (OpenWebif + FTP)" }) { checkPlugin() },
-        num("Port wtyczki", { p.pluginPort }, { p.pluginPort = it }, 1024..65535),
-        Item.Text("Token wtyczki", { p.pluginToken }, { p.pluginToken = it.trim() }, secret = true, hint = "puste = bez (sieć lokalna)"),
-                Item.Header("Aplikacja"),
+            "Informacje i aktualizacje" -> listOf(
+                Item.Header("Aplikacja E2Stream"),
         Item.Action("Sprawdź aktualizację", { "wersja ${Tools.appVersion(this)}" }) { Tools.checkUpdate(this, true) { toast(it) } },
         Item.Toggle("Automatyczna aktualizacja", { p.autoUpdate }, { p.autoUpdate = it }),
+                Item.Action("Opis aplikacji (README)") { showReadme("E2Stream", "e2stream/README.md") },
+                Item.Header("Wtyczka EPG Scan"),
+                Item.Action("Wtyczka na dekoderze", { if (p.pluginOk) "wersja ${p.pluginVersion}" else "brak — szczegóły w sekcji Dekoder Enigma2" }) { checkPlugin() },
+                Item.Action("Opis wtyczki (README)") { showReadme("EPG Scan", "epgscan/EPGScan/README.md") },
             )
             else -> listOfNotNull(
         Item.Toggle("Statystyki na ekranie", { p.showStats }, { p.showStats = it }),
@@ -168,6 +172,34 @@ class SettingsActivity : Activity() {
         Item.Toggle("Wysyłaj zrzuty TS na dekoder", { p.tsFtp }, { p.tsFtp = it }),
             )
         }
+    }
+
+    /** README z GitHuba (kopia aktualnej wersji opisu) w przewijanym oknie. */
+    private fun showReadme(title: String, path: String) {
+        toast("Pobieram opis…")
+        Thread {
+            val text = try {
+                val c = java.net.URL("https://raw.githubusercontent.com/JarDol/enigma2-epgscan/main/$path").openConnection()
+                    as java.net.HttpURLConnection
+                c.connectTimeout = 8000; c.readTimeout = 15000
+                c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } catch (e: Exception) { "Nie udało się pobrać opisu: ${e.message}" }
+            // prosty tekst z Markdown: bez znaczników nagłówków, pogrubień i kodu
+            val plain = text.lines().joinToString("\n") { l ->
+                l.replace(Regex("^#{1,6}\\s*"), "").replace("**", "").replace("`", "")
+                    .replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)"), "$1")
+            }
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                val tv = TextView(this).apply {
+                    this.text = plain; textSize = 17f; setTextColor(0xFFFFFFFF.toInt())
+                    setPadding(40, 20, 40, 20); setTextIsSelectable(false)
+                }
+                val sv = android.widget.ScrollView(this).apply { addView(tv); isFocusable = true }
+                AlertDialog.Builder(this).setTitle("Opis: $title").setView(sv).setPositiveButton("Zamknij", null).show()
+                sv.requestFocus()
+            }
+        }.start()
     }
 
     private fun pctItem(label: String, get: () -> Int, set: (Int) -> Unit) =
