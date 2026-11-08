@@ -61,6 +61,8 @@ class PlayerActivity : Activity() {
     private lateinit var bannerNext: TextView
     private lateinit var bannerProgress: android.widget.ProgressBar
     private lateinit var infoDesc: TextView
+    private lateinit var infoTitle: TextView
+    private lateinit var infoBox: View
     private val hm = SimpleDateFormat("HH:mm", Locale("pl", "PL"))
 
     private lateinit var playerView: PlayerView
@@ -147,6 +149,8 @@ class PlayerActivity : Activity() {
         bannerNext = findViewById(R.id.bannerNext)
         bannerProgress = findViewById(R.id.bannerProgress)
         infoDesc = findViewById(R.id.infoDesc)
+        infoTitle = findViewById(R.id.infoTitle)
+        infoBox = findViewById(R.id.infoBox)
         list.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 panelList.getOrNull(pos)?.let { showInfo(it) }
@@ -957,8 +961,12 @@ class PlayerActivity : Activity() {
     private fun showInfo(ch: Channel) {
         adapter.notifyDataSetChanged() // kolory podświetlonego wiersza
         infoDesc.text = ""
+        infoTitle.text = ""
+        UiScale.apply(infoBox, UiScale.pct(prefs.uiListFont))
         epg.nowNext(ch) { cur, _ ->
             if (panelList.getOrNull(list.selectedItemPosition) !== ch) return@nowNext
+            infoTitle.text = cur?.let { "${t(it.begin)}–${t(it.end)}  ${it.title}" } ?: ""
+            infoTitle.visibility = if (cur != null) View.VISIBLE else View.GONE
             infoDesc.text = when {
                 cur == null -> "Brak opisu w EPG"
                 cur.shortDesc.isNotBlank() && cur.longDesc.isNotBlank() && cur.longDesc != cur.shortDesc ->
