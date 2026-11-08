@@ -26,8 +26,15 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # Gradle z obrazu runnera (bez pobierania); wrapper tylko gdy go brak
       - name: Budowa
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+        run: |
+          if command -v gradle >/dev/null 2>&1; then
+            gradle --version | head -3
+            gradle --no-daemon assembleRelease
+          else
+            chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+          fi
 
       - name: Nazwa pliku z wersją
         run: |
