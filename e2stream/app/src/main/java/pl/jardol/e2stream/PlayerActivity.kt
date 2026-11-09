@@ -179,7 +179,14 @@ class PlayerActivity : Activity() {
         // długie OK na liście: opis bieżącej audycji zaznaczonego kanału
         list.isLongClickable = true
         list.setOnItemLongClickListener { _, _, pos, _ ->
-            panelList.getOrNull(pos)?.let { epg.showCurrentEvent(it) }
+            panelList.getOrNull(pos)?.let { c ->
+                val r = c.rec
+                if (r == null) epg.showCurrentEvent(c)
+                else if (!r.isDir) TvDialog.confirm(this, r.title,
+                    listOf(r.service, if (r.begin > 0) dateFmt.format(Date(r.begin * 1000)) else "", if (r.lengthSec > 0) "${r.lengthSec / 60} min" else "")
+                        .filter { it.isNotBlank() }.joinToString("  •  ") + "\n\n" + r.desc.ifBlank { "Brak opisu" },
+                    listOf(TvDialog.Btn("Odtwórz") { pickRecording(r) }))
+            }
             true
         }
 
@@ -947,7 +954,7 @@ class PlayerActivity : Activity() {
     private fun showPanel() {
         if (bouquets.isEmpty()) return
         // w trakcie nagrania albo po powrocie z niego — lista otwiera się na nagraniach
-        if (recMode || panelOnRec) { showRecordings(); return }
+        if ((recMode || panelOnRec) && bouquets.any { it.ref == REC_REF }) { showRecordings(); return }
         panelBouquet = playBouquet
         panelList = playList
         refreshPanel(playIndex.coerceAtLeast(0))
@@ -1107,18 +1114,16 @@ class PlayerActivity : Activity() {
         if (recStack.isNotEmpty()) out += Channel(0, "‹ wstecz", "").also {
             it.rec = Recording("..", "‹ wstecz", "", "", "", 0, 0, 0, true)
         }
-        items.forEachIndexed { i, r -> out += Channel(i + 1, r.title, r.sref.ifBlank { r.path }).also { it.rec = r } }
+        // katalogi ukryte (.Trash itp.) pomijane
+        items.filter { !(it.isDir && it.title.startsWith(".")) }
+            .forEachIndexed { i, r -> out += Channel(if (r.isDir) 0 else i + 1, r.title, r.sref.ifBlank { r.path }).also { it.rec = r } }
         return out
     }
 
     /** Lista kanałów otwarta na bukiecie „Nagrania”. */
     private fun showRecordings() {
-        var i = bouquets.indexOfFirst { it.ref == REC_REF }
-        if (i < 0 && bouquets.isNotEmpty()) {       // bukiet ukryty — z menu i tak dostępny
-            bouquets = bouquets + Bouquet("Nagrania", REC_REF)
-            i = bouquets.size - 1
-        }
-        if (i < 0) { showMessage("Najpierw połączenie z dekoderem", 3000); return }
+        val i = bouquets.indexOfFirst { it.ref == REC_REF }
+        if (i < 0) { panelOnRec = false; showPanel(); return }      // bukiet „Nagrania” ukryty
         panel.visibility = View.VISIBLE
         banner.visibility = View.GONE
         list.requestFocus()
@@ -1188,10 +1193,28 @@ class PlayerActivity : Activity() {
         player?.playWhenReady = true
     }
 
-    /** Powrót do ostatnio oglądanego kanału. */
+    /**
+     * Wyjście z nagrania: zatrzymanie (czarny ekran, bez wznawiania kanału TV) i lista nagrań.
+     * Obraz wraca po wyborze innego nagrania albo kanału z listy.
+     */
     private fun backToLive() {
         leaveRec()
-        if (playList.isNotEmpty() && playIndex >= 0) playIn(playBouquet, playList, playIndex)
+        stopPlayback()
+        showRecordings()
+    }
+
+    /** Zatrzymanie odtwarzania bez zwalniania odtwarzacza (czarny ekran do czasu wyboru). */
+    private fun stopPlayback() {
+        currentUrl = null
+        ui.removeCallbacks(restartRunnable)
+        restartPending = false
+        watchdog?.paused = true
+        ui.removeCallbacks(vlcTick)
+        proxy?.stop(); proxy = null
+        vlc?.release(); vlc = null
+        player?.stop()
+        player?.clearMediaItems()
+        banner.visibility = View.GONE
     }
 
     private fun recEnded() {
@@ -1200,7 +1223,8 @@ class PlayerActivity : Activity() {
         recMode = false
         recItem = null
         showMessage("Koniec nagrania", 3000)
-        backToLive()
+        stopPlayback()
+        showRecordings()
     }
 
     private fun recSeek(deltaMs: Long) {
@@ -1472,7 +1496,7 @@ class PlayerActivity : Activity() {
         numEntry.visibility = View.GONE
         if (n == null) return
         val i = playList.indexOfFirst { it.num == n }
-        if (i >= 0) play(i) else showMessage("Brak kanału $n w bukiecie")
+        if (i >= 0) { panelOnRec = false; play(i) } else showMessage("Brak kanału $n w bukiecie")
     }
 
     // ---------------------------------------------------------------- pilot
@@ -1714,13 +1738,11 @@ class PlayerActivity : Activity() {
 
     private fun showQuickMenu() {
         val items = listOf<Pair<String, () -> Unit>>(
-            *(if (recMode) arrayOf<Pair<String, () -> Unit>>("Wróć do telewizji" to { backToLive() }) else emptyArray()),
             "EPG wydarzenia" to { epg.showCurrentEvent() },
             "EPG kanału" to { epg.showChannelEpg() },
             "Multi EPG" to { epg.showMultiEpg() },
             "Szukaj w EPG" to { epg.showSearch() },
             "Ścieżka dźwięku…" to { showAudioDialog() },
-            "Nagrania" to { showRecordings() },
             "Ustawienia" to { openSettings() },
         )
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->
