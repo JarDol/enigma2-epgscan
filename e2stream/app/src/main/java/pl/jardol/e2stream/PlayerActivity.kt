@@ -685,6 +685,9 @@ class PlayerActivity : Activity() {
         // SID serwisu = 4. pole referencji (hex), np. 1:0:19:3DD2:640:13E:820000:0:0:0:
         val sid = url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
         analyzer?.reset(sid)
+        // nagranie z pliku: bez poprawiania strumienia — po przewinięciu znaczniki czasu skaczą względem
+        // ostatniego PCR i „poprawka” przesuwała dźwięk (obraz wyprzedzał dźwięk)
+        analyzer?.clean = if (recMode) false else prefs.cleanTs
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
             return
@@ -1076,7 +1079,7 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- nagrania z dekodera
 
-    private val REC_REF = "e2stream:nagrania"
+    private val REC_REF = REC_BOUQUET
     private var recDir = ""                       // bieżący katalog (puste = domyślny dekodera)
     private val recStack = ArrayList<String>()    // katalogi nadrzędne (powrót „‹ wstecz”)
     private var recMode = false
@@ -1086,7 +1089,8 @@ class PlayerActivity : Activity() {
     private val dateFmt = SimpleDateFormat("EEE dd.MM  HH:mm", Locale("pl", "PL"))
 
     /** Bukiet „Nagrania” zawsze na końcu listy bukietów. */
-    private fun withRec(bq: List<Bouquet>) = bq.filter { it.ref != REC_REF } + Bouquet("Nagrania", REC_REF)
+    private fun withRec(bq: List<Bouquet>) = bq.filter { it.ref != REC_REF } +
+        (if (REC_REF in prefs.hiddenBouquets) emptyList() else listOf(Bouquet("Nagrania", REC_REF)))
 
     /** Kanały bukietu albo (dla „Nagrania”) zawartość bieżącego katalogu nagrań. Poza wątkiem UI. */
     private fun channelsOf(bq: Bouquet): List<Channel> {
@@ -1103,7 +1107,11 @@ class PlayerActivity : Activity() {
 
     /** Lista kanałów otwarta na bukiecie „Nagrania”. */
     private fun showRecordings() {
-        val i = bouquets.indexOfFirst { it.ref == REC_REF }
+        var i = bouquets.indexOfFirst { it.ref == REC_REF }
+        if (i < 0 && bouquets.isNotEmpty()) {       // bukiet ukryty — z menu i tak dostępny
+            bouquets = bouquets + Bouquet("Nagrania", REC_REF)
+            i = bouquets.size - 1
+        }
         if (i < 0) { showMessage("Najpierw połączenie z dekoderem", 3000); return }
         panel.visibility = View.VISIBLE
         banner.visibility = View.GONE

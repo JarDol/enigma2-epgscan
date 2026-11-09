@@ -401,7 +401,7 @@ class SettingsActivity : Activity() {
     private fun chooseBouquets() {
         toast("Pobieram bukiety…")
         Thread {
-            val list = try { OpenWebif(p).bouquets() } catch (e: Exception) { null }
+            val list = try { OpenWebif(p).bouquets() + Bouquet("Nagrania (z dysku dekodera)", REC_BOUQUET) } catch (e: Exception) { null }
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
                 if (list.isNullOrEmpty()) { toast("Nie udało się pobrać bukietów z dekodera"); return@runOnUiThread }

@@ -22,6 +22,9 @@ data class EpgEvent(
     val end: Long get() = begin + duration
 }
 
+/** Referencja wirtualnego bukietu „Nagrania” (ukrywany jak zwykły bukiet). */
+const val REC_BOUQUET = "e2stream:nagrania"
+
 /** Nagranie (albo katalog) na dysku dekodera. */
 class Recording(
     val path: String, val title: String, val desc: String, val service: String, val sref: String,
