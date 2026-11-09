@@ -985,8 +985,22 @@ class PlayerActivity : Activity() {
         val target = panelList
         io.execute {
             val map = try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
+            // kanały, dla których dekoder nie podał bieżącej audycji (np. EPG tylko z paczki EPG Scan
+            // pod inną referencją) — z zapisanego EPG, tak jak opis na dole listy
+            val n = System.currentTimeMillis() / 1000
+            val local = HashMap<String, EpgEvent>()
+            for (c in target) {
+                val k = OpenWebif.key(c.ref)
+                val m = map[k]
+                if (m == null || m.first.isBlank() || m.third <= n) epg.localNow(c.ref)?.let { local[k] = it }
+            }
             runOnUiThread {
-                target.forEach { c -> map[OpenWebif.key(c.ref)]?.let { c.now = it.first; c.nowBegin = it.second; c.nowEnd = it.third } }
+                target.forEach { c ->
+                    val k = OpenWebif.key(c.ref)
+                    val l = local[k]
+                    if (l != null) { c.now = l.title; c.nowBegin = l.begin; c.nowEnd = l.end }
+                    else map[k]?.let { c.now = it.first; c.nowBegin = it.second; c.nowEnd = it.third }
+                }
                 if (panelList === target) adapter.notifyDataSetChanged()
             }
         }

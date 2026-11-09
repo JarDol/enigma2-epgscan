@@ -59,6 +59,15 @@ class EpgUi(
         return ev
     }
 
+    /** Bieżąca audycja tylko z pamięci / zapisanego EPG (bez zapytań do dekodera) — dla listy kanałów. */
+    fun localNow(ref: String): EpgEvent? {
+        val n = now()
+        val ev = synchronized(cache) { cache[OpenWebif.key(ref)]?.second }
+            ?: try { store.read(ref)?.second } catch (_: Exception) { null }
+            ?: return null
+        return ev.firstOrNull { it.begin <= n && it.end > n }
+    }
+
     private fun cached(ref: String): List<EpgEvent> =
         synchronized(cache) { cache[OpenWebif.key(ref)]?.second } ?: emptyList()
 
