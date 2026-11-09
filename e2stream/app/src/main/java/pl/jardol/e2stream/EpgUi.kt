@@ -93,16 +93,16 @@ class EpgUi(
         }
     }
 
-    private fun bigList(title: String, adapter: RowAdapter, onPick: (Int) -> Unit): AlertDialog {
-        val dlg = AlertDialog.Builder(a).setTitle(title).setAdapter(adapter, null).create()
-        dlg.setOnShowListener {
-            dlg.listView.setOnItemClickListener { _, _, w, _ -> onPick(w) }
+    private fun bigList(title: String, adapter: RowAdapter, hint: String = "OK opis audycji  •  WSTECZ zamknij",
+                        onPick: (Int) -> Unit): android.app.Dialog =
+        TvDialog.panel(a, title, hint, widthFrac = 0.85f, maxH = 0.9f) { ctx, _ ->
+            android.widget.ListView(ctx).apply {
+                this.adapter = adapter
+                selector = ctx.getDrawable(R.drawable.list_selector)
+                divider = null
+                setOnItemClickListener { _, _, w, _ -> onPick(w) }
+            }
         }
-        dlg.show()
-        val dm = a.resources.displayMetrics
-        dlg.window?.setLayout((dm.widthPixels * 0.85).toInt(), (dm.heightPixels * 0.9).toInt())
-        return dlg
-    }
 
     private fun progress(ev: EpgEvent): String {
         val n = now()
@@ -138,23 +138,47 @@ class EpgUi(
         }
         btns += TvDialog.Btn("Zamknij")
         val scale = UiScale.pct(Prefs(a).uiEpgFont)
-        // opis przewijany, przyciski zawsze na dole okna (okno ma wysokość treści, najwyżej 85% ekranu)
-        TvDialog.show(a, ev.title, btns, widthFrac = 0.8f, focusFirstButton = true) { ctx, _ ->
+        val n = now()
+        val pct = if (running && ev.duration > 0) ((n - ev.begin) * 1000 / ev.duration).toInt() else -1
+        val when_ = "${d(ev.begin)}  ${t(ev.begin)} – ${t(ev.end)}  (${ev.duration / 60} min)" +
+            if (running) "  •  zostało ${(ev.end - n) / 60} min" else ""
+        // nagłówek jak wiersz listy kanałów (ikona, kanał, tytuł, czas, postęp), niżej opis, akcje na dole
+        TvDialog.panel(a, null, null, btns, widthFrac = 0.8f, focusChip = true) { ctx, _ ->
             val dp = ctx.resources.displayMetrics.density
+            fun px(v: Int) = (v * dp).toInt()
             val col = android.widget.LinearLayout(ctx).apply { orientation = android.widget.LinearLayout.VERTICAL }
-            col.addView(TextView(ctx).apply {
-                text = head
-                textSize = 19f * scale
-                setTextColor(0xFFB0BEC5.toInt())
+            val head = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            val bmp = if (ref.isNotBlank()) try { Picons.bitmap(ctx, ref) } catch (_: Exception) { null } else null
+            if (bmp != null) head.addView(android.widget.ImageView(ctx).apply {
+                setImageBitmap(bmp); scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            }, android.widget.LinearLayout.LayoutParams(px(96), px(56)).apply { marginEnd = px(16) })
+            val info = android.widget.LinearLayout(ctx).apply { orientation = android.widget.LinearLayout.VERTICAL }
+            if (name.isNotBlank()) info.addView(TextView(ctx).apply {
+                text = name; textSize = 15f * scale; setTextColor(TvDialog.GREY)
             })
-            col.addView(TextView(ctx).apply {
-                text = body
-                textSize = 20f * scale
-                setTextColor(0xFFFFFFFF.toInt())
-                setLineSpacing(3 * dp, 1f)
-                setPadding(0, (12 * dp).toInt(), 0, (4 * dp).toInt())
+            info.addView(TextView(ctx).apply {
+                text = ev.title; textSize = 23f * scale; setTextColor(TvDialog.WHITE)
             })
-            android.widget.ScrollView(ctx).apply { isFocusable = true; isFocusableInTouchMode = false; addView(col) }
+            val tl = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            tl.addView(TextView(ctx).apply { text = when_; textSize = 15f * scale; setTextColor(TvDialog.BLUE) })
+            if (pct >= 0) tl.addView(android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
+                max = 1000; progress = pct.coerceIn(0, 1000); progressDrawable = ctx.getDrawable(R.drawable.progress_epg)
+            }, android.widget.LinearLayout.LayoutParams(0, px(5), 1f).apply { marginStart = px(16) })
+            info.addView(tl)
+            head.addView(info, android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            col.addView(head)
+            col.addView(android.view.View(ctx).apply { setBackgroundColor(0xFF37474F.toInt()) },
+                android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, px(1)).apply {
+                    topMargin = px(12); bottomMargin = px(12) })
+            col.addView(TvDialog.scrollText(ctx, body, 19f * scale),
+                android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            col
         }
     }
 
@@ -258,8 +282,8 @@ class EpgUi(
 
     private fun openMulti(chans: List<Channel>) {
         val adapter = RowAdapter(multiRows(chans, multiT))
-        fun title() = "Multi-EPG: ${host.bouquetName()} — ${d(multiT)} ${t(multiT)}   (◀ ▶ zmiana czasu)"
-        val dlg = bigList(title(), adapter) { w ->
+        fun title() = "Multi-EPG: ${host.bouquetName()} — ${d(multiT)} ${t(multiT)}"
+        val dlg = bigList(title(), adapter, "◀ ▶ zmiana czasu  •  OK opis  •  WSTECZ zamknij") { w ->
             val r = adapter.rows[w]
             if (r.ev != null) showEvent(r.ev, r.ch) else r.ch?.let { host.zapTo(it.ref) }
         }
@@ -277,7 +301,7 @@ class EpgUi(
             multiT = if (base < now() && shift < 0) now() else base
             adapter.rows = multiRows(chans, multiT)
             adapter.notifyDataSetChanged()
-            dlg.setTitle(title())
+            TvDialog.setTitle(dlg, title())
             true
         }
     }

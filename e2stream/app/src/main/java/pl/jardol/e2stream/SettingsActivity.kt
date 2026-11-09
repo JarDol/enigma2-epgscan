@@ -100,10 +100,8 @@ class SettingsActivity : Activity() {
         Item.Toggle("Tunelowanie wideo", { p.tunneling }, { p.tunneling = it }),
         Item.Action("ExoPlayer: liczba klatek dla dekodera (eksperyment)", { if (p.exoFps > 0) "${p.exoFps} kl./s" else "nie podawaj" }) {
             val ids = intArrayOf(0, 25, 50)
-            AlertDialog.Builder(this).setTitle("Liczba klatek dla dekodera (eksperyment)")
-                .setSingleChoiceItems(arrayOf("nie podawaj", "25 kl./s", "50 kl./s"), ids.indexOf(p.exoFps).coerceAtLeast(0)) { d, w ->
-                    p.exoFps = ids[w]; d.dismiss(); markChanged("ExoPlayer fps = ${ids[w]}")
-                }.show()
+            TvDialog.single(this, "Liczba klatek dla dekodera (eksperyment)", listOf("nie podawaj", "25 kl./s", "50 kl./s"),
+                ids.indexOf(p.exoFps)) { w -> p.exoFps = ids[w]; markChanged("ExoPlayer fps = ${ids[w]}") }
         },
         Item.Toggle("Wznawiaj przy zacinaniu (utrata klatek)", { p.dropRestart }, { p.dropRestart = it }),
         num("Zapas w trakcie oglądania (ms)", { p.rebufferMs }, { p.rebufferMs = it }, 1000..15_000),
@@ -205,10 +203,9 @@ class SettingsActivity : Activity() {
     private fun pctItem(label: String, get: () -> Int, set: (Int) -> Unit) =
         Item.Action(label, { "${get()}%" }) {
             val opts = intArrayOf(50, 60, 70, 80, 90, 100, 110, 120, 140)
-            AlertDialog.Builder(this).setTitle(label)
-                .setSingleChoiceItems(opts.map { "$it%" }.toTypedArray(), opts.indexOf(get()).coerceAtLeast(0)) { d, w ->
-                    set(opts[w]); d.dismiss(); markChanged("$label = ${opts[w]}%")
-                }.show()
+            TvDialog.single(this, label, opts.map { "$it%" }, opts.indexOf(get())) { w ->
+                set(opts[w]); markChanged("$label = ${opts[w]}%")
+            }
         }
 
     private fun openSection(name: String) {
@@ -337,30 +334,25 @@ class SettingsActivity : Activity() {
 
     private fun chooseAfr() {
         val opts = arrayOf("bez zmian", "zawsze 50 Hz", "automatycznie wg treści")
-        AlertDialog.Builder(this).setTitle("Odświeżanie ekranu")
-            .setSingleChoiceItems(opts, p.afrMode) { d, w -> p.afrMode = w; d.dismiss(); markChanged("odświeżanie = ${opts[w]}") }
-            .show()
+        TvDialog.single(this, "Odświeżanie ekranu", opts.toList(), p.afrMode) { w -> p.afrMode = w; markChanged("odświeżanie = ${opts[w]}") }
     }
 
     private fun choosePinTime() {
         val mins = intArrayOf(1, 5, 15, 30, 60, 0)
-        val opts = mins.map { PinLock.label(it) }.toTypedArray()
-        AlertDialog.Builder(this).setTitle("Po odblokowaniu PIN-em pytaj ponownie po")
-            .setSingleChoiceItems(opts, mins.indexOf(p.pinMin).coerceAtLeast(0)) { d, w ->
-                p.pinMin = mins[w]; d.dismiss()
-                if (PinLock.isUnlocked(p)) PinLock.unlock(p)      // nowy czas liczony od teraz
-                refresh()
-            }.show()
+        TvDialog.single(this, "Po odblokowaniu PIN-em pytaj ponownie po", mins.map { PinLock.label(it) }, mins.indexOf(p.pinMin)) { w ->
+            p.pinMin = mins[w]
+            if (PinLock.isUnlocked(p)) PinLock.unlock(p)      // nowy czas liczony od teraz
+            refresh()
+        }
     }
 
     private fun chooseEngine() {
         val ids = arrayOf("exo", "vlc")
         val opts = arrayOf("ExoPlayer (tunelowanie, najszybszy start)", "VLC (inne usuwanie przeplotu i odmierzanie klatek)")
-        AlertDialog.Builder(this).setTitle("Silnik odtwarzania na tym odbiorniku")
-            .setSingleChoiceItems(opts, ids.indexOf(p.engine).coerceAtLeast(0)) { d, w ->
-                p.engine = ids[w]; d.dismiss(); markChanged("silnik = ${ids[w]}")
-                items = buildItems(); refresh()
-            }.show()
+        TvDialog.single(this, "Silnik odtwarzania na tym odbiorniku", opts.toList(), ids.indexOf(p.engine)) { w ->
+            p.engine = ids[w]; markChanged("silnik = ${ids[w]}")
+            items = buildItems(); refresh()
+        }
     }
 
     private val hwIds = arrayOf("auto", "off", "dec", "full")
@@ -369,19 +361,17 @@ class SettingsActivity : Activity() {
     }
 
     private fun chooseHw() {
-        AlertDialog.Builder(this).setTitle("VLC: akceleracja sprzętowa")
-            .setSingleChoiceItems(hwIds.map { hwName(it) }.toTypedArray(), hwIds.indexOf(p.vlcHwMode).coerceAtLeast(0)) { d, w ->
-                p.vlcHwMode = hwIds[w]; d.dismiss(); markChanged("VLC akceleracja = ${hwIds[w]}")
-            }.show()
+        TvDialog.single(this, "VLC: akceleracja sprzętowa", hwIds.map { hwName(it) }, hwIds.indexOf(p.vlcHwMode)) { w ->
+            p.vlcHwMode = hwIds[w]; markChanged("VLC akceleracja = ${hwIds[w]}")
+        }
     }
 
     private fun chooseChroma() {
         val ids = arrayOf("RV32", "RV16", "YV12")
         val names = arrayOf("RGB 32-bit (zalecane)", "RGB 16-bit", "YUV (YV12)")
-        AlertDialog.Builder(this).setTitle("VLC: format obrazu")
-            .setSingleChoiceItems(names, ids.indexOf(p.vlcChroma).coerceAtLeast(0)) { d, w ->
-                p.vlcChroma = ids[w]; d.dismiss(); markChanged("VLC chroma = ${ids[w]}")
-            }.show()
+        TvDialog.single(this, "VLC: format obrazu", names.toList(), ids.indexOf(p.vlcChroma)) { w ->
+            p.vlcChroma = ids[w]; markChanged("VLC chroma = ${ids[w]}")
+        }
     }
 
     private val deintIds = arrayOf("default", "auto", "off", "yadif", "yadif2x", "bob", "linear", "blend", "x")
@@ -391,17 +381,16 @@ class SettingsActivity : Activity() {
     }
 
     private fun chooseDeint() {
-        AlertDialog.Builder(this).setTitle("VLC: usuwanie przeplotu")
-            .setSingleChoiceItems(deintIds.map { deintName(it) }.toTypedArray(), deintIds.indexOf(p.vlcDeint).coerceAtLeast(0)) { d, w ->
-                p.vlcDeint = deintIds[w]; d.dismiss(); markChanged("VLC przeplot = ${deintIds[w]}")
-            }.show()
+        TvDialog.single(this, "VLC: usuwanie przeplotu", deintIds.map { deintName(it) }, deintIds.indexOf(p.vlcDeint)) { w ->
+            p.vlcDeint = deintIds[w]; markChanged("VLC przeplot = ${deintIds[w]}")
+        }
     }
 
     private fun chooseStorage() {
         val opts = Storage.options(this)
-        AlertDialog.Builder(this).setTitle("Miejsce zapisu logów i zrzutów TS")
-            .setItems(opts.map { it.label }.toTypedArray()) { _, w -> p.storageDir = opts[w].path; markChanged("zapis = ${opts[w].path}") }
-            .show()
+        TvDialog.single(this, "Miejsce zapisu logów i zrzutów TS", opts.map { it.label }, opts.indexOfFirst { it.path == p.storageDir }) { w ->
+            p.storageDir = opts[w].path; markChanged("zapis = ${opts[w].path}")
+        }
     }
 
     private fun discover() {
@@ -413,13 +402,11 @@ class SettingsActivity : Activity() {
                 if (found.isEmpty()) {
                     toast("Nie znaleziono dekodera (port ${p.httpPort})"); return@runOnUiThread
                 }
-                AlertDialog.Builder(this).setTitle("Znalezione dekodery")
-                    .setItems(found.map { "${it.ip}   ${it.label}" }.toTypedArray()) { _, w ->
-                        p.host = found[w].ip
-                        markChanged("dekoder = ${found[w].ip} (${found[w].label})")
-                        checkPluginQuiet()
-                    }
-                    .show()
+                TvDialog.list(this, "Znalezione dekodery", found.map { TvDialog.Item(it.ip, it.label) }) { w ->
+                    p.host = found[w].ip
+                    markChanged("dekoder = ${found[w].ip} (${found[w].label})")
+                    checkPluginQuiet()
+                }
             }
         }.start()
     }
@@ -518,15 +505,13 @@ class SettingsActivity : Activity() {
                 val others = list?.filter { !it.file.contains(SyncManager.deviceId()) }
                 if (others.isNullOrEmpty()) { toast("Brak profili innych odbiorników na dekoderze"); return@runOnUiThread }
                 val fmt = SimpleDateFormat("dd.MM HH:mm", Locale("pl"))
-                AlertDialog.Builder(this).setTitle("Przenieś ustawienia z odbiornika")
-                    .setItems(others.map { "${it.name.ifBlank { it.model }}   (${it.model}, ${fmt.format(Date(it.updated))})" }.toTypedArray()) { _, w ->
-                        val n = SyncManager.restore(others[w])
-                        markChanged("przeniesiono $n ustawień z ${others[w].name}")
-                        toast("Przeniesiono $n ustawień z „${others[w].name}”")
-                        recreate()
-                    }
-                    .setNegativeButton("Anuluj", null)
-                    .show()
+                TvDialog.list(this, "Przenieś ustawienia z odbiornika",
+                    others.map { TvDialog.Item(it.name.ifBlank { it.model }, "${it.model}, ${fmt.format(Date(it.updated))}") }) { w ->
+                    val n = SyncManager.restore(others[w])
+                    markChanged("przeniesiono $n ustawień z ${others[w].name}")
+                    toast("Przeniesiono $n ustawień z „${others[w].name}”")
+                    recreate()
+                }
             }
         }.start()
     }
@@ -544,27 +529,25 @@ class SettingsActivity : Activity() {
 
     private fun showKeyMap() {
         val entries = KeyMap.load(p).entries.toList()
-        val labels = (listOf("+ Dodaj / zmień klawisz (naciśnij go na pilocie)") +
-            entries.map { "${KeyMap.keyName(it.key)}   →   ${it.value.label}" } +
-            listOf("Przywróć domyślne")).toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Mapowanie klawiszy (podczas oglądania)")
-            .setItems(labels) { _, w ->
-                when (w) {
-                    0 -> captureKey()
-                    labels.size - 1 -> { p.keyMap = ""; toast("Przywrócono domyślne"); showKeyMap() }
-                    else -> chooseAct(entries[w - 1].key)
-                }
+        val rows = listOf(TvDialog.Item("+ Dodaj / zmień klawisz", "naciśnij go na pilocie")) +
+            entries.map { TvDialog.Item(KeyMap.keyName(it.key), it.value.label) } +
+            listOf(TvDialog.Item("Przywróć domyślne"))
+        TvDialog.list(this, "Mapowanie klawiszy (podczas oglądania)", rows) { w ->
+            when (w) {
+                0 -> captureKey()
+                rows.size - 1 -> { p.keyMap = ""; toast("Przywrócono domyślne"); showKeyMap() }
+                else -> chooseAct(entries[w - 1].key)
             }
-            .setNegativeButton("Zamknij", null)
-            .show()
+        }
     }
 
     private fun captureKey() {
-        val dlg = AlertDialog.Builder(this)
-            .setTitle("Naciśnij klawisz na pilocie…")
-            .setMessage("WSTECZ — anuluj")
-            .create()
+        val dlg = TvDialog.panel(this, "Naciśnij klawisz na pilocie…", "WSTECZ anuluj", widthFrac = 0.45f) { ctx, _ ->
+            TextView(ctx).apply {
+                text = "Klawisz, który ma wywoływać wybraną akcję podczas oglądania."
+                textSize = 17f; setTextColor(TvDialog.GREY); isFocusable = true
+            }
+        }
         dlg.setOnKeyListener { d, code, e ->
             if (e.action != KeyEvent.ACTION_UP) return@setOnKeyListener true
             if (code == KeyEvent.KEYCODE_BACK) { d.dismiss(); return@setOnKeyListener true }
@@ -573,24 +556,18 @@ class SettingsActivity : Activity() {
             chooseAct(code)
             true
         }
-        dlg.show()
     }
 
     private fun chooseAct(code: Int) {
         val m = KeyMap.load(p)
         val acts = Act.values()
         val cur = acts.indexOf(m[code] ?: Act.NONE)
-        AlertDialog.Builder(this)
-            .setTitle("Klawisz ${KeyMap.keyName(code)}")
-            .setSingleChoiceItems(acts.map { it.label }.toTypedArray(), cur) { d, w ->
-                m[code] = acts[w]
-                KeyMap.save(p, m)
-                AppLog.i("mapowanie: ${KeyMap.keyName(code)} → ${acts[w].name}")
-                d.dismiss()
-                showKeyMap()
-            }
-            .setNegativeButton("Anuluj") { _, _ -> showKeyMap() }
-            .show()
+        TvDialog.single(this, "Klawisz ${KeyMap.keyName(code)}", acts.map { it.label }, cur, onCancel = { showKeyMap() }) { w ->
+            m[code] = acts[w]
+            KeyMap.save(p, m)
+            AppLog.i("mapowanie: ${KeyMap.keyName(code)} → ${acts[w].name}")
+            showKeyMap()
+        }
     }
 
     // ------------------------------------------------------------ widok listy

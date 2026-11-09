@@ -3,26 +3,39 @@ package pl.jardol.e2stream
 import android.app.Activity
 import android.app.Dialog
 import android.content.Context
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.text.TextUtils
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
-import android.widget.ArrayAdapter
+import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ListView
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 
 /**
- * Własne okno dialogowe na telewizory: tytuł, treść (tekst przewijany albo lista) i rząd przycisków
- * zawsze na dole okna. AlertDialog o stałym rozmiarze na części telewizorów (Philips) ściskał
- * przyciski do kilku pikseli, a przy krótkiej treści rysował je w połowie okna.
- * Okno ma wysokość treści, najwyżej [maxH] ekranu — dłuższa treść się przewija.
+ * Okna w stylu listy kanałów: ciemny panel, niebieski tytuł, podpowiedzi klawiszy po prawej,
+ * niebieskie podświetlenie wiersza. Zamiast systemowych przycisków: wybór OK, zamknięcie WSTECZ;
+ * akcje (gdy potrzebne) jako rząd przycisków przypiętych na dole panelu.
+ * Panel ma wysokość treści, najwyżej [maxH] ekranu — dłuższa treść się przewija.
  */
 object TvDialog {
 
+    const val BLUE = 0xFF4FC3F7.toInt()
+    const val GREY = 0xFFB0BEC5.toInt()
+    const val WHITE = 0xFFFFFFFF.toInt()
+
     class Btn(val label: String, val onClick: () -> Unit = {})
+
+    /** Wiersz listy: [mark] 0 — brak, 1 — zaznaczone ☑, 2 — niezaznaczone ☐, 3 — bieżący wybór ●. */
+    class Item(val title: String, val sub: String = "", var mark: Int = 0)
 
     /** Pionowy układ z górnym limitem wysokości: element z wagą (treść) kurczy się, przyciski zostają. */
     private class CappedColumn(ctx: Context, private val maxPx: Int) : LinearLayout(ctx) {
@@ -34,103 +47,219 @@ object TvDialog {
         }
     }
 
+    private fun dp(ctx: Context, v: Int) = (v * ctx.resources.displayMetrics.density).toInt()
+
     /**
-     * Pokazuje okno. [content] buduje treść w kontekście okna (kolory motywu). Przycisk zamyka okno
-     * i wywołuje swoją akcję. Zwraca okno (np. do zmiany tytułu).
+     * Panel: tytuł i podpowiedź u góry, treść z [content], opcjonalnie przyciski na dole.
+     * [onBack] — WSTECZ (domyślnie tylko zamknięcie); przy [cancelable] = false WSTECZ nic nie robi.
      */
-    fun show(
-        a: Activity, title: String?, buttons: List<Btn>,
-        widthFrac: Float = 0.7f, maxH: Float = 0.85f, focusFirstButton: Boolean = false,
+    fun panel(
+        a: Activity, title: String?, hint: String?, chips: List<Btn> = emptyList(),
+        widthFrac: Float = 0.6f, maxH: Float = 0.85f, cancelable: Boolean = true,
+        onBack: (() -> Unit)? = null, focusChip: Boolean = false,
         content: (ctx: Context, dlg: Dialog) -> View,
     ): Dialog {
         val dlg = Dialog(a, R.style.TvDialog)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val ctx = dlg.context
         val dm = a.resources.displayMetrics
-        val dp = dm.density
-        fun px(v: Int) = (v * dp).toInt()
 
         val root = CappedColumn(ctx, (dm.heightPixels * maxH).toInt())
-        root.setPadding(px(24), px(18), px(24), px(14))
-        if (!title.isNullOrBlank()) {
-            root.addView(TextView(ctx).apply {
-                text = title
-                textSize = 20f
-                setTextColor(0xFFFFFFFF.toInt())
-                setPadding(0, 0, 0, px(10))
-                tag = "title"
+        root.background = GradientDrawable().apply {
+            setColor(0xF2161B20.toInt()); cornerRadius = dp(ctx, 10).toFloat()
+        }
+        root.setPadding(dp(ctx, 20), dp(ctx, 14), dp(ctx, 20), dp(ctx, 14))
+
+        if (!title.isNullOrBlank() || !hint.isNullOrBlank()) {
+            val head = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(ctx, 4), 0, dp(ctx, 4), dp(ctx, 10))
+            }
+            head.addView(TextView(ctx).apply {
+                text = title ?: ""; textSize = 21f; setTextColor(BLUE); tag = "title"
+                maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            if (!hint.isNullOrBlank()) head.addView(TextView(ctx).apply {
+                text = hint; textSize = 13f; setTextColor(GREY); gravity = Gravity.END
+                setPadding(dp(ctx, 16), 0, 0, 0); tag = "hint"
             })
+            root.addView(head)
         }
         val body = content(ctx, dlg)
         root.addView(body, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         var first: Button? = null
-        if (buttons.isNotEmpty()) {
+        if (chips.isNotEmpty()) {
             val bar = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.END
-                setPadding(0, px(12), 0, 0)
+                setPadding(0, dp(ctx, 12), 0, 0)
             }
-            for (b in buttons) {
+            for (b in chips) {
                 val btn = Button(ctx, null, 0, R.style.TvDialogButton)
                 btn.text = b.label
                 btn.isFocusable = true
                 btn.setOnClickListener { dlg.dismiss(); b.onClick() }
                 val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                lp.marginStart = px(10)
+                lp.marginStart = dp(ctx, 10)
                 bar.addView(btn, lp)
                 if (first == null) first = btn
             }
             root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         dlg.setContentView(root)
+        dlg.setCancelable(cancelable)
+        dlg.setCanceledOnTouchOutside(false)
+        if (onBack != null) dlg.setOnCancelListener { onBack() }
+        dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dlg.show()
         dlg.window?.setLayout((dm.widthPixels * widthFrac).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
-        if (focusFirstButton && first != null) first!!.requestFocus() else body.requestFocus()
+        val f = first
+        if (focusChip && f != null) f.requestFocus() else body.requestFocus()
         return dlg
     }
 
     fun setTitle(dlg: Dialog, title: String) {
-        (dlg.window?.decorView?.findViewWithTag<TextView>("title"))?.text = title
+        dlg.window?.decorView?.findViewWithTag<TextView>("title")?.text = title
     }
 
-    /** Długi tekst (np. README) z przyciskiem „Zamknij”. */
-    fun text(a: Activity, title: String, text: CharSequence, sizeSp: Float = 17f) {
-        show(a, title, listOf(Btn("Zamknij"))) { ctx, _ ->
-            ScrollView(ctx).apply {
-                isFocusable = true
-                addView(TextView(ctx).apply {
-                    this.text = text; textSize = sizeSp; setTextColor(0xFFFFFFFF.toInt())
-                    setLineSpacing(3 * ctx.resources.displayMetrics.density, 1f)
-                })
+    // ------------------------------------------------------------ listy
+
+    private class RowAdapter(val ctx: Context, val items: List<Item>) : BaseAdapter() {
+        override fun getCount() = items.size
+        override fun getItem(position: Int): Any = items[position]
+        override fun getItemId(position: Int) = position.toLong()
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val row = (convertView as? LinearLayout) ?: LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(ctx, 52)
+                setPadding(dp(ctx, 14), dp(ctx, 6), dp(ctx, 16), dp(ctx, 6))
+                addView(TextView(ctx).apply { textSize = 20f; tag = "mark" },
+                    LinearLayout.LayoutParams(dp(ctx, 36), ViewGroup.LayoutParams.WRAP_CONTENT))
+                addView(TextView(ctx).apply { textSize = 19f; setTextColor(WHITE); tag = "t" },
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                addView(TextView(ctx).apply { textSize = 14f; setTextColor(GREY); tag = "s"; setPadding(dp(ctx, 12), 0, 0, 0) })
+            }
+            val it = items[position]
+            val mark = row.findViewWithTag<TextView>("mark")
+            mark.visibility = if (items.any { i -> i.mark != 0 }) View.VISIBLE else View.GONE
+            mark.text = when (it.mark) { 1 -> "☑"; 2 -> "☐"; 3 -> "●"; else -> "" }
+            mark.setTextColor(if (it.mark == 2) 0xFF78909C.toInt() else BLUE)
+            val t = row.findViewWithTag<TextView>("t")
+            t.text = it.title
+            t.setTextColor(if (it.mark == 2) GREY else WHITE)
+            val s = row.findViewWithTag<TextView>("s")
+            s.text = it.sub
+            s.visibility = if (it.sub.isEmpty()) View.GONE else View.VISIBLE
+            return row
+        }
+    }
+
+    private fun listView(ctx: Context, items: List<Item>, selected: Int): ListView {
+        val lv = ListView(ctx)
+        lv.adapter = RowAdapter(ctx, items)
+        lv.selector = ctx.getDrawable(R.drawable.list_selector)
+        lv.divider = null
+        lv.isVerticalScrollBarEnabled = true
+        lv.itemsCanFocus = false
+        if (selected in items.indices) lv.setSelection(selected)
+        return lv
+    }
+
+    /** Lista: OK wybiera i zamyka okno. */
+    fun list(
+        a: Activity, title: String, items: List<Item>, selected: Int = -1,
+        hint: String = "OK wybierz  •  WSTECZ zamknij", widthFrac: Float = 0.55f,
+        onCancel: () -> Unit = {}, onPick: (Int) -> Unit,
+    ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel) { ctx, dlg ->
+        listView(ctx, items, selected).apply {
+            setOnItemClickListener { _, _, w, _ -> dlg.dismiss(); onPick(w) }
+        }
+    }
+
+    /** Lista jednokrotnego wyboru z oznaczonym bieżącym wyborem. */
+    fun single(a: Activity, title: String, labels: List<String>, selected: Int, onCancel: () -> Unit = {}, onPick: (Int) -> Unit) =
+        list(a, title, labels.mapIndexed { i, l -> Item(l, mark = if (i == selected) 3 else 0) }, selected, onCancel = onCancel, onPick = onPick)
+
+    /** Lista z polami wyboru: OK przełącza, WSTECZ zapisuje i zamyka. */
+    fun multi(a: Activity, title: String, labels: List<String>, checked: BooleanArray, subs: List<String>? = null,
+              onSave: (BooleanArray) -> Unit) {
+        val items = labels.mapIndexed { i, l -> Item(l, subs?.getOrNull(i) ?: "", if (checked[i]) 1 else 2) }
+        panel(a, title, "OK zaznacz / odznacz  •  WSTECZ zapisz i wyjdź", widthFrac = 0.55f,
+            onBack = { onSave(BooleanArray(items.size) { items[it].mark == 1 }) }) { ctx, _ ->
+            listView(ctx, items, 0).apply {
+                setOnItemClickListener { _, _, w, _ ->
+                    items[w].mark = if (items[w].mark == 1) 2 else 1
+                    (adapter as BaseAdapter).notifyDataSetChanged()
+                }
             }
         }
     }
 
-    /** Lista z polami wyboru; [onSave] dostaje stan po „Zapisz”. */
-    fun multi(a: Activity, title: String, items: List<String>, checked: BooleanArray, onSave: (BooleanArray) -> Unit) {
-        lateinit var lv: ListView
-        show(a, title, listOf(Btn("Anuluj"), Btn("Zapisz") {
-            val st = BooleanArray(items.size) { lv.isItemChecked(it) }
-            onSave(st)
-        })) { ctx, _ ->
-            lv = ListView(ctx)
-            lv.choiceMode = ListView.CHOICE_MODE_MULTIPLE
-            lv.adapter = ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, items)
-            for (i in items.indices) lv.setItemChecked(i, checked[i])
-            lv
+    // ------------------------------------------------------------ tekst
+
+    /** Długi tekst (README, opisy): przewijanie ▲▼, pasek położenia, WSTECZ zamyka. */
+    fun text(a: Activity, title: String, text: CharSequence, sizeSp: Float = 17f) {
+        panel(a, title, "▲ ▼ przewijanie  •  WSTECZ zamknij", widthFrac = 0.75f) { ctx, _ ->
+            val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+            val pos = ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
+                max = 1000; progressDrawable = ctx.getDrawable(R.drawable.progress_epg)
+            }
+            val sv = scrollText(ctx, text, sizeSp) { p -> pos.progress = p }
+            col.addView(sv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            col.addView(pos, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(ctx, 4)).apply { topMargin = dp(ctx, 10) })
+            col.isFocusable = false
+            sv.post { sv.requestFocus() }
+            col
         }
     }
 
-    /** Lista jednokrotnego wyboru: wybór zamyka okno. */
-    fun single(a: Activity, title: String, items: List<String>, selected: Int, onPick: (Int) -> Unit) {
-        show(a, title, emptyList()) { ctx, dlg ->
-            val lv = ListView(ctx)
-            lv.choiceMode = ListView.CHOICE_MODE_SINGLE
-            lv.adapter = ArrayAdapter(ctx, android.R.layout.simple_list_item_single_choice, items)
-            if (selected >= 0) { lv.setItemChecked(selected, true); lv.setSelection(selected) }
-            lv.setOnItemClickListener { _, _, w, _ -> dlg.dismiss(); onPick(w) }
-            lv
+    /** Przewijany tekst sterowany pilotem (▲▼ o ~2/3 ekranu tekstu); [onPos] — położenie 0…1000. */
+    fun scrollText(ctx: Context, text: CharSequence, sizeSp: Float, color: Int = 0xFFECEFF1.toInt(), onPos: (Int) -> Unit = {}): ScrollView {
+        val sv = object : ScrollView(ctx) {
+            override fun onScrollChanged(l: Int, t: Int, ol: Int, ot: Int) {
+                super.onScrollChanged(l, t, ol, ot)
+                val range = (getChildAt(0)?.height ?: 0) - height
+                onPos(if (range <= 0) 1000 else (t * 1000 / range))
+            }
+            override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+                super.onLayout(changed, l, t, r, b)
+                val range = (getChildAt(0)?.height ?: 0) - height
+                onPos(if (range <= 0) 1000 else (scrollY * 1000 / range))
+            }
+        }
+        sv.isFocusable = true
+        sv.isFocusableInTouchMode = false
+        sv.isVerticalScrollBarEnabled = false
+        sv.addView(TextView(ctx).apply {
+            this.text = text; textSize = sizeSp; setTextColor(color)
+            setLineSpacing(dp(ctx, 4).toFloat(), 1f)
+            setPadding(dp(ctx, 4), 0, dp(ctx, 4), 0)
+        })
+        sv.setOnKeyListener { _, code, e ->
+            if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            val step = (sv.height * 2) / 3
+            val child = sv.getChildAt(0)?.height ?: 0
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    if (sv.scrollY + sv.height >= child) false      // koniec tekstu — fokus dalej (przyciski)
+                    else { sv.smoothScrollBy(0, step); true }
+                }
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (sv.scrollY <= 0) false else { sv.smoothScrollBy(0, -step); true }
+                }
+                else -> false
+            }
+        }
+        return sv
+    }
+
+    /** Komunikat z akcjami na dole (np. aktualizacja, awaria). */
+    fun confirm(a: Activity, title: String, message: CharSequence, chips: List<Btn>, cancelable: Boolean = true, onBack: (() -> Unit)? = null) {
+        panel(a, title, null, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack, focusChip = true) { ctx, _ ->
+            scrollText(ctx, message, 18f)
         }
     }
 }

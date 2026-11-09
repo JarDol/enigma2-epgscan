@@ -189,15 +189,14 @@ class PlayerActivity : Activity() {
             safeMode = true
             AppLog.i("start w trybie bezpiecznym po awarii")
             Tools.uploadLog(prefs, true) { }
-            AlertDialog.Builder(this)
-                .setTitle("Poprzednie uruchomienie zakończyło się błędem")
-                .setMessage(crash.lines().take(14).joinToString("\n") +
-                    "\n\nLog z pełnym opisem wysłano na dekoder (${prefs.ftpDir}/${Tools.logName(prefs)}).")
-                .setPositiveButton("Kontynuuj") { _, _ -> safeMode = false; settingsVersion = -1; startUp() }
-                .setNeutralButton("Ustawienia") { _, _ -> openSettings() }
-                .setNegativeButton("Zamknij") { _, _ -> finish() }
-                .setCancelable(false)
-                .show()
+            TvDialog.confirm(this, "Poprzednie uruchomienie zakończyło się błędem",
+                crash.lines().take(14).joinToString("\n") +
+                    "\n\nLog z pełnym opisem wysłano na dekoder (${prefs.ftpDir}/${Tools.logName(prefs)}).",
+                listOf(
+                    TvDialog.Btn("Kontynuuj") { safeMode = false; settingsVersion = -1; startUp() },
+                    TvDialog.Btn("Ustawienia") { openSettings() },
+                    TvDialog.Btn("Zamknij") { finish() },
+                ), cancelable = false)
         }
     }
 
@@ -1448,10 +1447,9 @@ class PlayerActivity : Activity() {
             "Ścieżka dźwięku…" to { showAudioDialog() },
             "Ustawienia" to { openSettings() },
         )
-        AlertDialog.Builder(this)
-            .setTitle("E2Stream ${appVersion()}")
-            .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
-            .show()
+        TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->
+            items[which].second()
+        }
     }
 
     /** Przełącza na kanał o danej referencji (z bieżącego lub innego widocznego bukietu). */
@@ -1509,13 +1507,9 @@ class PlayerActivity : Activity() {
         }
         val labels = tracks.map { audioLabel(it.format) }.toTypedArray()
         val sel = tracks.indexOfFirst { it.group.isTrackSelected(it.index) }
-        AlertDialog.Builder(this)
-            .setTitle("Ścieżka dźwięku (zapamiętywana dla kanału)")
-            .setSingleChoiceItems(labels, sel) { d, which ->
-                selectAudio(tracks[which], remember = true)
-                d.dismiss()
-            }
-            .show()
+        TvDialog.single(this, "Ścieżka dźwięku (zapamiętywana dla kanału)", labels.toList(), sel) { which ->
+            selectAudio(tracks[which], remember = true)
+        }
     }
 
     private fun selectAudio(t: AudioTrack, remember: Boolean) {

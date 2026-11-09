@@ -8,6 +8,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
+import android.view.KeyEvent
+import android.view.View
 import android.widget.EditText
 
 /**
@@ -63,49 +65,97 @@ object PinLock {
 
     fun lock() { unlockedUntil = 0 }
 
-    /** Wywołuje [onOk], gdy ustawienia są odblokowane lub po poprawnym PIN-ie; [onCancel] przy anulowaniu. */
+    /**
+     * Wywołuje [onOk], gdy ustawienia są odblokowane lub po poprawnym PIN-ie; [onCancel] przy anulowaniu.
+     * PIN wpisywany cyframi z pilota albo klawiaturą na ekranie (strzałki + OK) — dla pilotów bez cyfr
+     * (Mi Box, małe piloty nowych telewizorów); bez systemowej klawiatury, która zasłaniała okno.
+     */
     fun ask(a: Activity, prefs: Prefs, cancelable: Boolean = true, onCancel: () -> Unit = {}, onOk: () -> Unit) {
         if (isUnlocked(prefs)) { onOk(); return }
         val pin = prefs.pin
-        val et = EditText(a)
-        et.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        et.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-        et.hint = "PIN (${pin.length} cyfr)"
-        et.textSize = 26f
-        var handled = false
-        lateinit var dlg: AlertDialog
-        fun check() {
-            if (handled) return
-            handled = true
-            dlg.dismiss()
-            if (et.text.toString() == pin) {
-                unlock(prefs)
-                onOk()
-            } else {
-                android.widget.Toast.makeText(a, "Błędny PIN", android.widget.Toast.LENGTH_SHORT).show()
-                onCancel()
+        val typed = StringBuilder()
+        var done = false
+        lateinit var dots: android.widget.LinearLayout
+        lateinit var info: android.widget.TextView
+        lateinit var dlg: android.app.Dialog
+        fun dp(v: Int) = (v * a.resources.displayMetrics.density).toInt()
+        fun redraw() {
+            for (i in 0 until dots.childCount) {
+                val d = dots.getChildAt(i)
+                (d.background as android.graphics.drawable.GradientDrawable).apply {
+                    if (i < typed.length) { setColor(TvDialog.BLUE); setStroke(0, 0) }
+                    else { setColor(0); setStroke(dp(2), 0xFF78909C.toInt()) }
+                }
             }
         }
-        dlg = AlertDialog.Builder(a)
-            .setTitle("Ustawienia zablokowane — podaj PIN")
-            .setView(et)
-            .setCancelable(cancelable)
-            .setPositiveButton("OK") { _, _ -> check() }
-            .setNegativeButton("Anuluj") { _, _ -> if (!handled) { handled = true; onCancel() } }
-            .setOnCancelListener { if (!handled) { handled = true; onCancel() } }
-            .create()
-        // po wpisaniu wszystkich cyfr — od razu sprawdź (bez szukania przycisku OK)
-        et.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, af: Int) {}
-            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: android.text.Editable?) {
-                if ((s?.length ?: 0) >= pin.length) et.post { check() }
+        fun press(c: Char) {
+            if (done) return
+            when (c) {
+                '<' -> if (typed.isNotEmpty()) typed.setLength(typed.length - 1)
+                '>' -> {}
+                else -> if (typed.length < pin.length) typed.append(c)
             }
-        })
-        et.setOnEditorActionListener { _, _, _ -> check(); true }
-        dlg.setCanceledOnTouchOutside(false)
-        dlg.show()
-        et.requestFocus()
+            redraw()
+            if (typed.length >= pin.length || c == '>') {
+                if (typed.toString() == pin) {
+                    done = true
+                    unlock(prefs)
+                    dlg.dismiss()
+                    onOk()
+                } else if (typed.isNotEmpty()) {
+                    info.text = "Błędny PIN — spróbuj ponownie"
+                    info.setTextColor(0xFFEF9A9A.toInt())
+                    typed.setLength(0)
+                    dots.postDelayed({ redraw() }, 250)
+                }
+            }
+        }
+        dlg = TvDialog.panel(a, "Ustawienia zablokowane", null, widthFrac = 0.42f,
+            onBack = { if (!done) { done = true; onCancel() } }) { ctx, _ ->      // WSTECZ zawsze anuluje
+            val col = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
+            }
+            dots = android.widget.LinearLayout(ctx).apply { gravity = android.view.Gravity.CENTER }
+            repeat(pin.length) {
+                dots.addView(View(ctx).apply { background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL } },
+                    android.widget.LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginStart = dp(9); marginEnd = dp(9) })
+            }
+            col.addView(dots)
+            info = android.widget.TextView(ctx).apply {
+                text = "Wpisz PIN cyframi na pilocie albo wybierz poniżej"
+                textSize = 14f; setTextColor(TvDialog.GREY); gravity = android.view.Gravity.CENTER
+                setPadding(0, dp(12), 0, dp(12))
+            }
+            col.addView(info)
+            val grid = android.widget.GridLayout(ctx).apply { columnCount = 3 }
+            val keys = listOf('1', '2', '3', '4', '5', '6', '7', '8', '9', '<', '0', '>')
+            var firstKey: android.widget.Button? = null
+            for (k in keys) {
+                val b = android.widget.Button(ctx, null, 0, R.style.TvDialogButton)
+                b.text = when (k) { '<' -> "⌫"; '>' -> "OK"; else -> k.toString() }
+                b.textSize = 20f
+                b.minWidth = dp(76); b.minimumWidth = dp(76)
+                b.setOnClickListener { press(k) }
+                grid.addView(b, android.widget.GridLayout.LayoutParams().apply {
+                    width = dp(76); height = dp(52); setMargins(dp(5), dp(5), dp(5), dp(5))
+                })
+                if (firstKey == null) firstKey = b
+            }
+            col.addView(grid)
+            redraw()
+            col.post { firstKey?.requestFocus() }
+            col
+        }
+        dlg.setOnKeyListener { _, code, e ->
+            if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (code) {
+                in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> { press('0' + (code - KeyEvent.KEYCODE_0)); true }
+                in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> { press('0' + (code - KeyEvent.KEYCODE_NUMPAD_0)); true }
+                KeyEvent.KEYCODE_DEL -> { press('<'); true }
+                else -> false
+            }
+        }
     }
 }
 
@@ -218,11 +268,8 @@ object Tools {
     }
 
     private fun askUpdate(a: Activity, info: Updater.Info, msg: (String) -> Unit) {
-        AlertDialog.Builder(a)
-            .setTitle("Aktualizacja E2Stream")
-            .setMessage("Dostępna wersja ${info.version} (masz ${appVersion(a)}). Pobrać i zainstalować?")
-            .setPositiveButton("Tak") { _, _ -> downloadAndInstall(a, info, msg) }
-            .setNegativeButton("Nie", null)
-            .show()
+        TvDialog.confirm(a, "Aktualizacja E2Stream",
+            "Dostępna wersja ${info.version} (masz ${appVersion(a)}). Pobrać i zainstalować?",
+            listOf(TvDialog.Btn("Zainstaluj") { downloadAndInstall(a, info, msg) }, TvDialog.Btn("Nie teraz")))
     }
 }
