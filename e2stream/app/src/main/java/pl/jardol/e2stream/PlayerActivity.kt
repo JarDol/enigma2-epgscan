@@ -343,7 +343,9 @@ class PlayerActivity : Activity() {
                     readyLogged = true
                     AppLog.i("start: READY po ${SystemClock.elapsedRealtime() - streamStartAt} ms")
                 }
-                if (playbackState == Player.STATE_ENDED) scheduleRestart("koniec strumienia")
+                if (playbackState == Player.STATE_ENDED) {
+                    if (recMode) recEnded() else scheduleRestart("koniec strumienia")
+                }
             }
 
             override fun onRenderedFirstFrame() {
@@ -672,7 +674,7 @@ class PlayerActivity : Activity() {
             .createMediaSource(MediaItem.fromUri(url))
     }
 
-    private fun startStream(url: String) {
+    private fun startStream(url: String, startMs: Long = 0) {
         val p = player ?: return
         currentUrl = url
         streamGen++
@@ -683,16 +685,21 @@ class PlayerActivity : Activity() {
         // SID serwisu = 4. pole referencji (hex), np. 1:0:19:3DD2:640:13E:820000:0:0:0:
         val sid = url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
         analyzer?.reset(sid)
-        if (prefs.engine == "vlc") {
+        if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
             return
+        }
+        if (recMode) {        // nagrania zawsze przez ExoPlayer (przewijanie w pliku)
+            ui.removeCallbacks(vlcTick)
+            proxy?.stop(); proxy = null
+            vlc?.release(); vlc = null
         }
         vlcLayout.visibility = View.GONE
         playerView.visibility = View.VISIBLE
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
             .build()
-        p.setMediaSource(buildSource(url))
+        if (startMs > 0) p.setMediaSource(buildSource(url), startMs) else p.setMediaSource(buildSource(url))
         p.prepare()
         p.playWhenReady = true
         watchdog?.reset()
@@ -763,7 +770,8 @@ class PlayerActivity : Activity() {
         restarts++
         lastRestartReason = pendingReason
         showMessage("Wznawiam strumień ($pendingReason)")
-        startStream(url)
+        // nagranie: od miejsca, w którym przerwało, nie od początku
+        startStream(url, if (recMode) (player?.currentPosition ?: 0) else 0)
     }
 
     // ---------------------------------------------------------------- kanały
@@ -832,7 +840,7 @@ class PlayerActivity : Activity() {
                 val bi = bq.indexOfFirst { it.ref == wantB }.let { if (it < 0) 0 else it }
                 val ch = if (bq.isEmpty()) emptyList() else api.channels(bq[bi])
                 runOnUiThread {
-                    bouquets = bq
+                    bouquets = withRec(bq)
                     if (bq.isEmpty()) {
                         showMessage("Brak bukietów na dekoderze", 8000)
                         return@runOnUiThread
@@ -860,8 +868,8 @@ class PlayerActivity : Activity() {
                 val hidden = prefs.hiddenBouquets
                 val bq = all.filter { it.ref !in hidden }.ifEmpty { all }
                 runOnUiThread {
-                    bouquets = bq
-                    val i = bq.indexOfFirst { it.ref == curRef }
+                    bouquets = withRec(bq)
+                    val i = bouquets.indexOfFirst { it.ref == curRef }
                     playBouquet = if (i >= 0) i else 0
                     AppLog.i("bukiety: ${bq.size} z ${all.size} widocznych")
                 }
@@ -873,6 +881,7 @@ class PlayerActivity : Activity() {
 
     private fun playIn(bIdx: Int, chList: List<Channel>, index: Int) {
         if (chList.isEmpty()) return
+        if (recMode) leaveRec()
         val i = ((index % chList.size) + chList.size) % chList.size
         val cur = playList.getOrNull(playIndex)
         if (cur != null && !(bIdx == playBouquet && i == playIndex)) {
@@ -934,6 +943,7 @@ class PlayerActivity : Activity() {
 
     private fun showPanel() {
         if (bouquets.isEmpty()) return
+        if (recMode) { showRecordings(); return }
         panelBouquet = playBouquet
         panelList = playList
         refreshPanel(playIndex.coerceAtLeast(0))
@@ -949,7 +959,9 @@ class PlayerActivity : Activity() {
     }
 
     private fun refreshPanel(sel: Int) {
-        panelTitle.text = "◀  ${bouquets.getOrNull(panelBouquet)?.name ?: ""}  ▶"
+        val bn = bouquets.getOrNull(panelBouquet)
+        val sub = if (bn?.ref == REC_REF && recStack.isNotEmpty()) "  ›  " + recDir.trimEnd('/').substringAfterLast('/') else ""
+        panelTitle.text = "◀  ${bn?.name ?: ""}$sub  ▶"
         adapter.notifyDataSetChanged()
         if (panelList.isNotEmpty()) list.setSelection(sel.coerceIn(0, panelList.size - 1))
     }
@@ -968,7 +980,10 @@ class PlayerActivity : Activity() {
         refreshPanel(0)
         val bq = bouquets[b]
         io.execute {
-            val ch = try { api.channels(bq) } catch (e: Exception) { emptyList() }
+            val ch = try { channelsOf(bq) } catch (e: Exception) {
+                if (bq.ref == REC_REF) runOnUiThread { showMessage("Nagrania: ${e.message}", 6000) }
+                emptyList()
+            }
             runOnUiThread {
                 if (panelBouquet == b) {
                     panelList = ch
@@ -981,6 +996,7 @@ class PlayerActivity : Activity() {
 
     private fun loadPanelEpg() {
         val b = bouquets.getOrNull(panelBouquet) ?: return
+        if (b.ref == REC_REF) return
         val target = panelList
         io.execute {
             val map = try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
@@ -1008,6 +1024,7 @@ class PlayerActivity : Activity() {
     private fun onPanelPick(pos: Int) {
         val l = panelList
         if (pos !in l.indices) return
+        l[pos].rec?.let { pickRecording(it); return }
         hidePanel()
         // ten sam, już odtwarzany kanał — nie uruchamiaj strumienia od nowa
         if (panelBouquet == playBouquet && pos == playIndex && currentUrl != null) {
@@ -1025,6 +1042,7 @@ class PlayerActivity : Activity() {
             val v = convertView ?: layoutInflater.inflate(R.layout.item_channel, parent, false)
             UiScale.apply(v, UiScale.pct(prefs.uiListFont), UiScale.pct(prefs.uiListIcon))
             val c = panelList[position]
+            c.rec?.let { return recRow(v, c, it, position) }
             v.findViewById<TextView>(R.id.num).text = c.num.toString()
             val iv = v.findViewById<android.widget.ImageView>(R.id.icon)
             val bmp = if (prefs.picons) Picons.bitmap(this@PlayerActivity, c.ref) else null
@@ -1056,6 +1074,238 @@ class PlayerActivity : Activity() {
         }
     }
 
+    // ---------------------------------------------------------------- nagrania z dekodera
+
+    private val REC_REF = "e2stream:nagrania"
+    private var recDir = ""                       // bieżący katalog (puste = domyślny dekodera)
+    private val recStack = ArrayList<String>()    // katalogi nadrzędne (powrót „‹ wstecz”)
+    private var recMode = false
+    private var recItem: Recording? = null
+    private var recBannerUntil = 0L
+    private val recPos by lazy { getSharedPreferences("recpos", MODE_PRIVATE) }
+    private val dateFmt = SimpleDateFormat("EEE dd.MM  HH:mm", Locale("pl", "PL"))
+
+    /** Bukiet „Nagrania” zawsze na końcu listy bukietów. */
+    private fun withRec(bq: List<Bouquet>) = bq.filter { it.ref != REC_REF } + Bouquet("Nagrania", REC_REF)
+
+    /** Kanały bukietu albo (dla „Nagrania”) zawartość bieżącego katalogu nagrań. Poza wątkiem UI. */
+    private fun channelsOf(bq: Bouquet): List<Channel> {
+        if (bq.ref != REC_REF) return api.channels(bq)
+        val (cur, items) = api.movies(recDir)
+        if (recDir.isBlank()) recDir = cur
+        val out = ArrayList<Channel>()
+        if (recStack.isNotEmpty()) out += Channel(0, "‹ wstecz", "").also {
+            it.rec = Recording("..", "‹ wstecz", "", "", "", 0, 0, 0, true)
+        }
+        items.forEachIndexed { i, r -> out += Channel(i + 1, r.title, r.sref.ifBlank { r.path }).also { it.rec = r } }
+        return out
+    }
+
+    /** Lista kanałów otwarta na bukiecie „Nagrania”. */
+    private fun showRecordings() {
+        val i = bouquets.indexOfFirst { it.ref == REC_REF }
+        if (i < 0) { showMessage("Najpierw połączenie z dekoderem", 3000); return }
+        panel.visibility = View.VISIBLE
+        banner.visibility = View.GONE
+        list.requestFocus()
+        panelBouquet = i - 1
+        panelBouquetStep(1)
+    }
+
+    private fun recPosKey(r: Recording) = r.path
+
+    private fun savedPos(r: Recording): Long = recPos.getLong(recPosKey(r), 0)
+
+    private fun saveRecPos() {
+        val r = recItem ?: return
+        val p = player ?: return
+        val pos = p.currentPosition
+        val dur = p.duration
+        if (dur > 0 && pos > dur - 60_000) recPos.edit().remove(recPosKey(r)).apply()      // obejrzane do końca
+        else if (pos > 30_000) recPos.edit().putLong(recPosKey(r), pos).apply()
+    }
+
+    private fun pickRecording(r: Recording) {
+        if (r.isDir) {
+            if (r.path == "..") {
+                recDir = if (recStack.isNotEmpty()) recStack.removeAt(recStack.size - 1) else ""
+            } else {
+                recStack += recDir
+                recDir = r.path
+            }
+            panelBouquet -= 1
+            panelBouquetStep(1)
+            return
+        }
+        val saved = savedPos(r)
+        if (saved > 60_000) {
+            TvDialog.list(this, r.title, listOf(
+                TvDialog.Item("Wznów od ${fmtMs(saved)}"),
+                TvDialog.Item("Od początku"),
+            ), 0, widthFrac = 0.45f) { w -> playRecording(r, if (w == 0) saved else 0) }
+        } else playRecording(r, 0)
+    }
+
+    private fun playRecording(r: Recording, startMs: Long) {
+        if (recMode) saveRecPos()
+        hidePanel()
+        recMode = true
+        recItem = r
+        failStreak = 0
+        ui.removeCallbacks(restartRunnable)
+        restartPending = false
+        val url = api.fileUrl(r.path)
+        AppLog.i("nagranie: ${r.title} (${r.service}) $url od ${fmtMs(startMs)}")
+        startStream(url, startMs)
+        showRecBanner()
+        ui.removeCallbacks(recTick)
+        ui.postDelayed(recTick, 500)
+    }
+
+    /** Koniec nagrania albo wyjście: zapamiętanie miejsca. */
+    private fun leaveRec() {
+        if (!recMode) return
+        saveRecPos()
+        recMode = false
+        recItem = null
+        ui.removeCallbacks(recTick)
+        player?.playWhenReady = true
+    }
+
+    /** Powrót do ostatnio oglądanego kanału. */
+    private fun backToLive() {
+        leaveRec()
+        if (playList.isNotEmpty() && playIndex >= 0) playIn(playBouquet, playList, playIndex)
+    }
+
+    private fun recEnded() {
+        recItem?.let { recPos.edit().remove(recPosKey(it)).apply() }
+        AppLog.i("nagranie: koniec")
+        recMode = false
+        recItem = null
+        showMessage("Koniec nagrania", 3000)
+        backToLive()
+    }
+
+    private fun recSeek(deltaMs: Long) {
+        val p = player ?: return
+        val dur = p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+        p.seekTo((p.currentPosition + deltaMs).coerceIn(0, maxOf(0, dur - 1000)))
+        showRecBanner()
+    }
+
+    private fun recTogglePause() {
+        val p = player ?: return
+        p.playWhenReady = !p.playWhenReady
+        if (!p.playWhenReady) saveRecPos()
+        showRecBanner(sticky = !p.playWhenReady)
+    }
+
+    /** Klawisze podczas odtwarzania nagrania. */
+    private fun recKey(code: Int, e: KeyEvent): Boolean {
+        val fast = e.repeatCount > 3          // przytrzymanie przyspiesza przewijanie
+        when (code) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> recSeek(if (fast) -60_000 else -10_000)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> recSeek(if (fast) 120_000 else 30_000)
+            KeyEvent.KEYCODE_DPAD_UP -> recSeek(5 * 60_000)
+            KeyEvent.KEYCODE_DPAD_DOWN -> recSeek(-5 * 60_000)
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> recSeek(60_000)
+            KeyEvent.KEYCODE_MEDIA_REWIND -> recSeek(-60_000)
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> recTogglePause()
+            KeyEvent.KEYCODE_MEDIA_STOP -> backToLive()
+            KeyEvent.KEYCODE_BACK -> {
+                if (banner.visibility == View.VISIBLE && player?.playWhenReady == true) { banner.visibility = View.GONE; return true }
+                backToLive()
+            }
+            else -> return false
+        }
+        return true
+    }
+
+    private fun fmtMs(ms: Long): String {
+        val s = ms / 1000
+        return if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
+        else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
+    }
+
+    /** Pasek nagrania: tytuł, kanał, położenie / długość, pasek postępu, podpowiedzi klawiszy. */
+    private fun showRecBanner(sticky: Boolean = false) {
+        val r = recItem ?: return
+        bannerName.text = r.title
+        bannerClock.text = hm.format(Date())
+        val icon = if (prefs.picons && r.sref.isNotBlank()) Picons.bitmap(this, r.sref) else null
+        bannerIcon.setImageBitmap(icon)
+        bannerIcon.visibility = if (icon != null) View.VISIBLE else View.GONE
+        updateRecBanner()
+        banner.visibility = View.VISIBLE
+        ui.removeCallbacks(hideBanner)
+        recBannerUntil = if (sticky) Long.MAX_VALUE else SystemClock.elapsedRealtime() + prefs.bannerSec.coerceIn(3, 30) * 1000L
+    }
+
+    private fun updateRecBanner() {
+        val r = recItem ?: return
+        val p = player ?: return
+        val pos = p.currentPosition
+        val dur = p.duration.takeIf { it > 0 } ?: r.lengthSec * 1000
+        val paused = !p.playWhenReady
+        bannerNow.text = (if (paused) "⏸  " else "▶  ") + listOf(r.service, if (r.begin > 0) dateFmt.format(Date(r.begin * 1000)) else "")
+            .filter { it.isNotBlank() }.joinToString("  •  ")
+        bannerStart.text = fmtMs(pos)
+        bannerEnd.text = if (dur > 0) "${fmtMs(dur)}   (−${fmtMs(maxOf(0, dur - pos))})" else ""
+        bannerProgress.progress = if (dur > 0) (pos * 1000 / dur).toInt().coerceIn(0, 1000) else 0
+        bannerNext.text = "◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pauza   WSTECZ powrót do TV"
+    }
+
+    /** Co 0,5 s w trybie nagrania: odświeżenie paska, ukrycie po czasie, zapis miejsca co 15 s. */
+    private var recSaveN = 0
+    private val recTick = object : Runnable {
+        override fun run() {
+            if (!recMode) return
+            ui.postDelayed(this, 500)
+            if (banner.visibility == View.VISIBLE) {
+                updateRecBanner()
+                if (SystemClock.elapsedRealtime() > recBannerUntil && player?.playWhenReady == true) banner.visibility = View.GONE
+            }
+            if (++recSaveN % 30 == 0) saveRecPos()
+        }
+    }
+
+    /** Wiersz nagrania (albo katalogu) na liście. */
+    private fun recRow(v: View, c: Channel, r: Recording, position: Int): View {
+        val selected = position == list.selectedItemPosition && list.hasFocus()
+        v.findViewById<TextView>(R.id.num).text = if (r.isDir) "" else c.num.toString()
+        val iv = v.findViewById<android.widget.ImageView>(R.id.icon)
+        val bmp = if (!r.isDir && prefs.picons && r.sref.isNotBlank()) Picons.bitmap(this, r.sref) else null
+        iv.setImageBitmap(bmp)
+        iv.visibility = if (bmp != null) View.VISIBLE else View.INVISIBLE
+        val name = v.findViewById<TextView>(R.id.name)
+        val playing = recMode && recItem?.path == r.path
+        name.text = when {
+            r.isDir && r.path == ".." -> r.title
+            r.isDir -> "▸  ${r.title}"
+            playing -> "▶  ${r.title}"
+            else -> r.title
+        }
+        name.setTextColor(if (!selected && (playing || r.isDir)) 0xFF4FC3F7.toInt() else 0xFFFFFFFF.toInt())
+        val now = v.findViewById<TextView>(R.id.now)
+        now.text = if (r.isDir) "" else listOf(r.service, if (r.lengthSec > 0) "${r.lengthSec / 60} min" else "")
+            .filter { it.isNotBlank() }.joinToString("  •  ")
+        now.setTextColor(if (selected) 0xFFE3F2FD.toInt() else 0xFFB0BEC5.toInt())
+        val time = v.findViewById<TextView>(R.id.time)
+        val bar = v.findViewById<android.widget.ProgressBar>(R.id.bar)
+        if (!r.isDir && r.begin > 0) {
+            time.text = dateFmt.format(Date(r.begin * 1000))
+            time.setTextColor(if (selected) 0xFFFFFFFF.toInt() else 0xFFB0BEC5.toInt())
+            time.visibility = View.VISIBLE
+        } else time.visibility = View.INVISIBLE
+        val saved = savedPos(r)
+        if (!r.isDir && saved > 0 && r.lengthSec > 0) {
+            bar.progress = (saved * 1000 / (r.lengthSec * 1000)).toInt().coerceIn(0, 1000)      // obejrzana część
+            bar.visibility = View.VISIBLE
+        } else bar.visibility = View.INVISIBLE
+        return v
+    }
+
     // ---------------------------------------------------------------- nakładki
 
     private val hideBanner = Runnable { banner.visibility = View.GONE }
@@ -1075,6 +1325,12 @@ class PlayerActivity : Activity() {
         infoDesc.text = ""
         infoTitle.text = ""
         UiScale.apply(infoBox, UiScale.pct(prefs.uiListFont))
+        ch.rec?.let { r ->
+            infoTitle.visibility = View.VISIBLE
+            infoTitle.text = if (r.isDir) r.title else "${r.title}${if (r.service.isNotBlank()) "  •  " + r.service else ""}"
+            infoDesc.text = if (r.isDir) "Katalog nagrań" else r.desc.ifBlank { "Brak opisu" }
+            return
+        }
         epg.nowNext(ch) { cur, _ ->
             if (panelList.getOrNull(list.selectedItemPosition) !== ch) return@nowNext
             infoTitle.text = cur?.let { "${t(it.begin)}–${t(it.end)}  ${it.title}" } ?: ""
@@ -1232,6 +1488,8 @@ class PlayerActivity : Activity() {
             return super.onKeyDown(keyCode, event)
         }
 
+        if (recMode && recKey(keyCode, event)) return true
+
         if (keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
             digit(keyCode - KeyEvent.KEYCODE_0); return true
         }
@@ -1284,7 +1542,7 @@ class PlayerActivity : Activity() {
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
-            if (!suppressOkUp && !event.isCanceled) showPanel()
+            if (!suppressOkUp && !event.isCanceled) { if (recMode) recTogglePause() else showPanel() }
             suppressOkUp = false
             return true
         }
@@ -1440,11 +1698,13 @@ class PlayerActivity : Activity() {
 
     private fun showQuickMenu() {
         val items = listOf<Pair<String, () -> Unit>>(
+            *(if (recMode) arrayOf<Pair<String, () -> Unit>>("Wróć do telewizji" to { backToLive() }) else emptyArray()),
             "EPG wydarzenia" to { epg.showCurrentEvent() },
             "EPG kanału" to { epg.showChannelEpg() },
             "Multi EPG" to { epg.showMultiEpg() },
             "Szukaj w EPG" to { epg.showSearch() },
             "Ścieżka dźwięku…" to { showAudioDialog() },
+            "Nagrania" to { showRecordings() },
             "Ustawienia" to { openSettings() },
         )
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->
@@ -1460,6 +1720,7 @@ class PlayerActivity : Activity() {
         val bq = bouquets
         io.execute {
             for ((bi, b) in bq.withIndex()) {
+                if (b.ref == REC_REF) continue
                 val ch = try { api.channels(b) } catch (e: Exception) { continue }
                 val j = ch.indexOfFirst { OpenWebif.key(it.ref) == k }
                 if (j >= 0) {

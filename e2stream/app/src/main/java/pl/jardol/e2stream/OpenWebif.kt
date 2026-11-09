@@ -22,7 +22,15 @@ data class EpgEvent(
     val end: Long get() = begin + duration
 }
 
+/** Nagranie (albo katalog) na dysku dekodera. */
+class Recording(
+    val path: String, val title: String, val desc: String, val service: String, val sref: String,
+    val begin: Long, val lengthSec: Long, val size: Long, val isDir: Boolean,
+)
+
 class Channel(val num: Int, val name: String, val ref: String) {
+    /** Pozycja z bukietu „Nagrania” (nie kanał). */
+    var rec: Recording? = null
     @Volatile
     var now: String = ""
     @Volatile
@@ -214,6 +222,52 @@ class OpenWebif(private val p: Prefs) {
             "&eit=" + ev.id + "&disabled=0&justplay=0&afterevent=3")
         return js.optBoolean("result") to (js.optString("message") + " (margines 2 min przed, 5 min po)")
     }
+
+    /**
+     * Nagrania z katalogu [dir] (puste = katalog domyślny dekodera): podkatalogi, potem pliki od najnowszych.
+     * Zwraca bieżący katalog i listę.
+     */
+    fun movies(dir: String): Pair<String, List<Recording>> {
+        val js = get("/api/movielist" + if (dir.isNotBlank()) "?dirname=" + enc(dir) else "")
+        val cur = js.optString("directory").ifBlank { dir }
+        val out = ArrayList<Recording>()
+        js.optJSONArray("bookmarks")?.let { b ->
+            for (i in 0 until b.length()) {
+                val name = b.optString(i).trimEnd('/')
+                if (name.isBlank()) continue
+                out += Recording(cur.trimEnd('/') + "/" + name + "/", name, "", "", "", 0, 0, 0, true)
+            }
+        }
+        val files = ArrayList<Recording>()
+        js.optJSONArray("movies")?.let { m ->
+            for (i in 0 until m.length()) {
+                val o = m.optJSONObject(i) ?: continue
+                val path = o.str("filename")
+                if (path.isBlank()) continue
+                val len = o.str("length")       // „m:ss” albo „h:mm:ss”
+                val parts = len.split(":").mapNotNull { it.trim().toLongOrNull() }
+                val lenSec = when (parts.size) { 3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]; 2 -> parts[0] * 60 + parts[1]; else -> 0 }
+                val ext = o.str("descriptionExtended")
+                val sd = o.str("description")
+                files += Recording(
+                    path = path,
+                    title = unescape(o.str("eventname").ifBlank { path.substringAfterLast('/').substringBeforeLast('.') }),
+                    desc = unescape(listOf(sd, ext).filter { it.isNotBlank() }.distinct().joinToString("\n")),
+                    service = unescape(o.str("servicename")),
+                    sref = o.str("serviceref"),
+                    begin = o.optLong("recordingtime"),
+                    lengthSec = lenSec,
+                    size = o.optLong("filesize"),
+                    isDir = false,
+                )
+            }
+        }
+        files.sortByDescending { it.begin }
+        return cur to (out + files)
+    }
+
+    /** Odtwarzanie pliku nagrania przez serwer OpenWebif (z przewijaniem — zakresy HTTP). */
+    fun fileUrl(path: String): String = "http://${p.host}:${p.httpPort}/file?file=" + enc(path)
 
     fun streamUrl(c: Channel): String =
         "http://${p.host}:${p.streamPort}/" + c.ref.replace(" ", "%20")
