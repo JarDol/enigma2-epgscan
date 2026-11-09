@@ -114,6 +114,10 @@ class SettingsActivity : Activity() {
                 Item.Header("Timeshift (pauza i cofanie na żywo)"),
         Item.Action("Timeshift", { tsValue() }) { chooseTs() },
         Item.Action("Miejsce bufora timeshiftu", { tsPlace() }) { chooseTsDir() },
+        Item.Toggle("Zezwól na bufor w pamięci urządzenia", { p.tsInternalOk }, { v ->
+            p.tsInternalOk = v
+            if (!v && p.tsDir.isBlank()) p.tsMin = 0        // bez zgody i bez dysku — timeshift wyłączony
+        }),
                 Item.Header("Dźwięk"),
         Item.Text("Preferowany język", { p.audioLang }, { p.audioLang = it.trim().ifEmpty { "pol" } }, hint = "ISO 639-2, np. pol,eng"),
         Item.Toggle("Preferuj AC3 / E-AC3", { p.preferAc3 }, { p.preferAc3 = it }),
@@ -324,42 +328,53 @@ class SettingsActivity : Activity() {
 
     // ------------------------------------------------------------ timeshift
 
-    private fun tsFit(): Int = TimeshiftBuffer.fitMinutes(TimeshiftBuffer.dir(this, p))
+    /** Czy wybrany jest dysk USB / karta SD (nie pamięć urządzenia). */
+    private fun tsUsb(): Boolean = p.tsDir.isNotBlank() && p.tsDir != TimeshiftBuffer.internalBase(this).absolutePath
+
+    private fun tsFit(): Int = TimeshiftBuffer.dir(this, p)?.let { TimeshiftBuffer.fitMinutes(it) } ?: 0
 
     private fun tsValue(): String {
-        val fit = tsFit()
-        val rec = TimeshiftBuffer.recommended(fit)
+        val d = TimeshiftBuffer.dir(this, p)
+            ?: return if (p.tsDir.isNotBlank()) "dysk USB niedostępny" else "wybierz miejsce bufora (dysk USB albo zgoda na pamięć urządzenia)"
+        val fit = TimeshiftBuffer.fitMinutes(d)
+        val rec = TimeshiftBuffer.recommended(fit, tsUsb())
         val cur = if (p.tsMin <= 0) "wyłączony" else "${p.tsMin} min"
-        return "$cur  •  miejsce na ~$fit min" + if (rec > 0) ", zalecane $rec min" else " — za mało miejsca"
+        return "$cur  •  miejsce na ~${fmtMin(fit)}" + if (rec > 0) ", zalecane ${fmtMin(rec)}" else " — za mało miejsca"
     }
 
+    private fun fmtMin(m: Int) = if (m >= 120 && m % 60 == 0) "${m / 60} h" else "$m min"
+
     private fun tsPlace(): String {
-        val d = TimeshiftBuffer.dir(this, p)
-        val name = if (p.tsDir.isBlank()) "pamięć urządzenia" else storageName(p.tsDir)
-        return "$name  •  wolne ${TimeshiftBuffer.gb(d.usableSpace)}"
+        if (p.tsDir.isBlank()) return if (p.tsInternalOk) "pamięć urządzenia  •  wolne ${TimeshiftBuffer.gb(TimeshiftBuffer.internalBase(this).usableSpace)}" else "nie wybrano"
+        if (!TimeshiftBuffer.available(p.tsDir)) return "${storageName(p.tsDir)} — niedostępny"
+        return "${storageName(p.tsDir)}  •  wolne ${TimeshiftBuffer.gb(java.io.File(p.tsDir).usableSpace)}"
     }
 
     private fun storageName(path: String): String =
-        Storage.options(this).firstOrNull { it.path == path }?.label?.substringBefore(" —")?.substringBefore("\n") ?: path
+        Storage.options(this).firstOrNull { it.path == path }?.label?.substringBefore("\n")?.substringBefore(" —") ?: path
 
     private fun chooseTs() {
+        if (TimeshiftBuffer.dir(this, p) == null) {
+            toast("Najpierw wybierz miejsce bufora: dysk USB albo zezwól na pamięć urządzenia")
+            chooseTsDir(); return
+        }
+        val usb = tsUsb()
         val fit = tsFit()
-        val rec = TimeshiftBuffer.recommended(fit)
-        val ch = TimeshiftBuffer.CHOICES
+        val rec = TimeshiftBuffer.recommended(fit, usb)
+        val ch = TimeshiftBuffer.choices(usb)
         val items = ch.map { m ->
-            val label = if (m == 0) "Wyłączony" else "$m min"
+            val label = if (m == 0) "Wyłączony" else fmtMin(m)
             val sub = when {
                 m == 0 -> ""
                 m > fit -> "za mało miejsca"
-                m == rec -> "zalecane (maks. przy tym miejscu)"
-                else -> "~${m * TimeshiftBuffer.MB_PER_MIN / 1000.0} GB".replace('.', ',')
+                m == rec -> "zalecane (najdłuższy, który się mieści)"
+                else -> String.format(Locale("pl"), "~%.1f GB", m * TimeshiftBuffer.MB_PER_MIN / 1000.0)
             }
             TvDialog.Item(label, sub, if (m == p.tsMin) 3 else 0)
         }
-        TvDialog.list(this, "Timeshift — miejsce na ~$fit min (${tsPlace()})", items, ch.indexOf(p.tsMin).coerceAtLeast(0),
-            widthFrac = 0.6f) { w ->
+        TvDialog.list(this, "Timeshift — miejsce na ~${fmtMin(fit)}", items, ch.indexOf(p.tsMin).coerceAtLeast(0), widthFrac = 0.6f) { w ->
             val m = ch[w]
-            if (m > fit) { toast("Za mało miejsca na $m min — wybierz krótszy czas albo inny nośnik"); return@list }
+            if (m > fit) { toast("Za mało miejsca na ${fmtMin(m)} — wybierz krótszy czas albo inny nośnik"); return@list }
             p.tsMin = m
             markChanged("timeshift = $m min")
             refresh()
@@ -367,27 +382,45 @@ class SettingsActivity : Activity() {
     }
 
     private fun chooseTsDir() {
+        val internal = TimeshiftBuffer.internalBase(this).absolutePath
         val opts = Storage.options(this).filter { it.path != filesDir.absolutePath }
         val items = opts.map { o ->
+            val isInt = o.path == internal
+            val usable = isInt && !p.tsInternalOk
             val fit = TimeshiftBuffer.fitMinutes(java.io.File(o.path, "timeshift"))
-            val rec = TimeshiftBuffer.recommended(fit)
+            val rec = TimeshiftBuffer.recommended(fit, !isInt)
+            val cur = if (isInt) p.tsDir.isBlank() && p.tsInternalOk else o.path == p.tsDir
             TvDialog.Item(o.label.substringBefore("\n").substringBefore(" —"),
-                "wolne ${TimeshiftBuffer.gb(java.io.File(o.path).usableSpace)} → ~$fit min" + if (rec > 0) " (zalecane $rec)" else "",
-                if (o.path == p.tsDir || (p.tsDir.isBlank() && o == opts.firstOrNull())) 3 else 0)
+                if (usable) "wymaga zgody (zapis ciągły zużywa pamięć flash)"
+                else "wolne ${TimeshiftBuffer.gb(java.io.File(o.path).usableSpace)} → ~${fmtMin(fit)}" + if (rec > 0) " (zalecane ${fmtMin(rec)})" else "",
+                if (cur) 3 else 0)
         }
         TvDialog.list(this, "Miejsce bufora timeshiftu", items, -1, widthFrac = 0.6f) { w ->
-            p.tsDir = if (w == 0) "" else opts[w].path
-            val fit = tsFit()
-            val rec = TimeshiftBuffer.recommended(fit)
-            if (p.tsMin > fit) {
-                p.tsMin = rec
-                toast(if (rec > 0) "Na tym nośniku zmieści się ~$fit min — ustawiono $rec min" else "Za mało miejsca — timeshift wyłączony")
-            } else if (p.tsMin == 0 && rec > 0) {
-                toast("Na tym nośniku zmieści się ~$fit min — zalecane $rec min (włącz w pozycji „Timeshift”)")
-            }
-            markChanged("timeshift: miejsce = ${p.tsDir.ifBlank { "pamięć urządzenia" }}")
-            refresh()
+            val o = opts[w]
+            if (o.path == internal) {
+                if (!p.tsInternalOk) {
+                    TvDialog.confirm(this, "Bufor w pamięci urządzenia",
+                        "Timeshift zapisuje strumień bez przerwy (kanał HD to kilka GB na godzinę). Pamięć flash " +
+                            "telewizora ma ograniczoną liczbę zapisów — przy codziennym, wielogodzinnym użyciu może się szybciej zużyć.\n\n" +
+                            "Bezpieczniej użyć dysku USB. Zezwolić na pamięć urządzenia?",
+                        listOf(TvDialog.Btn("Zezwól") { p.tsInternalOk = true; setTsDir("") }, TvDialog.Btn("Nie")))
+                } else setTsDir("")
+            } else setTsDir(o.path)
         }
+    }
+
+    private fun setTsDir(path: String) {
+        p.tsDir = path
+        val fit = tsFit()
+        val rec = TimeshiftBuffer.recommended(fit, tsUsb())
+        if (p.tsMin > fit) {
+            p.tsMin = rec
+            toast(if (rec > 0) "Zmieści się ~${fmtMin(fit)} — ustawiono ${fmtMin(rec)}" else "Za mało miejsca — timeshift wyłączony")
+        } else if (p.tsMin == 0 && rec > 0) {
+            toast("Zmieści się ~${fmtMin(fit)} — zalecane ${fmtMin(rec)} (włącz w pozycji „Timeshift”)")
+        }
+        markChanged("timeshift: miejsce = ${path.ifBlank { "pamięć urządzenia" }}")
+        items = buildItems(); refresh()
     }
 
     private fun chooseAfr() {

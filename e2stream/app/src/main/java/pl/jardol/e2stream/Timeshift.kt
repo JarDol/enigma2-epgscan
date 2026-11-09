@@ -37,13 +37,14 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
     @Volatile var shrunk = false        // okno skrócone z braku miejsca
         private set
 
-    init { dir.mkdirs(); clearFiles() }
+    /** Prefiks plików bieżącej sesji — sprzątanie w tle nie dotyka plików, które właśnie powstają. */
+    @Volatile private var session = newSession()
 
-    private fun clearFiles() {
-        dir.listFiles { f -> f.name.startsWith("ts-") && f.name.endsWith(".ts") }?.forEach { it.delete() }
-    }
+    init { dir.mkdirs(); cleanupAsync(dir, session) }
 
-    /** Nowy kanał / koniec: wszystko od zera. */
+    private fun newSession() = "ts-" + java.lang.Long.toString(System.currentTimeMillis(), 36) + "-"
+
+    /** Nowy kanał / koniec: wszystko od zera; stare pliki kasowane w tle (bez czekania). */
     fun reset() = synchronized(lock) {
         try { out?.close() } catch (_: Exception) {}
         out = null
@@ -51,7 +52,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         total = 0
         failed = null
         shrunk = false
-        clearFiles()
+        session = newSession()
+        cleanupAsync(dir, session)
         lock.notifyAll()
     }
 
@@ -76,7 +78,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
 
     private fun rotate(now: Long) {
         try { out?.close() } catch (_: Exception) {}
-        val f = File(dir, "ts-${nextIdx++}.ts")
+        val f = File(dir, "$session${nextIdx++}.ts")
         out = FileOutputStream(f)
         segs += Seg(f, total, now)
         // okno: najwyżej maxMin pełnych minut (+ bieżąca); mało miejsca — wypadają najstarsze
@@ -86,7 +88,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
 
     private fun dropOldest() {
         val s = segs.removeAt(0)
-        s.file.delete()
+        val f = s.file
+        Thread({ f.delete() }, "timeshift-usun").start()      // usuwanie dużego pliku nie wstrzymuje zapisu
     }
 
     val oldestOffset: Long get() = synchronized(lock) { segs.firstOrNull()?.start ?: 0 }
@@ -165,6 +168,22 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
     }
 
     companion object {
+        /**
+         * Kasuje w tle pliki bufora z poprzednich sesji (zmiana kanału, wyjście, przerwanie aplikacji).
+         * [keep] — prefiks bieżącej sesji (zostaje).
+         */
+        fun cleanupAsync(dir: File?, keep: String? = null) {
+            if (dir == null) return
+            Thread({
+                try {
+                    var n = 0
+                    dir.listFiles { f -> f.name.startsWith("ts-") && f.name.endsWith(".ts") && (keep == null || !f.name.startsWith(keep)) }
+                        ?.forEach { if (it.delete()) n++ }
+                    if (n > 0) AppLog.i("timeshift: usunięto $n starych plików bufora")
+                } catch (_: Exception) {}
+            }, "timeshift-sprzatanie").start()
+        }
+
         /** Zapas wolnego miejsca, którego bufor nie rusza. */
         const val RESERVE = 400L * 1_000_000
         /** Ostrożne oszacowanie: kanał HD do ~8 Mb/s = 60 MB na minutę. */
@@ -177,19 +196,32 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
             return if (usable <= 0) 0 else (usable / (MB_PER_MIN * 1_000_000)).toInt()
         }
 
-        val CHOICES = intArrayOf(0, 15, 30, 60, 90, 120)
+        /** Pamięć urządzenia: do 2 h; dysk USB / SD: do 6 h (od 2 h co godzinę). */
+        val CHOICES_INTERNAL = intArrayOf(0, 15, 30, 60, 90, 120)
+        val CHOICES_USB = intArrayOf(0, 15, 30, 60, 90, 120, 180, 240, 300, 360)
+
+        fun choices(usb: Boolean) = if (usb) CHOICES_USB else CHOICES_INTERNAL
 
         /** Zalecany czas: największy z wyboru, który się mieści. */
-        fun recommended(fit: Int): Int = CHOICES.filter { it in 1..fit }.maxOrNull() ?: 0
+        fun recommended(fit: Int, usb: Boolean): Int = choices(usb).filter { it in 1..fit }.maxOrNull() ?: 0
 
-        /** Katalog bufora: wybrany nośnik albo pamięć urządzenia, gdy nośnika brak. */
-        fun dir(ctx: Context, prefs: Prefs): File {
+        fun internalBase(ctx: Context): File = ctx.getExternalFilesDir(null) ?: ctx.filesDir
+
+        /** Czy nośnik [path] jest teraz dostępny do zapisu (dysk USB może zniknąć po restarcie odbiornika). */
+        fun available(path: String): Boolean = try {
+            val f = File(path)
+            val state = android.os.Environment.getExternalStorageState(f)
+            (state == android.os.Environment.MEDIA_MOUNTED) && (f.isDirectory || f.mkdirs()) && f.canWrite()
+        } catch (_: Exception) { false }
+
+        /**
+         * Katalog bufora: wybrany nośnik, jeśli jest dostępny; pamięć urządzenia tylko za zgodą
+         * (zapis ciągły zużywa pamięć flash). Null — timeshift niedostępny (np. odłączony dysk USB).
+         */
+        fun dir(ctx: Context, prefs: Prefs): File? {
             val p = prefs.tsDir
-            if (p.isNotBlank()) {
-                val base = File(p)
-                if ((base.isDirectory || base.mkdirs()) && base.canWrite()) return File(base, "timeshift")
-            }
-            return File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "timeshift")
+            if (p.isNotBlank() && available(p)) return File(p, "timeshift")
+            return if (prefs.tsInternalOk) File(internalBase(ctx), "timeshift") else null
         }
 
         fun gb(bytes: Long) = String.format(java.util.Locale("pl"), "%.1f GB", bytes / 1e9)

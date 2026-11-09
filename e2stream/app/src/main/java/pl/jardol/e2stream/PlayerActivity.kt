@@ -124,6 +124,7 @@ class PlayerActivity : Activity() {
         api = OpenWebif(prefs)
         prefs.migrate()
         AppLog.init(this, Storage.dir(this, prefs))
+        tsCleanupAtStart()
         epgStore = EpgStore(this)
         epg = EpgUi(this, api, io, epgStore, object : EpgUi.Host {
             override fun current(): Channel? = playList.getOrNull(playIndex)
@@ -1097,7 +1098,9 @@ class PlayerActivity : Activity() {
 
     private var tsBuf: TimeshiftBuffer? = null
     private var tsRec: TimeshiftRecorder? = null
-    private var tsMode = false                 // odtwarzanie z bufora (pauza / cofnięte)
+    private var tsMode = false                 // odtwarzanie z bufora (strumień z dekodera zapisuje osobne połączenie)
+    private var tsShifted = false              // za transmisją (pauza / cofnięte) — klawisze przewijania
+    private var tsCleanedAtStart = false
     private var tsBaseWall = 0L                // chwila odbioru odpowiadająca pozycji 0 odtwarzacza
     private var tsPending = 0L                 // przewijanie zbierane z kilku naciśnięć
     private var tsBannerUntil = 0L
@@ -1112,6 +1115,17 @@ class PlayerActivity : Activity() {
             return
         }
         val dir = TimeshiftBuffer.dir(this, prefs)
+        if (dir == null) {
+            // wybrany dysk USB niedostępny, a pamięci urządzenia nie wolno użyć — timeshift wyłączony do czasu podłączenia
+            if (tsBuf != null || !tsWarned) {
+                tsWarned = true
+                AppLog.i("timeshift: nośnik ${prefs.tsDir.ifBlank { "pamięć urządzenia (brak zgody)" }} niedostępny — timeshift wyłączony")
+                showMessage("Timeshift wyłączony: dysk ${if (prefs.tsDir.isBlank()) "nie wybrany" else "USB niedostępny"}", 5000)
+            }
+            tsBuf?.reset(); tsBuf = null
+            return
+        }
+        tsWarned = false
         val b = tsBuf
         if (b == null || b.dir != dir) {
             b?.reset()
@@ -1123,7 +1137,19 @@ class PlayerActivity : Activity() {
         }
     }
 
-    /** Wyjście z aplikacji / nagranie: koniec timeshiftu, bufor skasowany. */
+    private var tsWarned = false
+
+    /** Przy starcie: pliki bufora z poprzedniego uruchomienia (np. aplikacja przerwana) — kasowane w tle. */
+    private fun tsCleanupAtStart() {
+        if (tsCleanedAtStart) return
+        tsCleanedAtStart = true
+        TimeshiftBuffer.cleanupAsync(java.io.File(TimeshiftBuffer.internalBase(this), "timeshift"))
+        prefs.tsDir.takeIf { it.isNotBlank() && TimeshiftBuffer.available(it) }?.let {
+            TimeshiftBuffer.cleanupAsync(java.io.File(it, "timeshift"))
+        }
+    }
+
+    /** Wyjście z aplikacji / nagranie: koniec timeshiftu, bufor skasowany (w tle). */
     private fun tsStopAll() {
         if (tsMode) tsLeave()
         tsBuf?.reset()
@@ -1132,6 +1158,7 @@ class PlayerActivity : Activity() {
     /** Koniec odtwarzania z bufora (bez uruchamiania strumienia na żywo). */
     private fun tsLeave() {
         tsMode = false
+        tsShifted = false
         tsRec?.stop(); tsRec = null
         ui.removeCallbacks(shiftTick)
         ui.removeCallbacks(tsApply)
@@ -1165,6 +1192,7 @@ class PlayerActivity : Activity() {
         tsLiveUrl = url
         tsRec = TimeshiftRecorder(url, api.authHeader()) { analyzer }.also { it.start() }
         tsMode = true
+        tsShifted = true
         tsPlayFrom(target, play = !pause)
         ui.removeCallbacks(shiftTick)
         ui.postDelayed(shiftTick, 1000)
@@ -1190,12 +1218,26 @@ class PlayerActivity : Activity() {
         p.prepare()
         p.playWhenReady = play
         watchdog?.reset()
-        tsShowBanner(sticky = !play)
+        if (tsShifted) tsShowBanner(sticky = !play)
     }
 
-    /** Powrót na żywo: koniec odtwarzania z bufora, zwykły strumień z dekodera. */
+    /**
+     * Powrót na żywo. ExoPlayer: skok na koniec bufora (kilka sekund za transmisją) — połączenie zapisu
+     * działa dalej, więc w buforze nie ma dziury. VLC: zwykły strumień z dekodera (VLC nie czyta z bufora).
+     */
     private fun tsGoLive(reason: String = "") {
         val url = tsLiveUrl ?: currentUrl ?: return
+        val b = tsBuf
+        if (prefs.engine != "vlc" && tsRec != null && b != null && b.failed == null && b.total > 0) {
+            AppLog.i("timeshift: na żywo — koniec bufora${if (reason.isNotBlank()) " ($reason)" else ""}")
+            tsShifted = false
+            ui.removeCallbacks(tsApply)
+            tsPending = 0
+            showMessage("Na żywo", 2000)
+            tsPlayFrom(SystemClock.elapsedRealtime() - 2500, play = true)
+            playList.getOrNull(playIndex)?.let { showBanner(it) }
+            return
+        }
         tsLeave()
         AppLog.i("timeshift: na żywo${if (reason.isNotBlank()) " ($reason)" else ""}")
         showMessage("Na żywo", 2000)
@@ -1298,7 +1340,7 @@ class PlayerActivity : Activity() {
                 tsPlayFrom(b.oldestWall + 10_000, play = true)
                 return
             }
-            if (banner.visibility == View.VISIBLE) {
+            if (tsShifted && banner.visibility == View.VISIBLE) {
                 tsUpdateBanner()
                 if (SystemClock.elapsedRealtime() > tsBannerUntil && p.playWhenReady) banner.visibility = View.GONE
             }
@@ -1747,7 +1789,7 @@ class PlayerActivity : Activity() {
         }
 
         if (recMode && recKey(keyCode, event)) return true
-        if (tsMode && tsKey(keyCode, event)) return true
+        if (tsShifted && tsKey(keyCode, event)) return true
 
         if (keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
             digit(keyCode - KeyEvent.KEYCODE_0); return true
@@ -1804,7 +1846,7 @@ class PlayerActivity : Activity() {
             if (!suppressOkUp && !event.isCanceled) {
                 when {
                     recMode -> recTogglePause()
-                    tsMode -> tsTogglePause()
+                    tsShifted -> tsTogglePause()
                     else -> showPanel()
                 }
             }
@@ -1830,8 +1872,15 @@ class PlayerActivity : Activity() {
             Act.RECALL -> recall()
             Act.CH_UP -> { panelOnRec = false; play(playIndex + if (inv) -1 else 1) }
             Act.CH_DOWN -> { panelOnRec = false; play(playIndex + if (inv) 1 else -1) }
-            Act.TIMESHIFT -> if (tsMode) tsTogglePause() else tsEnter(pause = true, backMs = 0)
-            Act.TS_BACK -> if (tsMode) tsSeek(-30_000) else tsEnter(pause = false, backMs = 30_000)
+            Act.TIMESHIFT -> when {
+                tsShifted -> tsTogglePause()
+                tsMode -> { tsShifted = true; player?.playWhenReady = false; tsShowBanner(sticky = true) }   // już z bufora
+                else -> tsEnter(pause = true, backMs = 0)
+            }
+            Act.TS_BACK -> when {
+                tsMode -> { tsShifted = true; tsSeek(-30_000) }
+                else -> tsEnter(pause = false, backMs = 30_000)
+            }
         }
     }
 
@@ -1970,9 +2019,9 @@ class PlayerActivity : Activity() {
             "Multi EPG" to { epg.showMultiEpg() },
             "Szukaj w EPG" to { epg.showSearch() },
             "Ścieżka dźwięku…" to { showAudioDialog() },
-            *(if (prefs.tsMin > 0 && !recMode && !tsMode) arrayOf<Pair<String, () -> Unit>>(
-                "Pauza (timeshift)" to { tsEnter(pause = true, backMs = 0) },
-                "Cofnij 30 s (timeshift)" to { tsEnter(pause = false, backMs = 30_000) },
+            *(if (prefs.tsMin > 0 && !recMode && !tsShifted) arrayOf<Pair<String, () -> Unit>>(
+                "Pauza (timeshift)" to { doAct(Act.TIMESHIFT, 0) },
+                "Cofnij 30 s (timeshift)" to { doAct(Act.TS_BACK, 0) },
             ) else emptyArray()),
             "Ustawienia" to { openSettings() },
         )

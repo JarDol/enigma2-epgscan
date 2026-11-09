@@ -97,6 +97,11 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("tsMin", 0)
         set(v) = putI("tsMin", v)
 
+    /** Timeshift: zgoda na bufor w pamięci urządzenia (bez zgody tylko dysk USB / karta SD). */
+    var tsInternalOk: Boolean
+        get() = sp.getBoolean("tsInternalOk", false)
+        set(v) = sp.edit().putBoolean("tsInternalOk", v).apply()
+
     /** Timeshift: katalog nośnika (pusty = pamięć urządzenia). */
     var tsDir: String
         get() = s("tsDir")
