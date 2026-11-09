@@ -56,7 +56,7 @@ object TvDialog {
     fun panel(
         a: Activity, title: String?, hint: String?, chips: List<Btn> = emptyList(),
         widthFrac: Float = 0.6f, maxH: Float = 0.85f, cancelable: Boolean = true,
-        onBack: (() -> Unit)? = null, focusChip: Boolean = false,
+        onBack: (() -> Unit)? = null, focusChip: Boolean = false, top: Boolean = false,
         content: (ctx: Context, dlg: Dialog) -> View,
     ): Dialog {
         val dlg = Dialog(a, R.style.TvDialog)
@@ -115,6 +115,13 @@ object TvDialog {
         dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dlg.show()
         dlg.window?.setLayout((dm.widthPixels * widthFrac).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        if (top) dlg.window?.let { w ->
+            // u góry ekranu — klawiatura ekranowa (dół ekranu) nie zasłania pola ani przycisków
+            val lp = w.attributes
+            lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            lp.y = (dm.heightPixels * 0.06).toInt()
+            w.attributes = lp
+        }
         val f = first
         if (focusChip && f != null) f.requestFocus() else body.requestFocus()
         return dlg
@@ -261,5 +268,25 @@ object TvDialog {
         panel(a, title, null, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack, focusChip = true) { ctx, _ ->
             scrollText(ctx, message, 18f)
         }
+    }
+
+    /** Pole tekstowe u góry ekranu (nad klawiaturą ekranową) z przyciskami Zapisz / Anuluj. */
+    fun input(a: Activity, title: String, hint: String, et: android.widget.EditText, saveLabel: String = "Zapisz", onSave: () -> Unit) {
+        var saved = false
+        lateinit var dlg: Dialog
+        fun save() { if (!saved) { saved = true; dlg.dismiss(); onSave() } }
+        dlg = panel(a, title, "OK — klawiatura  •  WSTECZ anuluj", listOf(Btn(saveLabel) { save() }, Btn("Anuluj")),
+            widthFrac = 0.6f, top = true) { ctx, _ ->
+            val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+            if (hint.isNotBlank()) col.addView(TextView(ctx).apply {
+                text = hint; textSize = 14f; setTextColor(GREY); setPadding(dp(ctx, 4), 0, 0, dp(ctx, 6))
+            })
+            et.setTextColor(WHITE)
+            et.setHintTextColor(0xFF78909C.toInt())
+            col.addView(et)
+            col
+        }
+        et.setOnEditorActionListener { _, _, _ -> save(); true }
+        et.requestFocus()
     }
 }

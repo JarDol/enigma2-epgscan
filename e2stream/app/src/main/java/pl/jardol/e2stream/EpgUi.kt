@@ -312,13 +312,10 @@ class EpgUi(
         val et = EditText(a)
         et.inputType = InputType.TYPE_CLASS_TEXT
         et.hint = "tytuł audycji"
-        AlertDialog.Builder(a)
-            .setTitle("Szukaj w EPG")
-            .setView(et)
-            .setPositiveButton("Szukaj") { _, _ -> search(et.text.toString().trim()) }
-            .setNegativeButton("Anuluj", null)
-            .show()
-        et.requestFocus()
+        et.textSize = 22f
+        et.setSingleLine(true)
+        et.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+        TvDialog.input(a, "Szukaj w EPG", "", et, "Szukaj") { search(et.text.toString().trim()) }
     }
 
     private fun search(q: String) {

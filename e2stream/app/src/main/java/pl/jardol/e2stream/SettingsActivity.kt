@@ -313,23 +313,10 @@ class SettingsActivity : Activity() {
         et.textSize = 22f
         et.imeOptions = EditorInfo.IME_ACTION_DONE
         et.setSingleLine(true)
-        lateinit var dlg: AlertDialog
-        fun accept() {
+        TvDialog.input(this, it.label, it.hint, et) {
             it.set(et.text.toString())
-            dlg.dismiss()
             markChanged(it.label + if (it.secret) " (zmieniono)" else " = ${it.get()}")
         }
-        dlg = AlertDialog.Builder(this)
-            .setTitle(it.label)
-            .setMessage(it.hint.ifBlank { null })
-            .setView(et)
-            .setPositiveButton("Zapisz") { _, _ -> accept() }
-            .setNegativeButton("Anuluj", null)
-            .create()
-        // „Gotowe” na klawiaturze ekranowej zapisuje od razu
-        et.setOnEditorActionListener { _, _, _ -> accept(); true }
-        dlg.show()
-        et.requestFocus()
     }
 
     private fun chooseAfr() {

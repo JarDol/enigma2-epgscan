@@ -150,7 +150,7 @@ class OpenWebif(private val p: Prefs) {
         val m = HashMap<String, Triple<String, Long, Long>>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
-            val t = o.optString("title")
+            val t = o.str("title")
             val s = o.optString("sref")
             val beg = o.optLong("begin_timestamp")
             if (t.isNotBlank() && t != "None" && s.isNotBlank()) m[key(s)] = Triple(unescape(t), beg, beg + o.optLong("duration_sec"))
@@ -162,7 +162,7 @@ class OpenWebif(private val p: Prefs) {
     fun serviceNow(ref: String): String? {
         val arr = get("/api/epgservicenow?sRef=" + enc(ref)).optJSONArray("events") ?: return null
         val o = arr.optJSONObject(0) ?: return null
-        return o.optString("title").takeIf { it.isNotBlank() }?.let { unescape(it) }
+        return o.str("title").takeIf { it.isNotBlank() }?.let { unescape(it) }
     }
 
     private fun events(js: JSONObject): List<EpgEvent> {
@@ -170,7 +170,7 @@ class OpenWebif(private val p: Prefs) {
         val out = ArrayList<EpgEvent>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
-            val title = o.optString("title")
+            val title = o.str("title")
             if (title.isBlank() || title == "None") continue
             out.add(
                 EpgEvent(
@@ -178,8 +178,8 @@ class OpenWebif(private val p: Prefs) {
                     begin = o.optLong("begin_timestamp"),
                     duration = o.optLong("duration_sec"),
                     title = unescape(title),
-                    shortDesc = unescape(o.optString("shortdesc").takeUnless { it == "None" } ?: ""),
-                    longDesc = unescape(o.optString("longdesc").takeUnless { it == "None" } ?: ""),
+                    shortDesc = unescape(o.str("shortdesc").takeUnless { it == "None" } ?: ""),
+                    longDesc = unescape(o.str("longdesc").takeUnless { it == "None" } ?: ""),
                     sref = o.optString("sref"),
                     sname = unescape(o.optString("sname")),
                 )
@@ -217,4 +217,11 @@ class OpenWebif(private val p: Prefs) {
 
     fun streamUrl(c: Channel): String =
         "http://${p.host}:${p.streamPort}/" + c.ref.replace(" ", "%20")
+}
+
+/** Tekst z JSON bez „null” / „None” (OpenWebif zwraca null dla kanałów bez EPG). */
+internal fun org.json.JSONObject.str(k: String): String {
+    if (isNull(k)) return ""
+    val v = optString(k)
+    return if (v == "null" || v == "None") "" else v
 }

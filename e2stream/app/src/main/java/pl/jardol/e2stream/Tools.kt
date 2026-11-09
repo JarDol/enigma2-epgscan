@@ -67,93 +67,146 @@ object PinLock {
 
     /**
      * Wywołuje [onOk], gdy ustawienia są odblokowane lub po poprawnym PIN-ie; [onCancel] przy anulowaniu.
-     * PIN wpisywany cyframi z pilota albo klawiaturą na ekranie (strzałki + OK) — dla pilotów bez cyfr
-     * (Mi Box, małe piloty nowych telewizorów); bez systemowej klawiatury, która zasłaniała okno.
+     * Wpisywanie bez systemowej klawiatury:
+     *  - cyfry z pilota (jeśli ma),
+     *  - strzałki: ▲▼ zmienia cyfrę na bieżącej pozycji, ▶ / OK — następna pozycja, ◀ — poprzednia,
+     *  - przytrzymane OK pokazuje / chowa klawiaturę na ekranie (piloty bez cyfr, gdy wygodniej).
      */
     fun ask(a: Activity, prefs: Prefs, cancelable: Boolean = true, onCancel: () -> Unit = {}, onOk: () -> Unit) {
         if (isUnlocked(prefs)) { onOk(); return }
         val pin = prefs.pin
-        val typed = StringBuilder()
+        val n = pin.length
+        val digits = IntArray(n) { -1 }
+        var pos = 0
         var done = false
-        lateinit var dots: android.widget.LinearLayout
+        var longOk = false
+        val boxes = ArrayList<android.widget.TextView>()
         lateinit var info: android.widget.TextView
+        lateinit var pad: android.view.View
         lateinit var dlg: android.app.Dialog
         fun dp(v: Int) = (v * a.resources.displayMetrics.density).toInt()
         fun redraw() {
-            for (i in 0 until dots.childCount) {
-                val d = dots.getChildAt(i)
-                (d.background as android.graphics.drawable.GradientDrawable).apply {
-                    if (i < typed.length) { setColor(TvDialog.BLUE); setStroke(0, 0) }
-                    else { setColor(0); setStroke(dp(2), 0xFF78909C.toInt()) }
+            for (i in 0 until n) {
+                val tv = boxes[i]
+                tv.text = when {
+                    digits[i] < 0 -> ""
+                    i == pos && pad.visibility != View.VISIBLE -> digits[i].toString()   // edytowana cyfra widoczna
+                    else -> "•"
                 }
+                (tv.background as android.graphics.drawable.GradientDrawable).setStroke(
+                    dp(if (i == pos) 3 else 2), if (i == pos) TvDialog.BLUE else 0xFF607D8B.toInt())
             }
         }
-        fun press(c: Char) {
-            if (done) return
-            when (c) {
-                '<' -> if (typed.isNotEmpty()) typed.setLength(typed.length - 1)
-                '>' -> {}
-                else -> if (typed.length < pin.length) typed.append(c)
+        fun check() {
+            if (digits.all { it >= 0 } && digits.joinToString("") == pin) {
+                done = true; unlock(prefs); dlg.dismiss(); onOk()
+            } else {
+                info.text = "Błędny PIN — spróbuj ponownie"
+                info.setTextColor(0xFFEF9A9A.toInt())
+                for (i in 0 until n) digits[i] = -1
+                pos = 0
+                redraw()
             }
+        }
+        fun next() {
+            if (digits[pos] < 0) digits[pos] = 0
+            if (pos == n - 1) check() else { pos++; redraw() }
+        }
+        fun typeDigit(d: Int) {
+            digits[pos] = d
+            if (pos == n - 1) { redraw(); check() } else { pos++; redraw() }
+        }
+        fun back() {
+            if (digits[pos] >= 0 && pos == n - 1) digits[pos] = -1
+            else if (pos > 0) { pos--; digits[pos] = -1 }
             redraw()
-            if (typed.length >= pin.length || c == '>') {
-                if (typed.toString() == pin) {
-                    done = true
-                    unlock(prefs)
-                    dlg.dismiss()
-                    onOk()
-                } else if (typed.isNotEmpty()) {
-                    info.text = "Błędny PIN — spróbuj ponownie"
-                    info.setTextColor(0xFFEF9A9A.toInt())
-                    typed.setLength(0)
-                    dots.postDelayed({ redraw() }, 250)
-                }
-            }
         }
         dlg = TvDialog.panel(a, "Ustawienia zablokowane", null, widthFrac = 0.42f,
             onBack = { if (!done) { done = true; onCancel() } }) { ctx, _ ->      // WSTECZ zawsze anuluje
             val col = android.widget.LinearLayout(ctx).apply {
                 orientation = android.widget.LinearLayout.VERTICAL
                 gravity = android.view.Gravity.CENTER_HORIZONTAL
+                isFocusable = true
             }
-            dots = android.widget.LinearLayout(ctx).apply { gravity = android.view.Gravity.CENTER }
-            repeat(pin.length) {
-                dots.addView(View(ctx).apply { background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL } },
-                    android.widget.LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginStart = dp(9); marginEnd = dp(9) })
+            val row = android.widget.LinearLayout(ctx).apply { gravity = android.view.Gravity.CENTER }
+            repeat(n) {
+                val tv = android.widget.TextView(ctx).apply {
+                    gravity = android.view.Gravity.CENTER; textSize = 28f; setTextColor(TvDialog.WHITE)
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = dp(8).toFloat(); setColor(0x22FFFFFF)
+                    }
+                }
+                boxes += tv
+                row.addView(tv, android.widget.LinearLayout.LayoutParams(dp(56), dp(64)).apply { marginStart = dp(7); marginEnd = dp(7) })
             }
-            col.addView(dots)
+            col.addView(row)
             info = android.widget.TextView(ctx).apply {
-                text = "Wpisz PIN cyframi na pilocie albo wybierz poniżej"
+                text = "Cyfry z pilota albo ▲▼ zmiana cyfry, ▶ / OK dalej, ◀ wstecz\nprzytrzymaj OK — klawiatura na ekranie"
                 textSize = 14f; setTextColor(TvDialog.GREY); gravity = android.view.Gravity.CENTER
-                setPadding(0, dp(12), 0, dp(12))
+                setPadding(0, dp(14), 0, dp(6))
             }
             col.addView(info)
-            val grid = android.widget.GridLayout(ctx).apply { columnCount = 3 }
-            val keys = listOf('1', '2', '3', '4', '5', '6', '7', '8', '9', '<', '0', '>')
-            var firstKey: android.widget.Button? = null
-            for (k in keys) {
+            val grid = android.widget.GridLayout(ctx).apply { columnCount = 3; visibility = View.GONE }
+            pad = grid
+            for (k in listOf('1', '2', '3', '4', '5', '6', '7', '8', '9', '<', '0', '>')) {
                 val b = android.widget.Button(ctx, null, 0, R.style.TvDialogButton)
                 b.text = when (k) { '<' -> "⌫"; '>' -> "OK"; else -> k.toString() }
                 b.textSize = 20f
-                b.minWidth = dp(76); b.minimumWidth = dp(76)
-                b.setOnClickListener { press(k) }
+                b.setOnClickListener {
+                    when (k) { '<' -> back(); '>' -> check(); else -> typeDigit(k - '0') }
+                }
                 grid.addView(b, android.widget.GridLayout.LayoutParams().apply {
-                    width = dp(76); height = dp(52); setMargins(dp(5), dp(5), dp(5), dp(5))
+                    width = dp(76); height = dp(52); setMargins(dp(5), dp(8), dp(5), 0)
                 })
-                if (firstKey == null) firstKey = b
             }
-            col.addView(grid)
-            redraw()
-            col.post { firstKey?.requestFocus() }
+            col.addView(grid, android.widget.LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                gravity = android.view.Gravity.CENTER_HORIZONTAL })
             col
         }
+        redraw()
+        fun togglePad() {
+            if (pad.visibility == View.VISIBLE) {
+                pad.visibility = View.GONE
+                (pad.parent as View).requestFocus()
+            } else {
+                pad.visibility = View.VISIBLE
+                (pad as android.view.ViewGroup).getChildAt(0)?.requestFocus()
+            }
+            redraw()
+        }
         dlg.setOnKeyListener { _, code, e ->
+            val padOn = pad.visibility == View.VISIBLE
+            if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER) {
+                // przytrzymane OK — klawiatura na ekranie; krótkie OK (przy puszczeniu) — następna pozycja
+                if (e.action == KeyEvent.ACTION_DOWN) {
+                    if (e.repeatCount > 0) {
+                        if (!longOk) { longOk = true; togglePad() }
+                        return@setOnKeyListener true
+                    }
+                    return@setOnKeyListener !padOn
+                }
+                if (e.action == KeyEvent.ACTION_UP) {
+                    if (longOk) { longOk = false; return@setOnKeyListener true }
+                    if (!padOn) { next(); return@setOnKeyListener true }
+                }
+                return@setOnKeyListener false
+            }
             if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             when (code) {
-                in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> { press('0' + (code - KeyEvent.KEYCODE_0)); true }
-                in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> { press('0' + (code - KeyEvent.KEYCODE_NUMPAD_0)); true }
-                KeyEvent.KEYCODE_DEL -> { press('<'); true }
-                else -> false
+                in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> { typeDigit(code - KeyEvent.KEYCODE_0); true }
+                in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> { typeDigit(code - KeyEvent.KEYCODE_NUMPAD_0); true }
+                KeyEvent.KEYCODE_DEL -> { back(); true }
+                else -> {
+                    if (padOn) return@setOnKeyListener false        // klawiatura na ekranie: strzałki chodzą po klawiszach
+                    when (code) {
+                        KeyEvent.KEYCODE_DPAD_UP -> { digits[pos] = if (digits[pos] < 0) 0 else (digits[pos] + 1) % 10; redraw(); true }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> { digits[pos] = if (digits[pos] < 0) 9 else (digits[pos] + 9) % 10; redraw(); true }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> { next(); true }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> { back(); true }
+                        else -> false
+                    }
+                }
             }
         }
     }
