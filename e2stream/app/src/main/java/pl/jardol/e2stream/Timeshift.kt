@@ -229,10 +229,13 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
 }
 
 /** ExoPlayer czyta strumień z bufora timeshiftu od bajtu [start], doganiając zapis na bieżąco. */
-class TimeshiftDataSource(private val buf: TimeshiftBuffer, private val start: Long, private val onGone: () -> Unit) : DataSource {
+class TimeshiftDataSource(
+    private val buf: TimeshiftBuffer, private val start: Long, private val header: ByteArray?, private val onGone: () -> Unit,
+) : DataSource {
     @Volatile private var closed = false
     private var pos = 0L
     private var uri: Uri? = null
+    private var hdrPos = 0
 
     override fun addTransferListener(transferListener: TransferListener) {}
 
@@ -240,11 +243,20 @@ class TimeshiftDataSource(private val buf: TimeshiftBuffer, private val start: L
         closed = false
         uri = dataSpec.uri
         pos = start + dataSpec.position
+        hdrPos = if (dataSpec.position == 0L) 0 else Int.MAX_VALUE
         return C.LENGTH_UNSET.toLong()
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
+        // najpierw PAT + PMT — odtwarzacz od razu zna ścieżki, czeka tylko na klatkę kluczową
+        val h = header
+        if (h != null && hdrPos < h.size) {
+            val n = minOf(length, h.size - hdrPos)
+            System.arraycopy(h, hdrPos, buffer, offset, n)
+            hdrPos += n
+            return n
+        }
         while (!closed) {
             if (!buf.await(pos, 12_000, { closed })) {
                 if (closed) break

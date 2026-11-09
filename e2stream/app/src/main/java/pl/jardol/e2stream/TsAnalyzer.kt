@@ -10,6 +10,19 @@ import android.os.SystemClock
  */
 class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
 
+    @Volatile private var lastPat: ByteArray? = null
+    @Volatile private var lastPmt: ByteArray? = null
+
+    /**
+     * Ostatnie PAT i PMT bieżącego programu jako gotowe pakiety TS — doklejane na początek odczytu
+     * z bufora timeshiftu, żeby odtwarzacz nie czekał na kolejne PAT/PMT w strumieniu.
+     */
+    fun psiHeader(): ByteArray? {
+        val pat = lastPat ?: return null
+        val pmt = lastPmt ?: buildInjection() ?: return null
+        return pat + pmt
+    }
+
     /** Kopia strumienia (po czyszczeniu) — np. do bufora timeshiftu. */
     @Volatile var tee: ((ByteArray, Int, Int) -> Unit)? = null
 
@@ -335,7 +348,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
             if (pid == pmtPid && pmtPid >= 0 && payload < o + 188) {
                 assemblePmt(p, o, payload, (b1 and 0x40) != 0)
             } else if ((b1 and 0x40) != 0 && payload < o + 188) {
-                if (pid == 0) parsePat(p, payload, o + 188)
+                if (pid == 0) { parsePat(p, payload, o + 188); lastPat = p.copyOfRange(o, o + 188) }
                 else if (pid == pmtPid || (pmtPid < 0 && pmtCandidates.contains(pid))) parsePmt(p, payload, o + 188, pid)
             }
         }
@@ -526,6 +539,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         val pkts = secPkts.toByteArray()
         secLen = 0
         if (parsePmtSection(secBuf, 0, need)) {
+            lastPmt = pkts
             if (!pmtSeen) {
                 pmtSeen = true
                 if (expectedSid >= 0 && need in 16..1024) {

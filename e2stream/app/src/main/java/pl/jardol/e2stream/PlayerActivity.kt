@@ -1203,9 +1203,10 @@ class PlayerActivity : Activity() {
         val p = player ?: return
         val off = b.offsetAt(wall)
         tsBaseWall = b.wallAt(off)
+        val hdr = analyzer?.psiHeader()
         val gen = streamGen
         val src = ProgressiveMediaSource.Factory(
-            DataSource.Factory { TimeshiftDataSource(b, off) { } },
+            DataSource.Factory { TimeshiftDataSource(b, off, hdr) { } },
             DefaultExtractorsFactory().setTsExtractorFlags(
                 DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS),
         ).createMediaSource(MediaItem.fromUri("timeshift://bufor/$gen/$off"))
@@ -1234,7 +1235,8 @@ class PlayerActivity : Activity() {
             ui.removeCallbacks(tsApply)
             tsPending = 0
             showMessage("Na żywo", 2000)
-            tsPlayFrom(SystemClock.elapsedRealtime() - 2500, play = true)
+            // ~6 s za końcem bufora: odtwarzacz ma od razu zapas na start (dane z dekodera przychodzą paczkami)
+            tsPlayFrom(SystemClock.elapsedRealtime() - 6000, play = true)
             playList.getOrNull(playIndex)?.let { showBanner(it) }
             return
         }
@@ -1269,7 +1271,7 @@ class PlayerActivity : Activity() {
         if (b == null || !tsMode || target == 0L) return@Runnable
         val now = SystemClock.elapsedRealtime()
         when {
-            target >= now - 3000 -> tsGoLive("przewinięte do końca")
+            target >= now - 6000 -> tsGoLive("przewinięte do końca")
             target < b.oldestWall -> {
                 showMessage("Początek bufora (${b.spanMs() / 60000} min)", 2500)
                 tsPlayFrom(b.oldestWall + 10_000, play = player?.playWhenReady != false)
