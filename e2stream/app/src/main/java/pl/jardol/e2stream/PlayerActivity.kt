@@ -1716,6 +1716,10 @@ class PlayerActivity : Activity() {
     private fun zapTo(ref: String) {
         val k = OpenWebif.key(ref)
         val i = playList.indexOfFirst { OpenWebif.key(it.ref) == k }
+        if (i >= 0 && i == playIndex && currentUrl != null && !recMode) {
+            // ten kanał już gra — tylko zamknij listę, bez ponownego uruchamiania strumienia
+            hidePanel(); showBanner(playList[i]); return
+        }
         if (i >= 0) { hidePanel(); play(i); return }
         val bq = bouquets
         io.execute {

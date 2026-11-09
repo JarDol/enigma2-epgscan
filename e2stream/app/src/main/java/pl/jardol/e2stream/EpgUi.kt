@@ -136,7 +136,7 @@ class EpgUi(
             btns += TvDialog.Btn(if (running) "Oglądaj" else "Przełącz na kanał") { host.zapTo(ref) }
             if (ev.end > now()) btns += TvDialog.Btn("Nagraj na dekoderze") { record(ref, ev) }
         }
-        btns += TvDialog.Btn("Zamknij")
+        if (btns.isEmpty()) btns += TvDialog.Btn("Zamknij")      // WSTECZ też zamyka
         val scale = UiScale.pct(Prefs(a).uiEpgFont)
         val n = now()
         val pct = if (running && ev.duration > 0) ((n - ev.begin) * 1000 / ev.duration).toInt() else -1
