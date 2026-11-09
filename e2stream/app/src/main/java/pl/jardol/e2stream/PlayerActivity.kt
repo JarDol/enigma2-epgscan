@@ -946,7 +946,8 @@ class PlayerActivity : Activity() {
 
     private fun showPanel() {
         if (bouquets.isEmpty()) return
-        if (recMode) { showRecordings(); return }
+        // w trakcie nagrania albo po powrocie z niego — lista otwiera się na nagraniach
+        if (recMode || panelOnRec) { showRecordings(); return }
         panelBouquet = playBouquet
         panelList = playList
         refreshPanel(playIndex.coerceAtLeast(0))
@@ -990,7 +991,9 @@ class PlayerActivity : Activity() {
             runOnUiThread {
                 if (panelBouquet == b) {
                     panelList = ch
-                    refreshPanel(0)
+                    // nagrania: zaznaczone ostatnio oglądane
+                    val sel = if (bq.ref == REC_REF) ch.indexOfFirst { it.rec?.path == recLastPath }.coerceAtLeast(0) else 0
+                    refreshPanel(sel)
                     loadPanelEpg()
                 }
             }
@@ -1028,6 +1031,7 @@ class PlayerActivity : Activity() {
         val l = panelList
         if (pos !in l.indices) return
         l[pos].rec?.let { pickRecording(it); return }
+        panelOnRec = false          // wybrany kanał TV — lista znów otwiera się na bukiecie kanału
         hidePanel()
         // ten sam, już odtwarzany kanał — nie uruchamiaj strumienia od nowa
         if (panelBouquet == playBouquet && pos == playIndex && currentUrl != null) {
@@ -1085,6 +1089,8 @@ class PlayerActivity : Activity() {
     private var recMode = false
     private var recItem: Recording? = null
     private var recBannerUntil = 0L
+    private var panelOnRec = false                // po powrocie z nagrania lista otwiera się na nagraniach
+    private var recLastPath = ""
     private val recPos by lazy { getSharedPreferences("recpos", MODE_PRIVATE) }
     private val dateFmt = SimpleDateFormat("EEE dd.MM  HH:mm", Locale("pl", "PL"))
 
@@ -1159,6 +1165,8 @@ class PlayerActivity : Activity() {
         hidePanel()
         recMode = true
         recItem = r
+        panelOnRec = true
+        recLastPath = r.path
         failStreak = 0
         ui.removeCallbacks(restartRunnable)
         restartPending = false
@@ -1571,8 +1579,8 @@ class PlayerActivity : Activity() {
             Act.MENU -> showQuickMenu()
             Act.SETTINGS -> openSettings()
             Act.RECALL -> recall()
-            Act.CH_UP -> play(playIndex + if (inv) -1 else 1)
-            Act.CH_DOWN -> play(playIndex + if (inv) 1 else -1)
+            Act.CH_UP -> { panelOnRec = false; play(playIndex + if (inv) -1 else 1) }
+            Act.CH_DOWN -> { panelOnRec = false; play(playIndex + if (inv) 1 else -1) }
         }
     }
 
