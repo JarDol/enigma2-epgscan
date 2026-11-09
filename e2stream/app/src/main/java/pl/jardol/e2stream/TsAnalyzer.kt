@@ -10,6 +10,9 @@ import android.os.SystemClock
  */
 class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
 
+    /** Kopia strumienia (po czyszczeniu) — np. do bufora timeshiftu. */
+    @Volatile var tee: ((ByteArray, Int, Int) -> Unit)? = null
+
     /** Czyść strumień: pakiety TEI / kodowane / PMT innych programów zamieniane na puste (PID 0x1FFF). */
     @Volatile var clean = true
 
@@ -207,6 +210,12 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     @Synchronized
     fun feed(buf: ByteArray, off: Int, len: Int) {
         if (len <= 0) return
+        feedInner(buf, off, len)
+        // kopia po czyszczeniu (pakiety zmieniane w miejscu); niepełny pakiet z końca dochodzi w całości
+        tee?.let { t -> try { t(buf, off, len) } catch (_: Exception) {} }
+    }
+
+    private fun feedInner(buf: ByteArray, off: Int, len: Int) {
         bytes += len
         ivBytes += len
         ring?.let { r ->

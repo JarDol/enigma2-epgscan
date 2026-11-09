@@ -92,6 +92,16 @@ class Prefs(ctx: Context) {
         get() = s("ftpDir", DEFAULT_FTP_DIR)
         set(v) = putS("ftpDir", v)
 
+    /** Timeshift: długość okna w minutach (0 = wyłączony). Ustawienie tego urządzenia. */
+    var tsMin: Int
+        get() = sp.getInt("tsMin", 0)
+        set(v) = putI("tsMin", v)
+
+    /** Timeshift: katalog nośnika (pusty = pamięć urządzenia). */
+    var tsDir: String
+        get() = s("tsDir")
+        set(v) = putS("tsDir", v)
+
     /** Katalog zapisu logów i zrzutów TS (pusty = domyślny katalog aplikacji). */
     var storageDir: String
         get() = s("storageDir")

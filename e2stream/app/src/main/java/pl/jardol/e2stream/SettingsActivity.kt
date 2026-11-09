@@ -111,6 +111,9 @@ class SettingsActivity : Activity() {
         num("Zawieszenie po (s bez nowych klatek)", { p.stallSec }, { p.stallSec = it }, 1..30),
         num("Bufor startowy (ms) — szybki obraz", { p.bufferMs }, { p.bufferMs = it }, 250..10_000),
         Item.Action("Odświeżanie ekranu", { afrName(p.afrMode) }) { chooseAfr() },
+                Item.Header("Timeshift (pauza i cofanie na żywo)"),
+        Item.Action("Timeshift", { tsValue() }) { chooseTs() },
+        Item.Action("Miejsce bufora timeshiftu", { tsPlace() }) { chooseTsDir() },
                 Item.Header("Dźwięk"),
         Item.Text("Preferowany język", { p.audioLang }, { p.audioLang = it.trim().ifEmpty { "pol" } }, hint = "ISO 639-2, np. pol,eng"),
         Item.Toggle("Preferuj AC3 / E-AC3", { p.preferAc3 }, { p.preferAc3 = it }),
@@ -316,6 +319,74 @@ class SettingsActivity : Activity() {
         TvDialog.input(this, it.label, it.hint, et) {
             it.set(et.text.toString())
             markChanged(it.label + if (it.secret) " (zmieniono)" else " = ${it.get()}")
+        }
+    }
+
+    // ------------------------------------------------------------ timeshift
+
+    private fun tsFit(): Int = TimeshiftBuffer.fitMinutes(TimeshiftBuffer.dir(this, p))
+
+    private fun tsValue(): String {
+        val fit = tsFit()
+        val rec = TimeshiftBuffer.recommended(fit)
+        val cur = if (p.tsMin <= 0) "wyłączony" else "${p.tsMin} min"
+        return "$cur  •  miejsce na ~$fit min" + if (rec > 0) ", zalecane $rec min" else " — za mało miejsca"
+    }
+
+    private fun tsPlace(): String {
+        val d = TimeshiftBuffer.dir(this, p)
+        val name = if (p.tsDir.isBlank()) "pamięć urządzenia" else storageName(p.tsDir)
+        return "$name  •  wolne ${TimeshiftBuffer.gb(d.usableSpace)}"
+    }
+
+    private fun storageName(path: String): String =
+        Storage.options(this).firstOrNull { it.path == path }?.label?.substringBefore(" —")?.substringBefore("\n") ?: path
+
+    private fun chooseTs() {
+        val fit = tsFit()
+        val rec = TimeshiftBuffer.recommended(fit)
+        val ch = TimeshiftBuffer.CHOICES
+        val items = ch.map { m ->
+            val label = if (m == 0) "Wyłączony" else "$m min"
+            val sub = when {
+                m == 0 -> ""
+                m > fit -> "za mało miejsca"
+                m == rec -> "zalecane (maks. przy tym miejscu)"
+                else -> "~${m * TimeshiftBuffer.MB_PER_MIN / 1000.0} GB".replace('.', ',')
+            }
+            TvDialog.Item(label, sub, if (m == p.tsMin) 3 else 0)
+        }
+        TvDialog.list(this, "Timeshift — miejsce na ~$fit min (${tsPlace()})", items, ch.indexOf(p.tsMin).coerceAtLeast(0),
+            widthFrac = 0.6f) { w ->
+            val m = ch[w]
+            if (m > fit) { toast("Za mało miejsca na $m min — wybierz krótszy czas albo inny nośnik"); return@list }
+            p.tsMin = m
+            markChanged("timeshift = $m min")
+            refresh()
+        }
+    }
+
+    private fun chooseTsDir() {
+        val opts = Storage.options(this).filter { it.path != filesDir.absolutePath }
+        val items = opts.map { o ->
+            val fit = TimeshiftBuffer.fitMinutes(java.io.File(o.path, "timeshift"))
+            val rec = TimeshiftBuffer.recommended(fit)
+            TvDialog.Item(o.label.substringBefore("\n").substringBefore(" —"),
+                "wolne ${TimeshiftBuffer.gb(java.io.File(o.path).usableSpace)} → ~$fit min" + if (rec > 0) " (zalecane $rec)" else "",
+                if (o.path == p.tsDir || (p.tsDir.isBlank() && o == opts.firstOrNull())) 3 else 0)
+        }
+        TvDialog.list(this, "Miejsce bufora timeshiftu", items, -1, widthFrac = 0.6f) { w ->
+            p.tsDir = if (w == 0) "" else opts[w].path
+            val fit = tsFit()
+            val rec = TimeshiftBuffer.recommended(fit)
+            if (p.tsMin > fit) {
+                p.tsMin = rec
+                toast(if (rec > 0) "Na tym nośniku zmieści się ~$fit min — ustawiono $rec min" else "Za mało miejsca — timeshift wyłączony")
+            } else if (p.tsMin == 0 && rec > 0) {
+                toast("Na tym nośniku zmieści się ~$fit min — zalecane $rec min (włącz w pozycji „Timeshift”)")
+            }
+            markChanged("timeshift: miejsce = ${p.tsDir.ifBlank { "pamięć urządzenia" }}")
+            refresh()
         }
     }
 

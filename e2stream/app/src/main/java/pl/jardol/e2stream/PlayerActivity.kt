@@ -351,7 +351,7 @@ class PlayerActivity : Activity() {
                     AppLog.i("start: READY po ${SystemClock.elapsedRealtime() - streamStartAt} ms")
                 }
                 if (playbackState == Player.STATE_ENDED) {
-                    if (recMode) recEnded() else scheduleRestart("koniec strumienia")
+                    if (recMode) recEnded() else if (tsMode) tsGoLive("koniec bufora") else scheduleRestart("koniec strumienia")
                 }
             }
 
@@ -464,6 +464,8 @@ class PlayerActivity : Activity() {
             analyzerRing = ring
         }
         analyzer?.clean = prefs.cleanTs
+        // kopia strumienia na żywo do bufora timeshiftu (nie przy nagraniach z dekodera)
+        analyzer?.tee = { b, o, l -> if (!recMode) tsBuf?.write(b, o, l) }
     }
 
     private var encrypted = false
@@ -645,6 +647,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun releasePlayer() {
+        tsStopAll()
         ui.removeCallbacks(vlcTick)
         proxy?.stop(); proxy = null          // najpierw źródło danych — VLC kończy odczyt
         vlc?.release(); vlc = null
@@ -779,6 +782,7 @@ class PlayerActivity : Activity() {
         val url = currentUrl ?: return
         restarts++
         lastRestartReason = pendingReason
+        if (tsMode) { tsGoLive(pendingReason); return }
         showMessage("Wznawiam strumień ($pendingReason)")
         // nagranie: od miejsca, w którym przerwało, nie od początku
         startStream(url, if (recMode) (player?.currentPosition ?: 0) else 0)
@@ -892,6 +896,7 @@ class PlayerActivity : Activity() {
     private fun playIn(bIdx: Int, chList: List<Channel>, index: Int) {
         if (chList.isEmpty()) return
         if (recMode) leaveRec()
+        tsNewChannel()
         val i = ((index % chList.size) + chList.size) % chList.size
         val cur = playList.getOrNull(playIndex)
         if (cur != null && !(bIdx == playBouquet && i == playIndex)) {
@@ -1088,6 +1093,218 @@ class PlayerActivity : Activity() {
         }
     }
 
+    // ---------------------------------------------------------------- timeshift
+
+    private var tsBuf: TimeshiftBuffer? = null
+    private var tsRec: TimeshiftRecorder? = null
+    private var tsMode = false                 // odtwarzanie z bufora (pauza / cofnięte)
+    private var tsBaseWall = 0L                // chwila odbioru odpowiadająca pozycji 0 odtwarzacza
+    private var tsPending = 0L                 // przewijanie zbierane z kilku naciśnięć
+    private var tsBannerUntil = 0L
+    private var tsLiveUrl: String? = null
+
+    /** Nowy kanał (albo zmiana ustawień): bufor od zera, odtwarzanie na żywo. */
+    private fun tsNewChannel() {
+        if (tsMode) tsLeave()
+        val min = prefs.tsMin
+        if (min <= 0) {
+            tsBuf?.reset(); tsBuf = null
+            return
+        }
+        val dir = TimeshiftBuffer.dir(this, prefs)
+        val b = tsBuf
+        if (b == null || b.dir != dir) {
+            b?.reset()
+            tsBuf = TimeshiftBuffer(dir, min)
+            AppLog.i("timeshift: $min min w ${dir.absolutePath} (wolne ${TimeshiftBuffer.gb(dir.usableSpace)})")
+        } else {
+            b.maxMin = min
+            b.reset()
+        }
+    }
+
+    /** Wyjście z aplikacji / nagranie: koniec timeshiftu, bufor skasowany. */
+    private fun tsStopAll() {
+        if (tsMode) tsLeave()
+        tsBuf?.reset()
+    }
+
+    /** Koniec odtwarzania z bufora (bez uruchamiania strumienia na żywo). */
+    private fun tsLeave() {
+        tsMode = false
+        tsRec?.stop(); tsRec = null
+        ui.removeCallbacks(tsTick)
+        ui.removeCallbacks(tsApply)
+        tsPending = 0
+    }
+
+    /** Chwila (odbioru), którą teraz widać na ekranie. */
+    private fun tsShownWall(): Long = tsBaseWall + (player?.currentPosition ?: 0)
+
+    /**
+     * Pauza albo cofnięcie strumienia na żywo: odtwarzacz przechodzi na bufor, a strumień z dekodera
+     * dalej zapisuje się do bufora (osobne połączenie).
+     */
+    private fun tsEnter(pause: Boolean, backMs: Long) {
+        val b = tsBuf
+        val url = currentUrl
+        if (prefs.tsMin <= 0) { showMessage("Timeshift wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift", 5000); return }
+        if (b == null || url == null || recMode) return
+        b.failed?.let { showMessage("Timeshift niedostępny: $it", 5000); return }
+        if (b.total < 2_000_000) { showMessage("Timeshift: bufor jeszcze pusty — chwilę po przełączeniu kanału", 4000); return }
+        val p = player ?: return
+        // obraz na ekranie jest za danymi o zapas odtwarzacza
+        val behind = if (vlc != null) prefs.bufferMs.toLong() else p.totalBufferedDuration
+        val target = (SystemClock.elapsedRealtime() - behind - 300 - backMs).coerceAtLeast(b.oldestWall + 10_000)
+        AppLog.i("timeshift: ${if (pause) "pauza" else "cofnięcie ${backMs / 1000} s"} (bufor ${b.spanMs() / 60000} min)")
+        // strumień na żywo odtwarzacza zatrzymany — zapis przejmuje osobne połączenie
+        ui.removeCallbacks(vlcTick)
+        proxy?.stop(); proxy = null
+        vlc?.release(); vlc = null
+        p.stop()
+        tsLiveUrl = url
+        tsRec = TimeshiftRecorder(url, api.authHeader()) { analyzer }.also { it.start() }
+        tsMode = true
+        tsPlayFrom(target, play = !pause)
+        ui.removeCallbacks(tsTick)
+        ui.postDelayed(tsTick, 1000)
+    }
+
+    private fun tsPlayFrom(wall: Long, play: Boolean) {
+        val b = tsBuf ?: return
+        val p = player ?: return
+        val off = b.offsetAt(wall)
+        tsBaseWall = b.wallAt(off)
+        val gen = streamGen
+        val src = ProgressiveMediaSource.Factory(
+            DataSource.Factory { TimeshiftDataSource(b, off) { } },
+            DefaultExtractorsFactory().setTsExtractorFlags(
+                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS),
+        ).createMediaSource(MediaItem.fromUri("timeshift://bufor/$gen/$off"))
+        vlcLayout.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
+        failStreak = 0
+        restartPending = false
+        ui.removeCallbacks(restartRunnable)
+        p.setMediaSource(src)
+        p.prepare()
+        p.playWhenReady = play
+        watchdog?.reset()
+        tsShowBanner(sticky = !play)
+    }
+
+    /** Powrót na żywo: koniec odtwarzania z bufora, zwykły strumień z dekodera. */
+    private fun tsGoLive(reason: String = "") {
+        val url = tsLiveUrl ?: currentUrl ?: return
+        tsLeave()
+        AppLog.i("timeshift: na żywo${if (reason.isNotBlank()) " ($reason)" else ""}")
+        showMessage("Na żywo", 2000)
+        failStreak = 0
+        startStream(url)
+        playList.getOrNull(playIndex)?.let { showBanner(it) }
+    }
+
+    private fun tsTogglePause() {
+        val p = player ?: return
+        p.playWhenReady = !p.playWhenReady
+        tsShowBanner(sticky = !p.playWhenReady)
+    }
+
+    /** Przewinięcie o [delta] ms; kilka naciśnięć z rzędu sumuje się (jedno przeładowanie). */
+    private fun tsSeek(delta: Long) {
+        if (!tsMode) return
+        val base = if (tsPending != 0L) tsPending else tsShownWall()
+        tsPending = base + delta
+        tsShowBanner(sticky = player?.playWhenReady == false)
+        ui.removeCallbacks(tsApply)
+        ui.postDelayed(tsApply, 700)
+    }
+
+    private val tsApply = Runnable {
+        val b = tsBuf
+        val target = tsPending
+        tsPending = 0
+        if (b == null || !tsMode || target == 0L) return@Runnable
+        val now = SystemClock.elapsedRealtime()
+        when {
+            target >= now - 3000 -> tsGoLive("przewinięte do końca")
+            target < b.oldestWall -> {
+                showMessage("Początek bufora (${b.spanMs() / 60000} min)", 2500)
+                tsPlayFrom(b.oldestWall + 10_000, play = player?.playWhenReady != false)
+            }
+            else -> tsPlayFrom(target, play = player?.playWhenReady != false)
+        }
+    }
+
+    /** Klawisze w trybie timeshiftu. */
+    private fun tsKey(code: Int, e: KeyEvent): Boolean {
+        val fast = e.repeatCount > 3
+        when (code) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> tsSeek(if (fast) -60_000 else -10_000)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> tsSeek(if (fast) 120_000 else 30_000)
+            KeyEvent.KEYCODE_DPAD_UP -> tsSeek(5 * 60_000)
+            KeyEvent.KEYCODE_DPAD_DOWN -> tsSeek(-5 * 60_000)
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> tsSeek(60_000)
+            KeyEvent.KEYCODE_MEDIA_REWIND -> tsSeek(-30_000)
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> tsTogglePause()
+            KeyEvent.KEYCODE_MEDIA_STOP -> tsGoLive()
+            KeyEvent.KEYCODE_BACK -> {
+                if (banner.visibility == View.VISIBLE && player?.playWhenReady == true) { banner.visibility = View.GONE; return true }
+                tsGoLive()
+            }
+            else -> return false
+        }
+        return true
+    }
+
+    private fun tsShowBanner(sticky: Boolean = false) {
+        val ch = playList.getOrNull(playIndex)
+        bannerName.text = ch?.let { "${it.num}   ${it.name}" } ?: ""
+        val icon = if (prefs.picons && ch != null) Picons.bitmap(this, ch.ref) else null
+        bannerIcon.setImageBitmap(icon)
+        bannerIcon.visibility = if (icon != null) View.VISIBLE else View.GONE
+        tsUpdateBanner()
+        banner.visibility = View.VISIBLE
+        ui.removeCallbacks(hideBanner)
+        tsBannerUntil = if (sticky) Long.MAX_VALUE else SystemClock.elapsedRealtime() + prefs.bannerSec.coerceIn(3, 30) * 1000L
+    }
+
+    private fun tsUpdateBanner() {
+        val b = tsBuf ?: return
+        val now = SystemClock.elapsedRealtime()
+        val shown = if (tsPending != 0L) tsPending else tsShownWall()
+        val behind = (now - shown).coerceAtLeast(0)
+        val span = b.spanMs().coerceAtLeast(1)
+        val paused = player?.playWhenReady == false
+        bannerClock.text = hm.format(Date(System.currentTimeMillis() - behind))
+        bannerNow.text = (if (paused) "⏸  Timeshift" else "▶  Timeshift") + "  −${fmtMs(behind)}"
+        bannerStart.text = "−${fmtMs(span)}"
+        bannerEnd.text = "na żywo"
+        bannerProgress.progress = ((span - behind) * 1000 / span).toInt().coerceIn(0, 1000)
+        bannerNext.text = "◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pauza   WSTECZ na żywo"
+    }
+
+    /** Co sekundę: pasek, ukrywanie, pilnowanie okna przy długiej pauzie. */
+    private val tsTick = object : Runnable {
+        override fun run() {
+            if (!tsMode) return
+            ui.postDelayed(this, 1000)
+            val b = tsBuf ?: return
+            val p = player ?: return
+            // pauza dłuższa niż okno: miejsce pauzy zaraz wypadnie z bufora — wznowienie od najstarszego
+            if (tsPending == 0L && tsShownWall() < b.oldestWall + 5000) {
+                showMessage("Bufor timeshiftu pełny — wznawiam od najstarszego zapisanego momentu", 5000)
+                AppLog.i("timeshift: pauza dłuższa niż okno — wznowienie od początku bufora")
+                tsPlayFrom(b.oldestWall + 10_000, play = true)
+                return
+            }
+            if (banner.visibility == View.VISIBLE) {
+                tsUpdateBanner()
+                if (SystemClock.elapsedRealtime() > tsBannerUntil && p.playWhenReady) banner.visibility = View.GONE
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- nagrania z dekodera
 
     private val REC_REF = REC_BOUQUET
@@ -1167,6 +1384,7 @@ class PlayerActivity : Activity() {
 
     private fun playRecording(r: Recording, startMs: Long) {
         if (recMode) saveRecPos()
+        tsStopAll()
         hidePanel()
         recMode = true
         recItem = r
@@ -1529,6 +1747,7 @@ class PlayerActivity : Activity() {
         }
 
         if (recMode && recKey(keyCode, event)) return true
+        if (tsMode && tsKey(keyCode, event)) return true
 
         if (keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
             digit(keyCode - KeyEvent.KEYCODE_0); return true
@@ -1582,7 +1801,13 @@ class PlayerActivity : Activity() {
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
-            if (!suppressOkUp && !event.isCanceled) { if (recMode) recTogglePause() else showPanel() }
+            if (!suppressOkUp && !event.isCanceled) {
+                when {
+                    recMode -> recTogglePause()
+                    tsMode -> tsTogglePause()
+                    else -> showPanel()
+                }
+            }
             suppressOkUp = false
             return true
         }
@@ -1605,6 +1830,8 @@ class PlayerActivity : Activity() {
             Act.RECALL -> recall()
             Act.CH_UP -> { panelOnRec = false; play(playIndex + if (inv) -1 else 1) }
             Act.CH_DOWN -> { panelOnRec = false; play(playIndex + if (inv) 1 else -1) }
+            Act.TIMESHIFT -> if (tsMode) tsTogglePause() else tsEnter(pause = true, backMs = 0)
+            Act.TS_BACK -> if (tsMode) tsSeek(-30_000) else tsEnter(pause = false, backMs = 30_000)
         }
     }
 
@@ -1627,7 +1854,7 @@ class PlayerActivity : Activity() {
         prefs.host, prefs.streamPort, prefs.httpPort, prefs.user, prefs.pass, prefs.tunneling, prefs.watchdog,
         prefs.stallSec, prefs.bufferMs, prefs.rebufferMs, prefs.cushionSlow, prefs.dropRestart, prefs.audioLang,
         prefs.preferAc3, prefs.saveTs, prefs.tsRingMb, prefs.pluginPort, prefs.pluginToken,
-        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma, prefs.exoFps,
+        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma, prefs.exoFps, prefs.tsMin, prefs.tsDir,
     ).joinToString("|")
 
     override fun onResume() {
@@ -1743,6 +1970,10 @@ class PlayerActivity : Activity() {
             "Multi EPG" to { epg.showMultiEpg() },
             "Szukaj w EPG" to { epg.showSearch() },
             "Ścieżka dźwięku…" to { showAudioDialog() },
+            *(if (prefs.tsMin > 0 && !recMode && !tsMode) arrayOf<Pair<String, () -> Unit>>(
+                "Pauza (timeshift)" to { tsEnter(pause = true, backMs = 0) },
+                "Cofnij 30 s (timeshift)" to { tsEnter(pause = false, backMs = 30_000) },
+            ) else emptyArray()),
             "Ustawienia" to { openSettings() },
         )
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->

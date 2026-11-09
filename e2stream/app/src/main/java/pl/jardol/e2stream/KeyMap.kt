@@ -17,6 +17,8 @@ enum class Act(val label: String) {
     RECALL("Poprzedni kanał"),
     CH_UP("Kanał +"),
     CH_DOWN("Kanał −"),
+    TIMESHIFT("Timeshift: pauza / wznowienie"),
+    TS_BACK("Timeshift: cofnij 30 s"),
 }
 
 /** Mapowanie klawiszy w trybie oglądania (bez otwartej listy kanałów). */
@@ -43,6 +45,10 @@ object KeyMap {
         KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK to Act.AUDIO,
         KeyEvent.KEYCODE_LAST_CHANNEL to Act.RECALL,
         KeyEvent.KEYCODE_MEDIA_PREVIOUS to Act.RECALL,
+        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE to Act.TIMESHIFT,
+        KeyEvent.KEYCODE_MEDIA_PAUSE to Act.TIMESHIFT,
+        KeyEvent.KEYCODE_MEDIA_PLAY to Act.TIMESHIFT,
+        KeyEvent.KEYCODE_MEDIA_REWIND to Act.TS_BACK,
     )
 
     fun load(prefs: Prefs): MutableMap<Int, Act> {
