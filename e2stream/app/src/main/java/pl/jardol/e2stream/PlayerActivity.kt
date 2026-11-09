@@ -1133,7 +1133,7 @@ class PlayerActivity : Activity() {
     private fun tsLeave() {
         tsMode = false
         tsRec?.stop(); tsRec = null
-        ui.removeCallbacks(tsTick)
+        ui.removeCallbacks(shiftTick)
         ui.removeCallbacks(tsApply)
         tsPending = 0
     }
@@ -1166,8 +1166,8 @@ class PlayerActivity : Activity() {
         tsRec = TimeshiftRecorder(url, api.authHeader()) { analyzer }.also { it.start() }
         tsMode = true
         tsPlayFrom(target, play = !pause)
-        ui.removeCallbacks(tsTick)
-        ui.postDelayed(tsTick, 1000)
+        ui.removeCallbacks(shiftTick)
+        ui.postDelayed(shiftTick, 1000)
     }
 
     private fun tsPlayFrom(wall: Long, play: Boolean) {
@@ -1285,7 +1285,7 @@ class PlayerActivity : Activity() {
     }
 
     /** Co sekundę: pasek, ukrywanie, pilnowanie okna przy długiej pauzie. */
-    private val tsTick = object : Runnable {
+    private val shiftTick = object : Runnable {
         override fun run() {
             if (!tsMode) return
             ui.postDelayed(this, 1000)
