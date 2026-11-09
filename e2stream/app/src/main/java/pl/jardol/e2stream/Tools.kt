@@ -27,20 +27,35 @@ object PinLock {
         unlockedUntil = if (min <= 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + min * 60_000L
     }
 
-    /** Liczy widoczne ekrany aplikacji; gdy żaden nie jest widoczny (ekran główny, inna aplikacja) — blokada. */
+    /**
+     * Liczy widoczne ekrany aplikacji; gdy żaden nie jest widoczny (ekran główny, inna aplikacja,
+     * wyłączony telewizor) — blokada i zamknięcie otwartych ustawień, żeby po powrocie na wierzchu
+     * był zawsze odtwarzacz. Zmiany cyklu życia trafiają do logu (diagnostyka wybudzania).
+     */
     fun watch(app: android.app.Application) {
         app.registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
             var started = 0
-            override fun onActivityStarted(a: Activity) { started++ }
+            val settings = mutableSetOf<Activity>()
+            fun name(a: Activity) = a.javaClass.simpleName.removeSuffix("Activity").lowercase()
+            override fun onActivityStarted(a: Activity) {
+                started++
+                AppLog.i("ekran: ${name(a)} widoczny")
+            }
             override fun onActivityStopped(a: Activity) {
                 started = (started - 1).coerceAtLeast(0)
-                if (started == 0 && !a.isChangingConfigurations) lock()
+                AppLog.i("ekran: ${name(a)} ukryty")
+                if (started == 0 && !a.isChangingConfigurations) {
+                    lock()
+                    for (s in settings.toList()) if (!s.isFinishing) s.finish()
+                }
             }
-            override fun onActivityCreated(a: Activity, b: android.os.Bundle?) {}
+            override fun onActivityCreated(a: Activity, b: android.os.Bundle?) {
+                if (a is SettingsActivity) settings += a
+            }
             override fun onActivityResumed(a: Activity) {}
             override fun onActivityPaused(a: Activity) {}
             override fun onActivitySaveInstanceState(a: Activity, b: android.os.Bundle) {}
-            override fun onActivityDestroyed(a: Activity) {}
+            override fun onActivityDestroyed(a: Activity) { settings -= a }
         })
     }
 

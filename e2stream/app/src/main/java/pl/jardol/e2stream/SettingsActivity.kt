@@ -197,13 +197,7 @@ class SettingsActivity : Activity() {
             }
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
-                val tv = TextView(this).apply {
-                    this.text = plain; textSize = 17f; setTextColor(0xFFFFFFFF.toInt())
-                    setPadding(40, 20, 40, 20); setTextIsSelectable(false)
-                }
-                val sv = android.widget.ScrollView(this).apply { addView(tv); isFocusable = true }
-                AlertDialog.Builder(this).setTitle("Opis: $title").setView(sv).setPositiveButton("Zamknij", null).show().also { fit(it) }
-                sv.requestFocus()
+                TvDialog.text(this, "Opis: $title", plain)
             }
         }.start()
     }
@@ -439,14 +433,10 @@ class SettingsActivity : Activity() {
                 if (list.isNullOrEmpty()) { toast("Nie udało się pobrać bukietów z dekodera"); return@runOnUiThread }
                 val hidden = p.hiddenBouquets
                 val checked = BooleanArray(list.size) { list[it].ref !in hidden }
-                AlertDialog.Builder(this).setTitle("Widoczne bukiety")
-                    .setMultiChoiceItems(list.map { it.name }.toTypedArray(), checked) { _, w, c -> checked[w] = c }
-                    .setPositiveButton("Zapisz") { _, _ ->
-                        p.hiddenBouquets = list.indices.filter { !checked[it] }.map { list[it].ref }.toSet()
-                        markChanged("bukiety: ukryte ${p.hiddenBouquets.size}")
-                    }
-                    .setNegativeButton("Anuluj", null)
-                    .show().also { fit(it) }
+                TvDialog.multi(this, "Widoczne bukiety", list.map { it.name }, checked) { st ->
+                    p.hiddenBouquets = list.indices.filter { !st[it] }.map { list[it].ref }.toSet()
+                    markChanged("bukiety: ukryte ${p.hiddenBouquets.size}")
+                }
             }
         }.start()
     }
@@ -463,26 +453,21 @@ class SettingsActivity : Activity() {
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
                 if (bq.isNullOrEmpty()) { toast("Nie udało się pobrać bukietów"); return@runOnUiThread }
-                AlertDialog.Builder(this).setTitle("Kanał startowy — bukiet")
-                    .setItems(bq.map { it.name }.toTypedArray()) { _, bi ->
+                TvDialog.single(this, "Kanał startowy — bukiet", bq.map { it.name }, -1) { bi ->
                         Thread {
                             val ch = try { api.channels(bq[bi]) } catch (e: Exception) { emptyList() }
                             runOnUiThread {
                                 if (ch.isEmpty()) { toast("Pusty bukiet"); return@runOnUiThread }
                                 val cur = ch.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(p.startChannel) }
-                                AlertDialog.Builder(this).setTitle("Kanał startowy — ${bq[bi].name}")
-                                    .setSingleChoiceItems(ch.map { "${it.num}  ${it.name}" }.toTypedArray(), cur) { d, ci ->
-                                        p.startBouquet = bq[bi].ref
-                                        p.startChannel = ch[ci].ref
-                                        p.startChannelName = "${ch[ci].name} (${bq[bi].name})"
-                                        d.dismiss()
-                                        markChanged("kanał startowy = ${p.startChannelName}")
-                                    }
-                                    .show().also { fit(it) }
+                                TvDialog.single(this, "Kanał startowy — ${bq[bi].name}", ch.map { "${it.num}  ${it.name}" }, cur) { ci ->
+                                    p.startBouquet = bq[bi].ref
+                                    p.startChannel = ch[ci].ref
+                                    p.startChannelName = "${ch[ci].name} (${bq[bi].name})"
+                                    markChanged("kanał startowy = ${p.startChannelName}")
+                                }
                             }
                         }.start()
                     }
-                    .show()
             }
         }.start()
     }
@@ -499,12 +484,6 @@ class SettingsActivity : Activity() {
                 items = buildItems(); refresh()
             }
         }.start()
-    }
-
-    /** Okno z długą listą lub tekstem: stały rozmiar, żeby przyciski zawsze były widoczne (np. Philips). */
-    private fun fit(d: AlertDialog) {
-        val dm = resources.displayMetrics
-        d.window?.setLayout((dm.widthPixels * 0.7).toInt(), (dm.heightPixels * 0.85).toInt())
     }
 
     private fun checkPlugin() {

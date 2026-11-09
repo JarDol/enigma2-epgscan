@@ -293,6 +293,8 @@ class PlayerActivity : Activity() {
         val params = trackSelector.buildUponParameters()
             .setTunnelingEnabled(prefs.tunneling)
             .setPreferredAudioLanguages(*langs.toTypedArray())
+            // napisy DVB nie są wyświetlane — wyłączona ścieżka nie trzyma danych w pamięci odtwarzacza
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         if (prefs.preferAc3) {
             params.setPreferredAudioMimeTypes(MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_AC3)
         }
@@ -309,7 +311,10 @@ class PlayerActivity : Activity() {
         val reserve = maxOf(start, prefs.rebufferMs.coerceIn(1000, 15_000))
         // ExoPlayer wymaga: minBuffer ≥ bufor startowy i ≥ bufor po niedoborze
         val minBuf = maxOf(start * 2, reserve + 5000, 10_000)
+        val alloc = androidx.media3.exoplayer.upstream.DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
+        allocator = alloc
         val load = DefaultLoadControl.Builder()
+            .setAllocator(alloc)
             // Enigma2 wysyła dane paczkami (~0,5 MB) z przerwami do ~1,5 s (SD: nawet 3–4 s)
             .setBufferDurationsMs(minBuf, maxOf(minBuf, 20_000), start, reserve)
             .build()
@@ -333,7 +338,8 @@ class PlayerActivity : Activity() {
                     Player.STATE_READY -> "READY"
                     else -> "ENDED"
                 }
-                AppLog.i("stan: $n (bufor ${p.totalBufferedDuration} ms)")
+                AppLog.i("stan: $n (bufor ${p.totalBufferedDuration} ms" +
+                    (if (playbackState == Player.STATE_BUFFERING) ", wczytuje: ${if (p.isLoading) "tak" else "NIE"}, pamięć ${memMb()} MB" else "") + ")")
                 if (playbackState == Player.STATE_READY && !readyLogged) {
                     readyLogged = true
                     AppLog.i("start: READY po ${SystemClock.elapsedRealtime() - streamStartAt} ms")
@@ -432,6 +438,9 @@ class PlayerActivity : Activity() {
         ui.postDelayed(tsTick, 10_000)
         ui.removeCallbacks(cushionTick)
         ui.postDelayed(cushionTick, 1000)
+        ui.removeCallbacks(loadGuard)
+        loadStuckSince = 0
+        ui.postDelayed(loadGuard, 3000)
         ui.removeCallbacks(pmtCheck)
         ui.postDelayed(pmtCheck, 500)
     }
@@ -524,6 +533,38 @@ class PlayerActivity : Activity() {
         try { player?.playbackParameters = PlaybackParameters(v, 1f) } catch (_: Exception) {}
     }
 
+    private var allocator: androidx.media3.exoplayer.upstream.DefaultAllocator? = null
+    private var loadStuckSince = 0L
+
+    private fun memMb() = (allocator?.totalBytesAllocated ?: 0) / 1_000_000
+
+    /**
+     * Co 250 ms: ExoPlayer przestał wczytywać dane, choć zapas prawie się skończył (np. zapchana pamięć
+     * bufora). Sam ExoPlayer czeka wtedy 4 s i zgłasza „Playback stuck buffering” — obraz stoi ~7 s.
+     * Tu strumień jest przeładowany od razu, zwykle jeszcze zanim obraz stanie.
+     */
+    private val loadGuard = object : Runnable {
+        override fun run() {
+            ui.postDelayed(this, 250)
+            val p = player ?: return
+            if (restartPending || !p.playWhenReady) { loadStuckSince = 0; return }
+            val st = p.playbackState
+            val buf = p.totalBufferedDuration
+            val stuck = !p.isLoading && (st == Player.STATE_BUFFERING || (st == Player.STATE_READY && buf < 1000))
+            if (!stuck) { loadStuckSince = 0; return }
+            val now = SystemClock.elapsedRealtime()
+            if (loadStuckSince == 0L) {
+                loadStuckSince = now
+                AppLog.i("bufor: ExoPlayer nie wczytuje danych (stan ${if (st == Player.STATE_READY) "READY" else "BUFFERING"}, zapas $buf ms, pamięć ${memMb()} MB)")
+                return
+            }
+            if (now - loadStuckSince >= 700) {
+                loadStuckSince = 0
+                scheduleRestart("ExoPlayer przestał wczytywać (zapas $buf ms, pamięć ${memMb()} MB)")
+            }
+        }
+    }
+
     /** Raz na sekundę: gdy zapas (minimum z ostatnich 4 s — paczki z dekodera) mniejszy od docelowego, odtwarzanie 0,95×. */
     private val cushionTick = object : Runnable {
         override fun run() {
@@ -597,14 +638,15 @@ class PlayerActivity : Activity() {
 
     private fun releasePlayer() {
         ui.removeCallbacks(vlcTick)
+        proxy?.stop(); proxy = null          // najpierw źródło danych — VLC kończy odczyt
         vlc?.release(); vlc = null
-        proxy?.stop(); proxy = null
         watchdog?.stop()
         watchdog = null
         ui.removeCallbacks(restartRunnable)
         ui.removeCallbacks(statsTick)
         ui.removeCallbacks(tsTick)
         ui.removeCallbacks(cushionTick)
+        ui.removeCallbacks(loadGuard)
         ui.removeCallbacks(pmtCheck)
         restartPending = false
         playerView.player = null
@@ -727,9 +769,58 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- kanały
 
+    /** Czy telewizor ma połączenie z siecią lokalną (Wi-Fi / Ethernet). */
+    @Suppress("DEPRECATION")
+    private fun networkUp(): Boolean = try {
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        cm.activeNetworkInfo?.isConnected == true
+    } catch (_: Exception) { true }
+
+    /**
+     * Po włączeniu Mi Box łączy się z Wi-Fi kilkanaście sekund — najpierw czekamy na sieć (do 60 s),
+     * potem dekoder dostaje kilka prób; błąd połączenia z dekoderem dopiero, gdy sieć jest, a dekoder milczy.
+     */
+    private fun waitForNetwork(): Boolean {
+        if (networkUp()) return true
+        AppLog.i("sieć: brak połączenia — czekam")
+        runOnUiThread { showMessage("Czekam na połączenie z siecią…", 60_000) }
+        val until = android.os.SystemClock.elapsedRealtime() + 60_000
+        while (android.os.SystemClock.elapsedRealtime() < until) {
+            Thread.sleep(1000)
+            if (networkUp()) {
+                AppLog.i("sieć: połączono")
+                runOnUiThread { showMessage("Łączenie z ${prefs.host}…", 10_000) }
+                Thread.sleep(1500)      // adres IP i trasy chwilę po zgłoszeniu połączenia
+                return true
+            }
+        }
+        AppLog.i("sieć: brak połączenia po 60 s")
+        return false
+    }
+
     private fun loadBouquets() {
         showMessage("Łączenie z ${prefs.host}…", 10_000)
         io.execute {
+            if (!waitForNetwork()) {
+                runOnUiThread {
+                    showMessage("Brak połączenia z siecią (Wi-Fi / kabel).\nSprawdź sieć telewizora — spróbuję ponownie, gdy wróci.", 30_000)
+                }
+                ui.postDelayed({ if (!isFinishing && bouquets.isEmpty()) loadBouquets() }, 15_000)
+                return@execute
+            }
+            var attempt = 0
+            while (true) {
+                attempt++
+                try {
+                    api.bouquets()
+                    break
+                } catch (e: Exception) {
+                    if (attempt >= 4 || isFinishing) break     // ostateczny błąd zgłosi pełna próba niżej
+                    AppLog.i("dekoder: brak odpowiedzi (próba $attempt): $e")
+                    runOnUiThread { showMessage("Łączenie z ${prefs.host}… (próba ${attempt + 1})", 10_000) }
+                    Thread.sleep(3000)
+                }
+            }
             try {
                 PluginApi.check(prefs)   // wtyczka EPG Scan na dekoderze?
                 val all = api.bouquets()
@@ -1232,7 +1323,16 @@ class PlayerActivity : Activity() {
         super.onResume()
         if (!settingsOpen) return
         settingsOpen = false
-        if (player == null) return            // odtwarzacz był zatrzymany (onStop) — start w onStart
+        if (player == null && vlc == null) {
+            // odtwarzacz nie był jeszcze uruchomiony (np. pierwsza konfiguracja nowego telewizora:
+            // ustawienia otwarte od razu, bez adresu dekodera) — po ustawieniu adresu start od razu
+            if (!safeMode && prefs.host.isNotBlank()) {
+                AppLog.i("ustawienia: pierwsza konfiguracja — start odtwarzania")
+                settingsVersion = -1
+                startUp()
+            }
+            return
+        }
         if (streamSig() != settingsSig) {
             AppLog.i("ustawienia: zmiany dotyczące strumienia — ponowne uruchomienie")
             releasePlayer()

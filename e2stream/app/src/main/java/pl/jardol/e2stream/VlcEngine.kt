@@ -158,14 +158,24 @@ class VlcEngine(
         playing = false
     }
 
+    /**
+     * Widoki odpinane od razu (wątek UI), a zatrzymanie i zwolnienie libVLC w tle: przy wyłączaniu
+     * telewizora powierzchnia obrazu znika i stop() potrafi się zablokować — na wątku UI aplikacja
+     * zostawała po wybudzeniu z czarnym ekranem i bez reakcji na pilota.
+     */
     fun release() {
-        try { mp?.stop() } catch (_: Exception) {}
-        try { mp?.detachViews() } catch (_: Exception) {}
-        try { mp?.release() } catch (_: Exception) {}
-        try { lib?.release() } catch (_: Exception) {}
-        mp = null
-        lib = null
-        playing = false
+        val m = mp; val l = lib
+        mp = null; lib = null; playing = false
+        try { m?.detachViews() } catch (_: Exception) {}
+        if (m == null && l == null) return
+        Thread({
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            try { m?.stop() } catch (_: Throwable) {}
+            try { m?.release() } catch (_: Throwable) {}
+            try { l?.release() } catch (_: Throwable) {}
+            val ms = android.os.SystemClock.elapsedRealtime() - t0
+            if (ms > 1500) AppLog.i("VLC: zwalnianie trwało $ms ms")
+        }, "vlc-release").start()
     }
 
     /** Wpisy VLC z logcat (dekoder, wyjście obrazu, przeplot) — do logu aplikacji. */
