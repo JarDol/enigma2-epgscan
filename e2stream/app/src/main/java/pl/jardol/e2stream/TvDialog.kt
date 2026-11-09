@@ -34,6 +34,14 @@ object TvDialog {
 
     class Btn(val label: String, val onClick: () -> Unit = {})
 
+    /** Otwarte okna — zamykane przy wyjściu z aplikacji (po powrocie zawsze sam odtwarzacz). */
+    private val open = java.util.Collections.newSetFromMap(java.util.WeakHashMap<Dialog, Boolean>())
+
+    fun dismissAll() {
+        for (d in open.toList()) try { if (d.isShowing) d.dismiss() } catch (_: Exception) {}
+        open.clear()
+    }
+
     /** Wiersz listy: [mark] 0 — brak, 1 — zaznaczone ☑, 2 — niezaznaczone ☐, 3 — bieżący wybór ●. */
     class Item(val title: String, val sub: String = "", var mark: Int = 0)
 
@@ -113,6 +121,8 @@ object TvDialog {
         dlg.setCanceledOnTouchOutside(false)
         if (onBack != null) dlg.setOnCancelListener { onBack() }
         dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        open += dlg
+        dlg.setOnDismissListener { open -= dlg }
         dlg.show()
         dlg.window?.setLayout((dm.widthPixels * widthFrac).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
         if (top) dlg.window?.let { w ->

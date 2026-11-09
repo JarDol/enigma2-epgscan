@@ -48,6 +48,7 @@ object PinLock {
                 AppLog.i("ekran: ${name(a)} ukryty")
                 if (started == 0 && !a.isChangingConfigurations) {
                     lock()
+                    TvDialog.dismissAll()
                     for (s in settings.toList()) if (!s.isFinishing) s.finish()
                 }
             }
