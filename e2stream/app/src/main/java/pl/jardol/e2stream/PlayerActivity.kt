@@ -2136,7 +2136,7 @@ class PlayerActivity : Activity() {
         if (keyCode == KeyEvent.KEYCODE_BACK && prefs.backLongExit) { finish(); return true }
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
-            if (tsShifted && !recMode) { tsShowBanner(sticky = player?.playWhenReady == false); return true }
+            if (tsShifted && !recMode && banner.visibility == View.VISIBLE) { tsShowBanner(sticky = player?.playWhenReady == false); return true }
             // pasek kanału widoczny + timeshift: menu przewijania; w pozostałych przypadkach menu główne
             if (prefs.tsMin > 0 && !recMode && !tsShifted && banner.visibility == View.VISIBLE) tsCtlOpen() else showQuickMenu()
             return true
