@@ -1525,7 +1525,7 @@ class PlayerActivity : Activity() {
             KeyEvent.KEYCODE_DPAD_LEFT -> tsEnter(pause = false, backMs = 10_000)
             KeyEvent.KEYCODE_DPAD_DOWN -> tsEnter(pause = false, backMs = 5 * 60_000)
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> { showMessage("Już na żywo", 1500); tsCtlOpen() }
-            KeyEvent.KEYCODE_BACK -> { tsCtl = false; banner.visibility = View.GONE; ui.removeCallbacks(hideBanner) }
+            KeyEvent.KEYCODE_BACK -> { tsCtl = false; playList.getOrNull(playIndex)?.let { showBanner(it) } }
             else -> {
                 val keep = isOk(code) || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || code == KeyEvent.KEYCODE_MEDIA_PLAY || code == KeyEvent.KEYCODE_MEDIA_PAUSE
                 if (!keep) tsCtl = false
