@@ -228,6 +228,8 @@ class PlayerActivity : Activity() {
         UiScale.apply(banner, UiScale.pct(prefs.uiBannerFont), UiScale.pct(prefs.uiBannerIcon))
         ui.removeCallbacks(epgTick)
         ui.postDelayed(epgTick, 15_000)
+        ui.removeCallbacks(zapTick)
+        ui.postDelayed(zapTick, 5000)
         ensureAnalyzer()
         buildPlayer()
         applyDisplayMode()
@@ -279,6 +281,7 @@ class PlayerActivity : Activity() {
         settingsOpen = false      // po powrocie i tak pełny start (onStart)
         backgrounded = true       // wyjście do ekranu głównego — po powrocie start jak przy uruchomieniu
         ui.removeCallbacks(epgTick)
+        ui.removeCallbacks(zapTick)
         releasePlayer()
         ui.removeCallbacks(logTick)
         if (AppLog.dirty) uploadLog(false)
@@ -1091,6 +1094,66 @@ class PlayerActivity : Activity() {
                 bar.visibility = View.INVISIBLE
             }
             return v
+        }
+    }
+
+    // ---------------------------------------------------------------- przełączenia wg harmonogramu
+
+    private val zapDf = SimpleDateFormat("EEE dd.MM  HH:mm", Locale("pl", "PL"))
+    private var zapPrompted: String? = null          // klucz przełączenia, dla którego jest odliczanie
+    private var zapDialog: android.app.Dialog? = null
+
+    /** Co 5 s: 30 s przed początkiem audycji okno z odliczaniem, o czasie przełączenie. */
+    private val zapTick = object : Runnable {
+        override fun run() {
+            ui.postDelayed(this, 5000)
+            if (backgrounded) return
+            val now = System.currentTimeMillis() / 1000
+            val t = ZapTimers.list(this@PlayerActivity).firstOrNull { it.begin - 30 <= now } ?: return
+            if (now >= t.begin) { zapFire(t); return }
+            if (zapPrompted == t.key()) return
+            zapPrompted = t.key()
+            AppLog.i("harmonogram: za ${t.begin - now} s przełączenie na ${t.channel}")
+            zapDialog = TvDialog.panel(this@PlayerActivity, "Przełączenie o ${hm.format(Date(t.begin * 1000))}", null,
+                listOf(
+                    TvDialog.Btn("Przełącz teraz") { zapFire(t) },
+                    TvDialog.Btn("Anuluj") {
+                        ZapTimers.remove(this@PlayerActivity, t); zapPrompted = null
+                        showMessage("Przełączenie anulowane", 2500)
+                    },
+                ), widthFrac = 0.5f, focusChip = true) { ctx, _ ->
+                TextView(ctx).apply {
+                    text = "${t.channel}\n${t.title}"
+                    textSize = 20f; setTextColor(TvDialog.WHITE)
+                }
+            }
+        }
+    }
+
+    private fun zapFire(t: ZapTimers.Timer) {
+        ZapTimers.remove(this, t)
+        zapPrompted = null
+        try { zapDialog?.dismiss() } catch (_: Exception) {}
+        zapDialog = null
+        AppLog.i("harmonogram: przełączam na ${t.channel} — ${t.title}")
+        if (recMode) leaveRec()
+        hidePanel()
+        zapTo(t.ref)
+        showMessage("Harmonogram: ${t.channel} — ${t.title}", 4000)
+    }
+
+    /** Lista zaplanowanych przełączeń: OK — usunięcie. */
+    private fun showZapTimers() {
+        val l = ZapTimers.list(this)
+        if (l.isEmpty()) {
+            showMessage("Brak zaplanowanych przełączeń — dodasz je w opisie audycji (przytrzymane OK na liście kanałów, EPG)", 6000)
+            return
+        }
+        TvDialog.list(this, "Przełączenia wg harmonogramu", l.map { TvDialog.Item(it.title, "${it.channel}  •  ${zapDf.format(Date(it.begin * 1000))}") },
+            hint = "OK usuń  •  WSTECZ zamknij", widthFrac = 0.7f) { w ->
+            ZapTimers.remove(this, l[w])
+            showMessage("Usunięto: ${l[w].channel} — ${l[w].title}", 3000)
+            showZapTimers()
         }
     }
 
@@ -2021,6 +2084,7 @@ class PlayerActivity : Activity() {
             "Multi EPG" to { epg.showMultiEpg() },
             "Szukaj w EPG" to { epg.showSearch() },
             "Ścieżka dźwięku…" to { showAudioDialog() },
+            "Przełączenia wg harmonogramu" to { showZapTimers() },
             *(if (prefs.tsMin > 0 && !recMode && !tsShifted) arrayOf<Pair<String, () -> Unit>>(
                 "Pauza (timeshift)" to { doAct(Act.TIMESHIFT, 0) },
                 "Cofnij 30 s (timeshift)" to { doAct(Act.TS_BACK, 0) },

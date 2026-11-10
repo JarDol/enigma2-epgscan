@@ -135,6 +135,16 @@ class EpgUi(
         if (ref.isNotBlank()) {
             btns += TvDialog.Btn(if (running) "Oglądaj" else "Przełącz na kanał") { host.zapTo(ref) }
             if (ev.end > now()) btns += TvDialog.Btn("Nagraj na dekoderze") { record(ref, ev) }
+            // przełączenie o początku audycji (tylko na tym telewizorze, gdy aplikacja działa)
+            if (!running && ev.begin > now()) {
+                if (ZapTimers.has(a, ref, ev.begin)) btns += TvDialog.Btn("Usuń przełączenie") {
+                    ZapTimers.remove(a, ZapTimers.Timer(ref, name, ev.title, ev.begin, ev.end))
+                    host.message("Usunięto przełączenie o ${t(ev.begin)}")
+                } else btns += TvDialog.Btn("Przełącz o ${t(ev.begin)}") {
+                    ZapTimers.add(a, ZapTimers.Timer(ref, name.ifBlank { ref }, ev.title, ev.begin, ev.end))
+                    host.message("O ${t(ev.begin)} przełączę na ${name.ifBlank { "kanał" }} — ${ev.title}")
+                }
+            }
         }
         if (btns.isEmpty()) btns += TvDialog.Btn("Zamknij")      // WSTECZ też zamyka
         val scale = UiScale.pct(Prefs(a).uiEpgFont)
