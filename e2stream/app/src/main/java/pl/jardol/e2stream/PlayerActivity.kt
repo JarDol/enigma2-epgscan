@@ -1136,9 +1136,13 @@ class PlayerActivity : Activity() {
         try { zapDialog?.dismiss() } catch (_: Exception) {}
         zapDialog = null
         AppLog.i("harmonogram: przełączam na ${t.channel} — ${t.title}")
-        if (recMode) leaveRec()
+        val forceTune = recMode || tsMode
+        if (recMode) {
+            leaveRec()
+            stopPlayback()
+        }
         hidePanel()
-        zapTo(t.ref)
+        zapTo(t.ref, forceTune)
         showMessage("Harmonogram: ${t.channel} — ${t.title}", 4000)
     }
 
@@ -2097,10 +2101,10 @@ class PlayerActivity : Activity() {
     }
 
     /** Przełącza na kanał o danej referencji (z bieżącego lub innego widocznego bukietu). */
-    private fun zapTo(ref: String) {
+    private fun zapTo(ref: String, forceTune: Boolean = false) {
         val k = OpenWebif.key(ref)
         val i = playList.indexOfFirst { OpenWebif.key(it.ref) == k }
-        if (i >= 0 && i == playIndex && currentUrl != null && !recMode) {
+        if (!forceTune && i >= 0 && i == playIndex && currentUrl != null && !recMode) {
             // ten kanał już gra — tylko zamknij listę, bez ponownego uruchamiania strumienia
             hidePanel(); showBanner(playList[i]); return
         }
