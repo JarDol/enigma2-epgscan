@@ -86,11 +86,31 @@ class ZapPromptActivity : Activity() {
 
     private fun countdownLabel(s: Int) = "0:${s.coerceAtLeast(0).toString().padStart(2, '0')}"
 
+    /**
+     * Odliczanie biegnie tylko przy włączonym ekranie i aktywnym oknie. Gdy przystawka/TV śpi,
+     * licznik stoi na pełnych 30 s i startuje dopiero po włączeniu. Po końcu audycji popup się zamyka.
+     */
     private fun startCountdown(dlg: android.app.Dialog, event: ZapTimers.Timer) {
         var left = COUNTDOWN_S
+        val power = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
         val tick = object : Runnable {
             override fun run() {
                 if (actionTaken || isFinishing) return
+                if (System.currentTimeMillis() / 1000 >= event.end) {
+                    AppLog.i("wybudzanie: audycja się skończyła, pomijam ${event.channel} — ${event.title}")
+                    try { dlg.dismiss() } catch (_: Exception) {}
+                    skip(event)
+                    return
+                }
+                val watching = power.isInteractive && hasWindowFocus()
+                if (!watching) {
+                    if (left != COUNTDOWN_S) {
+                        left = COUNTDOWN_S
+                        TvDialog.setButtonLabel(dlg, 0, "Przełącz (${countdownLabel(left)})")
+                    }
+                    handler.postDelayed(this, 1000)
+                    return
+                }
                 left--
                 if (left <= 0) {
                     AppLog.i("wybudzanie: minął czas, przełączam ${event.channel} — ${event.title}")
