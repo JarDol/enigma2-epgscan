@@ -86,9 +86,10 @@ class EpgUi(
         override fun getItem(position: Int): Any = rows[position]
         override fun getItemId(position: Int) = position.toLong()
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val v = convertView ?: a.layoutInflater.inflate(R.layout.item_epg, parent, false)
+            val v = convertView ?: a.layoutInflater.inflate(if (multi) R.layout.item_multi_epg else R.layout.item_epg, parent, false)
             UiScale.apply(v, UiScale.pct(Prefs(a).uiEpgFont))
             val r = rows[position]
+            if (multi) v.findViewById<TextView>(R.id.channel_number).text = requireNotNull(r.ch).num.toString()
             v.findViewById<TextView>(R.id.left).apply {
                 text = r.left
                 maxLines = if (multi) 2 else 3
@@ -306,7 +307,7 @@ class EpgUi(
         val cur = ev.firstOrNull { it.begin <= at && it.end > at }
         val next = ev.firstOrNull { it.begin >= (cur?.end ?: at) }
         Row(
-            "${c.num}  ${c.name}",
+            c.name,
             cur?.let { "${eventTime.range(it.begin, it.end)}  ${it.title}" } ?: "—",
             next?.let { "następnie ${eventTime.range(it.begin, it.end)}  ${it.title}" } ?: "",
             cur ?: next,
@@ -319,7 +320,7 @@ class EpgUi(
         fun title() = "Multi-EPG: ${bouquet.name} — ${d(multiT)} ${t(multiT)}"
         multiDialog?.dismiss()
         val dlg = TvDialog.panel(a, title(),
-            "Bukiet u góry: OK wybierz  •  ▲ ▼ kanały\n◀ ▶ czas  •  OK opis  •  WSTECZ zamknij",
+            "Bukiet u góry: OK wybierz  •  ▲ ▼ kanały  •  ◀ ▶ czas  •  OK opis  •  WSTECZ zamknij",
             widthFrac = 0.85f, maxH = 0.9f, timeoutSec = Prefs(a).epgMultiSec, hintBelowTitle = true) { ctx, _ ->
             val density = ctx.resources.displayMetrics.density
             fun dp(value: Int) = (value * density).toInt()
