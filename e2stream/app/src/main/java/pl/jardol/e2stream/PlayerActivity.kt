@@ -1514,7 +1514,7 @@ class PlayerActivity : Activity() {
         bannerStart.text = if (span > 0) "−${fmtMs(span)}" else ""
         bannerEnd.text = "na żywo"
         bannerProgress.progress = 1000
-        bannerNext.text = "◀ −${prefs.tsStepSec} s   ▼ −${prefs.tsStepMin} min   OK pauza   WSTECZ zamknij menu"
+        bannerNext.text = "◀ ▶ ±${prefs.tsStepSec} s   ▲ ▼ ±${prefs.tsStepMin} min   OK pauza / start   ■ na żywo   WSTECZ zamknij pasek"
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
         ui.postDelayed(hideBanner, 8000)
