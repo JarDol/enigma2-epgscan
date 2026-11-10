@@ -102,7 +102,7 @@ class ZapPromptActivity : Activity() {
                     skip(event)
                     return
                 }
-                val watching = power.isInteractive && hasWindowFocus()
+                val watching = power.isInteractive && (hasWindowFocus() || dlg.window?.decorView?.hasWindowFocus() == true)
                 if (!watching) {
                     if (left != COUNTDOWN_S) {
                         left = COUNTDOWN_S
