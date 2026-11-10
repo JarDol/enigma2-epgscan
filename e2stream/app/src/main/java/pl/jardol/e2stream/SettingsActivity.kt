@@ -123,6 +123,7 @@ class SettingsActivity : Activity() {
                 Item.Header("Timeshift (pauza i cofanie na żywo)"),
         Item.Action("Timeshift", { tsValue() }) { chooseTs() },
         Item.Action("Miejsce bufora timeshiftu", { tsPlace() }) { chooseTsDir() },
+        Item.Action("Start bufora po przełączeniu kanału", { tsDelayName(p.tsDelay) }) { chooseTsDelay() },
         Item.Toggle("Zezwól na bufor w pamięci urządzenia", { p.tsInternalOk }, { v ->
             p.tsInternalOk = v
             if (!v && p.tsDir.isBlank()) p.tsMin = 0        // bez zgody i bez dysku — timeshift wyłączony
@@ -432,6 +433,17 @@ class SettingsActivity : Activity() {
         val rec = TimeshiftBuffer.recommended(fit, tsUsb())
         val cur = if (p.tsMin <= 0) "wyłączony" else "${p.tsMin} min"
         return "$cur  •  miejsce na ~${fmtMin(fit)}" + if (rec > 0) ", zalecane ${fmtMin(rec)}" else " — za mało miejsca"
+    }
+
+    private fun tsDelayName(s: Int) = if (s == 0) "od razu" else "po $s s"
+
+    private fun chooseTsDelay() {
+        val opts = TS_DELAYS
+        TvDialog.single(this, "Start bufora po przełączeniu kanału", opts.map { tsDelayName(it) }, opts.indexOf(p.tsDelay).coerceAtLeast(0)) { w ->
+            p.tsDelay = opts[w]
+            markChanged("timeshift: start bufora = ${tsDelayName(opts[w])}")
+            items = buildItems(); refresh()
+        }
     }
 
     private fun fmtMin(m: Int) = if (m >= 120 && m % 60 == 0) "${m / 60} h" else "$m min"
@@ -791,3 +803,5 @@ class SettingsActivity : Activity() {
         }
     }
 }
+
+private val TS_DELAYS = listOf(0, 5, 10, 15, 30)

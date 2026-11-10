@@ -80,6 +80,10 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
                     pendLen = 0
                     if (pend[0] == SYNC) writeRaw(pend, 0, 188)
                 }
+                // pierwszy zapis (np. po opóźnieniu): początek porcji bywa w środku pakietu — szukamy pewnej granicy
+                if (total == 0L && pendLen == 0) {
+                    while (o < end && !aligned(b, o, end)) o++
+                }
                 var run = o
                 while (end - o >= 188) {
                     if (b[o] != SYNC) {
@@ -103,6 +107,9 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
             lock.notifyAll()
         }
     }
+
+    private fun aligned(b: ByteArray, o: Int, end: Int): Boolean =
+        b[o] == SYNC && (o + 188 >= end || b[o + 188] == SYNC) && (o + 376 >= end || b[o + 376] == SYNC)
 
     private fun writeRaw(b: ByteArray, off: Int, len: Int) {
         val now = SystemClock.elapsedRealtime()

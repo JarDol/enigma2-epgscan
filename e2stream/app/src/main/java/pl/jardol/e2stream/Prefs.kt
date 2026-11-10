@@ -97,6 +97,11 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("tsMin", 0)
         set(v) = putI("tsMin", v)
 
+    /** Timeshift: ile sekund po przełączeniu kanału zaczyna się zapis do bufora (skakanie po kanałach nie zapisuje na dysk). */
+    var tsDelay: Int
+        get() = sp.getInt("tsDelay", 5)
+        set(v) = putI("tsDelay", v)
+
     /** Timeshift: zgoda na bufor w pamięci urządzenia (bez zgody tylko dysk USB / karta SD). */
     var tsInternalOk: Boolean
         get() = sp.getBoolean("tsInternalOk", false)

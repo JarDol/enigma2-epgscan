@@ -526,7 +526,7 @@ class PlayerActivity : Activity() {
         }
         analyzer?.clean = prefs.cleanTs
         // kopia strumienia na żywo do bufora timeshiftu (nie przy nagraniach z dekodera)
-        analyzer?.tee = { b, o, l -> if (!recMode) tsBuf?.write(b, o, l) }
+        analyzer?.tee = { b, o, l -> if (!recMode && SystemClock.elapsedRealtime() >= tsWriteFrom) tsBuf?.write(b, o, l) }
     }
 
     private var encrypted = false
@@ -1327,6 +1327,7 @@ class PlayerActivity : Activity() {
     /** Nowy kanał (albo zmiana ustawień): bufor od zera, odtwarzanie na żywo. */
     private fun tsNewChannel() {
         if (tsMode) tsLeave()
+        tsWriteFrom = SystemClock.elapsedRealtime() + prefs.tsDelay * 1000L
         val min = prefs.tsMin
         if (min <= 0) {
             tsBuf?.reset(); tsBuf = null
@@ -1356,6 +1357,7 @@ class PlayerActivity : Activity() {
     }
 
     private var tsWarned = false
+    @Volatile private var tsWriteFrom = 0L        // zapis do bufora rusza dopiero po tej chwili (opóźnienie po zmianie kanału)
 
     /** Przy starcie: pliki bufora z poprzedniego uruchomienia (np. aplikacja przerwana) — kasowane w tle. */
     private fun tsCleanupAtStart() {
@@ -1396,7 +1398,7 @@ class PlayerActivity : Activity() {
         if (prefs.tsMin <= 0) { showMessage("Timeshift wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift", 5000); return }
         if (b == null || url == null || recMode) return
         b.failed?.let { showMessage("Timeshift niedostępny: $it", 5000); return }
-        if (b.total < 2_000_000) { showMessage("Timeshift: bufor jeszcze pusty — chwilę po przełączeniu kanału", 4000); return }
+        if (b.total < 2_000_000) { showMessage("Timeshift: bufor jeszcze pusty — zapis rusza ${if (prefs.tsDelay > 0) "${prefs.tsDelay} s " else ""}po przełączeniu kanału", 4000); return }
         val p = player ?: return
         // obraz na ekranie jest za danymi o zapas odtwarzacza
         val behind = if (vlc != null) prefs.bufferMs.toLong() else p.totalBufferedDuration
@@ -2120,7 +2122,7 @@ class PlayerActivity : Activity() {
         prefs.host, prefs.streamPort, prefs.httpPort, prefs.user, prefs.pass, prefs.tunneling, prefs.watchdog,
         prefs.stallSec, prefs.bufferMs, prefs.rebufferMs, prefs.cushionSlow, prefs.dropRestart, prefs.audioLang,
         prefs.preferAc3, prefs.saveTs, prefs.tsRingMb, prefs.pluginPort, prefs.pluginToken,
-        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma, prefs.exoFps, prefs.tsMin, prefs.tsDir,
+        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma, prefs.exoFps, prefs.tsMin, prefs.tsDir, prefs.tsDelay,
     ).joinToString("|")
 
     override fun onResume() {
