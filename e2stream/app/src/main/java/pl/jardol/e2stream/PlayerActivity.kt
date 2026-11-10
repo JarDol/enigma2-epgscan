@@ -52,6 +52,8 @@ class PlayerActivity : Activity() {
     companion object {
         const val EXTRA_WAKE_TIMER_KEY = "zap_alarm_timer_key"
         const val EXTRA_WAKE_TEST_ID = "zap_alarm_test_id"
+        const val EXTRA_SCHEDULE_REF = "schedule_channel_ref"
+        const val ACTION_SCHEDULE_ZAP = "pl.jardol.e2stream.SCHEDULE_ZAP"
     }
 
     private lateinit var prefs: Prefs
@@ -120,6 +122,7 @@ class PlayerActivity : Activity() {
     private var audioAppliedGen = -1
     private var wakeTimerKey: String? = null
     private var wakeTestId: String? = null
+    private var scheduledChannelRef: String? = null
 
     // ---------------------------------------------------------------- cykl życia
 
@@ -127,6 +130,7 @@ class PlayerActivity : Activity() {
         super.onCreate(savedInstanceState)
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
+        scheduledChannelRef = intent.getStringExtra(EXTRA_SCHEDULE_REF)
         if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -239,6 +243,7 @@ class PlayerActivity : Activity() {
         setIntent(intent)
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
+        scheduledChannelRef = intent.getStringExtra(EXTRA_SCHEDULE_REF) ?: scheduledChannelRef
         AppLog.i("wybudzanie: onNewIntent key=$wakeTimerKey testId=$wakeTestId")
         if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
@@ -248,6 +253,7 @@ class PlayerActivity : Activity() {
         ui.removeCallbacks(zapTick)
         ui.post(zapTick)
         showWakeTestResult()
+        applyScheduledChannel()
     }
 
     private fun showWakeTestResult() {
@@ -307,6 +313,7 @@ class PlayerActivity : Activity() {
             loadBouquets()
         } else {
             currentUrl?.let { startStream(it) }
+            applyScheduledChannel()
         }
     }
 
@@ -915,6 +922,7 @@ class PlayerActivity : Activity() {
                     val ci = ch.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(wantC) }.let { if (it < 0) 0 else it }
                     playIndex = -1
                     if (ch.isNotEmpty()) playIn(bi, ch, ci)
+                    applyScheduledChannel()
                 }
             } catch (e: Exception) {
                 AppLog.i("błąd połączenia z OpenWebif: $e")
@@ -923,6 +931,14 @@ class PlayerActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun applyScheduledChannel() {
+        val ref = scheduledChannelRef ?: return
+        if (bouquets.isEmpty()) return
+        scheduledChannelRef = null
+        AppLog.i("harmonogram: Oglądaj — dostrajam kanał ${OpenWebif.key(ref)}")
+        ui.post { if (!isFinishing) zapTo(ref, forceTune = true) }
     }
 
     /** Nowa lista bukietów (zmiana widocznych) bez przerywania odtwarzanego kanału. */

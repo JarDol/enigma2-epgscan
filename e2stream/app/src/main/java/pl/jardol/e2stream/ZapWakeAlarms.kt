@@ -151,7 +151,7 @@ object ZapWakeAlarms {
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "Harmonogram E2Stream", NotificationManager.IMPORTANCE_HIGH))
         }
-        val launch = Intent(ctx, PlayerActivity::class.java).apply {
+        val launch = Intent(ctx, ZapPromptActivity::class.java).apply {
             action = "pl.jardol.e2stream.OPEN_ZAP_ALARM"
             data = intent.data
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -161,10 +161,10 @@ object ZapWakeAlarms {
         if (Build.VERSION.SDK_INT <= 28) {
             try {
                 ctx.startActivity(launch)
-                AppLog.i("wybudzanie: bezpośrednio uruchomiono PlayerActivity API ${Build.VERSION.SDK_INT} key=$key")
+                AppLog.i("wybudzanie: bezpośrednio uruchomiono ZapPromptActivity API ${Build.VERSION.SDK_INT} key=$key")
                 return
             } catch (e: Exception) {
-                AppLog.i("wybudzanie: bezpośredni start PlayerActivity nieudany, zostawiam powiadomienie key=$key: $e")
+                AppLog.i("wybudzanie: bezpośredni start ZapPromptActivity nieudany, zostawiam powiadomienie key=$key: $e")
             }
         }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
