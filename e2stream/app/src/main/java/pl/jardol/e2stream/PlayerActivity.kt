@@ -1467,7 +1467,8 @@ class PlayerActivity : Activity() {
         p.playWhenReady = play
         watchdog?.reset()
         watchdog?.paused = tsShifted
-        if (tsShifted) tsShowBanner(sticky = !play)
+        // przeładowanie po przewinięciu nie może zastąpić paska kanału paskiem timeshiftu
+        if (tsShifted && !(tsChBar && banner.visibility == View.VISIBLE)) tsShowBanner(sticky = !play)
     }
 
     /**
@@ -1570,6 +1571,7 @@ class PlayerActivity : Activity() {
 
     /** Klawisze w trybie timeshiftu. */
     private fun tsKey(code: Int, e: KeyEvent): Boolean {
+        if (code in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT) AppLog.i("timeshift: strzałka $code, pasek kanału=$tsChBar, widoczny=${banner.visibility == View.VISIBLE}")
         // na pasku kanału strzałki działają jak na żywo (EPG, multi-EPG, zmiana kanału — keyMap), nie przewijają
         if (tsChBar && banner.visibility == View.VISIBLE && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) return false
         when (code) {
