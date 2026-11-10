@@ -129,7 +129,8 @@ class PlayerActivity : Activity() {
         epg = EpgUi(this, api, io, epgStore, object : EpgUi.Host {
             override fun current(): Channel? = playList.getOrNull(playIndex)
             override fun bouquetChannels(): List<Channel> = playList
-            override fun bouquetName(): String = bouquets.getOrNull(playBouquet)?.name ?: ""
+            override fun bouquetList(): List<Bouquet> = this@PlayerActivity.bouquets.filter { it.ref != REC_REF }
+            override fun currentBouquet(): Bouquet? = bouquets.getOrNull(playBouquet)?.takeIf { it.ref != REC_REF }
             override fun zapTo(ref: String) = this@PlayerActivity.zapTo(ref)
             override fun message(t: String) = showMessage(t, 4000)
         })

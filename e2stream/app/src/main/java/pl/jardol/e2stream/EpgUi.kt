@@ -27,7 +27,8 @@ class EpgUi(
     interface Host {
         fun current(): Channel?
         fun bouquetChannels(): List<Channel>
-        fun bouquetName(): String
+        fun bouquetList(): List<Bouquet>
+        fun currentBouquet(): Bouquet?
         fun zapTo(ref: String)
         fun message(t: String)
     }
@@ -263,17 +264,37 @@ class EpgUi(
     // ------------------------------------------------------------ multi-EPG
 
     private var multiT = 0L
+    private var multiDialog: android.app.Dialog? = null
 
     fun showMultiEpg() {
-        val chans = host.bouquetChannels()
-        if (chans.isEmpty()) return
-        host.message("Pobieram EPG bukietu (${chans.size} kanałów)…")
+        val bouquets = host.bouquetList()
+        if (bouquets.isEmpty()) {
+            host.message("Brak widocznych bukietów TV")
+            return
+        }
+        val current = host.currentBouquet()
+        val bouquet = current?.let { c -> bouquets.firstOrNull { it.ref == c.ref } } ?: bouquets.first()
+        val chans = if (current?.ref == bouquet.ref) host.bouquetChannels() else emptyList()
+        loadMulti(bouquet, chans, bouquets, now())
+    }
+
+    private fun loadMulti(bouquet: Bouquet, knownChannels: List<Channel>, bouquets: List<Bouquet>, at: Long) {
+        host.message("Pobieram EPG bukietu: ${bouquet.name}…")
         io.execute {
-            val pool = Executors.newFixedThreadPool(4)
-            for (c in chans) pool.execute { try { load(c.ref) } catch (_: Exception) { } }
-            pool.shutdown()
-            pool.awaitTermination(60, TimeUnit.SECONDS)
-            a.runOnUiThread { multiT = now(); openMulti(chans) }
+            try {
+                val chans = knownChannels.ifEmpty { api.channels(bouquet) }
+                if (chans.isEmpty()) {
+                    a.runOnUiThread { host.message("Brak kanałów w bukiecie ${bouquet.name}") }
+                    return@execute
+                }
+                val pool = Executors.newFixedThreadPool(4)
+                for (c in chans) pool.execute { try { load(c.ref) } catch (_: Exception) { } }
+                pool.shutdown()
+                pool.awaitTermination(60, TimeUnit.SECONDS)
+                a.runOnUiThread { multiT = at; openMulti(chans, bouquet, bouquets) }
+            } catch (e: Exception) {
+                a.runOnUiThread { host.message("Błąd EPG bukietu ${bouquet.name}: ${e.message}") }
+            }
         }
     }
 
@@ -290,13 +311,28 @@ class EpgUi(
         )
     }
 
-    private fun openMulti(chans: List<Channel>) {
-        val adapter = RowAdapter(multiRows(chans, multiT))
-        fun title() = "Multi-EPG: ${host.bouquetName()} — ${d(multiT)} ${t(multiT)}"
-        val dlg = bigList(title(), adapter, "◀ ▶ zmiana czasu  •  OK opis  •  WSTECZ zamknij") { w ->
+    private fun openMulti(chans: List<Channel>, bouquet: Bouquet, bouquets: List<Bouquet>) {
+        val adapter = RowAdapter(listOf(Row("Bukiet", "${bouquet.name}  •  wybierz", "", null, null)) + multiRows(chans, multiT))
+        fun title() = "Multi-EPG: ${bouquet.name} — ${d(multiT)} ${t(multiT)}"
+        multiDialog?.dismiss()
+        val dlg = bigList(title(), adapter, "▲ bukiet  •  ◀ ▶ zmiana czasu  •  OK opis  •  WSTECZ zamknij") { w ->
+            if (w == 0) {
+                TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
+                    selected = bouquets.indexOfFirst { it.ref == bouquet.ref },
+                    hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f) { picked ->
+                    val next = bouquets[picked]
+                    if (next.ref != bouquet.ref) {
+                        multiDialog?.dismiss()
+                        multiDialog = null
+                        loadMulti(next, emptyList(), bouquets, multiT)
+                    }
+                }
+                return@bigList
+            }
             val r = adapter.rows[w]
             if (r.ev != null) showEvent(r.ev, r.ch) else r.ch?.let { host.zapTo(it.ref) }
         }
+        multiDialog = dlg
         dlg.setOnKeyListener { _, code, e ->
             if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             val step = 30 * 60L
