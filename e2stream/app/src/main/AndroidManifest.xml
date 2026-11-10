@@ -41,7 +41,7 @@
             android:exported="false"
             android:launchMode="singleTop"
             android:screenOrientation="landscape"
-            android:taskAffinity="${applicationId}.zap-prompt"
+            android:taskAffinity="${applicationId}.zap_prompt"
             android:theme="@style/SettingsTheme" />
 
         <receiver
