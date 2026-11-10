@@ -977,6 +977,7 @@ class PlayerActivity : Activity() {
     private fun playIn(bIdx: Int, chList: List<Channel>, index: Int) {
         if (chList.isEmpty()) return
         if (recMode) leaveRec()
+        tsCtl = false
         tsNewChannel()
         val i = ((index % chList.size) + chList.size) % chList.size
         val cur = playList.getOrNull(playIndex)
@@ -1039,6 +1040,7 @@ class PlayerActivity : Activity() {
 
     private fun showPanel() {
         if (bouquets.isEmpty()) return
+        tsCtl = false
         // w trakcie nagrania albo po powrocie z niego — lista otwiera się na nagraniach
         if ((recMode || panelOnRec) && bouquets.any { it.ref == REC_REF }) { showRecordings(); return }
         panelBouquet = playBouquet
@@ -1317,6 +1319,14 @@ class PlayerActivity : Activity() {
     private var tsBuf: TimeshiftBuffer? = null
     private var tsRec: TimeshiftRecorder? = null
     private var tsMode = false                 // odtwarzanie z bufora (strumień z dekodera zapisuje osobne połączenie)
+    private var tsCtl = false                  // menu przewijania otwarte na żywo (OK na pasku kanału)
+
+    /** Za transmisją: watchdog wyłączony — krótkie przerwy po wznowieniu/przewinięciu to nie zawieszenie. */
+    private fun tsSetShifted(v: Boolean) {
+        tsShifted = v
+        watchdog?.paused = v
+    }
+
     private var tsShifted = false              // za transmisją (pauza / cofnięte) — klawisze przewijania
     private var tsCleanedAtStart = false
     private var tsBaseWall = 0L                // chwila odbioru odpowiadająca pozycji 0 odtwarzacza
@@ -1378,7 +1388,8 @@ class PlayerActivity : Activity() {
     /** Koniec odtwarzania z bufora (bez uruchamiania strumienia na żywo). */
     private fun tsLeave() {
         tsMode = false
-        tsShifted = false
+        tsSetShifted(false)
+        tsCtl = false
         tsRec?.stop(); tsRec = null
         ui.removeCallbacks(shiftTick)
         ui.removeCallbacks(tsApply)
@@ -1392,11 +1403,21 @@ class PlayerActivity : Activity() {
      * Pauza albo cofnięcie strumienia na żywo: odtwarzacz przechodzi na bufor, a strumień z dekodera
      * dalej zapisuje się do bufora (osobne połączenie).
      */
+    /** Czy timeshift jest skonfigurowany; jeśli nie — komunikat. */
+    private fun tsConfigured(): Boolean {
+        if (prefs.tsMin > 0) return true
+        showMessage("Brak skonfigurowanego timeshiftu — Ustawienia → Odtwarzanie i obraz → Timeshift", 5000)
+        return false
+    }
+
     private fun tsEnter(pause: Boolean, backMs: Long) {
-        val b = tsBuf
         val url = currentUrl
-        if (prefs.tsMin <= 0) { showMessage("Brak skonfigurowanego timeshiftu — Ustawienia → Odtwarzanie i obraz → Timeshift", 5000); return }
-        if (b == null || url == null || recMode) return
+        if (!tsConfigured()) return
+        if (recMode) { showMessage("Timeshift nie działa przy odtwarzaniu nagrania", 3000); return }
+        if (url == null) { showMessage("Timeshift: brak odtwarzanego kanału", 3000); return }
+        if (tsBuf == null) tsNewChannel()          // bufor mógł nie powstać (np. dysk podłączony po starcie)
+        val b = tsBuf
+        if (b == null) { showMessage("Timeshift niedostępny: dysk USB niedostępny albo brak zgody na pamięć urządzenia", 5000); return }
         b.failed?.let { showMessage("Timeshift niedostępny: $it", 5000); return }
         // bufor jeszcze nie zapisywany (opóźnienie / tryb ręczny) lub prawie pusty: pauza rusza od teraz, cofnięcie niemożliwe
         val fresh = b.total < 2_000_000
@@ -1416,7 +1437,8 @@ class PlayerActivity : Activity() {
         tsLiveUrl = url
         tsRec = TimeshiftRecorder(url, api.authHeader(), { analyzer }, { analyzer?.dropCarry(); tsBuf?.resync() }).also { it.start() }
         tsMode = true
-        tsShifted = true
+        tsSetShifted(true)
+        tsCtl = false
         tsPlayFrom(target, play = !pause)
         ui.removeCallbacks(shiftTick)
         ui.postDelayed(shiftTick, 1000)
@@ -1443,6 +1465,7 @@ class PlayerActivity : Activity() {
         p.prepare()
         p.playWhenReady = play
         watchdog?.reset()
+        watchdog?.paused = tsShifted
         if (tsShifted) tsShowBanner(sticky = !play)
     }
 
@@ -1455,7 +1478,8 @@ class PlayerActivity : Activity() {
         val b = tsBuf
         if (prefs.engine != "vlc" && tsRec != null && b != null && b.failed == null && b.total > 0) {
             AppLog.i("timeshift: na żywo — koniec bufora${if (reason.isNotBlank()) " ($reason)" else ""}")
-            tsShifted = false
+            tsSetShifted(false)
+            tsCtl = false
             ui.removeCallbacks(tsApply)
             tsPending = 0
             showMessage("Na żywo", 2000)
@@ -1470,6 +1494,45 @@ class PlayerActivity : Activity() {
         failStreak = 0
         startStream(url)
         playList.getOrNull(playIndex)?.let { showBanner(it) }
+    }
+
+    /** Menu przewijania na żywo (OK na pasku kanału): pasek ze skrótem klawiszy, czeka na przewinięcie lub pauzę. */
+    private fun tsCtlOpen() {
+        val b = tsBuf
+        if (b == null && prefs.tsMin > 0) tsNewChannel()
+        if (!tsConfigured()) return
+        tsCtl = true
+        val ch = playList.getOrNull(playIndex)
+        bannerName.text = ch?.let { "${it.num}   ${it.name}" } ?: ""
+        val icon = if (prefs.picons && ch != null) Picons.bitmap(this, ch.ref) else null
+        bannerIcon.setImageBitmap(icon)
+        bannerIcon.visibility = if (icon != null) View.VISIBLE else View.GONE
+        val span = (tsBuf?.takeIf { it.total > 0 }?.spanMs() ?: 0L)
+        bannerClock.text = hm.format(Date())
+        bannerNow.text = "▶  Na żywo  •  Timeshift " + if (span > 0) "(w buforze ${fmtMs(span)})" else "(bufor rusza po pauzie)"
+        bannerStart.text = if (span > 0) "−${fmtMs(span)}" else ""
+        bannerEnd.text = "na żywo"
+        bannerProgress.progress = 1000
+        bannerNext.text = "◀ −10 s   ▼ −5 min   OK pauza   WSTECZ zamknij menu"
+        banner.visibility = View.VISIBLE
+        ui.removeCallbacks(hideBanner)
+        ui.postDelayed(hideBanner, 8000)
+    }
+
+    /** Klawisze menu przewijania na żywo; false — klawisz obsługuje reszta aplikacji (menu się zamyka). */
+    private fun tsCtlKey(code: Int): Boolean {
+        when (code) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> tsEnter(pause = false, backMs = 10_000)
+            KeyEvent.KEYCODE_DPAD_DOWN -> tsEnter(pause = false, backMs = 5 * 60_000)
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> { showMessage("Już na żywo", 1500); tsCtlOpen() }
+            KeyEvent.KEYCODE_BACK -> { tsCtl = false; banner.visibility = View.GONE; ui.removeCallbacks(hideBanner) }
+            else -> {
+                val keep = isOk(code) || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || code == KeyEvent.KEYCODE_MEDIA_PLAY || code == KeyEvent.KEYCODE_MEDIA_PAUSE
+                if (!keep) tsCtl = false
+                return false
+            }
+        }
+        return true
     }
 
     private fun tsTogglePause() {
@@ -1512,11 +1575,11 @@ class PlayerActivity : Activity() {
             KeyEvent.KEYCODE_DPAD_RIGHT -> tsSeek(if (fast) 120_000 else 30_000)
             KeyEvent.KEYCODE_DPAD_UP -> tsSeek(5 * 60_000)
             KeyEvent.KEYCODE_DPAD_DOWN -> tsSeek(-5 * 60_000)
-            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> tsSeek(60_000)
-            KeyEvent.KEYCODE_MEDIA_REWIND -> tsSeek(-30_000)
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> tsTogglePause()
-            KeyEvent.KEYCODE_MEDIA_STOP -> tsGoLive()
-            KeyEvent.KEYCODE_BACK -> tsGoLive()
+            // Wstecz: najpierw zamyka pasek (także przy pauzie), dopiero kolejne naciśnięcie wraca na żywo
+            KeyEvent.KEYCODE_BACK -> {
+                if (banner.visibility == View.VISIBLE) { banner.visibility = View.GONE; ui.removeCallbacks(hideBanner); return true }
+                tsGoLive()
+            }
             else -> return false
         }
         return true
@@ -1546,7 +1609,7 @@ class PlayerActivity : Activity() {
         bannerStart.text = "−${fmtMs(span)}"
         bannerEnd.text = "na żywo"
         bannerProgress.progress = ((span - behind) * 1000 / span).toInt().coerceIn(0, 1000)
-        bannerNext.text = "◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pauza   WSTECZ na żywo"
+        bannerNext.text = "◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pauza / start   ■ na żywo   WSTECZ zamknij pasek"
     }
 
     /** Co sekundę: pasek, ukrywanie, pilnowanie okna przy długiej pauzie. */
@@ -1831,7 +1894,7 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- nakładki
 
-    private val hideBanner = Runnable { banner.visibility = View.GONE }
+    private val hideBanner = Runnable { banner.visibility = View.GONE; tsCtl = false }
     private val hideMessage = Runnable { message.visibility = View.GONE }
 
     private fun t(sec: Long) = hm.format(Date(sec * 1000))
@@ -2013,6 +2076,7 @@ class PlayerActivity : Activity() {
 
         if (recMode && recKey(keyCode, event)) return true
         if (tsShifted && tsKey(keyCode, event)) return true
+        if (tsCtl && !tsShifted && tsCtlKey(keyCode)) return true
 
         if (keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
             digit(keyCode - KeyEvent.KEYCODE_0); return true
@@ -2058,7 +2122,7 @@ class PlayerActivity : Activity() {
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
-            showQuickMenu()
+            if (prefs.tsMin > 0 && !recMode && !tsShifted) showPanel() else showQuickMenu()
             return true
         }
         return super.onKeyLongPress(keyCode, event)
@@ -2070,6 +2134,10 @@ class PlayerActivity : Activity() {
                 when {
                     recMode -> recTogglePause()
                     tsShifted -> tsTogglePause()
+                    tsCtl -> tsEnter(pause = true, backMs = 0)
+                    // timeshift skonfigurowany: OK pokazuje pasek, OK na pasku otwiera menu przewijania
+                    prefs.tsMin > 0 && playList.isNotEmpty() ->
+                        if (banner.visibility == View.VISIBLE) tsCtlOpen() else playList.getOrNull(playIndex)?.let { showBanner(it) }
                     else -> showPanel()
                 }
             }
@@ -2095,9 +2163,21 @@ class PlayerActivity : Activity() {
             Act.RECALL -> recall()
             Act.CH_UP -> { panelOnRec = false; play(playIndex + if (inv) -1 else 1) }
             Act.CH_DOWN -> { panelOnRec = false; play(playIndex + if (inv) 1 else -1) }
+            Act.TS_REWIND -> when {
+                !tsConfigured() -> {}
+                tsMode -> { tsSetShifted(true); tsSeek(-30_000) }
+                else -> tsEnter(pause = false, backMs = 30_000)
+            }
+            Act.TS_FORWARD -> when {
+                tsShifted -> tsSeek(60_000)
+                tsMode -> showMessage("Już na żywo", 1500)
+                prefs.tsMin > 0 -> showMessage("Już na żywo", 1500)
+                else -> tsConfigured()
+            }
+            Act.TS_LIVE -> if (tsMode) tsGoLive() else if (prefs.tsMin <= 0) tsConfigured()
             Act.TIMESHIFT -> when {
                 tsShifted -> tsTogglePause()
-                tsMode -> { tsShifted = true; player?.playWhenReady = false; tsShowBanner(sticky = true) }   // już z bufora
+                tsMode -> { tsSetShifted(true); player?.playWhenReady = false; tsShowBanner(sticky = true) }   // już z bufora
                 else -> tsEnter(pause = true, backMs = 0)
             }
         }
