@@ -39,7 +39,9 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density"
             android:excludeFromRecents="true"
             android:exported="false"
+            android:launchMode="singleTop"
             android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.zap-prompt"
             android:theme="@style/SettingsTheme" />
 
         <receiver
