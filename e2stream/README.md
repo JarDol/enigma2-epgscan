@@ -54,6 +54,10 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 | LAST / ⏮ | poprzedni kanał |
 | WSTECZ ×2 | wyjście |
 
+Przy włączonym timeshifcie długie OK na pasku kanału otwiera pasek przewijania.
+W jego trybie strzałki przewijają również po dotarciu do transmisji na żywo;
+na wyświetlonym pasku kanału działają jak podczas zwykłego oglądania.
+
 ## Ustawienia
 
 * adres dekodera, port OpenWebif (80), port streamingu (8001), login/hasło,
