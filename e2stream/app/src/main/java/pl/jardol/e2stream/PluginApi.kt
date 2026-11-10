@@ -79,7 +79,16 @@ class PluginApi(private val p: Prefs) {
     }
 
     /** Paczka danych (EPG, ikony, referencje) przygotowana przez wtyczkę; at = 0, gdy jej nie ma. */
-    fun packInfo(): JSONObject? = try { get("/api/pack/info", 5000) } catch (_: Exception) { null }
+    fun packInfo(): JSONObject? {
+        val c = open("/api/pack/info", 5000)
+        try {
+            if (c.responseCode == 404) return null
+            if (c.responseCode != 200) throw IOException("EPG Scan HTTP ${c.responseCode}")
+            return JSONObject(c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+        } finally {
+            c.disconnect()
+        }
+    }
 
     /** Pobiera plik paczki do [dest]; false, gdy go nie ma. */
     fun packFile(name: String, dest: java.io.File): Boolean {

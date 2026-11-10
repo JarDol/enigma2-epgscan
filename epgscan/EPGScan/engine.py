@@ -8,7 +8,7 @@ import time
 from enigma import eTimer, eServiceReference, eEPGCache, iRecordableService
 import NavigationInstance
 
-from .common import ensure_eit, restore_eit, cfg, VERSION, rotate_logs, log, save_cfg, build_jobs, count_detail, configured_tuners, \
+from .common import ensure_eit, restore_eit, pause_eit_for_xmltv, resume_eit_after_xmltv, cfg, VERSION, rotate_logs, log, save_cfg, build_jobs, count_detail, configured_tuners, \
 	frontend_of, same_tp, flush_all, flush_refs, clears_now, copy_backup, changes_since_last, remember_scan, \
 	update_tp_stats, update_topup_stats, horizons, apply_skip, epg_stats, stats_text, all_refs, xmltv_targets, log_dups, \
 	profile_default, profile_text, xmltv_in_profile, TUNE_TIMEOUT, MAX_RETRIES, COUNT_EVERY, TUNE_GAP, NO_TUNER_WAIT, USAGE_EVERY, TIMER_AHEAD
@@ -56,6 +56,7 @@ class ScanEngine(object):
 		self.changes = ""
 		self.phase = ""              # "" / "scan" / "xmltv"
 		self.xmltv = None
+		self.xmltv_resume_eit = False
 		self.summary = ""
 		self.timer_hold = 0          # tunery trzymane wolne dla nagran, ktore zaraz rusza
 		self.auto = False            # start z harmonogramu
@@ -633,13 +634,16 @@ class ScanEngine(object):
 		self.note = self.summary
 		try:
 			eEPGCache.getInstance().save()
-		except Exception:
-			pass
+		except Exception as e:
+			log("Doczytywanie: zapis EPG nieudany: %s" % e)
 		self.phase = ""
 		self.running = False
 		self.finished = True
 		self.topup = False
 		self.notify()
+		if cfg.cli_api.value and cfg.cli_pack.value:
+			from .clientpack import request_rebuild
+			request_rebuild()
 
 	def start_xmltv(self, tried=False):
 		from .xmltv import XmltvImport, sources_present, cache_present, install_sources
@@ -665,23 +669,35 @@ class ScanEngine(object):
 					self.complete()
 			install_sources(done)
 			return
-		names = {}
-		targets = xmltv_targets(names)
-		miss = len([k for k, hz in targets.items() if not hz])
-		log("XMLTV: kanalow do uzupelnienia %d (z bukietow %d, kopie spoza bukietow %d; bez EPG z satelity %d, dalsze dni %d)" % (
-			len(targets), len(names), len(targets) - len(names), miss, len(targets) - miss))
-		if not targets:
+		try:
+			self.xmltv_resume_eit = pause_eit_for_xmltv()
+		except Exception as e:
+			log("XMLTV: nie udalo sie wylaczyc EIT - import przerwany: %s" % e)
 			self.complete()
 			return
-		self.phase = "xmltv"
-		from . import xmltv as xm
-		xm.PROFILE = getattr(self, "profile", None) or profile_default()
-		srcs = xm.selected_sources()[0]
-		log("XMLTV: zrodla wg profilu (%s): %s" % (profile_text(xm.PROFILE), ", ".join(s.desc for s in srcs) or "brak"))
-		self.xmltv = XmltvImport(targets, self.complete, names)
-		self.xmltv.force = getattr(self, "force_xmltv", False)
-		if not self.xmltv.start():
-			self.xmltv = None
+		try:
+			names = {}
+			coverage = {}
+			event_ids = {}
+			targets = xmltv_targets(names, coverage, event_ids)
+			miss = len([k for k, hz in targets.items() if not hz])
+			log("XMLTV: kanalow do uzupelnienia %d (z bukietow %d, kopie spoza bukietow %d; bez EPG %d, z EPG %d)" % (
+				len(targets), len(names), len(targets) - len(names), miss, len(targets) - miss))
+			if not targets:
+				self.complete()
+				return
+			self.phase = "xmltv"
+			from . import xmltv as xm
+			xm.PROFILE = getattr(self, "profile", None) or profile_default()
+			srcs = xm.selected_sources()[0]
+			log("XMLTV: zrodla wg profilu (%s): %s" % (profile_text(xm.PROFILE), ", ".join(s.desc for s in srcs) or "brak"))
+			self.xmltv = XmltvImport(targets, self.complete, names, coverage, event_ids)
+			self.xmltv.force = getattr(self, "force_xmltv", False)
+			if not self.xmltv.start():
+				self.xmltv = None
+				self.complete()
+		except Exception as e:
+			log("XMLTV: nie udalo sie rozpoczac importu: %s" % e)
 			self.complete()
 		self.notify()
 
@@ -973,6 +989,12 @@ class ScanEngine(object):
 
 	def complete(self):
 		"""Koniec calego odswiezania: zapis EPG, powiadomienie, kopia i ew. gleboki sen."""
+		if self.xmltv_resume_eit:
+			self.xmltv_resume_eit = False
+			try:
+				resume_eit_after_xmltv()
+			except Exception as e:
+				log("XMLTV: nie udalo sie przywrocic EIT: %s" % e)
 		if self.phase == "xmltv":
 			try:
 				log("Statystyka EPG po imporcie XMLTV (bukiety): " + stats_text(epg_stats(all_refs())))

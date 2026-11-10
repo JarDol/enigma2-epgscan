@@ -5,7 +5,7 @@
 # Zrodla: pliki *.sources.xml z /etc/epgimport (pakiet enigma2-plugin-extensions-epgimport-sources),
 # awaryjnie wbudowana lista. Import po skanie z satelity:
 #  - kanaly bez EPG z satelity (rowniez IPTV z bukietow) dostaja caly program z XMLTV,
-#  - kanaly z EPG z satelity - tylko audycje zaczynajace sie po ostatniej audycji z satelity.
+#  - kanaly z EPG z satelity - tylko przedzialy niepokryte istniejacymi audycjami.
 # Dzieki temu w chwili importu nic sie nie naklada (brak dubli).
 
 import calendar
@@ -22,6 +22,7 @@ import xml.etree.ElementTree as ET
 from enigma import eTimer, eEPGCache
 
 from .common import cfg, log, E2
+from .epgintervals import uncovered_event
 
 SOURCES_DIR = "/etc/epgimport"
 TMP = "/tmp/epgscan_xmltv"
@@ -676,8 +677,10 @@ def xmltv_time(s):
 class XmltvImport(object):
 	"""Import w tle: pobieranie i parsowanie w osobnym watku, zapis do EPG w glownym watku."""
 
-	def __init__(self, targets, done_cb, names=None):
+	def __init__(self, targets, done_cb, names=None, coverage=None, event_ids=None):
 		self.targets = targets          # {key: horyzont satelity (koniec ostatniej audycji) albo 0}
+		self.coverage = coverage or {}
+		self.event_ids = event_ids or {}
 		self.names = names or {}        # {key: nazwa kanalu} - do logu
 		self.done_cb = done_cb
 		self.status = "przygotowanie"
@@ -885,14 +888,10 @@ class XmltvImport(object):
 						sub = el.findtext("sub-title", "") or ""
 						desc = el.findtext("desc", "") or ""
 						for k in keys:
-							hz = self.targets.get(k, 0)
-							bb = b
-							if hz and b < hz:
-								if e <= hz + 60:
-									continue      # ten czas pokrywa satelita
-								bb = hz           # audycja trwa w chwili konca danych z satelity - od tego miejsca,
-								                  # bez dziury na styku satelita/XMLTV (Multi EPG "nastepny" sie na niej urywa)
-							got.setdefault(k, []).append((bb, e - bb, title, sub, desc, 0))
+							event = (b, e - b, title, sub, desc, 0)
+							parts = uncovered_event(event, self.coverage.get(k, []))
+							if parts:
+								got.setdefault(k, []).extend(parts)
 				el.clear()
 		finally:
 			stream.close()
@@ -913,6 +912,14 @@ class XmltvImport(object):
 		self.imp_timer.start(50, False)
 
 	def import_step(self):
+		try:
+			self._import_step()
+		except Exception as e:
+			log("XMLTV: blad zapisu EPG - import przerwany: %s" % e)
+			self.imp_timer.stop()
+			self.finish()
+
+	def _import_step(self):
 		cache = eEPGCache.getInstance()
 		for _ in range(10):
 			if not self.queue or self.cancelled:
@@ -923,6 +930,18 @@ class XmltvImport(object):
 			evs = tidy_events(evs)
 			hz = self.targets.get(k, 0)
 			evs, n = fill_gaps(evs, time.time(), bool(hz and hz > time.time()), cfg.xmltv_gaps.value)
+			evs = [part for event in evs for part in uncovered_event(event, self.coverage.get(k, []))]
+			ids = set(self.event_ids.get(k, set()))
+			safe = []
+			for event in evs:
+				event_id = event[0] & 0xffff
+				if event_id in ids:
+					log("XMLTV: pominieto audycje %s (%s): identyfikator %d koliduje z innym EPG" %
+						(event[2], self.names.get(k, key_ref(k)), event_id))
+					continue
+				ids.add(event_id)
+				safe.append(event)
+			evs = safe
 			self.fillers = getattr(self, "fillers", 0) + n
 			ref = key_ref(k)
 			try:

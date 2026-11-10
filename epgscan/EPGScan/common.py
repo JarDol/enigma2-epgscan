@@ -17,7 +17,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.15.1"
+VERSION = "2.16.0"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 TP_STATS = "/etc/enigma2/epgscan_tps.json"
@@ -100,6 +100,9 @@ cfg.sched_deep_after = ConfigYesNo(default=True)
 cfg.last_auto_run = ConfigInteger(default=0)
 # doczytywanie brakow w ciagu dnia
 cfg.topup = ConfigYesNo(default=False)
+cfg.topup_mode = ConfigSelection(default="all", choices=[
+	("all", "aktualizuj wszystkie transpondery"),
+	("short", "tylko kanaly z konczacym sie EPG")])
 cfg.topup_every = ConfigSelectionNumber(1, 12, 1, default=3)
 TOPUP_CHOICES = [(str(h), "%d h" % h) for h in (2, 4, 6, 8, 10, 12, 18)] + \
 	[(str(d * 24), "1 dzien" if d == 1 else "%d dni" % d) for d in range(1, 8)]
@@ -115,7 +118,7 @@ cfg.auto_in_progress = ConfigYesNo(default=False)   # skan z harmonogramu w toku
 cfg.xmltv = ConfigYesNo(default=False)
 cfg.xmltv_mode = ConfigSelection(default="tail", choices=[
 	("missing", "tylko kanaly bez EPG z satelity"),
-	("tail", "kanaly bez EPG + dalsze dni pozostalych")])
+	("tail", "kanaly bez EPG + luki i dalsze dni pozostalych")])
 cfg.xmltv_copies = ConfigYesNo(default=True)    # XMLTV takze dla kopii kanalow spoza bukietow (wszystkie kanaly TV z lamedb)
 cfg.xmltv_sources = ConfigText(default="")    # opisy zrodel oddzielone "|"
 cfg.local_grab = ConfigYesNo(default=False)                    # pobieranie programu na dekoderze
@@ -374,6 +377,30 @@ def restore_eit():
 		log("EIT wylaczone z powrotem (jak w ustawieniach EPG)")
 	except Exception as e:
 		log("Nie udalo sie wylaczyc EIT: %s" % e)
+
+
+def pause_eit_for_xmltv():
+	try:
+		from Components.config import config
+		e = config.epg.eit
+	except (ImportError, AttributeError) as e:
+		log("XMLTV: nie mozna sterowac EIT w tym obrazie: %s" % e)
+		return False
+	if not e.value:
+		return False
+	try:
+		e.value = False
+	except Exception:
+		e.value = True
+		raise
+	log("XMLTV: EIT wylaczone na czas importu")
+	return True
+
+
+def resume_eit_after_xmltv():
+	from Components.config import config
+	config.epg.eit.value = True
+	log("XMLTV: przywrocono EIT po imporcie")
 
 
 def save_cfg():
@@ -1315,24 +1342,35 @@ def bouquet_keys(files, names=None):
 	return keys
 
 
-def xmltv_targets(names=None):
+def xmltv_targets(names=None, coverage=None, event_ids=None):
 	"""{klucz: horyzont} - horyzont = koniec ostatniej audycji z satelity (0 = brak EPG).
 	W trybie "missing" pomija kanaly, ktore maja EPG z satelity."""
 	cache = eEPGCache.getInstance()
 	now = int(time.time())
 	out = {}
-	files = xmltv_bouquet_files()
-	for k in bouquet_keys(files, names):
+	from .epgintervals import merge_intervals
+
+	def add_target(k):
 		ref = "1:0:1:%X:%X:%X:%X:0:0:0:" % k
 		try:
-			res = cache.lookupEvent(["BD", (ref, 0, -1, -1)]) or []
-		except Exception:
-			res = []
-		ends = [int(r[0]) + int(r[1] or 0) for r in res if r and r[0] is not None]
-		hz = max(ends) if ends else 0
+			res = cache.lookupEvent(["IBD", (ref, 0, -1, -1)]) or []
+		except Exception as e:
+			log("XMLTV: nie mozna odczytac EPG %s - pomijam kanal: %s" % (ref, e))
+			return
+		intervals = merge_intervals((int(r[1]), int(r[1]) + int(r[2] or 0))
+			for r in res if r and r[1] is not None and int(r[1]) + int(r[2] or 0) > now)
+		hz = intervals[-1][1] if intervals else 0
 		if hz and cfg.xmltv_mode.value == "missing":
-			continue
-		out[k] = hz if hz > now else 0
+			return
+		out[k] = hz
+		if coverage is not None:
+			coverage[k] = intervals
+		if event_ids is not None:
+			event_ids[k] = {int(r[0]) for r in res if r and r[0] is not None}
+
+	files = xmltv_bouquet_files()
+	for k in bouquet_keys(files, names):
+		add_target(k)
 	if cfg.xmltv_copies.value:
 		# pozostale kanaly TV z lamedb (kopie tych samych stacji na innych transponderach/platformach)
 		for refs in lamedb_groups().values():
@@ -1346,15 +1384,7 @@ def xmltv_targets(names=None):
 					continue
 				if k in out:
 					continue
-				try:
-					res = cache.lookupEvent(["BD", (ref, 0, -1, -1)]) or []
-				except Exception:
-					res = []
-				ends = [int(r[0]) + int(r[1] or 0) for r in res if r and r[0] is not None]
-				hz = max(ends) if ends else 0
-				if hz and cfg.xmltv_mode.value == "missing":
-					continue
-				out[k] = hz if hz > now else 0
+				add_target(k)
 	return out
 
 

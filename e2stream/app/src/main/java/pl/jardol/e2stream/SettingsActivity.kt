@@ -152,6 +152,18 @@ class SettingsActivity : Activity() {
                 pctItem("Ikona na pasku kanału", { p.uiBannerIcon }, { p.uiBannerIcon = it }),
             )
             "EPG i ikony kanałów" -> listOf(
+        Item.Action("Aktualizacja z EPG Scan", {
+            if (p.epgUpdateMode == EpgUpdatePolicy.STARTUP) "przy każdym uruchomieniu" else "raz dziennie"
+        }) {
+            val modes = listOf(EpgUpdatePolicy.DAILY, EpgUpdatePolicy.STARTUP)
+            TvDialog.single(this, "Aktualizacja z EPG Scan",
+                listOf("raz dziennie", "przy każdym uruchomieniu"),
+                modes.indexOf(p.epgUpdateMode).coerceAtLeast(0)) { w ->
+                p.epgUpdateMode = modes[w]
+                markChanged("EPG Scan: aktualizacja ${if (w == 0) "raz dziennie" else "przy uruchomieniu"}")
+                refresh()
+            }
+        },
         Item.Toggle("Pobieraj EPG codziennie (bez wtyczki EPG Scan)", { p.epgDaily }, { p.epgDaily = it }),
         Item.Text("Godzina pobierania EPG", { p.epgHour },
             { v -> if (Regex("^\\d{1,2}:\\d{2}$").matches(v.trim())) p.epgHour = v.trim() else toast("Format HH:MM") },

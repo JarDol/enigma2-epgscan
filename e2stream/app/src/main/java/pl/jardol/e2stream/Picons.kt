@@ -233,10 +233,8 @@ object Picons {
                 val e = z.nextEntry ?: break
                 val name = File(e.name).name
                 if (e.isDirectory || !name.endsWith(".png") || name.length > 120) continue
-                try {
-                    File(d, name).outputStream().use { z.copyTo(it) }
-                    n++
-                } catch (_: Exception) { }
+                File(d, name).outputStream().use { z.copyTo(it) }
+                n++
             }
         }
         synchronized(missing) { missing.clear() }

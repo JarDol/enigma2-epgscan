@@ -147,12 +147,16 @@ Pod listą widać opis wybranej pozycji i pełną kolejność kroków, np.
    zbieranie EIT aż przestaną przybywać nowe audycje.
 4. **Pobieranie programu** – równolegle ze skanem: dekoder pobiera polskie serwisy, serwer epgpl
    (jeśli jest) – według profilu.
-5. **Import XMLTV** – po skanie satelity: kanały bez EPG z satelity dostają cały program, kanały
-   z EPG z satelity – tylko dalsze dni (bez dubli).
+5. **Import XMLTV** – po skanie satelity: kanały bez EPG dostają cały program, pozostałe – tylko okresy
+   niepokryte istniejącymi audycjami, również luki przed ostatnią audycją. Na czas importu odbiór EIT
+   zostaje wyłączony, a następnie przywrócony do poprzedniego stanu, jeśli obraz na to pozwala.
 6. **Kopia EPG** na dysk, podsumowanie, ewentualny restart (tylko po nocnym przebiegu i tylko gdy potrzebny).
 
-Satelita zawsze ma pierwszeństwo: Enigma2 i tak przyjmuje EIT przed importem, więc import XMLTV tylko
-uzupełnia to, czego satelita nie dał.
+Istniejące audycje (także wcześniej zaimportowane) mają pierwszeństwo przed nowym importem XMLTV.
+Po przywróceniu EIT Enigma2 może nadal aktualizować program danymi z satelity.
+OpenPLi wyznacza identyfikator audycji XMLTV z czasu jej rozpoczęcia. Jeśli ten identyfikator
+koliduje z inną audycją kanału, import pomija kolidujący wpis i zapisuje ostrzeżenie w logu,
+zamiast ryzykować zastąpienie istniejącej audycji.
 
 ---
 
@@ -205,7 +209,7 @@ Własny import (bez wtyczki EPG Import):
 - źródła: *EPG PL (dekoder)*, serwer epgpl, listy z pakietu `epgimport-sources` (np. Rytec), własne
   listy pod adresem URL albo z `/etc/enigma2/epgscan_sources/wlasne`; gdy brak pakietu – wbudowana lista luster,
 - kolejność źródeł do ustawienia (np. dekoder → serwer → pozostałe),
-- *Co uzupełniać*: tylko kanały bez EPG z satelity albo także dalsze dni pozostałych,
+- *Co uzupełniać*: tylko kanały bez EPG albo również luki i dalsze dni pozostałych,
 - kanały z wybranych bukietów (wszystkie / wybrane / do skanowania) i opcjonalnie kopie kanałów spoza bukietów,
 - **audycje zastępcze** („Brak programu do HH:MM”) w przerwach – żeby kanał był widoczny w Multi EPG
   także wtedy, gdy pierwsza audycja zaczyna się później.
@@ -366,8 +370,11 @@ albo decyzja z kandydatami „ta sama nazwa”; kanał ze zmienioną nazwą i SI
 - **Tryb**: o godzinie w wybrane dni albo co N godzin; **tylko w czuwaniu** (czeka na czuwanie) albo zawsze.
 - Opcjonalnie: czekanie, gdy trwa nagrywanie; **wybudzanie z głębokiego czuwania** i powrót do niego po pracy.
 - Przebieg przerwany restartem odbiornika jest powtarzany po starcie.
-- **Doczytywanie braków w ciągu dnia**: co N godzin sprawdza kanały, którym EPG kończy się wkrótce,
-  i doczytuje tylko te transpondery (zawsze albo tylko w czuwaniu, opcjonalnie o stałej godzinie).
+- **Aktualizacja satelitarna w ciągu dnia**: co N godzin skanuje wszystkie transpondery niezależnie od
+  zasięgu EPG albo, w trybie krótkiego EPG, tylko transpondery kanałów, którym program kończy się wkrótce.
+  Próg uwzględnia całe EPG, także z XMLTV, i nie wykrywa luk w środku programu. Skan działa zawsze albo
+  tylko w czuwaniu, opcjonalnie także o stałej godzinie. Po zakończonym skanie powstaje nowa paczka
+  dla E2Stream, gdy włączono serwer i dane dla aplikacji.
 - **SatWatch: pełny skan raz w tygodniu** w wybrany dzień (w pozostałe dni – sprawdzenie zmian).
 - **Restart po nocnym przebiegu** (*nigdy* / *gdy potrzebny* / *zawsze*). „Gdy potrzebny” oznacza:
   tunery nie stroją, mało wolnej pamięci, Enigma2 zajmuje dużo więcej pamięci niż po starcie,
@@ -522,7 +529,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Różnice w dopasowaniu (dekoder / serwer) | wybór za każdym razem / wygrywa dekoder / wygrywa serwer / pozostaw różne (wybór za każdym razem) |
 | Codziennie program kandydatów (okno wyboru stacji) | program na dobę dla kandydatów po każdym pobraniu, dekoder i serwer – ok. 1000 stacji; bez tego program na żądanie z Menu w oknie wyboru (nie) |
 | Pobieranie w jednym miejscu (kto pierwszy) | harmonogram: program pobiera dekoder albo serwer – kto pierwszy, drugi bierze paczkę (tak) |
-| Co uzupełniać | kanały bez EPG z satelity / także dalsze dni pozostałych (także dalsze dni) |
+| Co uzupełniać | kanały bez EPG / także luki i dalsze dni pozostałych (luki i dalsze dni) |
 | Kanały z bukietów (OK – lista) | strzałki: wszystkie bukiety (także IPTV) / wybrane bukiety / bukiety do skanowania; OK – lista bukietów, zapis ustawia *wybrane bukiety*; te same bukiety są dopasowywane w mapie kanałów (wszystkie) |
 | Także kopie kanałów spoza bukietów | (tak) |
 | Audycja zastępcza w przerwach | nie / od teraz do pierwszej audycji / także przerwy od 30 min (od teraz do pierwszej audycji) |
@@ -541,7 +548,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Czekaj, gdy trwa nagrywanie | (nie) |
 | Wybudzaj z głębokiego czuwania / wróć po skanie | (nie / tak) |
 | SatWatch: pełny skan raz w tygodniu, dzień | (tak, niedziela) |
-| Doczytywanie braków w ciągu dnia | (nie); sprawdzaj co (3 h), próg (6 h), kiedy (zawsze), dodatkowo o stałej godzinie (nie, 14:00) |
+| Aktualizacja satelitarna w ciągu dnia | (nie); tryb: wszystkie transpondery (domyślnie, także po aktualizacji) / tylko krótkie EPG; co (3 h), próg dla krótkiego EPG (6 h), kiedy (zawsze), dodatkowo o stałej godzinie (nie, 14:00) |
 
 ### Kopie EPG, log, powiadomienia, restart, sprzątanie dysku
 | Ustawienie | Opis |
@@ -554,7 +561,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Profilaktycznie co [dni], próg wolnej pamięci | (nie, 100 MB) |
 | Aktualizacja automatyczna | (nie) raz na dobę nowa wersja z wydań GitHub; restart Enigma2 tylko w czuwaniu, bez nagrań i pracy wtyczki |
 | Aktualizuj teraz | OK – sprawdzenie i instalacja najnowszej wersji (zawsze, także przy wyłączonej automatycznej) |
-| Dane dla aplikacji po harmonogramie | (tak) ostatni krok pracy z harmonogramu: paczka EPG (wszystkie bukiety TV), ikon kanałów i zamian referencji dla E2Stream; *Przygotuj dane teraz* (OK) – od razu |
+| Dane dla aplikacji po skanach | (tak) paczka EPG (wszystkie bukiety TV), ikon i zamian referencji po pracy z harmonogramu oraz po cyklicznym skanie satelity; *Przygotuj dane teraz* (OK) – od razu |
 | Serwer dla aplikacji E2Stream | (tak) API dla klientów streamingu w sieci lokalnej: bukiety, kanały z PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników; port (8770), token (puste = bez) |
 | Sprzątanie dysku | (nie); katalogi (OK – lista: nośniki, katalog timeshift i crash logów z ustawień Enigma2, własne – żółty dodaj, niebieski usuń; `/media/hdd`), timeshift starszy niż (6 h), zostaw crash logów – łącznie (10), co ile minut (15) |
 
@@ -617,4 +624,3 @@ zawiera pobranego programu. Oprogramowanie jest dostarczane bez jakiejkolwiek gw
 EPG Scan – GNU GPL w wersji 2 lub (według wyboru) dowolnej późniejszej (GPL-2.0-or-later), pełny tekst w pliku `LICENSE`.
 Kod i programy innych autorów, z których korzysta (m.in. iptv-org/epg – Unlicense, Enigma2/OpenPLi – GPL-2.0), ich licencje oraz uwagi o danych
 z serwisów programu TV: `THIRD_PARTY.md`.
-

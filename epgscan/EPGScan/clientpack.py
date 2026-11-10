@@ -8,6 +8,7 @@
 # Odczyt EPG w paczkach co 30 kanalow na watku glownym (eEPGCache), zapis plikow w tle.
 
 import gzip
+import hashlib
 import json
 import os
 import time
@@ -24,6 +25,7 @@ CHUNK = 30
 KEEP_REMAP_DAYS = 30
 
 _job = None
+_rebuild_requested = False
 
 
 def pack_dir():
@@ -177,22 +179,22 @@ class PackJob(object):
 			for k, ref, name in part:
 				try:
 					res = ec.lookupEvent(["IBDTSE", (ref, 0, -1, -1)]) or []
-				except Exception:
-					res = []
+				except Exception as e:
+					raise RuntimeError("odczyt %s (%s): %s" % (name, ref, e))
 				ev = []
 				for r in res:
 					try:
 						if not r[1] or r[1] > limit:
 							continue
 						ev.append([int(r[0] or 0), int(r[1]), int(r[2] or 0), r[3] or "", r[4] or "", r[5] or ""])
-					except Exception:
-						continue
+					except (IndexError, TypeError, ValueError) as e:
+						raise ValueError("nieprawidlowa audycja %s (%s): %s" % (name, ref, e))
 				if ev:
 					self.epg[k] = {"n": name, "e": ev}
 			self.i += CHUNK
 		except Exception as e:
-			log("Dane dla E2Stream: EPG: %s" % e)
-			self.i = len(self.chans)
+			self.finished("blad EPG: %s - poprzednia paczka pozostaje bez zmian" % e)
+			return
 		if self.i < len(self.chans):
 			self.timer.start(20, True)
 			return
@@ -208,6 +210,10 @@ class PackJob(object):
 		with gzip.open(tmp, "wt", encoding="utf-8") as f:
 			json.dump({"at": now, "ch": self.epg}, f, ensure_ascii=False, separators=(",", ":"))
 		os.rename(tmp, os.path.join(d, "epg.json.gz"))
+		digest = hashlib.sha256()
+		with open(os.path.join(d, "epg.json.gz"), "rb") as f:
+			for block in iter(lambda: f.read(65536), b""):
+				digest.update(block)
 		events = sum(len(v["e"]) for v in self.epg.values())
 
 		idx = _picon_index()
@@ -252,7 +258,8 @@ class PackJob(object):
 		os.rename(tmp, os.path.join(d, "refs.json"))
 
 		meta = {"at": now, "channels": len(self.chans), "epg_channels": len(self.epg), "events": events,
-			"picons": npic, "remap": len(remap), "remap_new": new_remaps, "time": int(time.time() - self.t0)}
+			"picons": npic, "remap": len(remap), "remap_new": new_remaps, "time": int(time.time() - self.t0),
+			"epg_sha256": digest.hexdigest()}
 		with open(os.path.join(d, "pack.json"), "w") as f:
 			json.dump(meta, f)
 		if missing:
@@ -261,7 +268,7 @@ class PackJob(object):
 			len(self.chans), len(self.epg), events, npic, len(remap), new_remaps, meta["time"], d)
 
 	def finished(self, res):
-		global _job
+		global _job, _rebuild_requested
 		_job = None
 		log("Dane dla E2Stream: %s" % res)
 		try:
@@ -275,6 +282,17 @@ class PackJob(object):
 				self.done(res)
 			except Exception as e:
 				log("Dane dla E2Stream: %s" % e)
+		if _rebuild_requested:
+			_rebuild_requested = False
+			log("Dane dla E2Stream: ponawiam po skanie zakonczonym w trakcie przygotowywania paczki")
+			request_rebuild()
+
+
+def request_rebuild():
+	global _rebuild_requested
+	if not build():
+		_rebuild_requested = True
+		log("Dane dla E2Stream: przygotowanie juz trwa - ponowie po jego zakonczeniu")
 
 
 def build(done=None):

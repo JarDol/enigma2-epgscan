@@ -148,12 +148,15 @@ Below the list you see a description of the selected item and the full order of 
    until no new events arrive.
 4. **Listings download** – in parallel with the scan: the receiver downloads the Polish websites, the epgpl server
    (if present) – according to the profile.
-5. **XMLTV import** – after the satellite scan: channels without satellite EPG get the full listings, channels with
-   satellite EPG only the later days (no duplicates).
+5. **XMLTV import** – after the satellite scan: channels without EPG get the full listings; other channels get
+   listings only in gaps between existing events and after them. EIT is temporarily disabled during the import
+   and restored to its previous state afterwards when supported by the image.
 6. **EPG backup** to disk, summary, optional restart (only after the night run and only when needed).
 
-The satellite always has priority: Enigma2 accepts EIT before the import anyway, so XMLTV only fills what the
-satellite did not provide.
+Existing events, including earlier XMLTV imports, have priority over the new XMLTV import. Once EIT is restored,
+Enigma2 may update the guide with satellite data.
+OpenPLi derives XMLTV event IDs from their start time. If an ID conflicts with another event on the channel,
+the importer skips the conflicting entry and logs a warning rather than risk replacing existing listings.
 
 ---
 
@@ -207,7 +210,7 @@ Own import (no EPG Import plugin needed):
 - sources: *EPG PL (dekoder)*, the epgpl server, lists from the `epgimport-sources` package (e.g. Rytec), your own
   lists by URL or from `/etc/enigma2/epgscan_sources/wlasne`; without the package – a built-in list of mirrors,
 - adjustable source order (e.g. receiver → server → others),
-- *Co uzupełniać* (what to fill): only channels without satellite EPG, or also later days of the others,
+- *Co uzupełniać* (what to fill): only channels without EPG, or also gaps and later days of the others,
 - channels from the selected bouquets (all / selected / those being scanned) and optionally copies of channels
   outside the bouquets,
 - **placeholder events** ("Brak programu do HH:MM" – no listings until HH:MM) in gaps, so the channel is visible in
@@ -357,8 +360,10 @@ streaming to clients.**
 - **Mode**: at a time on chosen days, or every N hours; **only in standby** (waits for standby) or always.
 - Optional: wait while a recording is running; **wake from deep standby** and return to it afterwards.
 - A run interrupted by a receiver restart is repeated after start-up.
-- **Daytime top-up** (*Doczytywanie braków*): every N hours checks channels whose EPG ends soon and rescans only those
-  transponders (always or only in standby, optionally at a fixed time).
+- **Daytime satellite update** (*Aktualizacja satelitarna w ciągu dnia*): every N hours scans either all
+  transponders (default, including existing installations) or only those with soon-ending EPG. The latter
+  considers all EPG, including XMLTV, and does not detect internal gaps. It can run always or only in standby,
+  optionally at a fixed time. A new E2Stream pack is built after the scan if the client server and packs are enabled.
 - **SatWatch: full scan once a week** on a chosen day (on other days – checking for changes only).
 - **Restart after the night run** (*never* / *when needed* / *always*). "When needed" means: tuners do not tune, low
   free memory, Enigma2 uses much more memory than after start-up, SatWatch updated `satellites.xml`, optionally
@@ -508,7 +513,7 @@ below the settings list.
 | Matching differences (receiver / server) | ask every time / receiver wins / server wins / leave different (ask every time) |
 | Daily candidate listings (station selection window) | one day of listings for candidates after every download, receiver and server – about 1000 stations (no) |
 | Download in one place (whoever is first) | schedule: the receiver or the server downloads – whoever is first, the other takes the package (yes) |
-| What to fill | channels without satellite EPG / also later days of the others (also later days) |
+| What to fill | channels without EPG / also gaps and later days of the others (gaps and later days) |
 | Channels from bouquets (OK – list) | arrows: all bouquets (including IPTV) / selected bouquets / bouquets being scanned; OK – bouquet list, saving sets *selected bouquets*; the same bouquets are matched in the channel map (all) |
 | Also copies of channels outside bouquets | (yes) |
 | Placeholder event in gaps | no / from now to the first event / also gaps from 30 min (from now to the first event) |
@@ -527,7 +532,7 @@ below the settings list.
 | Wait while recording | (no) |
 | Wake from deep standby / return afterwards | (no / yes) |
 | SatWatch: full scan once a week, day | (yes, Sunday) |
-| Daytime top-up | (no); check every (3 h), threshold (6 h), when (always), additionally at a fixed time (no, 14:00) |
+| Daytime satellite update | (no); all transponders (default, including existing installations) / short EPG only; every (3 h), threshold for short EPG (6 h), when (always), optionally at a fixed time (no, 14:00) |
 
 ### *Kopie EPG* (backups, log, notifications, restart, disk cleanup)
 | Setting | Description |

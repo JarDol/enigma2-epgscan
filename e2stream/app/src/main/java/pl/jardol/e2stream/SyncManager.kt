@@ -38,7 +38,7 @@ object SyncManager {
         "hiddenBouquets", "pin", "pinMin", "invertUpDown", "bannerSec", "tsBannerSec",
         "channelListSec", "epgEventSec", "epgChannelSec", "epgMultiSec", "resumeLast",
         "startBouquet", "startChannel", "startChannelName", "autoUpdate", "keyMap",
-        "epgDaily", "epgHour", "epgDays", "picons", "piconDir", "showStats",
+        "epgDaily", "epgHour", "epgDays", "epgUpdateMode", "picons", "piconDir", "showStats",
     )
 
     /**

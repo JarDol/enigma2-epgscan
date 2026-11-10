@@ -117,6 +117,8 @@ class PlayerActivity : Activity() {
     private var analyzerRing = -1
     private var lastDumpAt = 0L
     private var updateChecked = false
+    private var epgStartupPending = false
+    private var epgReturnFromSettings = false
     private var streamStartAt = 0L
     private var readyLogged = false
     private var lastStartMs = -1L
@@ -234,6 +236,8 @@ class PlayerActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        if (!epgReturnFromSettings) epgStartupPending = true
+        epgReturnFromSettings = false
         ZapWakeAlarms.setAppForeground(this, true)
         ZapWakeAlarms.sync(this)
         if (safeMode) return
@@ -323,11 +327,12 @@ class PlayerActivity : Activity() {
     /** Co minutę: czy przypada pobranie EPG z harmonogramu. */
     private val epgTick = object : Runnable {
         override fun run() {
-            if (EpgSync.due(prefs)) {
+            if (EpgSync.due(prefs, epgStartupPending)) {
+                epgStartupPending = false
                 if (!prefs.pluginOk) AppLog.i("EPG: pobieranie wg harmonogramu (${prefs.epgHour})")
-                EpgSync.run(applicationContext, prefs, epgStore, { }) { r ->
-                    runOnUiThread { epg.clearMemory(); adapter.notifyDataSetChanged(); AppLog.i(r) }
-                }
+                EpgSync.run(applicationContext, prefs, epgStore, false, { },
+                    { r -> runOnUiThread { epg.clearMemory(); adapter.notifyDataSetChanged(); AppLog.i(r) } },
+                    { runOnUiThread { epgStartupPending = true } })
             }
             ui.postDelayed(this, 60_000)
         }
@@ -335,6 +340,7 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        epgReturnFromSettings = settingsOpen
         panelTimer.setActive(false)
         ZapWakeAlarms.setAppForeground(this, false)
         settingsOpen = false      // po powrocie i tak pełny start (onStart)

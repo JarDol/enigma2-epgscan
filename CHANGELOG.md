@@ -2,6 +2,7 @@
 
 ## EPG Scan (wtyczka Enigma2)
 
+- **2.16.0** – import XMLTV uzupełnia luki w istniejącym EPG, czasowo wyłącza EIT; cykliczna aktualizacja wszystkich transponderów albo tylko krótkiego EPG i nowa paczka E2Stream po skanie; suma SHA-256 paczki oraz ochrona przed częściowym eksportem
 - **2.15.1** – dane dla E2Stream: ustawienia zależne od urządzenia (silnik odtwarzania, obraz, bufory, wygląd) nie trafiają do części wspólnej (nowy telewizor nie przejmuje ich od innego; stare wpisy usuwane); paczka ikon tylko z serwisów DVB (bez strumieni IPTV z adresami)
 - **2.15.0** – serwer dla E2Stream przyjmuje log i zrzuty TS aplikacji (zamiast FTP; tylko `e2stream-*.log` i `stall-*.ts`, tylko w katalogach na nośnikach albo /tmp) – z wtyczką aplikacja nie potrzebuje FTP
 - **2.14.1** – sprzątanie dysku: także zrzuty TS aplikacji E2Stream (`stall-*.ts` w jej katalogu na dekoderze) starsze niż N dni (domyślnie 7)

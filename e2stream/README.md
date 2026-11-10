@@ -107,7 +107,7 @@ Gdy na dekoderze działa EPG Scan 2.12.0+ z włączonym „Serwerem dla aplikacj
 * PID-y kanałów z `lamedb` pozwalają zbudować PMT, gdy dekoder go nie wysyła — także przy pierwszym oglądaniu kanału,
 * synchronizacja ustawień i danych kanałów idzie przez API wtyczki (bez FTP), a z EPG Scan 2.15.0+ także log i zrzuty TS – FTP potrzebne jest tylko bez wtyczki; dane na dekoderze:
   `/etc/enigma2/epgscan/clients/common.json` i `device-<id>.json`,
-* pierwsze uruchomienie aplikacji w danym dniu pobiera EPG, ikony i dane kanałów (bez harmonogramu w aplikacji).
+* aplikacja sprawdza paczkę EPG Scan zgodnie z wybranym trybem aktualizacji.
 
 ## Współpraca z wtyczką EPG Scan
 
@@ -117,10 +117,17 @@ Gdy na dekoderze działa EPG Scan 2.12.0+ z włączonym „Serwerem dla aplikacj
 * PID-y kanałów z `lamedb` pozwalają zbudować PMT, gdy dekoder go nie wysyła — także przy pierwszym oglądaniu kanału,
 * synchronizacja ustawień i danych kanałów idzie przez API wtyczki (bez FTP), a z EPG Scan 2.15.0+ także log i zrzuty TS – FTP potrzebne jest tylko bez wtyczki; dane na dekoderze:
   `/etc/enigma2/epgscan/clients/common.json` i `device-<id>.json`,
-* pierwsze uruchomienie aplikacji w danym dniu pobiera EPG, ikony i dane kanałów (bez harmonogramu w aplikacji).
+* aplikacja sprawdza paczkę EPG Scan zgodnie z wybranym trybem aktualizacji.
 
 ## Wtyczka EPG Scan na dekoderze
 
-Gdy na dekoderze jest EPG Scan (2.14.0+), aplikacja przy pierwszym uruchomieniu w danym dniu (i co 3 h sprawdzając, czy jest nowsza)
-pobiera gotową paczkę przygotowaną po nocnym skanie: EPG wszystkich kanałów, ikony i zamiany referencji
+**E2Stream 0.18.14:** wybór sprawdzania paczki raz dziennie albo przy każdym uruchomieniu;
+automatyczny import tylko po zmianie pliku EPG.
+
+Gdy na dekoderze jest EPG Scan (2.14.0+), aplikacja sprawdza paczkę raz dziennie (domyślnie, także po północy
+podczas działania) albo przy każdym uruchomieniu i powrocie z ekranu głównego. Tryb wybiera się w **Ustawienia →
+EPG i ikony kanałów → Aktualizacja z EPG Scan**. Automatycznie pobiera i importuje paczkę tylko po zmianie jej
+pliku EPG; ręczne **Pobierz EPG i ikony teraz** wymusza ponowny import, np. po zmianie liczby dni EPG.
+Nowe wersje wtyczki identyfikują plik przez SHA-256, starsze przez czas i rozmiar paczki.
+Paczka zawiera EPG wszystkich kanałów, ikony i zamiany referencji
 (kanał startowy i ostatni przechodzą na nową referencję, gdy kanał zmienił transponder). Bez paczki – jak dotąd, kanał po kanale.

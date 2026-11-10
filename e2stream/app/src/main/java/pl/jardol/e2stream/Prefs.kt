@@ -250,6 +250,10 @@ class Prefs(ctx: Context) {
         get() = s("epgHour", "05:00")
         set(v) = putS("epgHour", v)
 
+    var epgUpdateMode: String
+        get() = s("epgUpdateMode", EpgUpdatePolicy.DAILY)
+        set(v) = putS("epgUpdateMode", v)
+
     /** Ile dni EPG do przodu zapisywać. */
     var epgDays: Int
         get() = sp.getInt("epgDays", 3)
@@ -263,6 +267,10 @@ class Prefs(ctx: Context) {
     var packCheckAt: Long
         get() = sp.getLong("packCheckAt", 0)
         set(v) = sp.edit().putLong("packCheckAt", v).apply()
+
+    var packIdentity: String
+        get() = s("packIdentity")
+        set(v) = putS("packIdentity", v)
 
     var lastEpgFetch: Long
         get() = sp.getLong("lastEpgFetch", 0)

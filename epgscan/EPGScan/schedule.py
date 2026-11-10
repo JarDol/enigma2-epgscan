@@ -187,12 +187,21 @@ class Scheduler(object):
 		cfg.last_topup.value = int(now)
 		if fixed:
 			cfg.last_topup_fixed.value = int(now)
-			log("Doczytywanie o stalej godzinie %02d:%02d - wszystkie transpondery z krotkim EPG, bez odstepow" %
+			log("Aktualizacja satelitarna o stalej godzinie %02d:%02d - bez odstepow" %
 				tuple(cfg.topup_fixed_time.value))
 		save_cfg()
 		eng.prepare()
-		jobs = topup_candidates(eng.jobs, force=bool(fixed))
+		if cfg.topup_mode.value == "all":
+			jobs = eng.jobs
+			for job in jobs:
+				job.topup_reason = "cykliczna aktualizacja"
+			log("Aktualizacja satelitarna: wszystkie %d transponderow, niezaleznie od zasiegu EPG" % len(jobs))
+		else:
+			jobs = topup_candidates(eng.jobs, force=bool(fixed))
 		if not jobs:
+			if cfg.topup_mode.value == "all":
+				log("Aktualizacja satelitarna: brak transponderow do skanowania")
+				return
 			parts = []
 			if TOPUP_INFO["recent"]:
 				parts.append("%d skanowane w ciagu ostatnich %d h" % (TOPUP_INFO["recent"], cfg.topup_every.value))
@@ -203,7 +212,7 @@ class Scheduler(object):
 			else:
 				log("Doczytywanie: wszystkie kanaly maja EPG na co najmniej %s - nic do zrobienia" % topup_label())
 			return
-		if TOPUP_INFO["recent"] or TOPUP_INFO["backoff"]:
+		if cfg.topup_mode.value == "short" and (TOPUP_INFO["recent"] or TOPUP_INFO["backoff"]):
 			log("Doczytywanie: pominiete teraz - %d niedawno skanowane, %d z wydluzonym odstepem" % (
 				TOPUP_INFO["recent"], TOPUP_INFO["backoff"]))
 		eng.start(topup_jobs=jobs)

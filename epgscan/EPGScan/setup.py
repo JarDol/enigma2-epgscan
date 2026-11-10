@@ -26,7 +26,7 @@ def all_items():
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
 		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto,
-		cfg.topup, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
+		cfg.topup, cfg.topup_mode, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
 
 
 ROW_H = 46
@@ -113,7 +113,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 	def changed(self):
 		cur = self["config"].getCurrent()
 		if cur and cur[1] in (cfg.backup, cfg.scope, cfg.sched_mode, cfg.sched_wakeup, cfg.skip_empty, cfg.xmltv, cfg.topup,
-				cfg.topup_fixed, cfg.sat_import, cfg.rs_mode, cfg.cl_on, cfg.cli_api) or (cur and is_sw_full(cur[1])):
+				cfg.topup_mode, cfg.topup_fixed, cfg.sat_import, cfg.rs_mode, cfg.cl_on, cfg.cli_api) or (cur and is_sw_full(cur[1])):
 			self.build()
 		if cur and cur[1] is cfg.xmltv and cfg.xmltv.value:
 			self.check_sources()
@@ -204,11 +204,13 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			except Exception:
 				pass
 			if cfg.sat_import.value:
-				lst.append(e("Doczytywanie brakow w ciagu dnia", cfg.topup))
+				lst.append(e("Aktualizacja satelitarna w ciagu dnia", cfg.topup))
 				if cfg.topup.value:
-					lst += [e("  Sprawdzaj co [h]", cfg.topup_every),
-						e("  Doczytaj, gdy EPG konczy sie za mniej niz", cfg.topup_hours),
-						e("  Kiedy", cfg.topup_when), e("  Dodatkowo raz dziennie o stalej godzinie", cfg.topup_fixed)]
+					lst += [e("  Tryb aktualizacji", cfg.topup_mode),
+						e("  Sprawdzaj co [h]", cfg.topup_every)]
+					if cfg.topup_mode.value == "short":
+						lst.append(e("  Doczytaj, gdy EPG konczy sie za mniej niz", cfg.topup_hours))
+					lst += [e("  Kiedy", cfg.topup_when), e("  Dodatkowo raz dziennie o stalej godzinie", cfg.topup_fixed)]
 					if cfg.topup_fixed.value:
 						lst.append(e("    Godzina", cfg.topup_fixed_time))
 		else:
@@ -223,7 +225,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			lst.append(e("Serwer dla aplikacji E2Stream (klienci streamingu)", cfg.cli_api))
 			if cfg.cli_api.value:
 				lst += [e("  Port", cfg.cli_port), e("  Token (puste = bez, siec lokalna)", cfg.cli_token),
-					e("  Dane dla aplikacji po harmonogramie (EPG, ikony, referencje)", cfg.cli_pack),
+					e("  Dane dla aplikacji po skanach (EPG, ikony, referencje)", cfg.cli_pack),
 					e("  Przygotuj dane teraz", self.p_pack)]
 			lst.append(e("Sprzatanie dysku (timeshift, crash logi)", cfg.cl_on))
 			if cfg.cl_on.value:
@@ -259,7 +261,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				txt += " Zainstalowana %s czeka na restart Enigma2." % cfg.upd_pending.value
 		elif item in (cfg.cli_pack, self.p_pack):
 			from .clientpack import last_text, pack_dir
-			txt = "Ostatni krok pracy z harmonogramu (po skanie satelity i imporcie EPG): paczka dla E2Stream - EPG kanalow " \
+			txt = "Po pracy z harmonogramu i po skanach cyklicznych w ciagu dnia: paczka dla E2Stream - EPG kanalow " \
 				"ze wszystkich bukietow TV, ikony kanalow i zamiany referencji (np. po zmianach SatWatch). Aplikacja pobiera ja " \
 				"przy pierwszym uruchomieniu w danym dniu i gdy pojawi sie nowsza. OK na 'Przygotuj dane teraz' - od razu. " \
 				"Katalog: %s. Ostatnio: %s" % (pack_dir(), last_text())
@@ -412,18 +414,21 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			if not single_flush_supported():
 				txt += " Czyszczenie pojedynczych kanalow jest niedostepne w tym obrazie."
 		elif item is cfg.topup:
-			txt = "Krotki skan w ciagu dnia - tylko transpondery, na ktorych kanalom konczy sie EPG. Bez czyszczenia, " \
-				"wolnymi tunerami z rezerwa. Ten sam transponder jest doczytywany najwyzej raz na \"Sprawdzaj co\"."
+			txt = "Cykliczny skan satelity w ciagu dnia bez czyszczenia EPG, wolnymi tunerami z rezerwa. " \
+				"Po skanie przygotowuje nowa paczke dla E2Stream, gdy wlaczono dane dla aplikacji."
+		elif item is cfg.topup_mode:
+			txt = "Wszystkie: skanuj wszystkie transpondery co podana liczbe godzin, niezaleznie od zasiegu EPG. " \
+				"Krotkie EPG: tylko transpondery z konczacym sie programem, z uwzglednieniem odstepow."
 		elif item is cfg.topup_every:
-			txt = "Jak czesto sprawdzac, czy jakims kanalom konczy sie EPG - to rowniez podstawowy odstep miedzy " \
+			txt = "Jak czesto uruchamiac aktualizacje. W trybie krotkiego EPG jest to podstawowy odstep miedzy " \
 				"skanami tego samego transpondera. Bez zysku odstep rosnie 2x: najwyzej do 2x podstawowego, jesli " \
 				"transponder dal dane w ostatnich 3 dniach, inaczej do 24 h. Po zysku wraca do podstawowego."
 		elif item is cfg.topup_hours:
-			txt = "Prog: kanal trafia do doczytania, gdy jego EPG z satelity siega mniej niz tyle do przodu. " \
+			txt = "Prog: kanal trafia do doczytania, gdy jego EPG (takze z XMLTV) siega mniej niz tyle do przodu. " \
 				"Przy duzym progu (np. 3 dni) doczytywanie bedzie czestsze; Polsat Box nadaje zwykle ok. 1 doby, " \
 				"wiec przy progu ponad 1 dzien jego transpondery beda doczytywane przy kazdym sprawdzeniu."
 		elif item in (cfg.topup_fixed, cfg.topup_fixed_time):
-			txt = "Raz dziennie o tej godzinie doczytuje wszystkie transpondery z krotkim EPG, bez wzgledu na odstepy " \
+			txt = "Raz dziennie o tej godzinie uruchamia wybrany tryb, bez wzgledu na odstepy " \
 				"i ich wydluzanie. Dobre do zlapania pory, o ktorej nadawca (np. Polsat Box) dosyla nowe dni - " \
 				"w logach widac ja po wpisach \"zasieg: +N h\"."
 		elif item is cfg.topup_when:
@@ -452,8 +457,9 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"z ostatniego skanu, wczytuje najnowsza kopie. Kopii: %d" % len(list_backups())
 		elif item in (cfg.xmltv, cfg.xmltv_mode):
 			n = len([x for x in cfg.xmltv_sources.value.split("|") if x])
-			txt = "Po skanie z satelity: kanaly bez EPG (rowniez IPTV z bukietow) dostaja program z XMLTV, " \
-				"a w trybie \"dalsze dni\" pozostale kanaly takze audycje po koncu danych z satelity. " \
+			txt = "Po skanie z satelity: kanaly bez EPG dostaja program z XMLTV, " \
+				"a w trybie \"dalsze dni\" takze luki miedzy istniejacymi audycjami i program po nich. " \
+				"Na czas importu EIT jest wylaczane, potem wraca do poprzedniego stanu. " \
 				"Zrodla wybierasz zoltym przyciskiem - wybrano %d." % n
 		elif item is cfg.log_place:
 			txt = "Log: %s (zachowywanych logow: %d - tyle, ile kopii EPG, min. 2). W katalogu kopii log przetrwa " \
