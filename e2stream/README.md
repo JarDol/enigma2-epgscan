@@ -66,6 +66,9 @@ Korzystanie z pilota lub dotyku zeruje licznik, a otwarcie innego okna wstrzymuj
 
 ## Ustawienia
 
+Diagnostyka wybudzania (status i test alarmu) jest dostępna tylko w wersjach beta;
+ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji stabilnej.
+
 * adres dekodera, port OpenWebif (80), port streamingu (8001), login/hasło,
 * silnik odtwarzania: ExoPlayer (domyślnie) albo VLC – dla każdego odbiornika osobno; przy VLC wybór usuwania przeplotu i dekodowania sprzętowego/programowego,
 * tunelowanie (ExoPlayer, domyślnie włączone),
