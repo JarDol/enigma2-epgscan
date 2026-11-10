@@ -374,6 +374,26 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("bannerSec", 4)
         set(v) = putI("bannerSec", v)
 
+    var tsBannerSec: Int
+        get() = sp.getInt("tsBannerSec", bannerSec)
+        set(v) = putI("tsBannerSec", v)
+
+    var channelListSec: Int
+        get() = sp.getInt("channelListSec", 30)
+        set(v) = putI("channelListSec", v)
+
+    var epgEventSec: Int
+        get() = sp.getInt("epgEventSec", 30)
+        set(v) = putI("epgEventSec", v)
+
+    var epgChannelSec: Int
+        get() = sp.getInt("epgChannelSec", 30)
+        set(v) = putI("epgChannelSec", v)
+
+    var epgMultiSec: Int
+        get() = sp.getInt("epgMultiSec", 30)
+        set(v) = putI("epgMultiSec", v)
+
     var resumeLast: Boolean
         get() = sp.getBoolean("resumeLast", true)
         set(v) = putB("resumeLast", v)

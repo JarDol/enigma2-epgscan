@@ -55,8 +55,12 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 | WSTECZ ×2 | wyjście |
 
 Przy włączonym timeshifcie długie OK na pasku kanału otwiera pasek przewijania.
-W jego trybie strzałki przewijają również po dotarciu do transmisji na żywo;
-na wyświetlonym pasku kanału działają jak podczas zwykłego oglądania.
+Strzałki przewijają tylko na widocznym pasku timeshiftu, również po dotarciu do transmisji na żywo;
+na pasku kanału i po ukryciu paska działają jak podczas zwykłego oglądania.
+Pasek timeshiftu pozostaje na ekranie w czasie pauzy, a po wznowieniu znika po czasie ustawionym w Ogólnych.
+Tam też można ustawić osobne czasy zamykania listy kanałów oraz EPG wydarzenia, kanału i Multi EPG.
+Okna te zamykają się po czasie bezczynności (domyślnie 30 s); 0 wyłącza automatyczne zamykanie.
+Korzystanie z pilota lub dotyku zeruje licznik, a otwarcie innego okna wstrzymuje go.
 
 ## Ustawienia
 

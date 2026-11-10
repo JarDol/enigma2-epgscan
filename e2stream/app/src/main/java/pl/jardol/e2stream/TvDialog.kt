@@ -6,9 +6,12 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.os.Handler
+import android.os.Looper
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -33,6 +36,33 @@ object TvDialog {
     const val WHITE = 0xFFFFFFFF.toInt()
 
     class Btn(val label: String, val onClick: () -> Unit = {})
+
+    private class TimedDialog(a: Activity, private val timeoutSec: Int) : Dialog(a, R.style.TvDialog) {
+        private val ui = Handler(Looper.getMainLooper())
+        private val timer = IdleTimeout(
+            { timeoutSec }, { task, delay -> ui.postDelayed(task, delay) }, { ui.removeCallbacks(it) },
+        ) { dismiss() }
+
+        override fun onWindowFocusChanged(hasFocus: Boolean) {
+            super.onWindowFocusChanged(hasFocus)
+            timer.setActive(hasFocus)
+        }
+
+        override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+            if (event.action == KeyEvent.ACTION_DOWN) timer.reset()
+            return super.dispatchKeyEvent(event)
+        }
+
+        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+            if (event.action == MotionEvent.ACTION_DOWN) timer.reset()
+            return super.dispatchTouchEvent(event)
+        }
+
+        override fun dismiss() {
+            timer.setActive(false)
+            super.dismiss()
+        }
+    }
 
     /** Otwarte okna — zamykane przy wyjściu z aplikacji (po powrocie zawsze sam odtwarzacz). */
     private val open = java.util.Collections.newSetFromMap(java.util.WeakHashMap<Dialog, Boolean>())
@@ -64,10 +94,10 @@ object TvDialog {
     fun panel(
         a: Activity, title: String?, hint: String?, chips: List<Btn> = emptyList(),
         widthFrac: Float = 0.6f, maxH: Float = 0.85f, cancelable: Boolean = true,
-        onBack: (() -> Unit)? = null, focusChip: Boolean = false, top: Boolean = false,
+        onBack: (() -> Unit)? = null, focusChip: Boolean = false, top: Boolean = false, timeoutSec: Int = 0,
         content: (ctx: Context, dlg: Dialog) -> View,
     ): Dialog {
-        val dlg = Dialog(a, R.style.TvDialog)
+        val dlg = if (timeoutSec > 0) TimedDialog(a, timeoutSec) else Dialog(a, R.style.TvDialog)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val ctx = dlg.context
         val dm = a.resources.displayMetrics

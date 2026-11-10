@@ -10,6 +10,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -334,6 +335,7 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        panelTimer.setActive(false)
         ZapWakeAlarms.setAppForeground(this, false)
         settingsOpen = false      // po powrocie i tak pełny start (onStart)
         backgrounded = true       // wyjście do ekranu głównego — po powrocie start jak przy uruchomieniu
@@ -1046,6 +1048,7 @@ class PlayerActivity : Activity() {
         panelList = playList
         refreshPanel(playIndex.coerceAtLeast(0))
         panel.visibility = View.VISIBLE
+        resetPanelTimer()
         banner.visibility = View.GONE
         list.requestFocus()
         loadPanelEpg()
@@ -1053,7 +1056,32 @@ class PlayerActivity : Activity() {
     }
 
     private fun hidePanel() {
+        panelTimer.setActive(false)
         panel.visibility = View.GONE
+    }
+
+    private val panelTimer = IdleTimeout(
+        { if (::prefs.isInitialized) prefs.channelListSec else 0 },
+        { task, delay -> ui.postDelayed(task, delay) }, { ui.removeCallbacks(it) },
+    ) { hidePanel() }
+
+    private fun resetPanelTimer() {
+        panelTimer.setActive(::panel.isInitialized && panel.visibility == View.VISIBLE && hasWindowFocus())
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) resetPanelTimer() else panelTimer.setActive(false)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) resetPanelTimer()
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_DOWN) resetPanelTimer()
+        return super.dispatchTouchEvent(event)
     }
 
     private fun refreshPanel(sel: Int) {
@@ -1331,7 +1359,6 @@ class PlayerActivity : Activity() {
     private var tsCleanedAtStart = false
     private var tsBaseWall = 0L                // chwila odbioru odpowiadająca pozycji 0 odtwarzacza
     private var tsPending = 0L                 // przewijanie zbierane z kilku naciśnięć
-    private var tsBannerUntil = 0L
     private var tsLiveUrl: String? = null
 
     /** Nowy kanał (albo zmiana ustawień): bufor od zera, odtwarzanie na żywo. */
@@ -1521,7 +1548,7 @@ class PlayerActivity : Activity() {
         bannerNext.text = "◀ ▶ ±${prefs.tsStepSec} s   ▲ ▼ ±${prefs.tsStepMin} min   OK pauza / start   ■ na żywo   WSTECZ zamknij pasek"
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
-        ui.postDelayed(hideBanner, 8000)
+        ui.postDelayed(hideBanner, prefs.tsBannerSec.coerceIn(1, 30) * 1000L)
     }
 
     private fun tsTogglePause() {
@@ -1560,8 +1587,9 @@ class PlayerActivity : Activity() {
     /** Klawisze w trybie timeshiftu. */
     private fun tsKey(code: Int): Boolean {
         if (code in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT) AppLog.i("timeshift: strzałka $code, pasek kanału=$tsChBar, widoczny=${banner.visibility == View.VISIBLE}")
-        // na pasku kanału strzałki działają jak na żywo (EPG, multi-EPG, zmiana kanału — keyMap), nie przewijają
-        if (tsChBar && banner.visibility == View.VISIBLE && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) return false
+        // Strzałki przewijają wyłącznie na widocznym pasku timeshiftu.
+        if (code in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT &&
+            !timeshiftNavigationOnBanner(banner.visibility == View.VISIBLE, tsChBar)) return false
         when (code) {
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN -> {
                 val back = if (code == KeyEvent.KEYCODE_DPAD_LEFT) prefs.tsStepSec * 1000L else prefs.tsStepMin * 60_000L
@@ -1598,7 +1626,7 @@ class PlayerActivity : Activity() {
         tsUpdateBanner()
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
-        tsBannerUntil = if (sticky) Long.MAX_VALUE else SystemClock.elapsedRealtime() + prefs.bannerSec.coerceIn(3, 30) * 1000L
+        if (!sticky) ui.postDelayed(hideBanner, prefs.tsBannerSec.coerceIn(1, 30) * 1000L)
     }
 
     private fun tsUpdateBanner() {
@@ -1622,7 +1650,7 @@ class PlayerActivity : Activity() {
             if (!tsMode) return
             ui.postDelayed(this, 1000)
             val b = tsBuf ?: return
-            val p = player ?: return
+            if (player == null) return
             // pauza dłuższa niż okno: miejsce pauzy zaraz wypadnie z bufora — wznowienie od najstarszego
             if (tsPending == 0L && b.trimmed && tsShownWall() < b.oldestWall + 5000) {
                 showMessage("Bufor timeshiftu pełny — wznawiam od najstarszego zapisanego momentu", 5000)
@@ -1632,7 +1660,6 @@ class PlayerActivity : Activity() {
             }
             if (tsShifted && !tsChBar && banner.visibility == View.VISIBLE) {
                 tsUpdateBanner()
-                if (SystemClock.elapsedRealtime() > tsBannerUntil && p.playWhenReady) banner.visibility = View.GONE
             }
         }
     }
@@ -1674,6 +1701,7 @@ class PlayerActivity : Activity() {
         val i = bouquets.indexOfFirst { it.ref == REC_REF }
         if (i < 0) { panelOnRec = false; showPanel(); return }      // bukiet „Nagrania” ukryty
         panel.visibility = View.VISIBLE
+        resetPanelTimer()
         banner.visibility = View.GONE
         list.requestFocus()
         panelBouquet = i - 1

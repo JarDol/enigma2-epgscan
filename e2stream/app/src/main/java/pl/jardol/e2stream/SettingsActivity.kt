@@ -181,6 +181,11 @@ class SettingsActivity : Activity() {
         }) { if (p.resumeLast) toast("Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”") else chooseStartChannel() },
         Item.Toggle("Odwróć ▲ / ▼ przy zmianie kanału", { p.invertUpDown }, { p.invertUpDown = it }),
         num("Czas paska kanału (s)", { p.bannerSec }, { p.bannerSec = it }, 1..30),
+        num("Czas paska timeshiftu (s)", { p.tsBannerSec }, { p.tsBannerSec = it }, 1..30),
+        num("Czas listy kanałów (s, 0 = bez zamykania)", { p.channelListSec }, { p.channelListSec = it }, 0..600),
+        num("Czas EPG wydarzenia (s, 0 = bez zamykania)", { p.epgEventSec }, { p.epgEventSec = it }, 0..600),
+        num("Czas EPG kanału (s, 0 = bez zamykania)", { p.epgChannelSec }, { p.epgChannelSec = it }, 0..600),
+        num("Czas Multi EPG (s, 0 = bez zamykania)", { p.epgMultiSec }, { p.epgMultiSec = it }, 0..600),
         Item.Text("PIN do ustawień", { p.pin }, { p.pin = it.trim() },
             InputType.TYPE_CLASS_NUMBER, secret = true, hint = "puste = bez blokady"),
         Item.Action("Pytaj o PIN ponownie po", {

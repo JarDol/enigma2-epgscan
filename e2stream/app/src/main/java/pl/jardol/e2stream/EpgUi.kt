@@ -94,9 +94,9 @@ class EpgUi(
         }
     }
 
-    private fun bigList(title: String, adapter: RowAdapter, hint: String = "OK opis audycji  •  WSTECZ zamknij",
+    private fun bigList(title: String, adapter: RowAdapter, hint: String = "OK opis audycji  •  WSTECZ zamknij", timeoutSec: Int = 0,
                         onPick: (Int) -> Unit): android.app.Dialog =
-        TvDialog.panel(a, title, hint, widthFrac = 0.85f, maxH = 0.9f) { ctx, _ ->
+        TvDialog.panel(a, title, hint, widthFrac = 0.85f, maxH = 0.9f, timeoutSec = timeoutSec) { ctx, _ ->
             android.widget.ListView(ctx).apply {
                 this.adapter = adapter
                 selector = ctx.getDrawable(R.drawable.list_selector)
@@ -142,7 +142,7 @@ class EpgUi(
         if (btns.isEmpty()) btns += TvDialog.Btn("Zamknij")      // WSTECZ też zamyka
         // nagłówek jak wiersz listy kanałów (ikona, kanał, tytuł, czas, postęp), niżej opis, akcje na dole
         TvDialog.panel(a, null, null, btns, widthFrac = 0.8f,
-            onBack = if (scheduledTimer != null) onReturn else null, focusChip = true) { ctx, _ ->
+            onBack = if (scheduledTimer != null) onReturn else null, focusChip = true, timeoutSec = Prefs(a).epgEventSec) { ctx, _ ->
             EventCard.content(ctx, ev, ref, name, EventCard.body(ev).ifEmpty { "Brak opisu" })
         }
     }
@@ -253,7 +253,7 @@ class EpgUi(
                     Row(left, it.title, it.shortDesc + progress(it), it, ch)
                 }
                 val adapter = RowAdapter(rows)
-                bigList("EPG: ${ch.num} ${ch.name}", adapter) { w -> showEvent(rows[w].ev!!, ch) }
+                bigList("EPG: ${ch.num} ${ch.name}", adapter, timeoutSec = Prefs(a).epgChannelSec) { w -> showEvent(rows[w].ev!!, ch) }
             }
         }
     }
@@ -312,7 +312,7 @@ class EpgUi(
         val adapter = RowAdapter(listOf(Row("Bukiet", "${bouquet.name}  •  wybierz", "", null, null)) + multiRows(chans, multiT))
         fun title() = "Multi-EPG: ${bouquet.name} — ${d(multiT)} ${t(multiT)}"
         multiDialog?.dismiss()
-        val dlg = bigList(title(), adapter, "▲ bukiet  •  ◀ ▶ zmiana czasu  •  OK opis  •  WSTECZ zamknij") { w ->
+        val dlg = bigList(title(), adapter, "▲ bukiet  •  ◀ ▶ zmiana czasu  •  OK opis  •  WSTECZ zamknij", timeoutSec = Prefs(a).epgMultiSec) { w ->
             if (w == 0) {
                 TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
                     selected = bouquets.indexOfFirst { it.ref == bouquet.ref },
