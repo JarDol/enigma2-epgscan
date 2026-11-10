@@ -52,28 +52,65 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         total = 0
         failed = null
         shrunk = false
+        pendLen = 0
         session = newSession()
         cleanupAsync(dir, session)
         lock.notifyAll()
     }
 
+    private val pend = ByteArray(188)
+    private var pendLen = 0
+
+    /** Nowe połączenie ze strumieniem: niepełny pakiet z poprzedniego jest porzucany, żeby bufor został zgodny z siatką 188 B. */
+    fun resync() = synchronized(lock) { pendLen = 0 }
+
+    /** Do bufora trafiają tylko całe pakiety TS — odczyt od dowolnego początku minuty zawsze trafia w granicę pakietu. */
     fun write(b: ByteArray, off: Int, len: Int) {
         if (len <= 0) return
         synchronized(lock) {
             if (failed != null) return
             try {
-                val now = SystemClock.elapsedRealtime()
-                val cur = segs.lastOrNull()
-                if (cur == null || out == null || now - cur.wall >= 60_000) rotate(now)
-                out!!.write(b, off, len)
-                segs.last().len += len
-                total += len
+                var o = off
+                val end = off + len
+                if (pendLen > 0) {
+                    val n = minOf(188 - pendLen, end - o)
+                    System.arraycopy(b, o, pend, pendLen, n)
+                    pendLen += n; o += n
+                    if (pendLen < 188) return
+                    pendLen = 0
+                    if (pend[0] == SYNC) writeRaw(pend, 0, 188)
+                }
+                var run = o
+                while (end - o >= 188) {
+                    if (b[o] != SYNC) {
+                        if (o > run) writeRaw(b, run, o - run)
+                        var j = o + 1
+                        while (j < end && b[j] != SYNC) j++
+                        o = j; run = j
+                        continue
+                    }
+                    o += 188
+                }
+                if (o > run) writeRaw(b, run, o - run)
+                if (o < end && b[o] == SYNC) {
+                    pendLen = end - o
+                    System.arraycopy(b, o, pend, 0, pendLen)
+                }
             } catch (e: IOException) {
                 failed = e.message ?: e.toString()
                 AppLog.i("timeshift: błąd zapisu — bufor wyłączony ($failed)")
             }
             lock.notifyAll()
         }
+    }
+
+    private fun writeRaw(b: ByteArray, off: Int, len: Int) {
+        val now = SystemClock.elapsedRealtime()
+        val cur = segs.lastOrNull()
+        if (cur == null || out == null || now - cur.wall >= 60_000) rotate(now)
+        out!!.write(b, off, len)
+        segs.last().len += len
+        total += len
     }
 
     private fun rotate(now: Long) {
@@ -184,6 +221,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
             }, "timeshift-sprzatanie").start()
         }
 
+        private const val SYNC = 0x47.toByte()
+
         /** Zapas wolnego miejsca, którego bufor nie rusza. */
         const val RESERVE = 400L * 1_000_000
         /** Ostrożne oszacowanie: kanał HD do ~8 Mb/s = 60 MB na minutę. */
@@ -277,7 +316,9 @@ class TimeshiftDataSource(
  * Pobieranie strumienia na żywo do bufora, gdy odtwarzacz gra z bufora (pauza / cofnięcie):
  * dane idą przez analizator (statystyki, PMT, czyszczenie) i dalej do bufora.
  */
-class TimeshiftRecorder(private val url: String, private val auth: String?, private val analyzer: () -> TsAnalyzer?) {
+class TimeshiftRecorder(
+    private val url: String, private val auth: String?, private val analyzer: () -> TsAnalyzer?, private val onConnect: () -> Unit = {},
+) {
     @Volatile private var running = true
     private var conn: HttpURLConnection? = null
 
@@ -293,6 +334,7 @@ class TimeshiftRecorder(private val url: String, private val auth: String?, priv
                     }
                     conn = c
                     val inp = c.inputStream
+                    onConnect()
                     val b = ByteArray(188 * 700)
                     while (running) {
                         val t0 = SystemClock.elapsedRealtime()

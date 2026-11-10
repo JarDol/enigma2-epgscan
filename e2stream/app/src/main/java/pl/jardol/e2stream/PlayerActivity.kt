@@ -1408,7 +1408,7 @@ class PlayerActivity : Activity() {
         vlc?.release(); vlc = null
         p.stop()
         tsLiveUrl = url
-        tsRec = TimeshiftRecorder(url, api.authHeader()) { analyzer }.also { it.start() }
+        tsRec = TimeshiftRecorder(url, api.authHeader(), { analyzer }, { analyzer?.dropCarry(); tsBuf?.resync() }).also { it.start() }
         tsMode = true
         tsShifted = true
         tsPlayFrom(target, play = !pause)
@@ -1510,10 +1510,7 @@ class PlayerActivity : Activity() {
             KeyEvent.KEYCODE_MEDIA_REWIND -> tsSeek(-30_000)
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> tsTogglePause()
             KeyEvent.KEYCODE_MEDIA_STOP -> tsGoLive()
-            KeyEvent.KEYCODE_BACK -> {
-                if (banner.visibility == View.VISIBLE && player?.playWhenReady == true) { banner.visibility = View.GONE; return true }
-                tsGoLive()
-            }
+            KeyEvent.KEYCODE_BACK -> tsGoLive()
             else -> return false
         }
         return true

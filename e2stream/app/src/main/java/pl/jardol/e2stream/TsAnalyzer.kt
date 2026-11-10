@@ -220,6 +220,10 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         if (ms >= 2500 && !inStartGrace()) event("dane z dekodera nie przychodziły przez $ms ms")
     }
 
+    /** Nowe połączenie: niepełny pakiet z poprzedniego strumienia nie może się skleić z początkiem nowego. */
+    @Synchronized
+    fun dropCarry() { carryLen = 0 }
+
     @Synchronized
     fun feed(buf: ByteArray, off: Int, len: Int) {
         if (len <= 0) return
