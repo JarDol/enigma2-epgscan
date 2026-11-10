@@ -51,6 +51,7 @@ class PlayerActivity : Activity() {
 
     companion object {
         const val EXTRA_WAKE_TIMER_KEY = "zap_alarm_timer_key"
+        const val EXTRA_WAKE_TEST_ID = "zap_alarm_test_id"
     }
 
     private lateinit var prefs: Prefs
@@ -118,13 +119,15 @@ class PlayerActivity : Activity() {
     private var lastStartMs = -1L
     private var audioAppliedGen = -1
     private var wakeTimerKey: String? = null
+    private var wakeTestId: String? = null
 
     // ---------------------------------------------------------------- cykl życia
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
-        if (wakeTimerKey != null && Build.VERSION.SDK_INT >= 27) {
+        wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
+        if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
@@ -225,19 +228,32 @@ class PlayerActivity : Activity() {
         ZapWakeAlarms.sync(this)
         if (safeMode) return
         startUp()
+        showWakeTestResult()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
-        if (wakeTimerKey != null && Build.VERSION.SDK_INT >= 27) {
+        wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
+        if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
         zapPrompted = null
         ui.removeCallbacks(zapTick)
         ui.post(zapTick)
+        showWakeTestResult()
+    }
+
+    private fun showWakeTestResult() {
+        val id = wakeTestId ?: return
+        wakeTestId = null
+        ui.post {
+            if (!isFinishing) TvDialog.confirm(this, "Test wybudzania dotarł",
+                "Android dostarczył RTC_WAKEUP i uruchomił E2Stream.\n\nJeśli nie naciskałeś pilota, pełnoekranowe powiadomienie działa.\nId testu: $id",
+                listOf(TvDialog.Btn("Zamknij")))
+        }
     }
 
     private fun startUp() {

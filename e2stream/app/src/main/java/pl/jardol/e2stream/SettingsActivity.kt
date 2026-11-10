@@ -158,6 +158,12 @@ class SettingsActivity : Activity() {
         Item.Action("Mapowanie klawiszy pilota") { showKeyMap() },
         Item.Toggle("Po uruchomieniu wróć do ostatniego kanału", { p.resumeLast }, { p.resumeLast = it }),
         Item.Toggle("Budź TV dla harmonogramu (eksperymentalne)", { p.wakeForZap }, { setWakeForZap(it) }),
+        Item.Action("Diagnostyka wybudzania", { if (p.wakeForZap) "status i test alarmu" else "najpierw włącz wybudzanie" }) {
+            TvDialog.confirm(this, "Diagnostyka wybudzania", ZapWakeAlarms.diagnostics(this), listOf(
+                TvDialog.Btn("Test za 60 sekund") { toast(ZapWakeAlarms.scheduleTest(this)) },
+                TvDialog.Btn("Zamknij"),
+            ))
+        },
         Item.Action("Po uruchomieniu przełącz na kanał", {
             if (p.resumeLast) "nieaktywne (włączony powrót do ostatniego)" else p.startChannelName.ifBlank { "pierwszy kanał" }
         }) { if (p.resumeLast) toast("Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”") else chooseStartChannel() },
@@ -172,6 +178,13 @@ class SettingsActivity : Activity() {
 
             "Informacje i aktualizacje" -> listOf(
                 Item.Header("Aplikacja E2Stream"),
+        Item.Action("Kanał aktualizacji", { if (p.updateChannel == "beta") "beta (testowy)" else "stabilny" }) {
+            TvDialog.single(this, "Kanał aktualizacji", listOf("Stabilny", "Beta (prerelease)"),
+                if (p.updateChannel == "beta") 1 else 0) { w ->
+                p.updateChannel = if (w == 1) "beta" else "stable"
+                markChanged("kanał aktualizacji = ${p.updateChannel}")
+            }
+        },
         Item.Action("Sprawdź aktualizację", { "wersja ${Tools.appVersion(this)}" }) { Tools.checkUpdate(this, true) { toast(it) } },
         Item.Toggle("Automatyczna aktualizacja", { p.autoUpdate }, { p.autoUpdate = it }),
                 Item.Action("Opis aplikacji (README)") { showReadme("E2Stream", "e2stream/README.md") },
