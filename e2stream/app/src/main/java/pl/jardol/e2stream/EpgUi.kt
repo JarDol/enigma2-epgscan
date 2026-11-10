@@ -345,7 +345,7 @@ class EpgUi(
             // pierwsze przesunięcie do pełnego pół-godzinnego znacznika
             val base = if (shift > 0) (multiT / step + 1) * step else ((multiT - 1) / step) * step
             multiT = if (base < now() && shift < 0) now() else base
-            adapter.rows = multiRows(chans, multiT)
+            adapter.rows = listOf(Row("Bukiet", "${bouquet.name}  •  wybierz", "", null, null)) + multiRows(chans, multiT)
             adapter.notifyDataSetChanged()
             TvDialog.setTitle(dlg, title())
             true
