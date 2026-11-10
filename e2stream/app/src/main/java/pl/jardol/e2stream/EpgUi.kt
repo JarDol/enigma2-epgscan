@@ -356,7 +356,7 @@ class EpgUi(
             bouquetBar.setOnClickListener {
                 TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
                     selected = bouquets.indexOfFirst { it.ref == bouquet.ref },
-                    hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f) { picked ->
+                    hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f, wrap = true) { picked ->
                     val next = bouquets[picked]
                     if (next.ref != bouquet.ref) {
                         multiDialog?.dismiss()

@@ -230,9 +230,20 @@ object TvDialog {
     fun list(
         a: Activity, title: String, items: List<Item>, selected: Int = -1,
         hint: String = "OK wybierz  •  WSTECZ zamknij", widthFrac: Float = 0.55f,
-        onCancel: () -> Unit = {}, onPick: (Int) -> Unit,
+        onCancel: () -> Unit = {}, wrap: Boolean = false, onPick: (Int) -> Unit,
     ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel) { ctx, dlg ->
         listView(ctx, items, selected).apply {
+            if (wrap) setOnKeyListener { _, code, event ->
+                if (event.action != KeyEvent.ACTION_DOWN || items.isEmpty()) return@setOnKeyListener false
+                val first = items.indexOfFirst { !it.header }
+                val last = items.indexOfLast { !it.header }
+                when {
+                    first < 0 || first == last -> false
+                    code == KeyEvent.KEYCODE_DPAD_DOWN && selectedItemPosition == last -> { setSelection(first); true }
+                    code == KeyEvent.KEYCODE_DPAD_UP && selectedItemPosition == first -> { setSelection(last); true }
+                    else -> false
+                }
+            }
             setOnItemClickListener { _, _, w, _ ->
                 if (!items[w].header) { dlg.dismiss(); onPick(w) }
             }
