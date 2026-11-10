@@ -49,6 +49,10 @@ import kotlin.math.abs
 
 class PlayerActivity : Activity() {
 
+    companion object {
+        const val EXTRA_WAKE_TIMER_KEY = "zap_alarm_timer_key"
+    }
+
     private lateinit var prefs: Prefs
     private lateinit var api: OpenWebif
     private lateinit var epg: EpgUi
@@ -113,11 +117,17 @@ class PlayerActivity : Activity() {
     private var readyLogged = false
     private var lastStartMs = -1L
     private var audioAppliedGen = -1
+    private var wakeTimerKey: String? = null
 
     // ---------------------------------------------------------------- cykl życia
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
+        if (wakeTimerKey != null && Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_player)
         prefs = Prefs(this)
@@ -211,8 +221,23 @@ class PlayerActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        ZapWakeAlarms.setAppForeground(this, true)
+        ZapWakeAlarms.sync(this)
         if (safeMode) return
         startUp()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
+        if (wakeTimerKey != null && Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
+        zapPrompted = null
+        ui.removeCallbacks(zapTick)
+        ui.post(zapTick)
     }
 
     private fun startUp() {
@@ -230,7 +255,7 @@ class PlayerActivity : Activity() {
         ui.removeCallbacks(epgTick)
         ui.postDelayed(epgTick, 15_000)
         ui.removeCallbacks(zapTick)
-        ui.postDelayed(zapTick, 5000)
+        ui.postDelayed(zapTick, if (wakeTimerKey != null) 0 else 5000)
         ensureAnalyzer()
         buildPlayer()
         applyDisplayMode()
@@ -279,6 +304,7 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        ZapWakeAlarms.setAppForeground(this, false)
         settingsOpen = false      // po powrocie i tak pełny start (onStart)
         backgrounded = true       // wyjście do ekranu głównego — po powrocie start jak przy uruchomieniu
         ui.removeCallbacks(epgTick)
@@ -1123,17 +1149,23 @@ class PlayerActivity : Activity() {
                 ui.postDelayed(this, 5000)
                 return
             }
-            if (now >= t.begin) {
+            if (now >= t.begin && wakeTimerKey != t.key() && zapPrompted != t.key()) {
                 zapFire(t)
                 ui.postDelayed(this, 5000)
                 return
             }
             if (zapPrompted == t.key()) {
+                if (now >= t.begin) {
+                    zapFire(t)
+                    ui.postDelayed(this, 5000)
+                    return
+                }
                 TvDialog.setButtonLabel(zapDialog, 0, "Oglądaj (${zapCountdown(t.begin - now)})")
                 ui.postDelayed(this, 1000)
                 return
             }
             zapPrompted = t.key()
+            wakeTimerKey = null
             AppLog.i("harmonogram: za ${t.begin - now} s przełączenie na ${t.channel}")
             zapDialog = TvDialog.panel(this@PlayerActivity, "Przełączenie o ${hm.format(Date(t.begin * 1000))}", null,
                 listOf(

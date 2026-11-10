@@ -74,6 +74,7 @@ object ZapTimers {
 
     fun complete(ctx: Context, t: Timer, outcome: String) {
         save(ctx, list(ctx).filter { it.key() != t.key() })
+        ZapWakeAlarms.sync(ctx)
         mark(ctx, t, outcome)
         AppLog.i("harmonogram: ${t.channel} — ${t.title}: $outcome")
     }
@@ -83,6 +84,7 @@ object ZapTimers {
     fun add(ctx: Context, t: Timer) {
         val l = list(ctx).filter { it.key() != t.key() } + t
         save(ctx, l)
+        ZapWakeAlarms.sync(ctx)
         AppLog.i("harmonogram: przełączenie ${t.channel} — ${t.title} o ${t.begin}")
     }
 
@@ -90,11 +92,13 @@ object ZapTimers {
         val current = list(ctx)
         current.filter { it.begin == t.begin }.forEach { mark(ctx, it, REPLACED) }
         save(ctx, current.filter { it.begin != t.begin } + t)
+        ZapWakeAlarms.sync(ctx)
         AppLog.i("harmonogram: zastąpiono przełączenie o ${t.begin} przez ${t.channel} — ${t.title}")
     }
 
     fun remove(ctx: Context, t: Timer) {
         save(ctx, list(ctx).filter { it.key() != t.key() })
+        ZapWakeAlarms.sync(ctx)
         AppLog.i("harmonogram: usunięto ${t.channel} — ${t.title}")
     }
 }

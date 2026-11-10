@@ -369,6 +369,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("autoUpdate", true)
         set(v) = putB("autoUpdate", v)
 
+    /** Eksperymentalne alarmy budzące dla lokalnego harmonogramu. */
+    var wakeForZap: Boolean
+        get() = sp.getBoolean("wakeForZap", false)
+        set(v) = putB("wakeForZap", v)
+
     /** Kanał startowy (gdy nie wracamy do ostatniego). */
     var startBouquet: String
         get() = s("startBouquet")

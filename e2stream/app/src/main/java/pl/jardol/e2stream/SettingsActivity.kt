@@ -2,9 +2,15 @@ package pl.jardol.e2stream
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.text.InputType
 import android.view.KeyEvent
 import android.view.View
@@ -30,6 +36,9 @@ class SettingsActivity : Activity() {
     private val ui = Handler(Looper.getMainLooper())
     private var asking = false
     private var changed = false
+    private var pendingWakeEnable = false
+    private var wakePermissionFlow: String? = null
+    private var fullScreenPermissionAsked = false
     private val adapter = Adapter()
     private lateinit var items: List<Item>
     private lateinit var store: EpgStore
@@ -148,6 +157,7 @@ class SettingsActivity : Activity() {
         Item.Action("Widoczne bukiety", { if (p.hiddenBouquets.isEmpty()) "wszystkie" else "ukryte: ${p.hiddenBouquets.size}" }) { chooseBouquets() },
         Item.Action("Mapowanie klawiszy pilota") { showKeyMap() },
         Item.Toggle("Po uruchomieniu wróć do ostatniego kanału", { p.resumeLast }, { p.resumeLast = it }),
+        Item.Toggle("Budź TV dla harmonogramu (eksperymentalne)", { p.wakeForZap }, { setWakeForZap(it) }),
         Item.Action("Po uruchomieniu przełącz na kanał", {
             if (p.resumeLast) "nieaktywne (włączony powrót do ostatniego)" else p.startChannelName.ifBlank { "pierwszy kanał" }
         }) { if (p.resumeLast) toast("Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”") else chooseStartChannel() },
@@ -278,6 +288,74 @@ class SettingsActivity : Activity() {
         super.onResume()
         ui.removeCallbacks(relock)
         ui.postDelayed(relock, 2000)
+        when (wakePermissionFlow) {
+            "exact" -> {
+                wakePermissionFlow = null
+                if (ZapWakeAlarms.canScheduleExact(this)) continueWakeEnable()
+                else { pendingWakeEnable = false; toast("Nie przyznano dostępu do dokładnych alarmów") }
+            }
+            "fullscreen" -> {
+                wakePermissionFlow = null
+                fullScreenPermissionAsked = true
+                continueWakeEnable()
+            }
+        }
+    }
+
+    private fun setWakeForZap(enabled: Boolean) {
+        if (!enabled) {
+            pendingWakeEnable = false
+            p.wakeForZap = false
+            ZapWakeAlarms.sync(this)
+            toast("Wybudzanie harmonogramów wyłączone")
+            return
+        }
+        pendingWakeEnable = true
+        fullScreenPermissionAsked = false
+        continueWakeEnable()
+    }
+
+    private fun continueWakeEnable() {
+        if (!pendingWakeEnable) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !ZapWakeAlarms.canScheduleExact(this)) {
+            try {
+                wakePermissionFlow = "exact"
+                startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    Uri.parse("package:$packageName")))
+            } catch (_: Exception) {
+                wakePermissionFlow = null
+                pendingWakeEnable = false
+                toast("To urządzenie nie udostępnia dokładnych alarmów")
+            }
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 34 && !ZapWakeAlarms.canUseFullScreen(this) && !fullScreenPermissionAsked) {
+            try {
+                wakePermissionFlow = "fullscreen"
+                startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                    Uri.parse("package:$packageName")))
+                return
+            } catch (_: Exception) {
+                wakePermissionFlow = null
+                fullScreenPermissionAsked = true
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 741)
+            return
+        }
+        pendingWakeEnable = false
+        p.wakeForZap = true
+        ZapWakeAlarms.sync(this)
+        markChanged("Budź TV dla harmonogramu = włączone")
+        toast("Wybudzanie harmonogramów włączone")
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 741) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) continueWakeEnable()
+        else { pendingWakeEnable = false; toast("Bez powiadomień przypomnienie może nie pojawić się na ekranie") }
     }
 
     override fun onPause() {
