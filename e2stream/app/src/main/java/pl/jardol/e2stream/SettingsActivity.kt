@@ -160,7 +160,8 @@ class SettingsActivity : Activity() {
         Item.Toggle("Budź TV dla harmonogramu (eksperymentalne)", { p.wakeForZap }, { setWakeForZap(it) }),
         Item.Action("Diagnostyka wybudzania", { if (p.wakeForZap) "status i test alarmu" else "najpierw włącz wybudzanie" }) {
             TvDialog.confirm(this, "Diagnostyka wybudzania", ZapWakeAlarms.diagnostics(this), listOf(
-                TvDialog.Btn("Test za 60 sekund") { toast(ZapWakeAlarms.scheduleTest(this)) },
+                TvDialog.Btn("Test 60 s") { toast(ZapWakeAlarms.scheduleTest(this)) },
+                TvDialog.Btn("Wyślij log") { Tools.uploadLog(p, true) { toast(it) } },
                 TvDialog.Btn("Zamknij"),
             ))
         },
