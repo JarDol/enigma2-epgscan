@@ -1514,7 +1514,7 @@ class PlayerActivity : Activity() {
         bannerStart.text = if (span > 0) "−${fmtMs(span)}" else ""
         bannerEnd.text = "na żywo"
         bannerProgress.progress = 1000
-        bannerNext.text = "◀ −10 s   ▼ −5 min   OK pauza   WSTECZ zamknij menu"
+        bannerNext.text = "◀ −${prefs.tsStepSec} s   ▼ −${prefs.tsStepMin} min   OK pauza   WSTECZ zamknij menu"
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
         ui.postDelayed(hideBanner, 8000)
@@ -1523,8 +1523,8 @@ class PlayerActivity : Activity() {
     /** Klawisze menu przewijania na żywo; false — klawisz obsługuje reszta aplikacji (menu się zamyka). */
     private fun tsCtlKey(code: Int): Boolean {
         when (code) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> tsEnter(pause = false, backMs = 10_000)
-            KeyEvent.KEYCODE_DPAD_DOWN -> tsEnter(pause = false, backMs = 5 * 60_000)
+            KeyEvent.KEYCODE_DPAD_LEFT -> tsEnter(pause = false, backMs = prefs.tsStepSec * 1000L)
+            KeyEvent.KEYCODE_DPAD_DOWN -> tsEnter(pause = false, backMs = prefs.tsStepMin * 60_000L)
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> { showMessage("Już na żywo", 1500); tsCtlOpen() }
             KeyEvent.KEYCODE_BACK -> { tsCtl = false; playList.getOrNull(playIndex)?.let { showBanner(it) } }
             else -> {
@@ -1572,10 +1572,10 @@ class PlayerActivity : Activity() {
     private fun tsKey(code: Int, e: KeyEvent): Boolean {
         val fast = e.repeatCount > 3
         when (code) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> tsSeek(if (fast) -60_000 else -10_000)
-            KeyEvent.KEYCODE_DPAD_RIGHT -> tsSeek(if (fast) 120_000 else 30_000)
-            KeyEvent.KEYCODE_DPAD_UP -> tsSeek(5 * 60_000)
-            KeyEvent.KEYCODE_DPAD_DOWN -> tsSeek(-5 * 60_000)
+            KeyEvent.KEYCODE_DPAD_LEFT -> tsSeek(-prefs.tsStepSec * 1000L)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> tsSeek(prefs.tsStepSec * 1000L)
+            KeyEvent.KEYCODE_DPAD_UP -> tsSeek(prefs.tsStepMin * 60_000L)
+            KeyEvent.KEYCODE_DPAD_DOWN -> tsSeek(-prefs.tsStepMin * 60_000L)
             // Wstecz: najpierw zamyka pasek (także przy pauzie), dopiero kolejne naciśnięcie wraca na żywo
             KeyEvent.KEYCODE_BACK -> {
                 if (banner.visibility == View.VISIBLE && !tsChBar) {
@@ -1584,7 +1584,7 @@ class PlayerActivity : Activity() {
                     return true
                 }
                 if (banner.visibility == View.VISIBLE) { banner.visibility = View.GONE; tsChBar = false; ui.removeCallbacks(hideBanner); return true }
-                tsGoLive()
+                if (prefs.tsBackLive) tsGoLive()
             }
             else -> return false
         }
@@ -1616,7 +1616,7 @@ class PlayerActivity : Activity() {
         bannerStart.text = "−${fmtMs(span)}"
         bannerEnd.text = "na żywo"
         bannerProgress.progress = ((span - behind) * 1000 / span).toInt().coerceIn(0, 1000)
-        bannerNext.text = "◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pauza / start   ■ na żywo   WSTECZ zamknij pasek"
+        bannerNext.text = "◀ ▶ ±${prefs.tsStepSec} s   ▲ ▼ ±${prefs.tsStepMin} min   OK pauza / start   ■ na żywo   WSTECZ zamknij pasek"
     }
 
     /** Co sekundę: pasek, ukrywanie, pilnowanie okna przy długiej pauzie. */
@@ -2176,11 +2176,11 @@ class PlayerActivity : Activity() {
             Act.CH_DOWN -> { panelOnRec = false; play(playIndex + if (inv) 1 else -1) }
             Act.TS_REWIND -> when {
                 !tsConfigured() -> {}
-                tsMode -> { tsSetShifted(true); tsSeek(-30_000) }
-                else -> tsEnter(pause = false, backMs = 30_000)
+                tsMode -> { tsSetShifted(true); tsSeek(-prefs.tsStepSec * 1000L) }
+                else -> tsEnter(pause = false, backMs = prefs.tsStepSec * 1000L)
             }
             Act.TS_FORWARD -> when {
-                tsShifted -> tsSeek(60_000)
+                tsShifted -> tsSeek(prefs.tsStepSec * 1000L)
                 tsMode -> showMessage("Już na żywo", 1500)
                 prefs.tsMin > 0 -> showMessage("Już na żywo", 1500)
                 else -> tsConfigured()

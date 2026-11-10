@@ -98,6 +98,15 @@ class Prefs(ctx: Context) {
         set(v) = putI("tsMin", v)
 
     /** Timeshift: ile sekund po przełączeniu kanału zaczyna się zapis do bufora (skakanie po kanałach nie zapisuje na dysk). */
+    var tsStepSec: Int
+        get() = sp.getInt("tsStepSec", 5)
+        set(v) = putI("tsStepSec", v)
+    var tsStepMin: Int
+        get() = sp.getInt("tsStepMin", 1)
+        set(v) = putI("tsStepMin", v)
+    var tsBackLive: Boolean
+        get() = sp.getBoolean("tsBackLive", false)
+        set(v) = putB("tsBackLive", v)
     var tsDelay: Int
         get() = sp.getInt("tsDelay", 5)
         set(v) = putI("tsDelay", v)

@@ -124,6 +124,15 @@ class SettingsActivity : Activity() {
         Item.Action("Timeshift", { tsValue() }) { chooseTs() },
         Item.Action("Miejsce bufora timeshiftu", { tsPlace() }) { chooseTsDir() },
         Item.Action("Automatyczny timeshift", { tsDelayName(p.tsDelay) }) { chooseTsDelay() },
+        Item.Action("Przewijanie ◀ ▶ (sekundy)", { "${p.tsStepSec} s" }) {
+            val o = listOf(5, 10, 15, 30)
+            TvDialog.single(this, "Przewijanie ◀ ▶", o.map { "$it s" }, o.indexOf(p.tsStepSec).coerceAtLeast(0)) { w -> p.tsStepSec = o[w]; markChanged("timeshift: krok ◀ ▶ = ${o[w]} s"); items = buildItems(); refresh() }
+        },
+        Item.Action("Przewijanie ▲ ▼ (minuty)", { "${p.tsStepMin} min" }) {
+            val o = listOf(1, 3, 5, 10, 15)
+            TvDialog.single(this, "Przewijanie ▲ ▼", o.map { "$it min" }, o.indexOf(p.tsStepMin).coerceAtLeast(0)) { w -> p.tsStepMin = o[w]; markChanged("timeshift: krok ▲ ▼ = ${o[w]} min"); items = buildItems(); refresh() }
+        },
+        Item.Toggle("Wstecz na pustym ekranie → na żywo", { p.tsBackLive }, { p.tsBackLive = it }),
         Item.Toggle("Zezwól na bufor w pamięci urządzenia", { p.tsInternalOk }, { v ->
             p.tsInternalOk = v
             if (!v && p.tsDir.isBlank()) p.tsMin = 0        // bez zgody i bez dysku — timeshift wyłączony
