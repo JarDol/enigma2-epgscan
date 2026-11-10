@@ -95,6 +95,7 @@ object TvDialog {
         a: Activity, title: String?, hint: String?, chips: List<Btn> = emptyList(),
         widthFrac: Float = 0.6f, maxH: Float = 0.85f, cancelable: Boolean = true,
         onBack: (() -> Unit)? = null, focusChip: Boolean = false, top: Boolean = false, timeoutSec: Int = 0,
+        hintBelowTitle: Boolean = false,
         content: (ctx: Context, dlg: Dialog) -> View,
     ): Dialog {
         val dlg = if (timeoutSec > 0) TimedDialog(a, timeoutSec) else Dialog(a, R.style.TvDialog)
@@ -110,17 +111,18 @@ object TvDialog {
 
         if (!title.isNullOrBlank() || !hint.isNullOrBlank()) {
             val head = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+                orientation = if (hintBelowTitle) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+                gravity = if (hintBelowTitle) Gravity.START else Gravity.CENTER_VERTICAL
                 setPadding(dp(ctx, 4), 0, dp(ctx, 4), dp(ctx, 10))
             }
             head.addView(TextView(ctx).apply {
                 text = title ?: ""; textSize = 21f; setTextColor(BLUE); tag = "title"
                 maxLines = 2; ellipsize = TextUtils.TruncateAt.END
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }, if (hintBelowTitle) LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+               else LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             if (!hint.isNullOrBlank()) head.addView(TextView(ctx).apply {
-                text = hint; textSize = 13f; setTextColor(GREY); gravity = Gravity.END
-                setPadding(dp(ctx, 16), 0, 0, 0); tag = "hint"
+                text = hint; textSize = 13f; setTextColor(GREY); gravity = if (hintBelowTitle) Gravity.START else Gravity.END
+                setPadding(if (hintBelowTitle) 0 else dp(ctx, 16), if (hintBelowTitle) dp(ctx, 4) else 0, 0, 0); tag = "hint"
             })
             root.addView(head)
         }

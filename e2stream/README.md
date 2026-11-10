@@ -45,7 +45,7 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 | przytrzymanie OK | menu: EPG wydarzenia, EPG kanału, Multi EPG, Szukaj w EPG, Ścieżka dźwięku, Ustawienia |
 | ▲ / ▼, CH+ / CH− | następny / poprzedni kanał |
 | ◀ | EPG kanału |
-| ▶ | Multi EPG bukietu (w nim ◀ ▶ zmiana czasu o 30 min) |
+| ▶ | Multi EPG bukietu (▲ ▼ kanały, ◀ ▶ zmiana czasu o 30 min, wybór bukietu na stałym pasku u góry) |
 | INFO | EPG wydarzenia — opis bieżącej audycji |
 | GUIDE / EPG | Multi EPG |
 | SEARCH | szukaj w EPG |
@@ -53,6 +53,8 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 | cyfry | wybór numeru kanału (OK zatwierdza od razu) |
 | LAST / ⏮ | poprzedni kanał |
 | WSTECZ ×2 | wyjście |
+
+EPG kanału pokazuje datę oraz godzinę rozpoczęcia i zakończenia każdej audycji. Multi EPG pokazuje zakresy godzin bieżącej i następnej audycji oraz nazwy kanałów w maksymalnie dwóch liniach.
 
 Przy włączonym timeshifcie długie OK na pasku kanału otwiera pasek przewijania.
 Strzałki przewijają tylko na widocznym pasku timeshiftu, również po dotarciu do transmisji na żywo;
@@ -65,6 +67,9 @@ Okna te zamykają się po czasie bezczynności (domyślnie 30 s); 0 wyłącza au
 Korzystanie z pilota lub dotyku zeruje licznik, a otwarcie innego okna wstrzymuje go.
 
 ## Ustawienia
+
+Diagnostyka wybudzania (status i test alarmu) jest dostępna tylko w wersjach beta;
+ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji stabilnej.
 
 * adres dekodera, port OpenWebif (80), port streamingu (8001), login/hasło,
 * silnik odtwarzania: ExoPlayer (domyślnie) albo VLC – dla każdego odbiornika osobno; przy VLC wybór usuwania przeplotu i dekodowania sprzętowego/programowego,

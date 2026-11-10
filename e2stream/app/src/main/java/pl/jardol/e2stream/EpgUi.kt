@@ -3,11 +3,15 @@ package pl.jardol.e2stream
 import android.app.Activity
 import android.app.AlertDialog
 import android.text.InputType
+import android.text.TextUtils
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
 import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.TextView
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -36,6 +40,7 @@ class EpgUi(
     private val pl = Locale("pl", "PL")
     private val hm = SimpleDateFormat("HH:mm", pl)
     private val day = SimpleDateFormat("EEE dd.MM", pl)
+    private val eventTime = EpgTimeFormat()
     private val cache = HashMap<String, Pair<Long, List<EpgEvent>>>()
 
     private fun now() = System.currentTimeMillis() / 1000
@@ -76,7 +81,7 @@ class EpgUi(
 
     private class Row(val left: String, val title: String, val sub: String, val ev: EpgEvent?, val ch: Channel?)
 
-    private inner class RowAdapter(var rows: List<Row>) : BaseAdapter() {
+    private inner class RowAdapter(var rows: List<Row>, private val multi: Boolean = false) : BaseAdapter() {
         override fun getCount() = rows.size
         override fun getItem(position: Int): Any = rows[position]
         override fun getItemId(position: Int) = position.toLong()
@@ -84,7 +89,12 @@ class EpgUi(
             val v = convertView ?: a.layoutInflater.inflate(R.layout.item_epg, parent, false)
             UiScale.apply(v, UiScale.pct(Prefs(a).uiEpgFont))
             val r = rows[position]
-            v.findViewById<TextView>(R.id.left).text = r.left
+            v.findViewById<TextView>(R.id.left).apply {
+                text = r.left
+                maxLines = if (multi) 2 else 3
+                ellipsize = if (multi) TextUtils.TruncateAt.END else null
+                contentDescription = null
+            }
             val title = v.findViewById<TextView>(R.id.title)
             title.text = r.title
             val running = r.ev != null && r.ev.begin <= now() && r.ev.end > now()
@@ -245,12 +255,8 @@ class EpgUi(
                 val n = now()
                 val list = ev.filter { it.end > n }
                 if (list.isEmpty()) { host.message("Brak EPG dla ${ch.name}"); return@runOnUiThread }
-                var lastDay = ""
                 val rows = list.map {
-                    val dd = d(it.begin)
-                    val left = if (dd != lastDay) "$dd  ${t(it.begin)}" else t(it.begin)
-                    lastDay = dd
-                    Row(left, it.title, it.shortDesc + progress(it), it, ch)
+                    Row(eventTime.dayAndRange(it.begin, it.end), it.title, it.shortDesc + progress(it), it, ch)
                 }
                 val adapter = RowAdapter(rows)
                 bigList("EPG: ${ch.num} ${ch.name}", adapter, timeoutSec = Prefs(a).epgChannelSec) { w -> showEvent(rows[w].ev!!, ch) }
@@ -300,20 +306,53 @@ class EpgUi(
         val cur = ev.firstOrNull { it.begin <= at && it.end > at }
         val next = ev.firstOrNull { it.begin >= (cur?.end ?: at) }
         Row(
-            "${c.num}  ${c.name}".take(18),
-            cur?.let { "${t(it.begin)}  ${it.title}" } ?: "—",
-            next?.let { "następnie ${t(it.begin)}  ${it.title}" } ?: "",
+            "${c.num}  ${c.name}",
+            cur?.let { "${eventTime.range(it.begin, it.end)}  ${it.title}" } ?: "—",
+            next?.let { "następnie ${eventTime.range(it.begin, it.end)}  ${it.title}" } ?: "",
             cur ?: next,
             c,
         )
     }
 
     private fun openMulti(chans: List<Channel>, bouquet: Bouquet, bouquets: List<Bouquet>) {
-        val adapter = RowAdapter(listOf(Row("Bukiet", "${bouquet.name}  •  wybierz", "", null, null)) + multiRows(chans, multiT))
+        val adapter = RowAdapter(multiRows(chans, multiT), multi = true)
         fun title() = "Multi-EPG: ${bouquet.name} — ${d(multiT)} ${t(multiT)}"
         multiDialog?.dismiss()
-        val dlg = bigList(title(), adapter, "▲ bukiet  •  ◀ ▶ zmiana czasu  •  OK opis  •  WSTECZ zamknij", timeoutSec = Prefs(a).epgMultiSec) { w ->
-            if (w == 0) {
+        val dlg = TvDialog.panel(a, title(),
+            "Bukiet u góry: OK wybierz  •  ▲ ▼ kanały\n◀ ▶ czas  •  OK opis  •  WSTECZ zamknij",
+            widthFrac = 0.85f, maxH = 0.9f, timeoutSec = Prefs(a).epgMultiSec, hintBelowTitle = true) { ctx, _ ->
+            val density = ctx.resources.displayMetrics.density
+            fun dp(value: Int) = (value * density).toInt()
+            val column = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+            }
+            val bouquetBar = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                background = ctx.getDrawable(R.drawable.list_selector)
+                isFocusable = true
+                isClickable = true
+                addView(TextView(ctx).apply {
+                    text = "Bukiet"; textSize = 17f; setTextColor(0xFF90A4AE.toInt())
+                    maxLines = 1
+                }, LinearLayout.LayoutParams(dp(150), ViewGroup.LayoutParams.WRAP_CONTENT))
+                addView(TextView(ctx).apply {
+                    text = "${bouquet.name}  •  wybierz"; textSize = 19f; setTextColor(0xFFFFFFFF.toInt())
+                    maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            val channels = ListView(ctx).apply {
+                this.adapter = adapter
+                selector = ctx.getDrawable(R.drawable.list_selector)
+                divider = null
+                setOnItemClickListener { _, _, w, _ ->
+                    val r = adapter.rows[w]
+                    if (r.ev != null) showEvent(r.ev, r.ch) else r.ch?.let { host.zapTo(it.ref) }
+                }
+            }
+            bouquetBar.setOnClickListener {
                 TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
                     selected = bouquets.indexOfFirst { it.ref == bouquet.ref },
                     hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f) { picked ->
@@ -324,10 +363,26 @@ class EpgUi(
                         loadMulti(next, emptyList(), bouquets, multiT)
                     }
                 }
-                return@bigList
             }
-            val r = adapter.rows[w]
-            if (r.ev != null) showEvent(r.ev, r.ch) else r.ch?.let { host.zapTo(it.ref) }
+            bouquetBar.setOnKeyListener { _, code, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    channels.requestFocus()
+                    channels.setSelection(0)
+                    true
+                } else false
+            }
+            channels.setOnKeyListener { _, code, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && code == KeyEvent.KEYCODE_DPAD_UP &&
+                    channels.selectedItemPosition <= 0) {
+                    bouquetBar.requestFocus()
+                    true
+                } else false
+            }
+            column.addView(bouquetBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            UiScale.apply(bouquetBar, UiScale.pct(Prefs(a).uiEpgFont))
+            column.addView(channels, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            bouquetBar.post { bouquetBar.requestFocus() }
+            column
         }
         multiDialog = dlg
         dlg.setOnKeyListener { _, code, e ->
@@ -342,7 +397,7 @@ class EpgUi(
             // pierwsze przesunięcie do pełnego pół-godzinnego znacznika
             val base = if (shift > 0) (multiT / step + 1) * step else ((multiT - 1) / step) * step
             multiT = if (base < now() && shift < 0) now() else base
-            adapter.rows = listOf(Row("Bukiet", "${bouquet.name}  •  wybierz", "", null, null)) + multiRows(chans, multiT)
+            adapter.rows = multiRows(chans, multiT)
             adapter.notifyDataSetChanged()
             TvDialog.setTitle(dlg, title())
             true
