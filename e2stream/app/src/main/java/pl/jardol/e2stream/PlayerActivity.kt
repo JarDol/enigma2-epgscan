@@ -1107,28 +1107,72 @@ class PlayerActivity : Activity() {
     /** Co 5 s: 30 s przed początkiem audycji okno z odliczaniem, o czasie przełączenie. */
     private val zapTick = object : Runnable {
         override fun run() {
-            ui.postDelayed(this, 5000)
-            if (backgrounded) return
+            val timers = ZapTimers.list(this@PlayerActivity)
+            if (zapPrompted != null && timers.none { it.key() == zapPrompted }) {
+                try { zapDialog?.dismiss() } catch (_: Exception) {}
+                zapDialog = null
+                zapPrompted = null
+            }
+            if (backgrounded) {
+                ui.postDelayed(this, if (zapPrompted == null) 5000 else 1000)
+                return
+            }
             val now = System.currentTimeMillis() / 1000
-            val t = ZapTimers.list(this@PlayerActivity).firstOrNull { it.begin - 30 <= now } ?: return
-            if (now >= t.begin) { zapFire(t); return }
-            if (zapPrompted == t.key()) return
+            val t = timers.firstOrNull { it.begin - 30 <= now }
+            if (t == null) {
+                ui.postDelayed(this, 5000)
+                return
+            }
+            if (now >= t.begin) {
+                zapFire(t)
+                ui.postDelayed(this, 5000)
+                return
+            }
+            if (zapPrompted == t.key()) {
+                TvDialog.setButtonLabel(zapDialog, 0, "Oglądaj (${zapCountdown(t.begin - now)})")
+                ui.postDelayed(this, 1000)
+                return
+            }
             zapPrompted = t.key()
             AppLog.i("harmonogram: za ${t.begin - now} s przełączenie na ${t.channel}")
             zapDialog = TvDialog.panel(this@PlayerActivity, "Przełączenie o ${hm.format(Date(t.begin * 1000))}", null,
                 listOf(
-                    TvDialog.Btn("Przełącz teraz") { zapFire(t) },
-                    TvDialog.Btn("Anuluj") {
-                        ZapTimers.remove(this@PlayerActivity, t); zapPrompted = null
-                        showMessage("Przełączenie anulowane", 2500)
+                    TvDialog.Btn("Oglądaj (${zapCountdown(t.begin - now)})") { zapFire(t) },
+                    TvDialog.Btn("Nagraj na dekoderze") {
+                        ZapTimers.remove(this@PlayerActivity, t)
+                        zapPrompted = null
+                        zapDialog = null
+                        epg.recordTimer(t)
                     },
-                ), widthFrac = 0.5f, focusChip = true) { ctx, _ ->
-                TextView(ctx).apply {
-                    text = "${t.channel}\n${t.title}"
-                    textSize = 20f; setTextColor(TvDialog.WHITE)
+                    TvDialog.Btn("Anuluj") {
+                        ZapTimers.remove(this@PlayerActivity, t)
+                        zapPrompted = null
+                        zapDialog = null
+                    },
+                ), widthFrac = 0.68f, focusChip = true) { ctx, _ ->
+                LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(TextView(ctx).apply {
+                        text = t.channel
+                        textSize = 16f; setTextColor(TvDialog.GREY)
+                    })
+                    addView(TextView(ctx).apply {
+                        text = t.title
+                        textSize = 23f; setTextColor(TvDialog.WHITE)
+                    })
+                    addView(TextView(ctx).apply {
+                        text = "${zapDf.format(Date(t.begin * 1000))} – ${hm.format(Date(t.end * 1000))}"
+                        textSize = 15f; setTextColor(TvDialog.BLUE)
+                    })
                 }
             }
+            ui.postDelayed(this, 1000)
         }
+    }
+
+    private fun zapCountdown(seconds: Long): String {
+        val s = seconds.coerceAtLeast(0)
+        return "${(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}"
     }
 
     private fun zapFire(t: ZapTimers.Timer) {

@@ -104,9 +104,10 @@ object TvDialog {
                 gravity = Gravity.END
                 setPadding(0, dp(ctx, 12), 0, 0)
             }
-            for (b in chips) {
+            for ((index, b) in chips.withIndex()) {
                 val btn = Button(ctx, null, 0, R.style.TvDialogButton)
                 btn.text = b.label
+                btn.tag = "chip_$index"
                 btn.isFocusable = true
                 btn.setOnClickListener { dlg.dismiss(); b.onClick() }
                 val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -139,6 +140,11 @@ object TvDialog {
 
     fun setTitle(dlg: Dialog, title: String) {
         dlg.window?.decorView?.findViewWithTag<TextView>("title")?.text = title
+    }
+
+    fun setButtonLabel(dlg: Dialog?, index: Int, label: String) {
+        if (dlg?.isShowing != true) return
+        dlg.window?.decorView?.findViewWithTag<Button>("chip_$index")?.text = label
     }
 
     // ------------------------------------------------------------ listy

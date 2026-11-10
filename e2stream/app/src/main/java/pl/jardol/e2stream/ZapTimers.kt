@@ -10,7 +10,7 @@ import org.json.JSONObject
  * Działają, gdy aplikacja jest uruchomiona.
  */
 object ZapTimers {
-    class Timer(val ref: String, val channel: String, val title: String, val begin: Long, val end: Long) {
+    class Timer(val ref: String, val channel: String, val title: String, val begin: Long, val end: Long, val eventId: Int = 0) {
         fun key() = "${OpenWebif.key(ref)}@$begin"
     }
 
@@ -23,7 +23,7 @@ object ZapTimers {
         val out = ArrayList<Timer>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
-            val t = Timer(o.optString("ref"), o.optString("ch"), o.optString("t"), o.optLong("b"), o.optLong("e"))
+            val t = Timer(o.optString("ref"), o.optString("ch"), o.optString("t"), o.optLong("b"), o.optLong("e"), o.optInt("id"))
             if (t.ref.isNotBlank() && t.end > now) out += t
         }
         return out.sortedBy { it.begin }
@@ -31,7 +31,7 @@ object ZapTimers {
 
     private fun save(ctx: Context, l: List<Timer>) {
         val arr = JSONArray()
-        for (t in l) arr.put(JSONObject().put("ref", t.ref).put("ch", t.channel).put("t", t.title).put("b", t.begin).put("e", t.end))
+        for (t in l) arr.put(JSONObject().put("ref", t.ref).put("ch", t.channel).put("t", t.title).put("b", t.begin).put("e", t.end).put("id", t.eventId))
         sp(ctx).edit().putString("list", arr.toString()).apply()
     }
 
@@ -41,6 +41,12 @@ object ZapTimers {
         val l = list(ctx).filter { it.key() != t.key() } + t
         save(ctx, l)
         AppLog.i("harmonogram: przełączenie ${t.channel} — ${t.title} o ${t.begin}")
+    }
+
+    fun replaceAt(ctx: Context, t: Timer) {
+        val l = list(ctx).filter { it.begin != t.begin } + t
+        save(ctx, l)
+        AppLog.i("harmonogram: zastąpiono przełączenie o ${t.begin} przez ${t.channel} — ${t.title}")
     }
 
     fun remove(ctx: Context, t: Timer) {

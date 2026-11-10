@@ -142,8 +142,7 @@ class EpgUi(
                     ZapTimers.remove(a, ZapTimers.Timer(ref, name, ev.title, ev.begin, ev.end))
                     host.message("Usunięto przełączenie o ${t(ev.begin)}")
                 } else btns += TvDialog.Btn("Przełącz o ${t(ev.begin)}") {
-                    ZapTimers.add(a, ZapTimers.Timer(ref, name.ifBlank { ref }, ev.title, ev.begin, ev.end))
-                    host.message("O ${t(ev.begin)} przełączę na ${name.ifBlank { "kanał" }} — ${ev.title}")
+                    scheduleZap(ZapTimers.Timer(ref, name.ifBlank { ref }, ev.title, ev.begin, ev.end, ev.id))
                 }
             }
         }
@@ -191,6 +190,31 @@ class EpgUi(
                 android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
             col
         }
+    }
+
+    private fun scheduleZap(timer: ZapTimers.Timer) {
+        val conflicts = ZapTimers.list(a).filter { it.begin == timer.begin && it.key() != timer.key() }
+        if (conflicts.isEmpty()) {
+            ZapTimers.add(a, timer)
+            host.message("O ${t(timer.begin)} przełączę na ${timer.channel} — ${timer.title}")
+            return
+        }
+        val current = conflicts.joinToString("\n") { "${it.channel} — ${it.title}" }
+        TvDialog.confirm(a, "Kolizja harmonogramu",
+            "O ${t(timer.begin)} zaplanowano już:\n$current\n\nZamienić na:\n${timer.channel} — ${timer.title}?",
+            listOf(
+                TvDialog.Btn("Zamień") {
+                    ZapTimers.replaceAt(a, timer)
+                    host.message("Zamieniono przełączenie na ${timer.channel} — ${timer.title}")
+                },
+                TvDialog.Btn("Zostaw obecne"),
+                TvDialog.Btn("Nagraj na dekoderze") { recordTimer(timer) },
+            ))
+    }
+
+    fun recordTimer(timer: ZapTimers.Timer) {
+        record(timer.ref, EpgEvent(timer.eventId, timer.begin, timer.end - timer.begin,
+            timer.title, "", "", timer.ref, timer.channel))
     }
 
     private fun record(ref: String, ev: EpgEvent) {
