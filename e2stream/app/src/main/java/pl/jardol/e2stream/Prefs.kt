@@ -107,6 +107,9 @@ class Prefs(ctx: Context) {
     var tsBackLive: Boolean
         get() = sp.getBoolean("tsBackLive", false)
         set(v) = putB("tsBackLive", v)
+    var backLongExit: Boolean
+        get() = sp.getBoolean("backLongExit", false)
+        set(v) = putB("backLongExit", v)
     var tsDelay: Int
         get() = sp.getInt("tsDelay", 5)
         set(v) = putI("tsDelay", v)

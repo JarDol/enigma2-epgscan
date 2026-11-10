@@ -2061,6 +2061,10 @@ class PlayerActivity : Activity() {
             keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && prefs.backLongExit) {
+            if (event.repeatCount > 0) { onKeyLongPress(keyCode, event); return true }
+            event.startTracking()
+        }
         if (panel.visibility == View.VISIBLE) {
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> { panelBouquetStep(-1); return true }
@@ -2128,6 +2132,7 @@ class PlayerActivity : Activity() {
     }
 
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && prefs.backLongExit) { finish(); return true }
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
             if (tsShifted && !recMode) { tsShowBanner(sticky = player?.playWhenReady == false); return true }

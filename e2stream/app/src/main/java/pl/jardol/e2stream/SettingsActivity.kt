@@ -117,6 +117,7 @@ class SettingsActivity : Activity() {
         Item.Toggle("Dobuduj zapas lekkim zwolnieniem (5%, tylko bez tunelowania)", { p.cushionSlow }, { p.cushionSlow = it }),
     )) + listOf(
         Item.Toggle("Wznawiaj zawieszony obraz (watchdog)", { p.watchdog }, { p.watchdog = it }),
+        Item.Toggle("Długie Wstecz zamyka E2Stream", { p.backLongExit }, { p.backLongExit = it }),
         num("Zawieszenie po (s bez nowych klatek)", { p.stallSec }, { p.stallSec = it }, 1..30),
         num("Bufor startowy (ms) — szybki obraz", { p.bufferMs }, { p.bufferMs = it }, 250..10_000),
         Item.Action("Odświeżanie ekranu", { afrName(p.afrMode) }) { chooseAfr() },
