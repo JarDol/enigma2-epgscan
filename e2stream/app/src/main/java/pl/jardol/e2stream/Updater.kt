@@ -17,13 +17,13 @@ object Updater {
 
     private const val API = "https://api.github.com/repos/JarDol/enigma2-epgscan/releases?per_page=50"
 
-    data class Info(val version: String, val url: String, val name: String)
+    data class Info(val version: String, val url: String, val name: String, val prerelease: Boolean)
 
     /**
      * Najwyższa wersja, której Release ma plik e2stream-<wersja>.apk.
      * Puste / zapasowe Release'y (bez pasującego pliku) są pomijane.
      */
-    fun latest(): Info? {
+    fun latest(channel: String = "stable"): Info? {
         val c = URL(API).openConnection() as HttpURLConnection
         c.connectTimeout = 6000
         c.readTimeout = 10000
@@ -35,7 +35,8 @@ object Updater {
             var best: Info? = null
             for (r in 0 until arr.length()) {
                 val js = arr.optJSONObject(r) ?: continue
-                if (js.optBoolean("draft") || js.optBoolean("prerelease")) continue
+                val prerelease = js.optBoolean("prerelease")
+                if (js.optBoolean("draft") || (prerelease && channel != "beta")) continue
                 val rawTag = js.optString("tag_name")
                 if (!rawTag.startsWith("e2stream-")) continue   // w repo są też wydania wtyczki i serwera
                 val tag = rawTag.removePrefix("e2stream-").removePrefix("v")
@@ -44,8 +45,8 @@ object Updater {
                     val a = assets.optJSONObject(i) ?: continue
                     val name = a.optString("name")
                     if (name == "e2stream-$tag.apk") {
-                        val cand = Info(tag, a.optString("browser_download_url"), name)
-                        if (best == null || newer(tag, best.version)) best = cand
+                        val cand = Info(tag, a.optString("browser_download_url"), name, prerelease)
+                        if (best == null || compareVersions(tag, best.version) > 0) best = cand
                     }
                 }
             }
@@ -55,15 +56,43 @@ object Updater {
         }
     }
 
-    /** true, jeśli [a] jest nowsza niż [b] (porównanie X.Y.Z). */
-    fun newer(a: String, b: String): Boolean {
-        val x = a.split(".").map { it.toIntOrNull() ?: 0 }
-        val y = b.split(".").map { it.toIntOrNull() ?: 0 }
-        for (i in 0 until maxOf(x.size, y.size)) {
-            val d = x.getOrElse(i) { 0 } - y.getOrElse(i) { 0 }
-            if (d != 0) return d > 0
+    /** Porównanie wersji semver, także prerelease w formacie X.Y.Z-beta.N. */
+    fun newer(a: String, b: String): Boolean = compareVersions(a, b) > 0
+
+    private fun compareVersions(a: String, b: String): Int {
+        fun parts(value: String): Pair<List<Int>, List<String>?> {
+            val split = value.removePrefix("v").split('-', limit = 2)
+            val numbers = split[0].split('.').map { it.toIntOrNull() ?: 0 }
+            val pre = split.getOrNull(1)?.split('.')
+            return numbers to pre
         }
-        return false
+        val (aNumbers, aPre) = parts(a)
+        val (bNumbers, bPre) = parts(b)
+        for (i in 0 until maxOf(aNumbers.size, bNumbers.size)) {
+            val diff = aNumbers.getOrElse(i) { 0 }.compareTo(bNumbers.getOrElse(i) { 0 })
+            if (diff != 0) return diff
+        }
+        if (aPre == null || bPre == null) return when {
+            aPre == null && bPre == null -> 0
+            aPre == null -> 1
+            else -> -1
+        }
+        for (i in 0 until maxOf(aPre.size, bPre.size)) {
+            if (i >= aPre.size) return -1
+            if (i >= bPre.size) return 1
+            val left = aPre[i]
+            val right = bPre[i]
+            val leftNum = left.toIntOrNull()
+            val rightNum = right.toIntOrNull()
+            val diff = when {
+                leftNum != null && rightNum != null -> leftNum.compareTo(rightNum)
+                leftNum != null -> -1
+                rightNum != null -> 1
+                else -> left.compareTo(right)
+            }
+            if (diff != 0) return diff
+        }
+        return 0
     }
 
     fun download(ctx: Context, info: Info, progress: (Int) -> Unit): File {

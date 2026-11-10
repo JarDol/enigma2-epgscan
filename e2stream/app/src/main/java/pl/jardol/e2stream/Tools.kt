@@ -278,7 +278,7 @@ object Tools {
     fun checkUpdate(a: Activity, manual: Boolean, msg: (String) -> Unit) {
         if (manual) msg("Sprawdzam aktualizację…")
         Thread {
-            val info = try { Updater.latest() } catch (e: Exception) {
+            val info = try { Updater.latest(Prefs(a).updateChannel) } catch (e: Exception) {
                 AppLog.i("aktualizacja: błąd $e"); null
             }
             ui.post {

@@ -172,6 +172,13 @@ class SettingsActivity : Activity() {
 
             "Informacje i aktualizacje" -> listOf(
                 Item.Header("Aplikacja E2Stream"),
+        Item.Action("Kanał aktualizacji", { if (p.updateChannel == "beta") "beta (testowy)" else "stabilny" }) {
+            TvDialog.single(this, "Kanał aktualizacji", listOf("Stabilny", "Beta (prerelease)"),
+                if (p.updateChannel == "beta") 1 else 0) { w ->
+                p.updateChannel = if (w == 1) "beta" else "stable"
+                markChanged("kanał aktualizacji = ${p.updateChannel}")
+            }
+        },
         Item.Action("Sprawdź aktualizację", { "wersja ${Tools.appVersion(this)}" }) { Tools.checkUpdate(this, true) { toast(it) } },
         Item.Toggle("Automatyczna aktualizacja", { p.autoUpdate }, { p.autoUpdate = it }),
                 Item.Action("Opis aplikacji (README)") { showReadme("E2Stream", "e2stream/README.md") },

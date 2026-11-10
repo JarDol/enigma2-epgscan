@@ -369,6 +369,10 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("autoUpdate", true)
         set(v) = putB("autoUpdate", v)
 
+    var updateChannel: String
+        get() = s("updateChannel", "stable")
+        set(v) = putS("updateChannel", if (v == "beta") "beta" else "stable")
+
     /** Eksperymentalne alarmy budzące dla lokalnego harmonogramu. */
     var wakeForZap: Boolean
         get() = sp.getBoolean("wakeForZap", false)
