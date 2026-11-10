@@ -123,6 +123,8 @@ class PlayerActivity : Activity() {
     private var wakeTimerKey: String? = null
     private var wakeTestId: String? = null
     private var scheduledChannelRef: String? = null
+    private var scheduledAppliedRef: String? = null      // kanał z harmonogramu dostrojony przed końcem startu
+    private var scheduledAppliedAt = 0L
 
     // ---------------------------------------------------------------- cykl życia
 
@@ -920,8 +922,17 @@ class PlayerActivity : Activity() {
                     }
                     message.visibility = View.GONE
                     val ci = ch.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(wantC) }.let { if (it < 0) 0 else it }
-                    playIndex = -1
-                    if (ch.isNotEmpty()) playIn(bi, ch, ci)
+                    // kanał z harmonogramu wybrany w trakcie tego startu ma pierwszeństwo przed startowym
+                    val forced = scheduledAppliedRef?.takeIf { android.os.SystemClock.elapsedRealtime() - scheduledAppliedAt < 30_000 }
+                    scheduledAppliedRef = null
+                    if (ch.isNotEmpty() && (forced == null || playList.isEmpty())) {
+                        playIndex = -1
+                        playIn(bi, ch, ci)
+                    }
+                    if (forced != null) {
+                        AppLog.i("harmonogram: start nie nadpisuje kanału z harmonogramu ${OpenWebif.key(forced)}")
+                        zapTo(forced)
+                    }
                     applyScheduledChannel()
                 }
             } catch (e: Exception) {
@@ -937,6 +948,8 @@ class PlayerActivity : Activity() {
         val ref = scheduledChannelRef ?: return
         if (bouquets.isEmpty()) return
         scheduledChannelRef = null
+        scheduledAppliedRef = ref
+        scheduledAppliedAt = android.os.SystemClock.elapsedRealtime()
         AppLog.i("harmonogram: Oglądaj — dostrajam kanał ${OpenWebif.key(ref)}")
         ui.post { if (!isFinishing) zapTo(ref, forceTune = true) }
     }
