@@ -158,6 +158,15 @@ object ZapWakeAlarms {
             putExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY, key)
             if (testId != null) putExtra(PlayerActivity.EXTRA_WAKE_TEST_ID, testId)
         }
+        if (Build.VERSION.SDK_INT <= 28) {
+            try {
+                ctx.startActivity(launch)
+                AppLog.i("wybudzanie: bezpośrednio uruchomiono PlayerActivity API ${Build.VERSION.SDK_INT} key=$key")
+                return
+            } catch (e: Exception) {
+                AppLog.i("wybudzanie: bezpośredni start PlayerActivity nieudany, zostawiam powiadomienie key=$key: $e")
+            }
+        }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
         val activity = PendingIntent.getActivity(ctx, key.hashCode(), launch, flags)

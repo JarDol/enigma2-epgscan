@@ -148,6 +148,9 @@ class PlayerActivity : Activity() {
             override fun message(t: String) = showMessage(t, 4000)
         })
         AppLog.i("=== Start E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} | ${prefs.displayName} | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) | ekran: ${displayInfo()}")
+        if (wakeTimerKey != null || wakeTestId != null) {
+            AppLog.i("wybudzanie: PlayerActivity uruchomiona z alarmu key=$wakeTimerKey testId=$wakeTestId")
+        }
 
         playerView = findViewById(R.id.playerView)
         vlcLayout = findViewById(R.id.vlcLayout)
@@ -236,6 +239,7 @@ class PlayerActivity : Activity() {
         setIntent(intent)
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
+        AppLog.i("wybudzanie: onNewIntent key=$wakeTimerKey testId=$wakeTestId")
         if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -249,6 +253,7 @@ class PlayerActivity : Activity() {
     private fun showWakeTestResult() {
         val id = wakeTestId ?: return
         wakeTestId = null
+        AppLog.i("wybudzanie: pokazuję popup testu id=$id")
         ui.post {
             if (!isFinishing) TvDialog.confirm(this, "Test wybudzania dotarł",
                 "Android dostarczył RTC_WAKEUP i uruchomił E2Stream.\n\nJeśli nie naciskałeś pilota, pełnoekranowe powiadomienie działa.\nId testu: $id",
