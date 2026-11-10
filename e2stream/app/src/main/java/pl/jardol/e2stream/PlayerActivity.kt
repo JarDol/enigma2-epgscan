@@ -111,7 +111,7 @@ class PlayerActivity : Activity() {
     private var safeMode = false
     private var numberBuffer = ""
     private var suppressOkUp = false
-    private var lastBackAt = 0L
+    private val backExit = DoubleBackExit()
     private var streamGen = 0
     private var analyzer: TsAnalyzer? = null
     private var analyzerRing = -1
@@ -1071,7 +1071,10 @@ class PlayerActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) resetPanelTimer() else panelTimer.setActive(false)
+        if (hasFocus) resetPanelTimer() else {
+            panelTimer.setActive(false)
+            backExit.reset()
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -1601,14 +1604,12 @@ class PlayerActivity : Activity() {
             }
             // Wstecz: najpierw zamyka pasek (także przy pauzie), dopiero kolejne naciśnięcie wraca na żywo
             KeyEvent.KEYCODE_BACK -> {
-                if (banner.visibility == View.VISIBLE && !tsChBar) {
-                    tsChBar = true
-                    playList.getOrNull(playIndex)?.let { showBanner(it) }
-                    return true
+                when (timeshiftBackAction(banner.visibility == View.VISIBLE, tsChBar, tsMode, tsShifted, prefs.tsBackLive)) {
+                    TimeshiftBackAction.SHOW_CHANNEL_BANNER -> playList.getOrNull(playIndex)?.let { showBanner(it) }
+                    TimeshiftBackAction.HIDE_BANNER -> { banner.visibility = View.GONE; tsChBar = false; ui.removeCallbacks(hideBanner) }
+                    TimeshiftBackAction.GO_LIVE -> { tsCtl = false; tsGoLive() }
+                    TimeshiftBackAction.EXIT -> { if (!tsMode || !tsShifted) tsCtl = false; return false }
                 }
-                if (banner.visibility == View.VISIBLE) { banner.visibility = View.GONE; tsChBar = false; ui.removeCallbacks(hideBanner); return true }
-                if (!tsMode) { tsCtl = false; return false }
-                if (prefs.tsBackLive) { tsCtl = false; tsGoLive() }
             }
             else -> return false
         }
@@ -2086,15 +2087,13 @@ class PlayerActivity : Activity() {
             keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && prefs.backLongExit) {
-            if (event.repeatCount > 0) { onKeyLongPress(keyCode, event); return true }
-            event.startTracking()
-        }
+        if (keyCode == KeyEvent.KEYCODE_BACK && event.repeatCount > 0) return true
+        if (keyCode != KeyEvent.KEYCODE_BACK) backExit.reset()
         if (panel.visibility == View.VISIBLE) {
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> { panelBouquetStep(-1); return true }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> { panelBouquetStep(1); return true }
-                KeyEvent.KEYCODE_BACK -> { hidePanel(); return true }
+                KeyEvent.KEYCODE_BACK -> { backExit.reset(); hidePanel(); return true }
                 KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_MENU -> {
                     panelList.getOrNull(list.selectedItemPosition)?.let { epg.showChannelEpg(it) }
                     return true
@@ -2111,8 +2110,11 @@ class PlayerActivity : Activity() {
             return super.onKeyDown(keyCode, event)
         }
 
-        if (recMode && recKey(keyCode, event)) return true
-        if (tsCtl && tsKey(keyCode)) return true
+        if (recMode && recKey(keyCode, event)) { if (keyCode == KeyEvent.KEYCODE_BACK) backExit.reset(); return true }
+        if ((tsCtl || (keyCode == KeyEvent.KEYCODE_BACK && tsMode && tsShifted)) && tsKey(keyCode)) {
+            if (keyCode == KeyEvent.KEYCODE_BACK) backExit.reset()
+            return true
+        }
 
         if (keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
             digit(keyCode - KeyEvent.KEYCODE_0); return true
@@ -2140,13 +2142,11 @@ class PlayerActivity : Activity() {
 
         when (keyCode) {
             KeyEvent.KEYCODE_BACK -> {
-                if (stats.visibility == View.VISIBLE) { stats.visibility = View.GONE; prefs.showStats = false; return true }
-                if (banner.visibility == View.VISIBLE) { banner.visibility = View.GONE; return true }
-                val now = SystemClock.elapsedRealtime()
-                if (now - lastBackAt < 2500) {
+                if (stats.visibility == View.VISIBLE) { backExit.reset(); stats.visibility = View.GONE; prefs.showStats = false; return true }
+                if (banner.visibility == View.VISIBLE) { backExit.reset(); banner.visibility = View.GONE; return true }
+                if (backExit.press(SystemClock.elapsedRealtime())) {
                     finish()
                 } else {
-                    lastBackAt = now
                     showMessage("Naciśnij ponownie WSTECZ, aby wyjść", 2500)
                 }
                 return true
@@ -2156,7 +2156,6 @@ class PlayerActivity : Activity() {
     }
 
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && prefs.backLongExit) { finish(); return true }
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
             // widoczny pasek + timeshift: menu przewijania; w pozostałych przypadkach menu główne
@@ -2360,9 +2359,6 @@ class PlayerActivity : Activity() {
             "Szukaj w EPG" to { epg.showSearch() },
             "Ścieżka dźwięku…" to { showAudioDialog() },
             "Przełączenia wg harmonogramu" to { showZapTimers() },
-            *(if (prefs.tsMin > 0 && !recMode && !tsShifted) arrayOf<Pair<String, () -> Unit>>(
-                "Pauza - Timeshift" to { doAct(Act.TIMESHIFT, 0) },
-            ) else emptyArray()),
             "Ustawienia" to { openSettings() },
         )
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->

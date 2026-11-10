@@ -8,6 +8,10 @@ class Prefs(ctx: Context) {
     private val sp: SharedPreferences =
         ctx.getSharedPreferences("e2stream", Context.MODE_PRIVATE)
 
+    init {
+        if (sp.contains("backLongExit")) sp.edit().remove("backLongExit").apply()
+    }
+
     private fun s(k: String, d: String = "") = sp.getString(k, d) ?: d
     private fun putS(k: String, v: String) = sp.edit().putString(k, v).apply()
     private fun putI(k: String, v: Int) = sp.edit().putInt(k, v).apply()
@@ -107,9 +111,6 @@ class Prefs(ctx: Context) {
     var tsBackLive: Boolean
         get() = sp.getBoolean("tsBackLive", false)
         set(v) = putB("tsBackLive", v)
-    var backLongExit: Boolean
-        get() = sp.getBoolean("backLongExit", false)
-        set(v) = putB("backLongExit", v)
     var tsDelay: Int
         get() = sp.getInt("tsDelay", 5)
         set(v) = putI("tsDelay", v)

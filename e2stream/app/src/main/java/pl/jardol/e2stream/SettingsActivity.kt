@@ -166,7 +166,6 @@ class SettingsActivity : Activity() {
             "Ogólne" -> listOf(
         Item.Action("Widoczne bukiety", { if (p.hiddenBouquets.isEmpty()) "wszystkie" else "ukryte: ${p.hiddenBouquets.size}" }) { chooseBouquets() },
         Item.Action("Mapowanie klawiszy pilota") { showKeyMap() },
-        Item.Toggle("Długie Wstecz zamyka E2Stream", { p.backLongExit }, { p.backLongExit = it }),
         Item.Toggle("Po uruchomieniu wróć do ostatniego kanału", { p.resumeLast }, { p.resumeLast = it }),
         Item.Toggle("Budź TV dla harmonogramu (eksperymentalne)", { p.wakeForZap }, { setWakeForZap(it) }),
         Item.Action("Diagnostyka wybudzania", { if (p.wakeForZap) "status i test alarmu" else "najpierw włącz wybudzanie" }) {

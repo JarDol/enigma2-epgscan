@@ -58,6 +58,8 @@ Przy włączonym timeshifcie długie OK na pasku kanału otwiera pasek przewijan
 Strzałki przewijają tylko na widocznym pasku timeshiftu, również po dotarciu do transmisji na żywo;
 na pasku kanału i po ukryciu paska działają jak podczas zwykłego oglądania.
 Pasek timeshiftu pozostaje na ekranie w czasie pauzy, a po wznowieniu znika po czasie ustawionym w Ogólnych.
+Opcja „Wstecz na pustym ekranie → na żywo” pozwala wrócić z cofniętego strumienia do transmisji na żywo.
+Wyjście z aplikacji wymaga dwóch osobnych naciśnięć WSTECZ; przytrzymanie nie zamyka aplikacji.
 Tam też można ustawić osobne czasy zamykania listy kanałów oraz EPG wydarzenia, kanału i Multi EPG.
 Okna te zamykają się po czasie bezczynności (domyślnie 30 s); 0 wyłącza automatyczne zamykanie.
 Korzystanie z pilota lub dotyku zeruje licznik, a otwarcie innego okna wstrzymuje go.
