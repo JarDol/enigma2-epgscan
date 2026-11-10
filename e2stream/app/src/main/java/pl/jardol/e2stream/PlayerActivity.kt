@@ -1319,6 +1319,7 @@ class PlayerActivity : Activity() {
     private var tsBuf: TimeshiftBuffer? = null
     private var tsRec: TimeshiftRecorder? = null
     private var tsMode = false                 // odtwarzanie z bufora (strumień z dekodera zapisuje osobne połączenie)
+    private var tsChBar = false                // w timeshifcie pokazany zwykły pasek kanału (zamiast paska timeshiftu)
     private var tsCtl = false                  // menu przewijania otwarte na żywo (OK na pasku kanału)
 
     /** Za transmisją: watchdog wyłączony — krótkie przerwy po wznowieniu/przewinięciu to nie zawieszenie. */
@@ -1577,7 +1578,12 @@ class PlayerActivity : Activity() {
             KeyEvent.KEYCODE_DPAD_DOWN -> tsSeek(-5 * 60_000)
             // Wstecz: najpierw zamyka pasek (także przy pauzie), dopiero kolejne naciśnięcie wraca na żywo
             KeyEvent.KEYCODE_BACK -> {
-                if (banner.visibility == View.VISIBLE) { banner.visibility = View.GONE; ui.removeCallbacks(hideBanner); return true }
+                if (banner.visibility == View.VISIBLE && !tsChBar) {
+                    tsChBar = true
+                    playList.getOrNull(playIndex)?.let { showBanner(it) }
+                    return true
+                }
+                if (banner.visibility == View.VISIBLE) { banner.visibility = View.GONE; tsChBar = false; ui.removeCallbacks(hideBanner); return true }
                 tsGoLive()
             }
             else -> return false
@@ -1591,6 +1597,7 @@ class PlayerActivity : Activity() {
         val icon = if (prefs.picons && ch != null) Picons.bitmap(this, ch.ref) else null
         bannerIcon.setImageBitmap(icon)
         bannerIcon.visibility = if (icon != null) View.VISIBLE else View.GONE
+        tsChBar = false
         tsUpdateBanner()
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
@@ -1626,7 +1633,7 @@ class PlayerActivity : Activity() {
                 tsPlayFrom(b.oldestWall + 10_000, play = true)
                 return
             }
-            if (tsShifted && banner.visibility == View.VISIBLE) {
+            if (tsShifted && !tsChBar && banner.visibility == View.VISIBLE) {
                 tsUpdateBanner()
                 if (SystemClock.elapsedRealtime() > tsBannerUntil && p.playWhenReady) banner.visibility = View.GONE
             }
@@ -1894,7 +1901,7 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- nakładki
 
-    private val hideBanner = Runnable { banner.visibility = View.GONE; tsCtl = false }
+    private val hideBanner = Runnable { banner.visibility = View.GONE; tsCtl = false; tsChBar = false }
     private val hideMessage = Runnable { message.visibility = View.GONE }
 
     private fun t(sec: Long) = hm.format(Date(sec * 1000))
@@ -2122,6 +2129,7 @@ class PlayerActivity : Activity() {
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
+            if (tsShifted && !recMode) { tsShowBanner(sticky = player?.playWhenReady == false); return true }
             // pasek kanału widoczny + timeshift: menu przewijania; w pozostałych przypadkach menu główne
             if (prefs.tsMin > 0 && !recMode && !tsShifted && banner.visibility == View.VISIBLE) tsCtlOpen() else showQuickMenu()
             return true
@@ -2134,6 +2142,8 @@ class PlayerActivity : Activity() {
             if (!suppressOkUp && !event.isCanceled) {
                 when {
                     recMode -> recTogglePause()
+                    tsShifted && tsChBar -> { tsChBar = false; showPanel() }
+                    tsShifted && banner.visibility != View.VISIBLE -> { tsChBar = true; playList.getOrNull(playIndex)?.let { showBanner(it) } }
                     tsShifted -> tsTogglePause()
                     tsCtl -> tsEnter(pause = true, backMs = 0)
                     // timeshift skonfigurowany: OK pokazuje pasek, kolejne OK otwiera listę kanałów
