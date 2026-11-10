@@ -123,7 +123,7 @@ class SettingsActivity : Activity() {
                 Item.Header("Timeshift (pauza i cofanie na żywo)"),
         Item.Action("Timeshift", { tsValue() }) { chooseTs() },
         Item.Action("Miejsce bufora timeshiftu", { tsPlace() }) { chooseTsDir() },
-        Item.Action("Start bufora po przełączeniu kanału", { tsDelayName(p.tsDelay) }) { chooseTsDelay() },
+        Item.Action("Automatyczny timeshift", { tsDelayName(p.tsDelay) }) { chooseTsDelay() },
         Item.Toggle("Zezwól na bufor w pamięci urządzenia", { p.tsInternalOk }, { v ->
             p.tsInternalOk = v
             if (!v && p.tsDir.isBlank()) p.tsMin = 0        // bez zgody i bez dysku — timeshift wyłączony
@@ -435,11 +435,11 @@ class SettingsActivity : Activity() {
         return "$cur  •  miejsce na ~${fmtMin(fit)}" + if (rec > 0) ", zalecane ${fmtMin(rec)}" else " — za mało miejsca"
     }
 
-    private fun tsDelayName(s: Int) = when { s == 0 -> "od razu"; s < 0 -> "nie uruchamiaj automatycznie (dopiero po pauzie)"; else -> "po $s s" }
+    private fun tsDelayName(s: Int) = when { s == 0 -> "od razu"; s < 0 -> "wyłączony (bufor rusza dopiero po pauzie)"; else -> "po $s s" }
 
     private fun chooseTsDelay() {
         val opts = TS_DELAYS
-        TvDialog.single(this, "Start bufora po przełączeniu kanału", opts.map { tsDelayName(it) }, opts.indexOf(p.tsDelay).coerceAtLeast(0)) { w ->
+        TvDialog.single(this, "Automatyczny timeshift", opts.map { tsDelayName(it) }, opts.indexOf(p.tsDelay).coerceAtLeast(0)) { w ->
             p.tsDelay = opts[w]
             markChanged("timeshift: start bufora = ${tsDelayName(opts[w])}")
             items = buildItems(); refresh()
@@ -804,4 +804,4 @@ class SettingsActivity : Activity() {
     }
 }
 
-private val TS_DELAYS = listOf(0, 5, 10, 15, 30, -1)
+private val TS_DELAYS = listOf(-1, 0, 5, 10, 15, 30)

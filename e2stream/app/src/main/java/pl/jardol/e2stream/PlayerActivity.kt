@@ -2100,10 +2100,6 @@ class PlayerActivity : Activity() {
                 tsMode -> { tsShifted = true; player?.playWhenReady = false; tsShowBanner(sticky = true) }   // już z bufora
                 else -> tsEnter(pause = true, backMs = 0)
             }
-            Act.TS_BACK -> when {
-                tsMode -> { tsShifted = true; tsSeek(-30_000) }
-                else -> tsEnter(pause = false, backMs = 30_000)
-            }
         }
     }
 
@@ -2244,8 +2240,7 @@ class PlayerActivity : Activity() {
             "Ścieżka dźwięku…" to { showAudioDialog() },
             "Przełączenia wg harmonogramu" to { showZapTimers() },
             *(if (prefs.tsMin > 0 && !recMode && !tsShifted) arrayOf<Pair<String, () -> Unit>>(
-                "Pauza (timeshift)" to { doAct(Act.TIMESHIFT, 0) },
-                "Cofnij 30 s (timeshift)" to { doAct(Act.TS_BACK, 0) },
+                "Pauza - Timeshift" to { doAct(Act.TIMESHIFT, 0) },
             ) else emptyArray()),
             "Ustawienia" to { openSettings() },
         )
