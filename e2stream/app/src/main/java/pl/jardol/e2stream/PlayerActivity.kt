@@ -1939,6 +1939,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun showBanner(ch: Channel) {
+        tsChBar = true
         bannerName.text = "${ch.num}   ${ch.name}"
         bannerClock.text = hm.format(Date())
         val icon = if (prefs.picons) Picons.bitmap(this, ch.ref) else null
