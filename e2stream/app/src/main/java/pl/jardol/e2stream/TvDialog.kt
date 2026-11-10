@@ -43,7 +43,7 @@ object TvDialog {
     }
 
     /** Wiersz listy: [mark] 0 — brak, 1 — zaznaczone ☑, 2 — niezaznaczone ☐, 3 — bieżący wybór ●. */
-    class Item(val title: String, val sub: String = "", var mark: Int = 0)
+    class Item(val title: String, val sub: String = "", var mark: Int = 0, val header: Boolean = false)
 
     /** Pionowy układ z górnym limitem wysokości: element z wagą (treść) kurczy się, przyciski zostają. */
     private class CappedColumn(ctx: Context, private val maxPx: Int) : LinearLayout(ctx) {
@@ -166,16 +166,19 @@ object TvDialog {
                 addView(TextView(ctx).apply { textSize = 14f; setTextColor(GREY); tag = "s"; setPadding(dp(ctx, 12), 0, 0, 0) })
             }
             val it = items[position]
+            row.minimumHeight = dp(ctx, if (it.header) 40 else 52)
             val mark = row.findViewWithTag<TextView>("mark")
-            mark.visibility = if (items.any { i -> i.mark != 0 }) View.VISIBLE else View.GONE
+            mark.visibility = if (!it.header && items.any { i -> i.mark != 0 }) View.VISIBLE else View.GONE
             mark.text = when (it.mark) { 1 -> "☑"; 2 -> "☐"; 3 -> "●"; else -> "" }
             mark.setTextColor(if (it.mark == 2) 0xFF78909C.toInt() else BLUE)
             val t = row.findViewWithTag<TextView>("t")
             t.text = it.title
-            t.setTextColor(if (it.mark == 2) GREY else WHITE)
+            t.textSize = if (it.header) 15f else 19f
+            t.setTextColor(if (it.header) BLUE else if (it.mark == 2) GREY else WHITE)
+            t.setTypeface(null, if (it.header) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
             val s = row.findViewWithTag<TextView>("s")
             s.text = it.sub
-            s.visibility = if (it.sub.isEmpty()) View.GONE else View.VISIBLE
+            s.visibility = if (it.header || it.sub.isEmpty()) View.GONE else View.VISIBLE
             return row
         }
     }
@@ -198,7 +201,9 @@ object TvDialog {
         onCancel: () -> Unit = {}, onPick: (Int) -> Unit,
     ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel) { ctx, dlg ->
         listView(ctx, items, selected).apply {
-            setOnItemClickListener { _, _, w, _ -> dlg.dismiss(); onPick(w) }
+            setOnItemClickListener { _, _, w, _ ->
+                if (!items[w].header) { dlg.dismiss(); onPick(w) }
+            }
         }
     }
 

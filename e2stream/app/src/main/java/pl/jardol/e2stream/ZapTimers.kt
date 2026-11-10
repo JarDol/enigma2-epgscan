@@ -10,9 +10,17 @@ import org.json.JSONObject
  * Działają, gdy aplikacja jest uruchomiona.
  */
 object ZapTimers {
+    const val SWITCHED = "switched"
+    const val RECORDED = "recorded"
+    const val RECORD_FAILED = "record_failed"
+    const val SKIPPED = "skipped"
+    const val REPLACED = "replaced"
+
     class Timer(val ref: String, val channel: String, val title: String, val begin: Long, val end: Long, val eventId: Int = 0) {
         fun key() = "${OpenWebif.key(ref)}@$begin"
     }
+
+    class History(val timer: Timer, val outcome: String, val completedAt: Long)
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences("zaptimers", Context.MODE_PRIVATE)
 
@@ -35,6 +43,41 @@ object ZapTimers {
         sp(ctx).edit().putString("list", arr.toString()).apply()
     }
 
+    fun history(ctx: Context): List<History> {
+        val arr = try { JSONArray(sp(ctx).getString("history", "[]")) } catch (_: Exception) { JSONArray() }
+        val out = ArrayList<History>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val t = Timer(o.optString("ref"), o.optString("ch"), o.optString("t"), o.optLong("b"), o.optLong("e"), o.optInt("id"))
+            val outcome = o.optString("outcome")
+            if (t.ref.isNotBlank() && outcome.isNotBlank()) out += History(t, outcome, o.optLong("at"))
+        }
+        return out.sortedByDescending { it.completedAt }
+    }
+
+    private fun saveHistory(ctx: Context, entries: List<History>) {
+        val arr = JSONArray()
+        for (h in entries.take(100)) {
+            val t = h.timer
+            arr.put(JSONObject().put("ref", t.ref).put("ch", t.channel).put("t", t.title)
+                .put("b", t.begin).put("e", t.end).put("id", t.eventId)
+                .put("outcome", h.outcome).put("at", h.completedAt))
+        }
+        sp(ctx).edit().putString("history", arr.toString()).apply()
+    }
+
+    fun mark(ctx: Context, t: Timer, outcome: String) {
+        val entries = history(ctx).toMutableList()
+        entries.add(0, History(t, outcome, System.currentTimeMillis() / 1000))
+        saveHistory(ctx, entries)
+    }
+
+    fun complete(ctx: Context, t: Timer, outcome: String) {
+        save(ctx, list(ctx).filter { it.key() != t.key() })
+        mark(ctx, t, outcome)
+        AppLog.i("harmonogram: ${t.channel} — ${t.title}: $outcome")
+    }
+
     fun has(ctx: Context, ref: String, begin: Long) = list(ctx).any { it.key() == Timer(ref, "", "", begin, 0).key() }
 
     fun add(ctx: Context, t: Timer) {
@@ -44,8 +87,9 @@ object ZapTimers {
     }
 
     fun replaceAt(ctx: Context, t: Timer) {
-        val l = list(ctx).filter { it.begin != t.begin } + t
-        save(ctx, l)
+        val current = list(ctx)
+        current.filter { it.begin == t.begin }.forEach { mark(ctx, it, REPLACED) }
+        save(ctx, current.filter { it.begin != t.begin } + t)
         AppLog.i("harmonogram: zastąpiono przełączenie o ${t.begin} przez ${t.channel} — ${t.title}")
     }
 

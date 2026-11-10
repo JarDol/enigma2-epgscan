@@ -114,7 +114,7 @@ class EpgUi(
 
     // ------------------------------------------------------------ audycja
 
-    fun showEvent(ev: EpgEvent, ch: Channel?) {
+    fun showEvent(ev: EpgEvent, ch: Channel?, scheduledTimer: ZapTimers.Timer? = null, onReturn: () -> Unit = {}) {
         // referencja w pełnej postaci z listy kanałów (z paczki EPG przychodzi skrócona: bez końcowego „:”)
         val ref = (ch?.ref?.takeIf { it.isNotBlank() } ?: ev.sref).let { if (it.count { c -> c == ':' } == 9) "$it:" else it }
         val name = ev.sname.ifBlank { ch?.name ?: "" }
@@ -136,8 +136,14 @@ class EpgUi(
         if (ref.isNotBlank()) {
             btns += TvDialog.Btn(if (running) "Oglądaj" else "Przełącz na kanał") { host.zapTo(ref) }
             if (ev.end > now()) btns += TvDialog.Btn("Nagraj na dekoderze") { record(ref, ev) }
+            if (scheduledTimer != null) {
+                btns += TvDialog.Btn("Usuń przełączenie") {
+                    ZapTimers.remove(a, scheduledTimer)
+                    host.message("Usunięto przełączenie o ${t(scheduledTimer.begin)}")
+                    onReturn()
+                }
             // przełączenie o początku audycji (tylko na tym telewizorze, gdy aplikacja działa)
-            if (!running && ev.begin > now()) {
+            } else if (!running && ev.begin > now()) {
                 if (ZapTimers.has(a, ref, ev.begin)) btns += TvDialog.Btn("Usuń przełączenie") {
                     ZapTimers.remove(a, ZapTimers.Timer(ref, name, ev.title, ev.begin, ev.end))
                     host.message("Usunięto przełączenie o ${t(ev.begin)}")
@@ -153,7 +159,8 @@ class EpgUi(
         val when_ = "${d(ev.begin)}  ${t(ev.begin)} – ${t(ev.end)}  (${ev.duration / 60} min)" +
             if (running) "  •  zostało ${(ev.end - n) / 60} min" else ""
         // nagłówek jak wiersz listy kanałów (ikona, kanał, tytuł, czas, postęp), niżej opis, akcje na dole
-        TvDialog.panel(a, null, null, btns, widthFrac = 0.8f, focusChip = true) { ctx, _ ->
+        TvDialog.panel(a, null, null, btns, widthFrac = 0.8f,
+            onBack = if (scheduledTimer != null) onReturn else null, focusChip = true) { ctx, _ ->
             val dp = ctx.resources.displayMetrics.density
             fun px(v: Int) = (v * dp).toInt()
             val col = android.widget.LinearLayout(ctx).apply { orientation = android.widget.LinearLayout.VERTICAL }
@@ -192,6 +199,21 @@ class EpgUi(
         }
     }
 
+    fun showScheduledEvent(timer: ZapTimers.Timer, onReturn: () -> Unit) {
+        host.message("Pobieram EPG: ${timer.title}…")
+        io.execute {
+            val ev = try {
+                val events = load(timer.ref)
+                events.firstOrNull { timer.eventId != 0 && it.id == timer.eventId }
+                    ?: events.firstOrNull { it.begin == timer.begin }
+            } catch (_: Exception) { null }
+            val event = ev ?: EpgEvent(timer.eventId, timer.begin, (timer.end - timer.begin).coerceAtLeast(0),
+                timer.title, "", "", timer.ref, timer.channel)
+            val channel = Channel(0, timer.channel, timer.ref)
+            a.runOnUiThread { showEvent(event, channel, timer, onReturn) }
+        }
+    }
+
     private fun scheduleZap(timer: ZapTimers.Timer) {
         val conflicts = ZapTimers.list(a).filter { it.begin == timer.begin && it.key() != timer.key() }
         if (conflicts.isEmpty()) {
@@ -208,21 +230,24 @@ class EpgUi(
                     host.message("Zamieniono przełączenie na ${timer.channel} — ${timer.title}")
                 },
                 TvDialog.Btn("Zostaw obecne"),
-                TvDialog.Btn("Nagraj na dekoderze") { recordTimer(timer) },
+                TvDialog.Btn("Nagraj na dekoderze") {
+                    recordTimer(timer) { ok -> ZapTimers.mark(a, timer, if (ok) ZapTimers.RECORDED else ZapTimers.RECORD_FAILED) }
+                },
             ))
     }
 
-    fun recordTimer(timer: ZapTimers.Timer) {
+    fun recordTimer(timer: ZapTimers.Timer, onResult: ((Boolean) -> Unit)? = null) {
         record(timer.ref, EpgEvent(timer.eventId, timer.begin, timer.end - timer.begin,
-            timer.title, "", "", timer.ref, timer.channel))
+            timer.title, "", "", timer.ref, timer.channel), onResult)
     }
 
-    private fun record(ref: String, ev: EpgEvent) {
+    private fun record(ref: String, ev: EpgEvent, onResult: ((Boolean) -> Unit)? = null) {
         io.execute {
             val r = try { api.timerAdd(ref, ev) } catch (e: Exception) { false to (e.message ?: e.toString()) }
             AppLog.i("nagranie: ${ev.title} ${d(ev.begin)} ${t(ev.begin)} -> ${r.first} ${r.second}")
             a.runOnUiThread {
                 host.message(if (r.first) "Nagranie ustawione: ${ev.title}" else "Nie udało się ustawić nagrania: ${r.second}")
+                onResult?.invoke(r.first)
             }
         }
     }

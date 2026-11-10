@@ -1104,7 +1104,7 @@ class PlayerActivity : Activity() {
     private var zapPrompted: String? = null          // klucz przełączenia, dla którego jest odliczanie
     private var zapDialog: android.app.Dialog? = null
 
-    /** Co 5 s: 30 s przed początkiem audycji okno z odliczaniem, o czasie przełączenie. */
+    /** 30 s przed audycją pokazuje okno; odliczanie aktualizuje się co sekundę. */
     private val zapTick = object : Runnable {
         override fun run() {
             val timers = ZapTimers.list(this@PlayerActivity)
@@ -1142,14 +1142,11 @@ class PlayerActivity : Activity() {
                         ZapTimers.remove(this@PlayerActivity, t)
                         zapPrompted = null
                         zapDialog = null
-                        epg.recordTimer(t)
+                        epg.recordTimer(t) { ok ->
+                            ZapTimers.mark(this@PlayerActivity, t, if (ok) ZapTimers.RECORDED else ZapTimers.RECORD_FAILED)
+                        }
                     },
-                    TvDialog.Btn("Anuluj") {
-                        ZapTimers.remove(this@PlayerActivity, t)
-                        zapPrompted = null
-                        zapDialog = null
-                    },
-                ), widthFrac = 0.68f, focusChip = true) { ctx, _ ->
+                ), widthFrac = 0.68f, onBack = { zapSkip(t) }, focusChip = true) { ctx, _ ->
                 LinearLayout(ctx).apply {
                     orientation = LinearLayout.VERTICAL
                     addView(TextView(ctx).apply {
@@ -1176,7 +1173,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun zapFire(t: ZapTimers.Timer) {
-        ZapTimers.remove(this, t)
+        ZapTimers.complete(this, t, ZapTimers.SWITCHED)
         zapPrompted = null
         try { zapDialog?.dismiss() } catch (_: Exception) {}
         zapDialog = null
@@ -1191,19 +1188,58 @@ class PlayerActivity : Activity() {
         showMessage("Harmonogram: ${t.channel} — ${t.title}", 4000)
     }
 
-    /** Lista zaplanowanych przełączeń: OK — usunięcie. */
+    private fun zapSkip(t: ZapTimers.Timer) {
+        ZapTimers.complete(this, t, ZapTimers.SKIPPED)
+        zapPrompted = null
+        zapDialog = null
+        AppLog.i("harmonogram: pominięto po wyjściu z okna ${t.channel} — ${t.title}")
+    }
+
+    /** Lista przyszłych i zrealizowanych przełączeń. */
     private fun showZapTimers() {
-        val l = ZapTimers.list(this)
-        if (l.isEmpty()) {
+        val future = ZapTimers.list(this)
+        val history = ZapTimers.history(this)
+        if (future.isEmpty() && history.isEmpty()) {
             showMessage("Brak zaplanowanych przełączeń — dodasz je w opisie audycji (przytrzymane OK na liście kanałów, EPG)", 6000)
             return
         }
-        TvDialog.list(this, "Przełączenia wg harmonogramu", l.map { TvDialog.Item(it.title, "${it.channel}  •  ${zapDf.format(Date(it.begin * 1000))}") },
-            hint = "OK usuń  •  WSTECZ zamknij", widthFrac = 0.7f) { w ->
-            ZapTimers.remove(this, l[w])
-            showMessage("Usunięto: ${l[w].channel} — ${l[w].title}", 3000)
-            showZapTimers()
+        val items = ArrayList<TvDialog.Item>()
+        val actions = ArrayList<(() -> Unit)?>()
+        if (future.isNotEmpty()) {
+            items += TvDialog.Item("PRZYSZŁE WYDARZENIA", header = true)
+            actions += null
+            for (timer in future) {
+                items += TvDialog.Item(timer.title, "${timer.channel}  •  ${zapDf.format(Date(timer.begin * 1000))}")
+                actions += { epg.showScheduledEvent(timer) { showZapTimers() } }
+            }
         }
+        if (history.isNotEmpty()) {
+            items += TvDialog.Item("ZREALIZOWANE", header = true)
+            actions += null
+            for (entry in history) {
+                items += TvDialog.Item(entry.timer.title,
+                    "${zapOutcomeLabel(entry.outcome)}  •  ${entry.timer.channel}  •  ${zapDf.format(Date(entry.completedAt * 1000))}")
+                actions += { showZapHistoryEntry(entry) }
+            }
+        }
+        TvDialog.list(this, "Przełączenia wg harmonogramu", items,
+            hint = "OK szczegóły  •  WSTECZ zamknij", widthFrac = 0.72f) { w -> actions[w]?.invoke() }
+    }
+
+    private fun zapOutcomeLabel(outcome: String) = when (outcome) {
+            ZapTimers.SWITCHED -> "Przełączono"
+            ZapTimers.RECORDED -> "Nagrano na dekoderze"
+            ZapTimers.RECORD_FAILED -> "Nagranie nieudane"
+            ZapTimers.SKIPPED -> "Pominięto przy wyjściu"
+            ZapTimers.REPLACED -> "Zastąpiono innym timerem"
+            else -> outcome
+        }
+
+    private fun showZapHistoryEntry(entry: ZapTimers.History) {
+        TvDialog.confirm(this, zapOutcomeLabel(entry.outcome),
+            "${entry.timer.channel}\n${entry.timer.title}\n${zapDf.format(Date(entry.completedAt * 1000))}",
+            listOf(TvDialog.Btn("Wróć do harmonogramu") { showZapTimers() }),
+            onBack = { showZapTimers() })
     }
 
     // ---------------------------------------------------------------- timeshift
