@@ -2122,7 +2122,8 @@ class PlayerActivity : Activity() {
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
-            if (prefs.tsMin > 0 && !recMode && !tsShifted) showPanel() else showQuickMenu()
+            // pasek kanału widoczny + timeshift: menu przewijania; w pozostałych przypadkach menu główne
+            if (prefs.tsMin > 0 && !recMode && !tsShifted && banner.visibility == View.VISIBLE) tsCtlOpen() else showQuickMenu()
             return true
         }
         return super.onKeyLongPress(keyCode, event)
@@ -2135,9 +2136,9 @@ class PlayerActivity : Activity() {
                     recMode -> recTogglePause()
                     tsShifted -> tsTogglePause()
                     tsCtl -> tsEnter(pause = true, backMs = 0)
-                    // timeshift skonfigurowany: OK pokazuje pasek, OK na pasku otwiera menu przewijania
-                    prefs.tsMin > 0 && playList.isNotEmpty() ->
-                        if (banner.visibility == View.VISIBLE) tsCtlOpen() else playList.getOrNull(playIndex)?.let { showBanner(it) }
+                    // timeshift skonfigurowany: OK pokazuje pasek, kolejne OK otwiera listę kanałów
+                    prefs.tsMin > 0 && playList.isNotEmpty() && banner.visibility != View.VISIBLE ->
+                        playList.getOrNull(playIndex)?.let { showBanner(it) }
                     else -> showPanel()
                 }
             }
