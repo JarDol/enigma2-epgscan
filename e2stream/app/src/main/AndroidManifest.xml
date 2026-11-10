@@ -34,6 +34,16 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ZapPromptActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.zap_prompt"
+            android:theme="@style/SettingsTheme" />
+
         <receiver
             android:name=".ZapAlarmReceiver"
             android:exported="false" />

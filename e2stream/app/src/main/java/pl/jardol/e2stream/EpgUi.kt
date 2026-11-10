@@ -119,19 +119,6 @@ class EpgUi(
         val ref = (ch?.ref?.takeIf { it.isNotBlank() } ?: ev.sref).let { if (it.count { c -> c == ':' } == 9) "$it:" else it }
         val name = ev.sname.ifBlank { ch?.name ?: "" }
         val running = ev.begin <= now() && ev.end > now()
-        val head = buildString {
-            append("${d(ev.begin)}  ${t(ev.begin)}–${t(ev.end)}  (${ev.duration / 60} min)")
-            append(progress(ev))
-            if (name.isNotBlank()) append("\n$name")
-        }
-        val body = buildString {
-            if (ev.shortDesc.isNotBlank()) append(ev.shortDesc)
-            if (ev.longDesc.isNotBlank() && ev.longDesc != ev.shortDesc) {
-                if (isNotEmpty()) append("\n\n")
-                append(ev.longDesc)
-            }
-            if (isEmpty()) append("Brak opisu")
-        }
         val btns = mutableListOf<TvDialog.Btn>()
         if (ref.isNotBlank()) {
             btns += TvDialog.Btn(if (running) "Oglądaj" else "Przełącz na kanał") { host.zapTo(ref) }
@@ -153,49 +140,10 @@ class EpgUi(
             }
         }
         if (btns.isEmpty()) btns += TvDialog.Btn("Zamknij")      // WSTECZ też zamyka
-        val scale = UiScale.pct(Prefs(a).uiEpgFont)
-        val n = now()
-        val pct = if (running && ev.duration > 0) ((n - ev.begin) * 1000 / ev.duration).toInt() else -1
-        val when_ = "${d(ev.begin)}  ${t(ev.begin)} – ${t(ev.end)}  (${ev.duration / 60} min)" +
-            if (running) "  •  zostało ${(ev.end - n) / 60} min" else ""
         // nagłówek jak wiersz listy kanałów (ikona, kanał, tytuł, czas, postęp), niżej opis, akcje na dole
         TvDialog.panel(a, null, null, btns, widthFrac = 0.8f,
             onBack = if (scheduledTimer != null) onReturn else null, focusChip = true) { ctx, _ ->
-            val dp = ctx.resources.displayMetrics.density
-            fun px(v: Int) = (v * dp).toInt()
-            val col = android.widget.LinearLayout(ctx).apply { orientation = android.widget.LinearLayout.VERTICAL }
-            val head = android.widget.LinearLayout(ctx).apply {
-                orientation = android.widget.LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-            }
-            val bmp = if (ref.isNotBlank()) try { Picons.bitmap(ctx, ref) } catch (_: Exception) { null } else null
-            if (bmp != null) head.addView(android.widget.ImageView(ctx).apply {
-                setImageBitmap(bmp); scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-            }, android.widget.LinearLayout.LayoutParams(px(96), px(56)).apply { marginEnd = px(16) })
-            val info = android.widget.LinearLayout(ctx).apply { orientation = android.widget.LinearLayout.VERTICAL }
-            if (name.isNotBlank()) info.addView(TextView(ctx).apply {
-                text = name; textSize = 15f * scale; setTextColor(TvDialog.GREY)
-            })
-            info.addView(TextView(ctx).apply {
-                text = ev.title; textSize = 23f * scale; setTextColor(TvDialog.WHITE)
-            })
-            val tl = android.widget.LinearLayout(ctx).apply {
-                orientation = android.widget.LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-            }
-            tl.addView(TextView(ctx).apply { text = when_; textSize = 15f * scale; setTextColor(TvDialog.BLUE) })
-            if (pct >= 0) tl.addView(android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
-                max = 1000; progress = pct.coerceIn(0, 1000); progressDrawable = ctx.getDrawable(R.drawable.progress_epg)
-            }, android.widget.LinearLayout.LayoutParams(0, px(5), 1f).apply { marginStart = px(16) })
-            info.addView(tl)
-            head.addView(info, android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            col.addView(head)
-            col.addView(android.view.View(ctx).apply { setBackgroundColor(0xFF37474F.toInt()) },
-                android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, px(1)).apply {
-                    topMargin = px(12); bottomMargin = px(12) })
-            col.addView(TvDialog.scrollText(ctx, body, 19f * scale),
-                android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-            col
+            EventCard.content(ctx, ev, ref, name, EventCard.body(ev).ifEmpty { "Brak opisu" })
         }
     }
 

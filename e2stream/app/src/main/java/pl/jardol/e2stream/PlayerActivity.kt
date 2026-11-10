@@ -51,6 +51,9 @@ class PlayerActivity : Activity() {
 
     companion object {
         const val EXTRA_WAKE_TIMER_KEY = "zap_alarm_timer_key"
+        const val EXTRA_WAKE_TEST_ID = "zap_alarm_test_id"
+        const val EXTRA_SCHEDULE_REF = "schedule_channel_ref"
+        const val ACTION_SCHEDULE_ZAP = "pl.jardol.e2stream.SCHEDULE_ZAP"
     }
 
     private lateinit var prefs: Prefs
@@ -118,13 +121,19 @@ class PlayerActivity : Activity() {
     private var lastStartMs = -1L
     private var audioAppliedGen = -1
     private var wakeTimerKey: String? = null
+    private var wakeTestId: String? = null
+    private var scheduledChannelRef: String? = null
+    private var scheduledAppliedRef: String? = null      // kanał z harmonogramu dostrojony przed końcem startu
+    private var scheduledAppliedAt = 0L
 
     // ---------------------------------------------------------------- cykl życia
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
-        if (wakeTimerKey != null && Build.VERSION.SDK_INT >= 27) {
+        wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
+        scheduledChannelRef = intent.getStringExtra(EXTRA_SCHEDULE_REF)
+        if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
@@ -145,6 +154,9 @@ class PlayerActivity : Activity() {
             override fun message(t: String) = showMessage(t, 4000)
         })
         AppLog.i("=== Start E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} | ${prefs.displayName} | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) | ekran: ${displayInfo()}")
+        if (wakeTimerKey != null || wakeTestId != null) {
+            AppLog.i("wybudzanie: PlayerActivity uruchomiona z alarmu key=$wakeTimerKey testId=$wakeTestId")
+        }
 
         playerView = findViewById(R.id.playerView)
         vlcLayout = findViewById(R.id.vlcLayout)
@@ -225,19 +237,36 @@ class PlayerActivity : Activity() {
         ZapWakeAlarms.sync(this)
         if (safeMode) return
         startUp()
+        showWakeTestResult()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
-        if (wakeTimerKey != null && Build.VERSION.SDK_INT >= 27) {
+        wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
+        scheduledChannelRef = intent.getStringExtra(EXTRA_SCHEDULE_REF) ?: scheduledChannelRef
+        AppLog.i("wybudzanie: onNewIntent key=$wakeTimerKey testId=$wakeTestId")
+        if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
         zapPrompted = null
         ui.removeCallbacks(zapTick)
         ui.post(zapTick)
+        showWakeTestResult()
+        applyScheduledChannel()
+    }
+
+    private fun showWakeTestResult() {
+        val id = wakeTestId ?: return
+        wakeTestId = null
+        AppLog.i("wybudzanie: pokazuję popup testu id=$id")
+        ui.post {
+            if (!isFinishing) TvDialog.confirm(this, "Test wybudzania dotarł",
+                "Android dostarczył RTC_WAKEUP i uruchomił E2Stream.\n\nJeśli nie naciskałeś pilota, pełnoekranowe powiadomienie działa.\nId testu: $id",
+                listOf(TvDialog.Btn("Zamknij")))
+        }
     }
 
     private fun startUp() {
@@ -286,6 +315,7 @@ class PlayerActivity : Activity() {
             loadBouquets()
         } else {
             currentUrl?.let { startStream(it) }
+            applyScheduledChannel()
         }
     }
 
@@ -892,8 +922,18 @@ class PlayerActivity : Activity() {
                     }
                     message.visibility = View.GONE
                     val ci = ch.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(wantC) }.let { if (it < 0) 0 else it }
-                    playIndex = -1
-                    if (ch.isNotEmpty()) playIn(bi, ch, ci)
+                    // kanał z harmonogramu wybrany w trakcie tego startu ma pierwszeństwo przed startowym
+                    val forced = scheduledAppliedRef?.takeIf { android.os.SystemClock.elapsedRealtime() - scheduledAppliedAt < 30_000 }
+                    scheduledAppliedRef = null
+                    if (ch.isNotEmpty() && (forced == null || playList.isEmpty())) {
+                        playIndex = -1
+                        playIn(bi, ch, ci)
+                    }
+                    if (forced != null) {
+                        AppLog.i("harmonogram: start nie nadpisuje kanału z harmonogramu ${OpenWebif.key(forced)}")
+                        zapTo(forced)
+                    }
+                    applyScheduledChannel()
                 }
             } catch (e: Exception) {
                 AppLog.i("błąd połączenia z OpenWebif: $e")
@@ -902,6 +942,16 @@ class PlayerActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun applyScheduledChannel() {
+        val ref = scheduledChannelRef ?: return
+        if (bouquets.isEmpty()) return
+        scheduledChannelRef = null
+        scheduledAppliedRef = ref
+        scheduledAppliedAt = android.os.SystemClock.elapsedRealtime()
+        AppLog.i("harmonogram: Oglądaj — dostrajam kanał ${OpenWebif.key(ref)}")
+        ui.post { if (!isFinishing) zapTo(ref, forceTune = true) }
     }
 
     /** Nowa lista bukietów (zmiana widocznych) bez przerywania odtwarzanego kanału. */
@@ -1160,16 +1210,18 @@ class PlayerActivity : Activity() {
                     ui.postDelayed(this, 5000)
                     return
                 }
-                TvDialog.setButtonLabel(zapDialog, 0, "Oglądaj (${zapCountdown(t.begin - now)})")
+                TvDialog.setButtonLabel(zapDialog, 0, "Przełącz (${zapCountdown(t.begin - now)})")
                 ui.postDelayed(this, 1000)
                 return
             }
             zapPrompted = t.key()
             wakeTimerKey = null
             AppLog.i("harmonogram: za ${t.begin - now} s przełączenie na ${t.channel}")
-            zapDialog = TvDialog.panel(this@PlayerActivity, "Przełączenie o ${hm.format(Date(t.begin * 1000))}", null,
+            val card = EventCard.eventOf(t, this@PlayerActivity)
+            val body = EventCard.cachedBody(this@PlayerActivity, t)
+            zapDialog = TvDialog.panel(this@PlayerActivity, null, null,
                 listOf(
-                    TvDialog.Btn("Oglądaj (${zapCountdown(t.begin - now)})") { zapFire(t) },
+                    TvDialog.Btn("Przełącz (${zapCountdown(t.begin - now)})") { zapFire(t) },
                     TvDialog.Btn("Nagraj na dekoderze") {
                         ZapTimers.remove(this@PlayerActivity, t)
                         zapPrompted = null
@@ -1178,22 +1230,8 @@ class PlayerActivity : Activity() {
                             ZapTimers.mark(this@PlayerActivity, t, if (ok) ZapTimers.RECORDED else ZapTimers.RECORD_FAILED)
                         }
                     },
-                ), widthFrac = 0.68f, onBack = { zapSkip(t) }, focusChip = true) { ctx, _ ->
-                LinearLayout(ctx).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(TextView(ctx).apply {
-                        text = t.channel
-                        textSize = 16f; setTextColor(TvDialog.GREY)
-                    })
-                    addView(TextView(ctx).apply {
-                        text = t.title
-                        textSize = 23f; setTextColor(TvDialog.WHITE)
-                    })
-                    addView(TextView(ctx).apply {
-                        text = "${zapDf.format(Date(t.begin * 1000))} – ${hm.format(Date(t.end * 1000))}"
-                        textSize = 15f; setTextColor(TvDialog.BLUE)
-                    })
-                }
+                ), widthFrac = 0.8f, onBack = { zapSkip(t) }, focusChip = true) { ctx, _ ->
+                EventCard.content(ctx, card, t.ref, t.channel, body)
             }
             ui.postDelayed(this, 1000)
         }

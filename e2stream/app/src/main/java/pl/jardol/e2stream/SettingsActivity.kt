@@ -158,6 +158,13 @@ class SettingsActivity : Activity() {
         Item.Action("Mapowanie klawiszy pilota") { showKeyMap() },
         Item.Toggle("Po uruchomieniu wróć do ostatniego kanału", { p.resumeLast }, { p.resumeLast = it }),
         Item.Toggle("Budź TV dla harmonogramu (eksperymentalne)", { p.wakeForZap }, { setWakeForZap(it) }),
+        Item.Action("Diagnostyka wybudzania", { if (p.wakeForZap) "status i test alarmu" else "najpierw włącz wybudzanie" }) {
+            TvDialog.confirm(this, "Diagnostyka wybudzania", ZapWakeAlarms.diagnostics(this), listOf(
+                TvDialog.Btn("Test 60 s") { toast(ZapWakeAlarms.scheduleTest(this)) },
+                TvDialog.Btn("Wyślij log") { Tools.uploadLog(p, true) { toast(it) } },
+                TvDialog.Btn("Zamknij"),
+            ))
+        },
         Item.Action("Po uruchomieniu przełącz na kanał", {
             if (p.resumeLast) "nieaktywne (włączony powrót do ostatniego)" else p.startChannelName.ifBlank { "pierwszy kanał" }
         }) { if (p.resumeLast) toast("Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”") else chooseStartChannel() },

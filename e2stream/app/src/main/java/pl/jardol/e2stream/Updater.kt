@@ -97,7 +97,10 @@ object Updater {
 
     fun download(ctx: Context, info: Info, progress: (Int) -> Unit): File {
         val dir = ctx.externalCacheDir ?: ctx.cacheDir
+        if (!dir.exists() && !dir.mkdirs()) throw IOException("Nie można utworzyć katalogu pobierania")
         val out = File(dir, info.name)
+        val temp = File(dir, "${info.name}.part")
+        temp.delete()
         var url = URL(info.url)
         var c: HttpURLConnection
         var hops = 0
@@ -115,15 +118,18 @@ object Updater {
                 hops++
                 continue
             }
-            if (code != 200) throw IOException("HTTP $code")
+            if (code != 200) {
+                c.disconnect()
+                throw IOException("HTTP $code")
+            }
             break
         }
         try {
-            val total = c.contentLength.toLong()
+            val total = c.getHeaderField("Content-Length")?.toLongOrNull() ?: c.contentLength.toLong()
+            var sum = 0L
             c.inputStream.use { input ->
-                out.outputStream().use { o ->
+                temp.outputStream().use { o ->
                     val buf = ByteArray(64 * 1024)
-                    var sum = 0L
                     var lastPct = -1
                     while (true) {
                         val n = input.read(buf)
@@ -137,6 +143,15 @@ object Updater {
                     }
                 }
             }
+            if (sum == 0L) throw IOException("Pobrany plik jest pusty")
+            if (total > 0 && sum != total) throw IOException("Niekompletne pobranie APK: $sum z $total bajtów")
+            val archive = ctx.packageManager.getPackageArchiveInfo(temp.absolutePath, 0)
+                ?: throw IOException("Pobrany plik nie jest poprawnym APK")
+            if (archive.packageName != ctx.packageName) throw IOException("Nieprawidłowy pakiet APK: ${archive.packageName}")
+            if (archive.versionName != info.version) throw IOException("Nieprawidłowa wersja APK: ${archive.versionName}, oczekiwano ${info.version}")
+            if (out.exists() && !out.delete()) throw IOException("Nie można zastąpić poprzedniego pliku APK")
+            if (!temp.renameTo(out)) throw IOException("Nie można przygotować pliku APK do instalacji")
+            AppLog.i("aktualizacja: APK zweryfikowany package=${archive.packageName} version=${archive.versionName} bytes=$sum")
         } finally {
             c.disconnect()
         }
