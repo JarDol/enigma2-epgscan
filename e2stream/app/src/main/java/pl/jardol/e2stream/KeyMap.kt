@@ -5,6 +5,8 @@ import android.view.KeyEvent
 /** Akcje, które można przypisać klawiszom pilota. */
 enum class Act(val label: String) {
     NONE("— brak —"),
+    DEFAULT_OK("Domyślne działanie OK"),
+    CHANNEL_BANNER("Pokaż pasek kanału"),
     CHANNEL_LIST("Lista kanałów"),
     EPG_EVENT("EPG wydarzenia (opis bieżącej audycji)"),
     EPG_CHANNEL("EPG kanału"),
@@ -55,20 +57,50 @@ object KeyMap {
         KeyEvent.KEYCODE_MEDIA_STOP to Act.TS_LIVE,
     )
 
-    fun load(prefs: Prefs): MutableMap<Int, Act> {
-        val m = LinkedHashMap(defaults)
-        for (part in prefs.keyMap.split(",")) {
+    val navigation = linkedMapOf(
+        KeyEvent.KEYCODE_DPAD_CENTER to "OK",
+        KeyEvent.KEYCODE_DPAD_LEFT to "Lewo",
+        KeyEvent.KEYCODE_DPAD_RIGHT to "Prawo",
+        KeyEvent.KEYCODE_DPAD_UP to "Góra",
+        KeyEvent.KEYCODE_DPAD_DOWN to "Dół",
+    )
+
+    fun navigationMap(base: Map<Int, Act>, overrides: String): MutableMap<Int, Act> {
+        val result = linkedMapOf(KeyEvent.KEYCODE_DPAD_CENTER to Act.DEFAULT_OK)
+        for (code in navigation.keys.filter { it != KeyEvent.KEYCODE_DPAD_CENTER }) {
+            result[code] = base[code] ?: Act.NONE
+        }
+        parse(overrides).forEach { (code, act) ->
+            if (code in navigation && (act != Act.DEFAULT_OK || code == KeyEvent.KEYCODE_DPAD_CENTER)) {
+                result[code] = act
+            }
+        }
+        return result
+    }
+
+    fun parse(value: String): MutableMap<Int, Act> {
+        val m = linkedMapOf<Int, Act>()
+        for (part in value.split(",")) {
             val kv = part.split("=")
             if (kv.size != 2) continue
             val code = kv[0].trim().toIntOrNull() ?: continue
-            val act = try { Act.valueOf(kv[1].trim()) } catch (_: Exception) { continue }
+            val act = try { Act.valueOf(kv[1].trim()) } catch (_: IllegalArgumentException) { continue }
             m[code] = act
         }
         return m
     }
 
+    fun encode(m: Map<Int, Act>): String =
+        m.entries.joinToString(",") { "${it.key}=${it.value.name}" }
+
+    fun load(prefs: Prefs): MutableMap<Int, Act> {
+        val m = LinkedHashMap(defaults)
+        m.putAll(parse(prefs.keyMap))
+        return m
+    }
+
     fun save(prefs: Prefs, m: Map<Int, Act>) {
-        prefs.keyMap = m.entries.joinToString(",") { "${it.key}=${it.value.name}" }
+        prefs.keyMap = encode(m)
     }
 
     fun keyName(code: Int): String = KeyEvent.keyCodeToString(code).removePrefix("KEYCODE_")

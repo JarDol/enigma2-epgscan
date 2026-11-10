@@ -37,7 +37,7 @@ object SyncManager {
         "logFtp", "ftpUser", "ftpPass", "ftpDir", "saveTs", "tsRingMb", "tsFtp", "cleanTs",
         "hiddenBouquets", "pin", "pinMin", "invertUpDown", "bannerSec", "tsBannerSec",
         "channelListSec", "epgEventSec", "epgChannelSec", "epgMultiSec", "resumeLast",
-        "startBouquet", "startChannel", "startChannelName", "autoUpdate", "keyMap",
+        "startBouquet", "startChannel", "startChannelName", "autoUpdate", "keyMap", "keyMapNoBanner", "keyMapBanner",
         "epgDaily", "epgHour", "epgDays", "epgUpdateMode", "picons", "piconDir", "showStats",
     )
 

@@ -111,6 +111,7 @@ class PlayerActivity : Activity() {
     private var safeMode = false
     private var numberBuffer = ""
     private var suppressOkUp = false
+    private var okAction = Act.DEFAULT_OK
     private val backExit = DoubleBackExit()
     private var streamGen = 0
     private var analyzer: TsAnalyzer? = null
@@ -2129,10 +2130,6 @@ class PlayerActivity : Activity() {
             digit(keyCode - KeyEvent.KEYCODE_NUMPAD_0); return true
         }
 
-        keyMap[keyCode]?.let { act ->
-            if (act != Act.NONE) { doAct(act, keyCode); return true }
-        }
-
         if (isOk(keyCode)) {
             if (event.repeatCount == 0) {
                 suppressOkUp = false
@@ -2140,10 +2137,19 @@ class PlayerActivity : Activity() {
                     commitNumber()
                     suppressOkUp = true
                 } else {
+                    okAction = navigationAction(KeyEvent.KEYCODE_DPAD_CENTER)
                     event.startTracking()
                 }
             }
             return true
+        }
+
+        if (keyCode in KeyMap.navigation) {
+            doAct(navigationAction(keyCode), keyCode)
+            return true
+        }
+        keyMap[keyCode]?.let { act ->
+            if (act != Act.NONE) { doAct(act, keyCode); return true }
         }
 
         when (keyCode) {
@@ -2178,10 +2184,11 @@ class PlayerActivity : Activity() {
             if (!suppressOkUp && !event.isCanceled) {
                 when {
                     recMode -> recTogglePause()
+                    tsCtl && !tsChBar && banner.visibility == View.VISIBLE ->
+                        if (tsMode) tsTogglePause() else tsEnter(pause = true, backMs = 0)
+                    okAction != Act.DEFAULT_OK -> doAct(okAction, KeyEvent.KEYCODE_DPAD_CENTER)
                     tsCtl && tsChBar && banner.visibility == View.VISIBLE -> showPanel()
                     tsCtl && banner.visibility != View.VISIBLE -> playList.getOrNull(playIndex)?.let { showBanner(it) }
-                    tsCtl -> if (tsMode) tsTogglePause() else tsEnter(pause = true, backMs = 0)
-                    // timeshift skonfigurowany: OK pokazuje pasek, kolejne OK otwiera listę kanałów
                     prefs.tsMin > 0 && playList.isNotEmpty() && banner.visibility != View.VISIBLE ->
                         playList.getOrNull(playIndex)?.let { showBanner(it) }
                     else -> showPanel()
@@ -2193,10 +2200,17 @@ class PlayerActivity : Activity() {
         return super.onKeyUp(keyCode, event)
     }
 
+    private fun navigationAction(code: Int): Act {
+        val withBanner = banner.visibility == View.VISIBLE && tsChBar
+        val overrides = if (withBanner) prefs.keyMapBanner else prefs.keyMapNoBanner
+        return KeyMap.navigationMap(keyMap, overrides).getValue(code)
+    }
+
     private fun doAct(act: Act, keyCode: Int) {
         val inv = prefs.invertUpDown && (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN)
         when (act) {
-            Act.NONE -> {}
+            Act.NONE, Act.DEFAULT_OK -> {}
+            Act.CHANNEL_BANNER -> playList.getOrNull(playIndex)?.let { showBanner(it) }
             Act.CHANNEL_LIST -> showPanel()
             Act.EPG_EVENT -> epg.showCurrentEvent()
             Act.EPG_CHANNEL -> epg.showChannelEpg()

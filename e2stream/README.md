@@ -59,6 +59,10 @@ EPG kanału pokazuje datę oraz godzinę rozpoczęcia i zakończenia każdej aud
 Przy włączonym timeshifcie długie OK na pasku kanału otwiera pasek przewijania.
 Strzałki przewijają tylko na widocznym pasku timeshiftu, również po dotarciu do transmisji na żywo;
 na pasku kanału i po ukryciu paska działają jak podczas zwykłego oglądania.
+W ustawieniach Ogólne dostępne są osobne mapowania OK i strzałek dla ekranu bez paska oraz z paskiem kanału.
+Domyślnie strzałki zachowują dotychczasowe przypisania, również zmienione w starszych wersjach,
+a OK zachowuje dotychczasowe działanie. Długie OK i obsługa paska timeshiftu pozostają bez zmian;
+mapowanie nie dotyczy też listy kanałów ani odtwarzania nagrań. Każde z dwóch mapowań można osobno przywrócić.
 Pasek timeshiftu pozostaje na ekranie w czasie pauzy, a po wznowieniu znika po czasie ustawionym w Ogólnych.
 Opcja „Wstecz na pustym ekranie → na żywo” pozwala wrócić z cofniętego strumienia do transmisji na żywo.
 Wyjście z aplikacji wymaga dwóch osobnych naciśnięć WSTECZ; przytrzymanie nie zamyka aplikacji.

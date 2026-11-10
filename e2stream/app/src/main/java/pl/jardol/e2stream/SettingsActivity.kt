@@ -178,6 +178,8 @@ class SettingsActivity : Activity() {
             "Ogólne" -> listOf(
         Item.Action("Widoczne bukiety", { if (p.hiddenBouquets.isEmpty()) "wszystkie" else "ukryte: ${p.hiddenBouquets.size}" }) { chooseBouquets() },
         Item.Action("Mapowanie klawiszy pilota") { showKeyMap() },
+        Item.Action("Mapowanie OK i strzałek — bez paska") { showNavigationMap(false) },
+        Item.Action("Mapowanie OK i strzałek — z paskiem kanału") { showNavigationMap(true) },
         Item.Toggle("Po uruchomieniu wróć do ostatniego kanału", { p.resumeLast }, { p.resumeLast = it }),
         Item.Toggle("Budź TV dla harmonogramu (eksperymentalne)", { p.wakeForZap }, { setWakeForZap(it) }),
         *(if (BuildConfig.WAKE_DIAGNOSTICS) arrayOf<Item>(Item.Action("Diagnostyka wybudzania", { if (p.wakeForZap) "status i test alarmu" else "najpierw włącz wybudzanie" }) {
@@ -749,7 +751,7 @@ class SettingsActivity : Activity() {
     // ------------------------------------------------------------ mapowanie klawiszy
 
     private fun showKeyMap() {
-        val entries = KeyMap.load(p).entries.toList()
+        val entries = KeyMap.load(p).entries.filter { it.key !in KeyMap.navigation }
         val rows = listOf(TvDialog.Item("+ Dodaj / zmień klawisz", "naciśnij go na pilocie")) +
             entries.map { TvDialog.Item(KeyMap.keyName(it.key), it.value.label) } +
             listOf(TvDialog.Item("Przywróć domyślne"))
@@ -772,6 +774,7 @@ class SettingsActivity : Activity() {
         dlg.setOnKeyListener { d, code, e ->
             if (e.action != KeyEvent.ACTION_UP) return@setOnKeyListener true
             if (code == KeyEvent.KEYCODE_BACK) { d.dismiss(); return@setOnKeyListener true }
+            if (code in KeyMap.navigation) { toast("Użyj mapowania OK i strzałek"); return@setOnKeyListener true }
             if (code in KeyMap.fixed) { toast("Klawisza ${KeyMap.keyName(code)} nie można przypisać"); return@setOnKeyListener true }
             d.dismiss()
             chooseAct(code)
@@ -781,13 +784,41 @@ class SettingsActivity : Activity() {
 
     private fun chooseAct(code: Int) {
         val m = KeyMap.load(p)
-        val acts = Act.values()
+        val acts = Act.values().filter { it != Act.DEFAULT_OK }
         val cur = acts.indexOf(m[code] ?: Act.NONE)
         TvDialog.single(this, "Klawisz ${KeyMap.keyName(code)}", acts.map { it.label }, cur, onCancel = { showKeyMap() }) { w ->
             m[code] = acts[w]
             KeyMap.save(p, m)
             AppLog.i("mapowanie: ${KeyMap.keyName(code)} → ${acts[w].name}")
             showKeyMap()
+        }
+    }
+
+    private fun showNavigationMap(withBanner: Boolean) {
+        val stored = if (withBanner) p.keyMapBanner else p.keyMapNoBanner
+        val map = KeyMap.navigationMap(KeyMap.load(p), stored)
+        val keys = KeyMap.navigation.keys.toList()
+        val title = if (withBanner) "OK i strzałki — pasek kanału" else "OK i strzałki — bez paska"
+        val rows = keys.map { TvDialog.Item(KeyMap.navigation.getValue(it), map.getValue(it).label) } +
+            TvDialog.Item("Przywróć domyślne")
+        TvDialog.list(this, title, rows) { selected ->
+            if (selected == keys.size) {
+                if (withBanner) p.keyMapBanner = "" else p.keyMapNoBanner = ""
+                markChanged("mapowanie: $title — przywrócono domyślne")
+                showNavigationMap(withBanner)
+            } else {
+                val code = keys[selected]
+                val acts = Act.values().filter { it != Act.DEFAULT_OK || code == KeyEvent.KEYCODE_DPAD_CENTER }
+                val current = acts.indexOf(map.getValue(code))
+                TvDialog.single(this, "${KeyMap.navigation.getValue(code)} — $title",
+                    acts.map { it.label }, current, onCancel = { showNavigationMap(withBanner) }) { index ->
+                    val overrides = KeyMap.parse(stored)
+                    overrides[code] = acts[index]
+                    if (withBanner) p.keyMapBanner = KeyMap.encode(overrides) else p.keyMapNoBanner = KeyMap.encode(overrides)
+                    markChanged("mapowanie: $title ${KeyMap.navigation.getValue(code)} → ${acts[index].name}")
+                    showNavigationMap(withBanner)
+                }
+            }
         }
     }
 

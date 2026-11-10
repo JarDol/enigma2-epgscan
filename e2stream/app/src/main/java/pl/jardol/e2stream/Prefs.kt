@@ -240,6 +240,14 @@ class Prefs(ctx: Context) {
         get() = s("keyMap")
         set(v) = putS("keyMap", v)
 
+    var keyMapNoBanner: String
+        get() = s("keyMapNoBanner")
+        set(v) = putS("keyMapNoBanner", v)
+
+    var keyMapBanner: String
+        get() = s("keyMapBanner")
+        set(v) = putS("keyMapBanner", v)
+
     /** Codzienne pobieranie EPG wg harmonogramu. */
     var epgDaily: Boolean
         get() = sp.getBoolean("epgDaily", true)
