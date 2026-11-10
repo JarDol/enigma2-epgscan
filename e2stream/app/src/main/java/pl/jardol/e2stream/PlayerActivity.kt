@@ -1570,8 +1570,8 @@ class PlayerActivity : Activity() {
 
     /** Klawisze w trybie timeshiftu. */
     private fun tsKey(code: Int, e: KeyEvent): Boolean {
-        // na pasku kanału góra/dół zmieniają kanał (obsługa w keyMap), nie przewijają
-        if (tsChBar && banner.visibility == View.VISIBLE && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN)) return false
+        // na pasku kanału strzałki działają jak na żywo (EPG, multi-EPG, zmiana kanału — keyMap), nie przewijają
+        if (tsChBar && banner.visibility == View.VISIBLE && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) return false
         when (code) {
             KeyEvent.KEYCODE_DPAD_LEFT -> tsSeek(-prefs.tsStepSec * 1000L)
             KeyEvent.KEYCODE_DPAD_RIGHT -> tsSeek(prefs.tsStepSec * 1000L)
