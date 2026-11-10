@@ -435,7 +435,7 @@ class SettingsActivity : Activity() {
         return "$cur  •  miejsce na ~${fmtMin(fit)}" + if (rec > 0) ", zalecane ${fmtMin(rec)}" else " — za mało miejsca"
     }
 
-    private fun tsDelayName(s: Int) = if (s == 0) "od razu" else "po $s s"
+    private fun tsDelayName(s: Int) = when { s == 0 -> "od razu"; s < 0 -> "nie uruchamiaj automatycznie (dopiero po pauzie)"; else -> "po $s s" }
 
     private fun chooseTsDelay() {
         val opts = TS_DELAYS
@@ -804,4 +804,4 @@ class SettingsActivity : Activity() {
     }
 }
 
-private val TS_DELAYS = listOf(0, 5, 10, 15, 30)
+private val TS_DELAYS = listOf(0, 5, 10, 15, 30, -1)

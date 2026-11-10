@@ -34,6 +34,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         private set
     @Volatile var failed: String? = null
         private set
+    @Volatile var trimmed = false       // najstarsza minuta już wypadła z okna
+        private set
     @Volatile var shrunk = false        // okno skrócone z braku miejsca
         private set
 
@@ -52,6 +54,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         total = 0
         failed = null
         shrunk = false
+        trimmed = false
         pendLen = 0
         session = newSession()
         cleanupAsync(dir, session)
@@ -132,6 +135,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
 
     private fun dropOldest() {
         val s = segs.removeAt(0)
+        trimmed = true
         val f = s.file
         Thread({ f.delete() }, "timeshift-usun").start()      // usuwanie dużego pliku nie wstrzymuje zapisu
     }

@@ -1327,7 +1327,7 @@ class PlayerActivity : Activity() {
     /** Nowy kanał (albo zmiana ustawień): bufor od zera, odtwarzanie na żywo. */
     private fun tsNewChannel() {
         if (tsMode) tsLeave()
-        tsWriteFrom = SystemClock.elapsedRealtime() + prefs.tsDelay * 1000L
+        tsWriteFrom = if (prefs.tsDelay < 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + prefs.tsDelay * 1000L
         val min = prefs.tsMin
         if (min <= 0) {
             tsBuf?.reset(); tsBuf = null
@@ -1395,14 +1395,18 @@ class PlayerActivity : Activity() {
     private fun tsEnter(pause: Boolean, backMs: Long) {
         val b = tsBuf
         val url = currentUrl
-        if (prefs.tsMin <= 0) { showMessage("Timeshift wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift", 5000); return }
+        if (prefs.tsMin <= 0) { showMessage("Brak skonfigurowanego timeshiftu — Ustawienia → Odtwarzanie i obraz → Timeshift", 5000); return }
         if (b == null || url == null || recMode) return
         b.failed?.let { showMessage("Timeshift niedostępny: $it", 5000); return }
-        if (b.total < 2_000_000) { showMessage("Timeshift: bufor jeszcze pusty — zapis rusza ${if (prefs.tsDelay > 0) "${prefs.tsDelay} s " else ""}po przełączeniu kanału", 4000); return }
+        // bufor jeszcze nie zapisywany (opóźnienie / tryb ręczny) lub prawie pusty: pauza rusza od teraz, cofnięcie niemożliwe
+        val fresh = b.total < 2_000_000
+        if (fresh && !pause) { showMessage("Timeshift: bufor jeszcze pusty — nie ma do czego cofnąć", 4000); return }
+        tsWriteFrom = 0
         val p = player ?: return
         // obraz na ekranie jest za danymi o zapas odtwarzacza
         val behind = if (vlc != null) prefs.bufferMs.toLong() else p.totalBufferedDuration
-        val target = (SystemClock.elapsedRealtime() - behind - 300 - backMs).coerceAtLeast(b.oldestWall + 10_000)
+        val target = if (fresh) SystemClock.elapsedRealtime() else
+            (SystemClock.elapsedRealtime() - behind - 300 - backMs).coerceAtLeast(b.oldestWall + 10_000)
         AppLog.i("timeshift: ${if (pause) "pauza" else "cofnięcie ${backMs / 1000} s"} (bufor ${b.spanMs() / 60000} min)")
         // strumień na żywo odtwarzacza zatrzymany — zapis przejmuje osobne połączenie
         ui.removeCallbacks(vlcTick)
@@ -1553,7 +1557,7 @@ class PlayerActivity : Activity() {
             val b = tsBuf ?: return
             val p = player ?: return
             // pauza dłuższa niż okno: miejsce pauzy zaraz wypadnie z bufora — wznowienie od najstarszego
-            if (tsPending == 0L && tsShownWall() < b.oldestWall + 5000) {
+            if (tsPending == 0L && b.trimmed && tsShownWall() < b.oldestWall + 5000) {
                 showMessage("Bufor timeshiftu pełny — wznawiam od najstarszego zapisanego momentu", 5000)
                 AppLog.i("timeshift: pauza dłuższa niż okno — wznowienie od początku bufora")
                 tsPlayFrom(b.oldestWall + 10_000, play = true)
