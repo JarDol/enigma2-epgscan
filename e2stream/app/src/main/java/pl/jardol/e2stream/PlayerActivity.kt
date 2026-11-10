@@ -1197,16 +1197,18 @@ class PlayerActivity : Activity() {
                     ui.postDelayed(this, 5000)
                     return
                 }
-                TvDialog.setButtonLabel(zapDialog, 0, "Oglądaj (${zapCountdown(t.begin - now)})")
+                TvDialog.setButtonLabel(zapDialog, 0, "Przełącz (${zapCountdown(t.begin - now)})")
                 ui.postDelayed(this, 1000)
                 return
             }
             zapPrompted = t.key()
             wakeTimerKey = null
             AppLog.i("harmonogram: za ${t.begin - now} s przełączenie na ${t.channel}")
-            zapDialog = TvDialog.panel(this@PlayerActivity, "Przełączenie o ${hm.format(Date(t.begin * 1000))}", null,
+            val card = EventCard.eventOf(t, this@PlayerActivity)
+            val body = EventCard.cachedBody(this@PlayerActivity, t)
+            zapDialog = TvDialog.panel(this@PlayerActivity, null, null,
                 listOf(
-                    TvDialog.Btn("Oglądaj (${zapCountdown(t.begin - now)})") { zapFire(t) },
+                    TvDialog.Btn("Przełącz (${zapCountdown(t.begin - now)})") { zapFire(t) },
                     TvDialog.Btn("Nagraj na dekoderze") {
                         ZapTimers.remove(this@PlayerActivity, t)
                         zapPrompted = null
@@ -1215,22 +1217,8 @@ class PlayerActivity : Activity() {
                             ZapTimers.mark(this@PlayerActivity, t, if (ok) ZapTimers.RECORDED else ZapTimers.RECORD_FAILED)
                         }
                     },
-                ), widthFrac = 0.68f, onBack = { zapSkip(t) }, focusChip = true) { ctx, _ ->
-                LinearLayout(ctx).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(TextView(ctx).apply {
-                        text = t.channel
-                        textSize = 16f; setTextColor(TvDialog.GREY)
-                    })
-                    addView(TextView(ctx).apply {
-                        text = t.title
-                        textSize = 23f; setTextColor(TvDialog.WHITE)
-                    })
-                    addView(TextView(ctx).apply {
-                        text = "${zapDf.format(Date(t.begin * 1000))} – ${hm.format(Date(t.end * 1000))}"
-                        textSize = 15f; setTextColor(TvDialog.BLUE)
-                    })
-                }
+                ), widthFrac = 0.8f, onBack = { zapSkip(t) }, focusChip = true) { ctx, _ ->
+                EventCard.content(ctx, card, t.ref, t.channel, body)
             }
             ui.postDelayed(this, 1000)
         }
