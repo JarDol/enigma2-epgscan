@@ -977,7 +977,7 @@ class PlayerActivity : Activity() {
     private fun playIn(bIdx: Int, chList: List<Channel>, index: Int) {
         if (chList.isEmpty()) return
         if (recMode) leaveRec()
-        tsCtl = false
+        tsCtl = false; tsChBar = false
         tsNewChannel()
         val i = ((index % chList.size) + chList.size) % chList.size
         val cur = playList.getOrNull(playIndex)
@@ -1570,7 +1570,8 @@ class PlayerActivity : Activity() {
 
     /** Klawisze w trybie timeshiftu. */
     private fun tsKey(code: Int, e: KeyEvent): Boolean {
-        val fast = e.repeatCount > 3
+        // na pasku kanału góra/dół zmieniają kanał (obsługa w keyMap), nie przewijają
+        if (tsChBar && banner.visibility == View.VISIBLE && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN)) return false
         when (code) {
             KeyEvent.KEYCODE_DPAD_LEFT -> tsSeek(-prefs.tsStepSec * 1000L)
             KeyEvent.KEYCODE_DPAD_RIGHT -> tsSeek(prefs.tsStepSec * 1000L)
