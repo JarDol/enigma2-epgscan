@@ -226,9 +226,23 @@ object TvDialog {
         return lv
     }
 
-    fun enableCarousel(list: ListView, bounds: () -> Pair<Int, Int> = { 0 to (list.count - 1) }) {
+    fun enableCarousel(list: ListView, pageKeys: Boolean = false, bounds: () -> Pair<Int, Int> = { 0 to (list.count - 1) }) {
         list.setOnKeyListener { _, code, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            if (pageKeys && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                val visible = (0 until list.childCount).count { i ->
+                    val child = list.getChildAt(i)
+                    child.top >= list.paddingTop && child.bottom <= list.height - list.paddingBottom
+                }
+                val direction = if (code == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
+                val target = pageTarget(list.selectedItemPosition, list.count, visible, direction)
+                if (target != null && target != list.selectedItemPosition) {
+                    val selectedView = list.getChildAt(list.selectedItemPosition - list.firstVisiblePosition)
+                    val offset = selectedView?.top?.minus(list.paddingTop) ?: 0
+                    list.setSelectionFromTop(target, offset)
+                }
+                return@setOnKeyListener true
+            }
             val direction = when (code) {
                 KeyEvent.KEYCODE_DPAD_DOWN -> 1
                 KeyEvent.KEYCODE_DPAD_UP -> -1

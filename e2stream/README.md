@@ -54,7 +54,7 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 | LAST / ⏮ | poprzedni kanał |
 | WSTECZ ×2 | wyjście |
 
-EPG kanału pokazuje datę oraz godzinę rozpoczęcia i zakończenia każdej audycji. Multi EPG pokazuje zakresy godzin bieżącej i następnej audycji oraz nazwy kanałów w maksymalnie dwóch liniach. Listy EPG kanału, kanałów Multi EPG i wyboru bukietu przewijają się w pętli.
+EPG kanału pokazuje datę oraz godzinę rozpoczęcia i zakończenia każdej audycji; ◀ ▶ przewijają listę o stronę. Jeśli brak krótkiego opisu, lista pokazuje początek opisu rozszerzonego. Multi EPG pokazuje zakresy godzin bieżącej i następnej audycji oraz nazwy kanałów w maksymalnie dwóch liniach. Listy EPG kanału, kanałów Multi EPG i wyboru bukietu przewijają się w pętli.
 
 Przy włączonym timeshifcie długie OK na pasku kanału otwiera pasek przewijania.
 Strzałki przewijają tylko na widocznym pasku timeshiftu, również po dotarciu do transmisji na żywo;

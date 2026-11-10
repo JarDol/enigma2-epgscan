@@ -6,3 +6,10 @@ internal fun carouselTarget(selected: Int, first: Int, last: Int, direction: Int
     direction < 0 && selected == first -> last
     else -> null
 }
+
+internal fun pageTarget(selected: Int, count: Int, pageSize: Int, direction: Int): Int? {
+    if (selected !in 0 until count || direction == 0) return null
+    val step = pageSize.coerceAtLeast(1)
+    return if (direction > 0) (selected.toLong() + step).coerceAtMost((count - 1).toLong()).toInt()
+    else (selected - step).coerceAtLeast(0)
+}

@@ -103,14 +103,14 @@ class EpgUi(
         }
     }
 
-    private fun bigList(title: String, adapter: RowAdapter, hint: String = "OK opis audycji  •  WSTECZ zamknij", timeoutSec: Int = 0, wrap: Boolean = false,
+    private fun bigList(title: String, adapter: RowAdapter, hint: String = "OK opis audycji  •  WSTECZ zamknij", timeoutSec: Int = 0, wrap: Boolean = false, pageKeys: Boolean = false,
                         onPick: (Int) -> Unit): android.app.Dialog =
         TvDialog.panel(a, title, hint, widthFrac = 0.85f, maxH = 0.9f, timeoutSec = timeoutSec) { ctx, _ ->
             android.widget.ListView(ctx).apply {
                 this.adapter = adapter
                 selector = ctx.getDrawable(R.drawable.list_selector)
                 divider = null
-                if (wrap) TvDialog.enableCarousel(this)
+                if (wrap) TvDialog.enableCarousel(this, pageKeys = pageKeys)
                 setOnItemClickListener { _, _, w, _ -> onPick(w) }
             }
         }
@@ -256,10 +256,11 @@ class EpgUi(
                 val list = ev.filter { it.end > n }
                 if (list.isEmpty()) { host.message("Brak EPG dla ${ch.name}"); return@runOnUiThread }
                 val rows = list.map {
-                    Row(eventTime.dayAndRange(it.begin, it.end), it.title, it.shortDesc + progress(it), it, ch)
+                    Row(eventTime.dayAndRange(it.begin, it.end), it.title, epgDescriptionPreview(it.shortDesc, it.longDesc) + progress(it), it, ch)
                 }
                 val adapter = RowAdapter(rows)
-                bigList("EPG: ${ch.num} ${ch.name}", adapter, timeoutSec = Prefs(a).epgChannelSec, wrap = true) { w -> showEvent(rows[w].ev!!, ch) }
+                bigList("EPG: ${ch.num} ${ch.name}", adapter, hint = "◀ ▶ strony  •  OK opis audycji  •  WSTECZ zamknij",
+                    timeoutSec = Prefs(a).epgChannelSec, wrap = true, pageKeys = true) { w -> showEvent(rows[w].ev!!, ch) }
             }
         }
     }

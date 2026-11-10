@@ -21,4 +21,15 @@ class ListCarouselTest {
         assertNull(carouselTarget(-1, 0, -1, 1))
         assertNull(carouselTarget(0, 0, 0, -1))
     }
+
+    @Test
+    fun pagesByVisibleRowsAndStopsAtEnds() {
+        assertEquals(9, pageTarget(3, 20, 6, 1))
+        assertEquals(3, pageTarget(9, 20, 6, -1))
+        assertEquals(19, pageTarget(18, 20, 6, 1))
+        assertEquals(0, pageTarget(1, 20, 6, -1))
+        assertEquals(2, pageTarget(1, 20, 0, 1))
+        assertNull(pageTarget(-1, 20, 6, 1))
+        assertNull(pageTarget(0, 0, 6, 1))
+    }
 }
