@@ -226,6 +226,20 @@ object TvDialog {
         return lv
     }
 
+    fun enableCarousel(list: ListView, bounds: () -> Pair<Int, Int> = { 0 to (list.count - 1) }) {
+        list.setOnKeyListener { _, code, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            val direction = when (code) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> 1
+                KeyEvent.KEYCODE_DPAD_UP -> -1
+                else -> return@setOnKeyListener false
+            }
+            val (first, last) = bounds()
+            val target = carouselTarget(list.selectedItemPosition, first, last, direction)
+            if (target == null) false else { list.setSelection(target); true }
+        }
+    }
+
     /** Lista: OK wybiera i zamyka okno. */
     fun list(
         a: Activity, title: String, items: List<Item>, selected: Int = -1,
@@ -233,17 +247,7 @@ object TvDialog {
         onCancel: () -> Unit = {}, wrap: Boolean = false, onPick: (Int) -> Unit,
     ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel) { ctx, dlg ->
         listView(ctx, items, selected).apply {
-            if (wrap) setOnKeyListener { _, code, event ->
-                if (event.action != KeyEvent.ACTION_DOWN || items.isEmpty()) return@setOnKeyListener false
-                val first = items.indexOfFirst { !it.header }
-                val last = items.indexOfLast { !it.header }
-                when {
-                    first < 0 || first == last -> false
-                    code == KeyEvent.KEYCODE_DPAD_DOWN && selectedItemPosition == last -> { setSelection(first); true }
-                    code == KeyEvent.KEYCODE_DPAD_UP && selectedItemPosition == first -> { setSelection(last); true }
-                    else -> false
-                }
-            }
+            if (wrap) enableCarousel(this) { items.indexOfFirst { !it.header } to items.indexOfLast { !it.header } }
             setOnItemClickListener { _, _, w, _ ->
                 if (!items[w].header) { dlg.dismiss(); onPick(w) }
             }

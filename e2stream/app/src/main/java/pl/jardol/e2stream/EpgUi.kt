@@ -4,13 +4,11 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.text.InputType
 import android.text.TextUtils
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
 import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import java.text.SimpleDateFormat
@@ -105,13 +103,14 @@ class EpgUi(
         }
     }
 
-    private fun bigList(title: String, adapter: RowAdapter, hint: String = "OK opis audycji  •  WSTECZ zamknij", timeoutSec: Int = 0,
+    private fun bigList(title: String, adapter: RowAdapter, hint: String = "OK opis audycji  •  WSTECZ zamknij", timeoutSec: Int = 0, wrap: Boolean = false,
                         onPick: (Int) -> Unit): android.app.Dialog =
         TvDialog.panel(a, title, hint, widthFrac = 0.85f, maxH = 0.9f, timeoutSec = timeoutSec) { ctx, _ ->
             android.widget.ListView(ctx).apply {
                 this.adapter = adapter
                 selector = ctx.getDrawable(R.drawable.list_selector)
                 divider = null
+                if (wrap) TvDialog.enableCarousel(this)
                 setOnItemClickListener { _, _, w, _ -> onPick(w) }
             }
         }
@@ -260,7 +259,7 @@ class EpgUi(
                     Row(eventTime.dayAndRange(it.begin, it.end), it.title, it.shortDesc + progress(it), it, ch)
                 }
                 val adapter = RowAdapter(rows)
-                bigList("EPG: ${ch.num} ${ch.name}", adapter, timeoutSec = Prefs(a).epgChannelSec) { w -> showEvent(rows[w].ev!!, ch) }
+                bigList("EPG: ${ch.num} ${ch.name}", adapter, timeoutSec = Prefs(a).epgChannelSec, wrap = true) { w -> showEvent(rows[w].ev!!, ch) }
             }
         }
     }
@@ -320,70 +319,32 @@ class EpgUi(
         fun title() = "Multi-EPG: ${bouquet.name} — ${d(multiT)} ${t(multiT)}"
         multiDialog?.dismiss()
         val dlg = TvDialog.panel(a, title(),
-            "Bukiet u góry: OK wybierz  •  ▲ ▼ kanały  •  ◀ ▶ czas  •  OK opis  •  WSTECZ zamknij",
+            "Bukiet: przytrzymaj OK  •  ▲ ▼ kanały  •  ◀ ▶ czas  •  OK opis  •  WSTECZ zamknij",
             widthFrac = 0.85f, maxH = 0.9f, timeoutSec = Prefs(a).epgMultiSec, hintBelowTitle = true) { ctx, _ ->
-            val density = ctx.resources.displayMetrics.density
-            fun dp(value: Int) = (value * density).toInt()
-            val column = LinearLayout(ctx).apply {
-                orientation = LinearLayout.VERTICAL
-                descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
-            }
-            val bouquetBar = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(6), dp(12), dp(6))
-                background = ctx.getDrawable(R.drawable.list_selector)
-                isFocusable = true
-                isClickable = true
-                addView(TextView(ctx).apply {
-                    text = "Bukiet"; textSize = 17f; setTextColor(0xFF90A4AE.toInt())
-                    maxLines = 1
-                }, LinearLayout.LayoutParams(dp(150), ViewGroup.LayoutParams.WRAP_CONTENT))
-                addView(TextView(ctx).apply {
-                    text = "${bouquet.name}  •  wybierz"; textSize = 19f; setTextColor(0xFFFFFFFF.toInt())
-                    maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            }
-            val channels = ListView(ctx).apply {
+            ListView(ctx).apply {
                 this.adapter = adapter
                 selector = ctx.getDrawable(R.drawable.list_selector)
                 divider = null
+                TvDialog.enableCarousel(this)
                 setOnItemClickListener { _, _, w, _ ->
                     val r = adapter.rows[w]
                     if (r.ev != null) showEvent(r.ev, r.ch) else r.ch?.let { host.zapTo(it.ref) }
                 }
-            }
-            bouquetBar.setOnClickListener {
-                TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
-                    selected = bouquets.indexOfFirst { it.ref == bouquet.ref },
-                    hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f, wrap = true) { picked ->
-                    val next = bouquets[picked]
-                    if (next.ref != bouquet.ref) {
-                        multiDialog?.dismiss()
-                        multiDialog = null
-                        loadMulti(next, emptyList(), bouquets, multiT)
+                isLongClickable = true
+                setOnItemLongClickListener { _, _, _, _ ->
+                    TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
+                        selected = bouquets.indexOfFirst { it.ref == bouquet.ref },
+                        hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f, wrap = true) { picked ->
+                        val next = bouquets[picked]
+                        if (next.ref != bouquet.ref) {
+                            multiDialog?.dismiss()
+                            multiDialog = null
+                            loadMulti(next, emptyList(), bouquets, multiT)
+                        }
                     }
+                    true
                 }
             }
-            bouquetBar.setOnKeyListener { _, code, event ->
-                if (event.action == KeyEvent.ACTION_DOWN && code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                    channels.requestFocus()
-                    channels.setSelection(0)
-                    true
-                } else false
-            }
-            channels.setOnKeyListener { _, code, event ->
-                if (event.action == KeyEvent.ACTION_DOWN && code == KeyEvent.KEYCODE_DPAD_UP &&
-                    channels.selectedItemPosition <= 0) {
-                    bouquetBar.requestFocus()
-                    true
-                } else false
-            }
-            column.addView(bouquetBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            UiScale.apply(bouquetBar, UiScale.pct(Prefs(a).uiEpgFont))
-            column.addView(channels, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-            bouquetBar.post { bouquetBar.requestFocus() }
-            column
         }
         multiDialog = dlg
         dlg.setOnKeyListener { _, code, e ->

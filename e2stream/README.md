@@ -45,7 +45,7 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 | przytrzymanie OK | menu: EPG wydarzenia, EPG kanału, Multi EPG, Szukaj w EPG, Ścieżka dźwięku, Ustawienia |
 | ▲ / ▼, CH+ / CH− | następny / poprzedni kanał |
 | ◀ | EPG kanału |
-| ▶ | Multi EPG bukietu (▲ ▼ kanały, ◀ ▶ zmiana czasu o 30 min, wybór bukietu na stałym pasku u góry) |
+| ▶ | Multi EPG bukietu (▲ ▼ kanały, ◀ ▶ zmiana czasu o 30 min, przytrzymanie OK — wybór bukietu) |
 | INFO | EPG wydarzenia — opis bieżącej audycji |
 | GUIDE / EPG | Multi EPG |
 | SEARCH | szukaj w EPG |
@@ -54,7 +54,7 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 | LAST / ⏮ | poprzedni kanał |
 | WSTECZ ×2 | wyjście |
 
-EPG kanału pokazuje datę oraz godzinę rozpoczęcia i zakończenia każdej audycji. Multi EPG pokazuje zakresy godzin bieżącej i następnej audycji oraz nazwy kanałów w maksymalnie dwóch liniach. Lista wyboru bukietu w Multi EPG przewija się w pętli.
+EPG kanału pokazuje datę oraz godzinę rozpoczęcia i zakończenia każdej audycji. Multi EPG pokazuje zakresy godzin bieżącej i następnej audycji oraz nazwy kanałów w maksymalnie dwóch liniach. Listy EPG kanału, kanałów Multi EPG i wyboru bukietu przewijają się w pętli.
 
 Przy włączonym timeshifcie długie OK na pasku kanału otwiera pasek przewijania.
 Strzałki przewijają tylko na widocznym pasku timeshiftu, również po dotarciu do transmisji na żywo;
