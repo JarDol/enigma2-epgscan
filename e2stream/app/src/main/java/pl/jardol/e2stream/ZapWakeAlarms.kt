@@ -155,6 +155,7 @@ object ZapWakeAlarms {
             action = "pl.jardol.e2stream.OPEN_ZAP_ALARM"
             data = intent.data
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtras(intent)
             putExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY, key)
             if (testId != null) putExtra(PlayerActivity.EXTRA_WAKE_TEST_ID, testId)
         }
