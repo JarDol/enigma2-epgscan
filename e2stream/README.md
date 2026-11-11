@@ -21,6 +21,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV.
 * Miejsce zapisu: pamięć urządzenia lub pendrive/karta (katalog `Android/data/pl.jardol.e2stream/files/`).
 * EPG pobierane codziennie wg harmonogramu (i na żądanie) z zapisem na urządzeniu; ikony kanałów z dekodera (OpenWebif /picon/ lub FTP).
 * EPG kanału, multi-EPG bukietu i wyszukiwanie w EPG; z audycji: przełącz na kanał, zaplanuj przełączenie lub nagraj na dekoderze.
+* Długie OK w EPG kanału i Multi-EPG otwiera wyszukiwanie lub wybór kanału/bukietu.
 * Akcje „Przełącz na kanał”, „Przełącz o…” i „Nagraj na dekoderze” pokazują potwierdzenie wyniku.
 * Menu podręczne z konfigurowalną widocznością i kolejnością pozycji; Ustawienia są zawsze dostępne.
 * Domyślne mapowanie OK i strzałek można zmieniać osobno z paskiem kanału i bez niego.

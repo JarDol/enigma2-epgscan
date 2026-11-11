@@ -104,6 +104,7 @@ class EpgUi(
     }
 
     private fun bigList(title: String, adapter: RowAdapter, hint: String = "OK opis audycji  •  WSTECZ zamknij", timeoutSec: Int = 0, wrap: Boolean = false, pageKeys: Boolean = false,
+                        onLongPick: ((Int) -> Boolean)? = null,
                         onPick: (Int) -> Unit): android.app.Dialog =
         TvDialog.panel(a, title, hint, widthFrac = 0.85f, maxH = 0.9f, timeoutSec = timeoutSec) { ctx, _ ->
             android.widget.ListView(ctx).apply {
@@ -112,6 +113,10 @@ class EpgUi(
                 divider = null
                 if (wrap) TvDialog.enableCarousel(this, pageKeys = pageKeys)
                 setOnItemClickListener { _, _, w, _ -> onPick(w) }
+                if (onLongPick != null) {
+                    isLongClickable = true
+                    setOnItemLongClickListener { _, _, position, _ -> onLongPick(position) }
+                }
             }
         }
 
@@ -276,8 +281,64 @@ class EpgUi(
                     Row(eventTime.dayAndRange(it.begin, it.end), it.title, epgDescriptionPreview(it.shortDesc, it.longDesc) + progress(it), it, ch)
                 }
                 val adapter = RowAdapter(rows)
-                bigList("EPG: ${ch.num} ${ch.name}", adapter, hint = "◀ ▶ strony  •  OK opis audycji  •  WSTECZ zamknij",
-                    timeoutSec = Prefs(a).epgChannelSec, wrap = true, pageKeys = true) { w -> showEvent(rows[w].ev!!, ch) }
+                bigList("EPG: ${ch.num} ${ch.name}",
+                    adapter,
+                    hint = "◀ ▶ strony  •  OK opis audycji  •  długie OK akcje  •  WSTECZ zamknij",
+                    timeoutSec = Prefs(a).epgChannelSec,
+                    wrap = true,
+                    pageKeys = true,
+                    onLongPick = { showChannelEpgActions(ch); true },
+                ) { w -> showEvent(rows[w].ev!!, ch) }
+            }
+        }
+    }
+
+    private fun showChannelEpgActions(current: Channel) {
+        TvDialog.list(a, "EPG kanału", listOf(
+            TvDialog.Item("Szukaj w EPG"),
+            TvDialog.Item("Wybierz inny kanał"),
+        ), hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f) { selected ->
+            if (selected == 0) {
+                TvDialog.dismissAll()
+                showSearch()
+            } else {
+                showEpgBouquetPicker(current)
+            }
+        }
+    }
+
+    private fun showEpgBouquetPicker(current: Channel) {
+        val bouquets = host.bouquetList()
+        if (bouquets.isEmpty()) {
+            host.message("Brak widocznych bukietów TV")
+            return
+        }
+        val currentBouquet = host.currentBouquet()
+        TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
+            selected = bouquets.indexOfFirst { it.ref == currentBouquet?.ref }.coerceAtLeast(0),
+            hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.6f, wrap = true) { selected ->
+            val bouquet = bouquets[selected]
+            host.message("Pobieram kanały: ${bouquet.name}…")
+            io.execute {
+                val channels = try {
+                    api.channels(bouquet)
+                } catch (e: Exception) {
+                    a.runOnUiThread { host.message("Błąd listy kanałów ${bouquet.name}: ${e.message}") }
+                    return@execute
+                }
+                a.runOnUiThread {
+                    if (channels.isEmpty()) {
+                        host.message("Brak kanałów w bukiecie ${bouquet.name}")
+                    } else {
+                        TvDialog.list(a, "Wybierz kanał — ${bouquet.name}",
+                            channels.map { TvDialog.Item("${it.num}  ${it.name}") },
+                            selected = channels.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(current.ref) }.coerceAtLeast(0),
+                            hint = "OK pokaż EPG  •  WSTECZ wróć", widthFrac = 0.7f, wrap = true) { channelIndex ->
+                            TvDialog.dismissAll()
+                            showChannelEpg(channels[channelIndex])
+                        }
+                    }
+                }
             }
         }
     }
@@ -337,7 +398,7 @@ class EpgUi(
         fun title() = "Multi-EPG: ${bouquet.name} — ${d(multiT)} ${t(multiT)}"
         multiDialog?.dismiss()
         val dlg = TvDialog.panel(a, title(),
-            "Bukiet: przytrzymaj OK  •  ▲ ▼ kanały  •  ◀ ▶ czas  •  OK opis  •  WSTECZ zamknij",
+            "Długie OK akcje  •  ▲ ▼ kanały  •  ◀ ▶ czas  •  OK opis  •  WSTECZ zamknij",
             widthFrac = 0.85f, maxH = 0.9f, timeoutSec = Prefs(a).epgMultiSec, hintBelowTitle = true) { ctx, _ ->
             ListView(ctx).apply {
                 this.adapter = adapter
@@ -350,14 +411,25 @@ class EpgUi(
                 }
                 isLongClickable = true
                 setOnItemLongClickListener { _, _, _, _ ->
-                    TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
-                        selected = bouquets.indexOfFirst { it.ref == bouquet.ref },
-                        hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f, wrap = true) { picked ->
-                        val next = bouquets[picked]
-                        if (next.ref != bouquet.ref) {
+                    TvDialog.list(a, "Multi-EPG", listOf(
+                        TvDialog.Item("Szukaj w EPG"),
+                        TvDialog.Item("Wybierz bukiet"),
+                    ), hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f) { action ->
+                        if (action == 0) {
                             multiDialog?.dismiss()
                             multiDialog = null
-                            loadMulti(next, emptyList(), bouquets, multiT)
+                            showSearch()
+                        } else {
+                            TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
+                                selected = bouquets.indexOfFirst { it.ref == bouquet.ref },
+                                hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f, wrap = true) { picked ->
+                                val next = bouquets[picked]
+                                if (next.ref != bouquet.ref) {
+                                    multiDialog?.dismiss()
+                                    multiDialog = null
+                                    loadMulti(next, emptyList(), bouquets, multiT)
+                                }
+                            }
                         }
                     }
                     true

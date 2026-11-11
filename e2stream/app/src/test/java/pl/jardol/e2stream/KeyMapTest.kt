@@ -16,8 +16,8 @@ class KeyMapTest {
 
         val withBanner = KeyMap.navigationMap(KeyMap.navigationBannerDefaults, "")
         assertEquals(Act.EPG_EVENT, withBanner[KeyEvent.KEYCODE_DPAD_CENTER])
-        assertEquals(Act.EPG_EVENT, withBanner[KeyEvent.KEYCODE_DPAD_LEFT])
-        assertEquals(Act.EPG_CHANNEL, withBanner[KeyEvent.KEYCODE_DPAD_RIGHT])
+        assertEquals(Act.EPG_CHANNEL, withBanner[KeyEvent.KEYCODE_DPAD_LEFT])
+        assertEquals(Act.MULTI_EPG, withBanner[KeyEvent.KEYCODE_DPAD_RIGHT])
         assertEquals(Act.CHANNEL_LIST, withBanner[KeyEvent.KEYCODE_DPAD_UP])
         assertEquals(Act.CHANNEL_LIST, withBanner[KeyEvent.KEYCODE_DPAD_DOWN])
     }

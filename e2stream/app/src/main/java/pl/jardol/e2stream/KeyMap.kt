@@ -75,8 +75,8 @@ object KeyMap {
 
     val navigationBannerDefaults = mapOf(
         KeyEvent.KEYCODE_DPAD_CENTER to Act.EPG_EVENT,
-        KeyEvent.KEYCODE_DPAD_LEFT to Act.EPG_EVENT,
-        KeyEvent.KEYCODE_DPAD_RIGHT to Act.EPG_CHANNEL,
+        KeyEvent.KEYCODE_DPAD_LEFT to Act.EPG_CHANNEL,
+        KeyEvent.KEYCODE_DPAD_RIGHT to Act.MULTI_EPG,
         KeyEvent.KEYCODE_DPAD_UP to Act.CHANNEL_LIST,
         KeyEvent.KEYCODE_DPAD_DOWN to Act.CHANNEL_LIST,
     )
