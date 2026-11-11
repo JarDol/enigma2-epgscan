@@ -295,10 +295,10 @@ class EpgUi(
 
     private fun showChannelEpgActions(current: Channel) {
         TvDialog.list(a, "EPG kanału", listOf(
-            TvDialog.Item("Szukaj w EPG"),
             TvDialog.Item("Wybierz inny kanał"),
+            TvDialog.Item("Szukaj w EPG"),
         ), hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f) { selected ->
-            if (selected == 0) {
+            if (selected == 1) {
                 TvDialog.dismissAll()
                 showSearch()
             } else {
@@ -412,10 +412,10 @@ class EpgUi(
                 isLongClickable = true
                 setOnItemLongClickListener { _, _, _, _ ->
                     TvDialog.list(a, "Multi-EPG", listOf(
-                        TvDialog.Item("Szukaj w EPG"),
                         TvDialog.Item("Wybierz bukiet"),
+                        TvDialog.Item("Szukaj w EPG"),
                     ), hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f) { action ->
-                        if (action == 0) {
+                        if (action == 1) {
                             multiDialog?.dismiss()
                             multiDialog = null
                             showSearch()
