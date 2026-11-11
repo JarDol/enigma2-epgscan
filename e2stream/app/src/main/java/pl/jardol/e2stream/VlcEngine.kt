@@ -99,6 +99,8 @@ class VlcEngine(
     private val onEvent: (String) -> Unit,
     private val onFailure: (String) -> Unit,
 ) {
+    data class AudioTrack(val id: Int, val name: String)
+
     private val ui = Handler(Looper.getMainLooper())
     private var lib: LibVLC? = null
     private var mp: MediaPlayer? = null
@@ -195,6 +197,24 @@ class VlcEngine(
         mp?.audioTrack?.takeIf { it >= 0 }
     } catch (_: Exception) {
         null
+    }
+
+    fun audioTracks(): List<AudioTrack> = try {
+        mp?.audioTracks.orEmpty()
+            .filter { it.id >= 0 }
+            .map { track ->
+                AudioTrack(track.id, track.name?.takeIf { it.isNotBlank() } ?: "Ścieżka ${track.id}")
+            }
+    } catch (e: Exception) {
+        AppLog.i("VLC: nie można pobrać ścieżek audio: ${e.message}")
+        emptyList()
+    }
+
+    fun selectAudioTrack(id: Int): Boolean = try {
+        mp?.setAudioTrack(id) == true
+    } catch (e: Exception) {
+        AppLog.i("VLC: nie można wybrać ścieżki audio $id: ${e.message}")
+        false
     }
 
     fun info(): String {

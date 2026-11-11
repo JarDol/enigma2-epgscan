@@ -873,7 +873,10 @@ class PlayerActivity : Activity() {
         val px = proxy ?: TsProxy({ analyzer }, { api.authHeader() }).also { it.start(); proxy = it }
         px.setTarget(url)
         val v = vlc ?: VlcEngine(this, prefs, vlcLayout,
-            onEvent = { m -> if (!readyLogged) { readyLogged = true; AppLog.i("start: $m po ${SystemClock.elapsedRealtime() - streamStartAt} ms") } },
+            onEvent = { m ->
+                if (m == "VLC: odtwarzanie") ui.post { applySavedVlcAudio() }
+                if (!readyLogged) { readyLogged = true; AppLog.i("start: $m po ${SystemClock.elapsedRealtime() - streamStartAt} ms") }
+            },
             onFailure = { r -> scheduleRestart(r) }).also { vlc = it }
         AppLog.i("VLC: ${v.info()}")
         vlcLastTime = -1
@@ -2642,7 +2645,33 @@ class PlayerActivity : Activity() {
         return "${f.language ?: "?"}  $codec$ch$label"
     }
 
-    private fun showAudioDialog() {
+    private fun showAudioDialog(vlcAttempt: Int = 0) {
+        if (prefs.engine == "vlc" && !tsMode && !recMode) {
+            val engine = vlc
+            val tracks = engine?.audioTracks().orEmpty()
+            if (tracks.isEmpty()) {
+                if (vlcAttempt < 8) {
+                    ui.postDelayed({ showAudioDialog(vlcAttempt + 1) }, 250)
+                } else {
+                    showMessage("Brak ścieżek dźwięku")
+                }
+                return
+            }
+            val labels = tracks.map { it.name }
+            val selected = tracks.indexOfFirst { it.id == engine?.selectedAudioTrackId() }
+            TvDialog.single(this, "Ścieżka dźwięku (zapamiętywana dla kanału)", labels, selected) { which ->
+                val track = tracks.getOrNull(which)
+                if (track != null && engine?.selectAudioTrack(track.id) == true) {
+                    playList.getOrNull(playIndex)?.let { ch ->
+                        prefs.setAudioFor(ch.ref, "${track.id}||")
+                        AppLog.i("wybrano audio dla ${ch.name}: ${track.name} (ID ${track.id})")
+                    }
+                } else {
+                    showMessage("Nie udało się wybrać ścieżki dźwięku")
+                }
+            }
+            return
+        }
         val tracks = audioTracks()
         if (tracks.isEmpty()) {
             showMessage("Brak ścieżek dźwięku"); return
@@ -2651,6 +2680,22 @@ class PlayerActivity : Activity() {
         val sel = tracks.indexOfFirst { it.group.isTrackSelected(it.index) }
         TvDialog.single(this, "Ścieżka dźwięku (zapamiętywana dla kanału)", labels.toList(), sel) { which ->
             selectAudio(tracks[which], remember = true)
+        }
+    }
+
+    private fun applySavedVlcAudio(attempt: Int = 0) {
+        val ch = playList.getOrNull(playIndex) ?: return
+        val savedId = prefs.audioFor(ch.ref).substringBefore('|')
+            .substringAfterLast('/').toIntOrNull() ?: return
+        val engine = vlc ?: return
+        val tracks = engine.audioTracks()
+        if (tracks.isEmpty()) {
+            if (attempt < 8) ui.postDelayed({ applySavedVlcAudio(attempt + 1) }, 250)
+            return
+        }
+        val match = tracks.firstOrNull { it.id == savedId } ?: return
+        if (engine.selectedAudioTrackId() != savedId && engine.selectAudioTrack(savedId)) {
+            AppLog.i("VLC: przywrócono audio dla ${ch.name}: ${match.name} (ID $savedId)")
         }
     }
 
