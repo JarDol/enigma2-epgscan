@@ -373,6 +373,15 @@ class Prefs(ctx: Context) {
         get() = HashSet(sp.getStringSet("hiddenBouquets", emptySet()) ?: emptySet())
         set(v) = sp.edit().putStringSet("hiddenBouquets", HashSet(v)).apply()
 
+    /** Pozycje i kolejność głównego menu podręcznego. */
+    var quickMenuOrder: List<String>
+        get() = s("quickMenuOrder").split(',').filter { it.isNotBlank() }
+        set(v) = putS("quickMenuOrder", v.joinToString(","))
+
+    var quickMenuVisible: Set<String>
+        get() = HashSet(sp.getStringSet("quickMenuVisible", QuickMenu.configurable.map { it.id }.toSet()) ?: emptySet())
+        set(v) = sp.edit().putStringSet("quickMenuVisible", HashSet(v)).apply()
+
     /** PIN do ustawień (pusty = bez blokady). */
     var pin: String
         get() = s("pin")

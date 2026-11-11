@@ -57,6 +57,65 @@ class PlayerActivity : Activity() {
         const val ACTION_SCHEDULE_ZAP = "pl.jardol.e2stream.SCHEDULE_ZAP"
     }
 
+    private fun showDecoderTimers() {
+        showMessage("Pobieram harmonogramy z dekodera…", 3000)
+        io.execute {
+            val result = try { api.decoderTimers() to null } catch (e: Exception) { null to (e.message ?: e.toString()) }
+            runOnUiThread {
+                val timers = result.first
+                if (timers == null) {
+                    showMessage("Nie udało się pobrać harmonogramów: ${result.second}", 8000)
+                    return@runOnUiThread
+                }
+                if (timers.isEmpty()) {
+                    showMessage("Brak harmonogramów na dekoderze", 5000)
+                    return@runOnUiThread
+                }
+                val labels = timers.map { timer ->
+                    TvDialog.Item(timer.title.ifBlank { timer.channel },
+                        "${if (timer.disabled) "wyłączony • " else ""}${timer.channel}  •  ${zapDf.format(Date(timer.begin * 1000))}  •  ${if (timer.switchOnly) "przełączenie" else "nagranie"}")
+                }
+                TvDialog.list(this, "Harmonogramy dekodera", labels,
+                    hint = "OK szczegóły  •  WSTECZ zamknij", widthFrac = 0.75f) { selected ->
+                    showDecoderTimer(timers[selected])
+                }
+            }
+        }
+    }
+
+    private fun showDecoderTimer(timer: DecoderTimer) {
+        val description = listOf(
+            timer.channel,
+            "${zapDf.format(Date(timer.begin * 1000))} – ${SimpleDateFormat("HH:mm", Locale("pl", "PL")).format(Date(timer.end * 1000))}",
+            if (timer.switchOnly) "Przełączenie" else "Nagranie",
+            if (timer.disabled) "Wyłączony" else "",
+            timer.description,
+        ).filter { it.isNotBlank() }.joinToString("\n")
+        TvDialog.confirm(this, timer.title.ifBlank { timer.channel }, description,
+            listOf(
+                TvDialog.Btn("Usuń z dekodera") { confirmDeleteDecoderTimer(timer) },
+                TvDialog.Btn("Wróć") { showDecoderTimers() },
+            ), onBack = { showDecoderTimers() })
+    }
+
+    private fun confirmDeleteDecoderTimer(timer: DecoderTimer) {
+        TvDialog.confirm(this, "Usunąć timer z dekodera?", "${timer.channel}\n${timer.title}\n${zapDf.format(Date(timer.begin * 1000))}",
+            listOf(
+                TvDialog.Btn("Usuń") {
+                    io.execute {
+                        val result = try { api.timerDelete(timer) } catch (e: Exception) { false to (e.message ?: e.toString()) }
+                        runOnUiThread {
+                            if (result.first) {
+                                showMessage("Usunięto timer: ${timer.title}", 5000)
+                                showDecoderTimers()
+                            } else showMessage("Nie udało się usunąć timera: ${result.second}", 8000)
+                        }
+                    }
+                },
+                TvDialog.Btn("Anuluj"),
+            ))
+    }
+
     private lateinit var prefs: Prefs
     private lateinit var api: OpenWebif
     private lateinit var epg: EpgUi
@@ -210,10 +269,7 @@ class PlayerActivity : Activity() {
             panelList.getOrNull(pos)?.let { c ->
                 val r = c.rec
                 if (r == null) epg.showCurrentEvent(c)
-                else if (!r.isDir) TvDialog.confirm(this, r.title,
-                    listOf(r.service, if (r.begin > 0) dateFmt.format(Date(r.begin * 1000)) else "", if (r.lengthSec > 0) "${r.lengthSec / 60} min" else "")
-                        .filter { it.isNotBlank() }.joinToString("  •  ") + "\n\n" + r.desc.ifBlank { "Brak opisu" },
-                    listOf(TvDialog.Btn("Odtwórz") { pickRecording(r) }))
+                else if (!r.isDir) showRecordingActions(r)
             }
             true
         }
@@ -1162,7 +1218,10 @@ class PlayerActivity : Activity() {
     private fun onPanelPick(pos: Int) {
         val l = panelList
         if (pos !in l.indices) return
-        l[pos].rec?.let { pickRecording(it); return }
+        l[pos].rec?.let {
+            if (it.isDir) pickRecording(it) else showRecordingDetails(it)
+            return
+        }
         panelOnRec = false          // wybrany kanał TV — lista znów otwiera się na bukiecie kanału
         hidePanel()
         // ten sam, już odtwarzany kanał — nie uruchamiaj strumienia od nowa
@@ -1748,6 +1807,61 @@ class PlayerActivity : Activity() {
                 TvDialog.Item("Od początku"),
             ), 0, widthFrac = 0.45f) { w -> playRecording(r, if (w == 0) saved else 0) }
         } else playRecording(r, 0)
+    }
+
+    private fun recordingDescription(r: Recording) =
+        listOf(r.service, if (r.begin > 0) dateFmt.format(Date(r.begin * 1000)) else "", if (r.lengthSec > 0) "${r.lengthSec / 60} min" else "")
+            .filter { it.isNotBlank() }.joinToString("  •  ") + "\n\n" + r.desc.ifBlank { "Brak opisu" }
+
+    private fun showRecordingDetails(r: Recording) {
+        TvDialog.confirm(this, r.title, recordingDescription(r),
+            listOf(TvDialog.Btn("Odtwórz") { pickRecording(r) }))
+    }
+
+    private fun showRecordingActions(r: Recording) {
+        TvDialog.list(this, r.title, listOf(TvDialog.Item("Odtwórz"), TvDialog.Item("Usuń")),
+            hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.45f) { selected ->
+            if (selected == 0) pickRecording(r) else confirmDeleteRecording(r)
+        }
+    }
+
+    private fun confirmDeleteRecording(r: Recording) {
+        TvDialog.confirm(this, "Usunąć nagranie?", "${r.title}\n${r.path}",
+            listOf(
+                TvDialog.Btn("Usuń") { deleteRecording(r) },
+                TvDialog.Btn("Anuluj"),
+            ))
+    }
+
+    private fun deleteRecording(r: Recording) {
+        io.execute {
+            val result = try { api.movieDelete(r.path) } catch (e: Exception) { false to (e.message ?: e.toString()) }
+            runOnUiThread {
+                if (result.first) {
+                    recPos.edit().remove(recPosKey(r)).apply()
+                    showMessage("Usunięto nagranie: ${r.title}", 5000)
+                    reloadRecordings()
+                } else showMessage("Nie udało się usunąć nagrania: ${result.second}", 8000)
+            }
+        }
+    }
+
+    private fun reloadRecordings() {
+        val bqIndex = panelBouquet
+        if (bouquets.getOrNull(bqIndex)?.ref != REC_REF) return
+        io.execute {
+            val channels = try { channelsOf(bouquets[bqIndex]) } catch (e: Exception) {
+                runOnUiThread { showMessage("Nagrania: ${e.message}", 6000) }
+                return@execute
+            }
+            runOnUiThread {
+                if (panelBouquet == bqIndex && panel.visibility == View.VISIBLE) {
+                    panelList = channels
+                    val selected = channels.indexOfFirst { it.rec?.path == recLastPath }.coerceAtLeast(0)
+                    refreshPanel(selected)
+                }
+            }
+        }
     }
 
     private fun playRecording(r: Recording, startMs: Long) {
@@ -2372,15 +2486,17 @@ class PlayerActivity : Activity() {
     // ---------------------------------------------------------------- menu podręczne
 
     private fun showQuickMenu() {
-        val items = listOf<Pair<String, () -> Unit>>(
-            "EPG wydarzenia" to { epg.showCurrentEvent() },
-            "EPG kanału" to { epg.showChannelEpg() },
-            "Multi EPG" to { epg.showMultiEpg() },
-            "Szukaj w EPG" to { epg.showSearch() },
-            "Ścieżka dźwięku…" to { showAudioDialog() },
-            "Przełączenia wg harmonogramu" to { showZapTimers() },
-            "Ustawienia" to { openSettings() },
+        val actions = mapOf<String, () -> Unit>(
+            "event" to { epg.showCurrentEvent() },
+            "channel_epg" to { epg.showChannelEpg() },
+            "multi_epg" to { epg.showMultiEpg() },
+            "search" to { epg.showSearch() },
+            "audio" to { showAudioDialog() },
+            "zap_timers" to { showZapTimers() },
+            "decoder_timers" to { showDecoderTimers() },
         )
+        val items = QuickMenu.ordered(prefs).map { it.label to actions.getValue(it.id) } +
+            listOf("Ustawienia" to { openSettings() })
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->
             items[which].second()
         }

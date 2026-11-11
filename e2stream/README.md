@@ -20,7 +20,9 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV.
 * Przy zawieszeniu zapis ostatnich sekund strumienia (`stall-*.ts`, bufor 16 MB) do analizy np. TSDuck; na urządzeniu najwyżej 3 zrzuty, po wysłaniu na dekoder kopia lokalna jest usuwana (na dekoderze sprząta je EPG Scan: Sprzątanie dysku → zrzuty starsze niż N dni).
 * Miejsce zapisu: pamięć urządzenia lub pendrive/karta (katalog `Android/data/pl.jardol.e2stream/files/`).
 * EPG pobierane codziennie wg harmonogramu (i na żądanie) z zapisem na urządzeniu; ikony kanałów z dekodera (OpenWebif /picon/ lub FTP).
-* EPG kanału, multi-EPG bukietu i wyszukiwanie w EPG; z audycji: przełącz na kanał lub nagraj na dekoderze.
+* EPG kanału, multi-EPG bukietu i wyszukiwanie w EPG; z audycji: przełącz na kanał, zaplanuj przełączenie lub nagraj na dekoderze.
+* Menu podręczne z konfigurowalną widocznością i kolejnością pozycji; Ustawienia są zawsze dostępne.
+* Przegląd timerów nagrań dekodera z usuwaniem oraz usuwanie plików nagrań z menu długiego OK.
 * Wybór widocznych bukietów, PIN do ustawień (odblokowanie na wybrany czas, wyjście z aplikacji zawsze blokuje), aktualizacja aplikacji z GitHub (menu → Aktualizacja).
 * Log diagnostyczny: lokalnie w `Android/data/pl.jardol.e2stream/files/e2stream.log`
   i co 2 minuty przez FTP na dekoder (domyślnie `/media/hdd/e2stream/e2stream-<nazwa odbiornika>-<znacznik>.log`, np. `e2stream-Salon-3F2A.log`; znacznik to 4 znaki z identyfikatora urządzenia, więc dwa takie same modele w sieci nie nadpisują sobie plików; nazwa ze znacznikiem jest też w liście odbiorników i w nazwach zrzutów TS).
@@ -41,8 +43,8 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 
 | Klawisz | Działanie (domyślnie — można zmienić: Ustawienia → Mapowanie klawiszy) |
 |---|---|
-| OK | lista kanałów (◀ ▶ zmiana bukietu; długie OK na kanale — opis bieżącej audycji) |
-| przytrzymanie OK | menu: EPG wydarzenia, EPG kanału, Multi EPG, Szukaj w EPG, Ścieżka dźwięku, Ustawienia |
+| OK | lista kanałów (◀ ▶ zmiana bukietu; długie OK na kanale — opis bieżącej audycji; na nagraniu — opis i Odtwórz) |
+| przytrzymanie OK | menu (pozycje i kolejność można zmienić w Ustawieniach; Ustawienia zawsze widoczne) |
 | ▲ / ▼, CH+ / CH− | następny / poprzedni kanał |
 | ◀ | EPG kanału |
 | ▶ | Multi EPG bukietu (▲ ▼ kanały, ◀ ▶ zmiana czasu o 30 min, przytrzymanie OK — wybór bukietu) |
@@ -63,6 +65,7 @@ W ustawieniach Ogólne dostępne są osobne mapowania OK i strzałek dla ekranu 
 Domyślnie strzałki zachowują dotychczasowe przypisania, również zmienione w starszych wersjach,
 a OK zachowuje dotychczasowe działanie. Długie OK i obsługa paska timeshiftu pozostają bez zmian;
 mapowanie nie dotyczy też listy kanałów ani odtwarzania nagrań. Każde z dwóch mapowań można osobno przywrócić.
+Na nagraniu długie OK otwiera wybór Odtwórz/Usuń; usunięcie wymaga potwierdzenia.
 Pasek timeshiftu pozostaje na ekranie w czasie pauzy, a po wznowieniu znika po czasie ustawionym w Ogólnych.
 Opcja „Wstecz na pustym ekranie → na żywo” pozwala wrócić z cofniętego strumienia do transmisji na żywo.
 Wyjście z aplikacji wymaga dwóch osobnych naciśnięć WSTECZ; przytrzymanie nie zamyka aplikacji.

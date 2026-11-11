@@ -151,7 +151,7 @@ class EpgUi(
         }
         if (btns.isEmpty()) btns += TvDialog.Btn("Zamknij")      // WSTECZ też zamyka
         // nagłówek jak wiersz listy kanałów (ikona, kanał, tytuł, czas, postęp), niżej opis, akcje na dole
-        TvDialog.panel(a, null, null, btns, widthFrac = 0.8f,
+        TvDialog.panel(a, null, "OK wybierz  •  WSTECZ wróć", btns, widthFrac = 0.8f,
             onBack = if (scheduledTimer != null) onReturn else null, focusChip = true, timeoutSec = Prefs(a).epgEventSec) { ctx, _ ->
             EventCard.content(ctx, ev, ref, name, EventCard.body(ev).ifEmpty { "Brak opisu" })
         }

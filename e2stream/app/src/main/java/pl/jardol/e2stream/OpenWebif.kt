@@ -22,6 +22,18 @@ data class EpgEvent(
     val end: Long get() = begin + duration
 }
 
+data class DecoderTimer(
+    val serviceRef: String,
+    val channel: String,
+    val title: String,
+    val description: String,
+    val begin: Long,
+    val end: Long,
+    val eventId: Int,
+    val switchOnly: Boolean,
+    val disabled: Boolean,
+)
+
 /** Referencja wirtualnego bukietu „Nagrania” (ukrywany jak zwykły bukiet). */
 const val REC_BOUQUET = "e2stream:nagrania"
 
@@ -226,6 +238,41 @@ class OpenWebif(private val p: Prefs) {
         return js.optBoolean("result") to (js.optString("message") + " (margines 2 min przed, 5 min po)")
     }
 
+    /** Timery nagrań i przełączeń zapisane bezpośrednio na dekoderze. */
+    fun decoderTimers(): List<DecoderTimer> {
+        val arr = get("/api/timerlist").optJSONArray("timers")
+            ?: throw IOException("OpenWebif nie zwrócił listy timerów")
+        val out = ArrayList<DecoderTimer>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val ref = o.str("serviceref")
+            val begin = o.optLong("begin")
+            val end = o.optLong("end")
+            if (ref.isBlank() || begin <= 0 || end <= begin) continue
+            out += DecoderTimer(
+                serviceRef = ref,
+                channel = unescape(o.str("servicename")),
+                title = unescape(o.str("name").ifBlank { o.str("description") }),
+                description = unescape(o.str("description")),
+                begin = begin,
+                end = end,
+                eventId = o.optInt("eit"),
+                switchOnly = o.bool("justplay"),
+                disabled = o.bool("disabled"),
+            )
+        }
+        return out.sortedBy { it.begin }
+    }
+
+    /** Usuwa timer zapisany na dekoderze. */
+    fun timerDelete(timer: DecoderTimer): Pair<Boolean, String> {
+        val eit = if (timer.eventId > 0) "&eit=${timer.eventId}" else ""
+        val js = get("/api/timerdelete?sRef=" + enc(timer.serviceRef) +
+            "&begin=${timer.begin}&end=${timer.end}$eit")
+        val message = js.optString("message").ifBlank { js.optString("error") }.ifBlank { "Brak potwierdzenia z dekodera" }
+        return js.optBoolean("result") to message
+    }
+
     /**
      * Nagrania z katalogu [dir] (puste = katalog domyślny dekodera): podkatalogi, potem pliki od najnowszych.
      * Zwraca bieżący katalog i listę.
@@ -269,6 +316,13 @@ class OpenWebif(private val p: Prefs) {
         return cur to (out + files)
     }
 
+    /** Usuwa nagranie z dysku dekodera. */
+    fun movieDelete(path: String): Pair<Boolean, String> {
+        val js = get("/api/moviedelete?sRef=" + enc(path))
+        val message = js.optString("message").ifBlank { js.optString("error") }.ifBlank { "Brak potwierdzenia z dekodera" }
+        return js.optBoolean("result") to message
+    }
+
     /** Odtwarzanie pliku nagrania przez serwer OpenWebif (z przewijaniem — zakresy HTTP). */
     fun fileUrl(path: String): String = "http://${p.host}:${p.httpPort}/file?file=" + enc(path)
 
@@ -281,4 +335,11 @@ internal fun org.json.JSONObject.str(k: String): String {
     if (isNull(k)) return ""
     val v = optString(k)
     return if (v == "null" || v == "None") "" else v
+}
+
+internal fun org.json.JSONObject.bool(k: String): Boolean = when (val value = opt(k)) {
+    is Boolean -> value
+    is Number -> value.toInt() != 0
+    is String -> value == "1" || value.equals("true", ignoreCase = true)
+    else -> false
 }

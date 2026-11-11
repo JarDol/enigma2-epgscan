@@ -177,6 +177,7 @@ class SettingsActivity : Activity() {
             )
             "Ogólne" -> listOf(
         Item.Action("Widoczne bukiety", { if (p.hiddenBouquets.isEmpty()) "wszystkie" else "ukryte: ${p.hiddenBouquets.size}" }) { chooseBouquets() },
+        Item.Action("Pozycje i kolejność menu") { showQuickMenuSettings() },
         Item.Action("Mapowanie klawiszy pilota") { showKeyMap() },
         Item.Action("Mapowanie OK i strzałek — bez paska") { showNavigationMap(false) },
         Item.Action("Mapowanie OK i strzałek — z paskiem kanału") { showNavigationMap(true) },
@@ -274,6 +275,40 @@ class SettingsActivity : Activity() {
         items = buildItems()
         refresh()
         listView.setSelection(items.indexOfFirst { it !is Item.Header }.coerceAtLeast(0))
+    }
+
+    private fun quickMenuEntriesInOrder(): MutableList<QuickMenu.Entry> {
+        return QuickMenu.allInOrder(p.quickMenuOrder).toMutableList()
+    }
+
+    private fun showQuickMenuSettings(selected: Int = 0) {
+        val entries = quickMenuEntriesInOrder()
+        val visible = p.quickMenuVisible.toMutableSet()
+        val rows = entries.mapIndexed { index, entry ->
+            TvDialog.Item(entry.label, "${index + 1}.  ${if (entry.id in visible) "widoczne" else "ukryte"}")
+        }
+        TvDialog.list(this, "Pozycje i kolejność menu", rows, selected.coerceIn(rows.indices),
+            hint = "OK opcje  •  WSTECZ wróć", widthFrac = 0.6f) { index ->
+            val entry = entries[index]
+            val options = buildList {
+                add(if (entry.id in visible) "Ukryj pozycję" else "Pokaż pozycję")
+                if (index > 0) add("Przesuń wyżej")
+                if (index < entries.lastIndex) add("Przesuń niżej")
+            }
+            TvDialog.list(this, entry.label, options.map { TvDialog.Item(it) },
+                hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.5f) { choice ->
+                when (options[choice]) {
+                    "Ukryj pozycję" -> visible.remove(entry.id)
+                    "Pokaż pozycję" -> visible.add(entry.id)
+                    "Przesuń wyżej" -> entries.add(index - 1, entries.removeAt(index))
+                    "Przesuń niżej" -> entries.add(index + 1, entries.removeAt(index))
+                }
+                p.quickMenuVisible = visible
+                QuickMenu.saveOrder(p, entries)
+                markChanged("menu: ${entry.label} ${options[choice].lowercase()}")
+                showQuickMenuSettings(entries.indexOfFirst { it.id == entry.id })
+            }
+        }
     }
 
     @Deprecated("Deprecated in Java")
