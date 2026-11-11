@@ -65,11 +65,24 @@ object KeyMap {
         KeyEvent.KEYCODE_DPAD_DOWN to "Dół",
     )
 
-    fun navigationMap(base: Map<Int, Act>, overrides: String): MutableMap<Int, Act> {
-        val result = linkedMapOf(KeyEvent.KEYCODE_DPAD_CENTER to Act.DEFAULT_OK)
-        for (code in navigation.keys.filter { it != KeyEvent.KEYCODE_DPAD_CENTER }) {
-            result[code] = base[code] ?: Act.NONE
-        }
+    val navigationNoBannerDefaults = mapOf(
+        KeyEvent.KEYCODE_DPAD_CENTER to Act.CHANNEL_BANNER,
+        KeyEvent.KEYCODE_DPAD_LEFT to Act.EPG_CHANNEL,
+        KeyEvent.KEYCODE_DPAD_RIGHT to Act.MULTI_EPG,
+        KeyEvent.KEYCODE_DPAD_UP to Act.CHANNEL_LIST,
+        KeyEvent.KEYCODE_DPAD_DOWN to Act.CHANNEL_LIST,
+    )
+
+    val navigationBannerDefaults = mapOf(
+        KeyEvent.KEYCODE_DPAD_CENTER to Act.EPG_EVENT,
+        KeyEvent.KEYCODE_DPAD_LEFT to Act.EPG_EVENT,
+        KeyEvent.KEYCODE_DPAD_RIGHT to Act.EPG_CHANNEL,
+        KeyEvent.KEYCODE_DPAD_UP to Act.CHANNEL_LIST,
+        KeyEvent.KEYCODE_DPAD_DOWN to Act.CHANNEL_LIST,
+    )
+
+    fun navigationMap(defaults: Map<Int, Act>, overrides: String): MutableMap<Int, Act> {
+        val result = LinkedHashMap(defaults)
         parse(overrides).forEach { (code, act) ->
             if (code in navigation && (act != Act.DEFAULT_OK || code == KeyEvent.KEYCODE_DPAD_CENTER)) {
                 result[code] = act

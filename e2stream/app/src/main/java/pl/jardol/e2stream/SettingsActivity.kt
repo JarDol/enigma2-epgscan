@@ -841,7 +841,8 @@ class SettingsActivity : Activity() {
 
     private fun showNavigationMap(withBanner: Boolean) {
         val stored = if (withBanner) p.keyMapBanner else p.keyMapNoBanner
-        val map = KeyMap.navigationMap(KeyMap.load(p), stored)
+        val defaults = if (withBanner) KeyMap.navigationBannerDefaults else KeyMap.navigationNoBannerDefaults
+        val map = KeyMap.navigationMap(defaults, stored)
         val keys = KeyMap.navigation.keys.toList()
         val title = if (withBanner) "OK i strzałki — pasek kanału" else "OK i strzałki — bez paska"
         val rows = keys.map { TvDialog.Item(KeyMap.navigation.getValue(it), map.getValue(it).label) } +

@@ -2347,6 +2347,7 @@ class PlayerActivity : Activity() {
             if (!suppressOkUp && !event.isCanceled) {
                 when {
                     recMode -> recTogglePause()
+                    panelOnRec -> showRecordings()
                     tsCtl && !tsChBar && banner.visibility == View.VISIBLE ->
                         if (tsMode) tsTogglePause() else tsEnter(pause = true, backMs = 0)
                     okAction != Act.DEFAULT_OK -> doAct(okAction, KeyEvent.KEYCODE_DPAD_CENTER)
@@ -2366,7 +2367,8 @@ class PlayerActivity : Activity() {
     private fun navigationAction(code: Int): Act {
         val withBanner = banner.visibility == View.VISIBLE && tsChBar
         val overrides = if (withBanner) prefs.keyMapBanner else prefs.keyMapNoBanner
-        return KeyMap.navigationMap(keyMap, overrides).getValue(code)
+        val defaults = if (withBanner) KeyMap.navigationBannerDefaults else KeyMap.navigationNoBannerDefaults
+        return KeyMap.navigationMap(defaults, overrides).getValue(code)
     }
 
     private fun doAct(act: Act, keyCode: Int) {
