@@ -210,6 +210,16 @@ class SettingsActivity : Activity() {
         num("Czas EPG wydarzenia (s, 0 = bez zamykania)", { p.epgEventSec }, { p.epgEventSec = it }, 0..600),
         num("Czas EPG kanału (s, 0 = bez zamykania)", { p.epgChannelSec }, { p.epgChannelSec = it }, 0..600),
         num("Czas Multi EPG (s, 0 = bez zamykania)", { p.epgMultiSec }, { p.epgMultiSec = it }, 0..600),
+        Item.Action("Zamykaj okno informacyjne po", { if (p.infoDialogSec == 0) "nie zamykaj" else "${p.infoDialogSec} s" }) {
+            val options = listOf("15 sekund", "Nie zamykaj")
+            TvDialog.single(this, "Zamykaj okno informacyjne po", options,
+                if (p.infoDialogSec == 0) 1 else 0) { selected ->
+                p.infoDialogSec = if (selected == 0) 15 else 0
+                markChanged("okna informacyjne = ${if (p.infoDialogSec == 0) "bez zamykania" else "15 s"}")
+                items = buildItems()
+                refresh()
+            }
+        },
         Item.Text("PIN do ustawień", { p.pin }, { p.pin = it.trim() },
             InputType.TYPE_CLASS_NUMBER, secret = true, hint = "maks. 6 cyfr; puste = bez blokady"),
         Item.Action("Pytaj o PIN ponownie po", {

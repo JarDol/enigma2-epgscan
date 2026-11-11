@@ -346,8 +346,12 @@ object TvDialog {
     }
 
     /** Komunikat z akcjami na dole (np. aktualizacja, awaria). */
-    fun confirm(a: Activity, title: String, message: CharSequence, chips: List<Btn>, cancelable: Boolean = true, onBack: (() -> Unit)? = null) {
-        panel(a, title, null, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack, focusChip = true) { ctx, _ ->
+    fun confirm(
+        a: Activity, title: String, message: CharSequence, chips: List<Btn>,
+        cancelable: Boolean = true, onBack: (() -> Unit)? = null, timeoutSec: Int = 0,
+    ) {
+        panel(a, title, null, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack,
+            focusChip = true, timeoutSec = timeoutSec) { ctx, _ ->
             scrollText(ctx, message, 18f)
         }
     }

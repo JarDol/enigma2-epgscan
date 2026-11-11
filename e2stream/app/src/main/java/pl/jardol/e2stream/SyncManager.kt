@@ -36,7 +36,7 @@ object SyncManager {
         "audioLang", "preferAc3",
         "logFtp", "ftpUser", "ftpPass", "ftpDir", "saveTs", "tsRingMb", "tsFtp", "cleanTs",
         "hiddenBouquets", "pin", "pinMin", "invertUpDown", "bannerSec", "tsBannerSec",
-        "channelListSec", "epgEventSec", "epgChannelSec", "epgMultiSec", "resumeLast",
+        "channelListSec", "epgEventSec", "epgChannelSec", "epgMultiSec", "infoDialogSec", "resumeLast",
         "startBouquet", "startChannel", "startChannelName", "autoUpdate", "keyMap", "keyMapNoBanner", "keyMapBanner",
         "epgDaily", "epgHour", "epgDays", "epgUpdateMode", "picons", "piconDir", "showStats",
     )

@@ -164,15 +164,27 @@ class EpgUi(
             }
             if (scheduledTimer != null) {
                 btns += TvDialog.Btn("Usuń przełączenie") {
-                    ZapTimers.remove(a, scheduledTimer)
-                    host.message("Usunięto przełączenie o ${t(scheduledTimer.begin)}")
-                    onReturn()
+                    confirmAction(
+                        "Potwierdź usunięcie",
+                        "Usunąć zaplanowane przełączenie?\n\n${scheduledTimer.channel} — ${scheduledTimer.title}\n${t(scheduledTimer.begin)}",
+                        "Usuń",
+                    ) {
+                        ZapTimers.remove(a, scheduledTimer)
+                        host.message("Usunięto przełączenie o ${t(scheduledTimer.begin)}")
+                        onReturn()
+                    }
                 }
             // przełączenie o początku audycji (tylko na tym telewizorze, gdy aplikacja działa)
             } else if (!running && ev.begin > now()) {
                 if (ZapTimers.has(a, ref, ev.begin)) btns += TvDialog.Btn("Usuń przełączenie") {
-                    ZapTimers.remove(a, ZapTimers.Timer(ref, name, ev.title, ev.begin, ev.end))
-                    host.message("Usunięto przełączenie o ${t(ev.begin)}")
+                    confirmAction(
+                        "Potwierdź usunięcie",
+                        "Usunąć zaplanowane przełączenie?\n\n$name — ${ev.title}\n${t(ev.begin)}",
+                        "Usuń",
+                    ) {
+                        ZapTimers.remove(a, ZapTimers.Timer(ref, name, ev.title, ev.begin, ev.end, ev.id))
+                        host.message("Usunięto przełączenie o ${t(ev.begin)}")
+                    }
                 } else btns += TvDialog.Btn("Przełącz o ${t(ev.begin)}") {
                     confirmAction(
                         "Potwierdź przełączenie",
@@ -251,7 +263,7 @@ class EpgUi(
     }
 
     private fun showActionResult(title: String, message: String) {
-        TvDialog.confirm(a, title, message, listOf(TvDialog.Btn("OK")))
+        TvDialog.confirm(a, title, message, listOf(TvDialog.Btn("OK")), timeoutSec = Prefs(a).infoDialogSec)
     }
 
     private fun confirmAction(title: String, message: String, confirmLabel: String, action: () -> Unit) {
