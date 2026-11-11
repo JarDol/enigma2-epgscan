@@ -134,20 +134,24 @@ class EpgUi(
         val ref = (ch?.ref?.takeIf { it.isNotBlank() } ?: ev.sref).let { if (it.count { c -> c == ':' } == 9) "$it:" else it }
         val name = ev.sname.ifBlank { ch?.name ?: "" }
         val running = ev.begin <= now() && ev.end > now()
+        val isCurrentChannel = host.current()?.ref?.let { OpenWebif.key(it) == OpenWebif.key(ref) } == true
         val btns = mutableListOf<TvDialog.Btn>()
         if (ref.isNotBlank()) {
-            btns += TvDialog.Btn(if (running) "Oglądaj" else "Przełącz na kanał") {
-                if (running) host.zapTo(ref)
-                else confirmAction(
-                    "Potwierdź przełączenie",
-                    "Przełączyć na kanał $name?",
-                    "Przełącz",
-                ) {
-                    host.zapTo(ref) { ok, result ->
-                        showActionResult(
-                            if (ok) "Przełączono na kanał" else "Nie udało się przełączyć",
-                            result,
-                        )
+            if (isCurrentChannel) {
+                btns += TvDialog.Btn("Oglądaj")
+            } else {
+                btns += TvDialog.Btn("Przełącz na kanał") {
+                    confirmAction(
+                        "Potwierdź przełączenie",
+                        "Przełączyć na kanał ${name.ifBlank { ref }}?",
+                        "Przełącz",
+                    ) {
+                        host.zapTo(ref) { ok, result ->
+                            showActionResult(
+                                if (ok) "Przełączono na kanał" else "Nie udało się przełączyć",
+                                result,
+                            )
+                        }
                     }
                 }
             }
