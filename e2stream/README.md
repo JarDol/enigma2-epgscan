@@ -14,6 +14,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV.
 * Strumień: `http://DEKODER:8001/<referencja>` (opcjonalnie z logowaniem Basic).
 * Wyszukiwanie dekoderów w sieci lokalnej (ustawienia → „Szukaj dekoderów w sieci”).
 * Wybór ścieżki dźwięku zapamiętywany osobno dla każdego kanału; preferowany język i opcjonalnie AC3.
+* Timeshift zachowuje tę samą ścieżkę audio co strumień na żywo, także przy silniku VLC.
 * Odświeżanie ekranu: bez zmian / zawsze 50 Hz / automatycznie wg treści.
 * Analizator strumienia TS: błędy CC, TEI, pakiety kodowane, utrata synchronizacji, skoki PCR,
   zmiany PMT, przerwy w napływie danych — w statystykach i w logu.

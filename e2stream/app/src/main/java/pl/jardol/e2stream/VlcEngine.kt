@@ -190,6 +190,13 @@ class VlcEngine(
     /** Czas odtwarzania (ms) — do wykrywania zawieszenia. */
     fun time(): Long = try { mp?.time ?: -1 } catch (_: Exception) { -1 }
 
+    /** Bieżące ID ścieżki audio; dla MPEG-TS jest to PID strumienia elementarnego. */
+    fun selectedAudioTrackId(): Int? = try {
+        mp?.audioTrack?.takeIf { it >= 0 }
+    } catch (_: Exception) {
+        null
+    }
+
     fun info(): String {
         val p = mp ?: return "-"
         return try {

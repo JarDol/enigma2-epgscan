@@ -508,7 +508,7 @@ class PlayerActivity : Activity() {
                         "${f.sampleMimeType} ${if (g.isTrackSupported(0)) "obsługiwana" else "brak dekodera"}"
                     } + ")")
                 }
-                applySavedAudio()
+                if (tsMode) applyTimeshiftAudio() else applySavedAudio()
             }
         })
 
@@ -1464,6 +1464,9 @@ class PlayerActivity : Activity() {
     private var tsBuf: TimeshiftBuffer? = null
     private var tsRec: TimeshiftRecorder? = null
     private var tsMode = false                 // odtwarzanie z bufora (strumień z dekodera zapisuje osobne połączenie)
+    private var tsAudioPid: Int? = null
+    private var tsAudioSourceGen = 0
+    private var tsAudioAppliedGen = -1
     private var tsChBar = false                // w timeshifcie pokazany zwykły pasek kanału (zamiast paska timeshiftu)
     private var tsCtl = false                  // wybrany tryb obsługi timeshiftu, także po ukryciu paska
 
@@ -1534,6 +1537,7 @@ class PlayerActivity : Activity() {
     /** Koniec odtwarzania z bufora (bez uruchamiania strumienia na żywo). */
     private fun tsLeave() {
         tsMode = false
+        tsAudioPid = null
         tsSetShifted(false)
         tsCtl = false
         tsRec?.stop(); tsRec = null
@@ -1572,8 +1576,10 @@ class PlayerActivity : Activity() {
         val p = player ?: return
         // obraz na ekranie jest za danymi o zapas odtwarzacza
         val behind = if (vlc != null) prefs.bufferMs.toLong() else p.totalBufferedDuration
+        tsAudioPid = vlc?.selectedAudioTrackId() ?: selectedAudioPid()
         val target = if (fresh) SystemClock.elapsedRealtime() else
             (SystemClock.elapsedRealtime() - behind - 300 - backMs).coerceAtLeast(b.oldestWall + 10_000)
+        AppLog.i("timeshift: zachowuję ścieżkę audio PID=${tsAudioPid ?: "auto"}")
         AppLog.i("timeshift: ${if (pause) "pauza" else "cofnięcie ${backMs / 1000} s"} (bufor ${b.spanMs() / 60000} min)")
         // strumień na żywo odtwarzacza zatrzymany — zapis przejmuje osobne połączenie
         ui.removeCallbacks(vlcTick)
@@ -1593,6 +1599,7 @@ class PlayerActivity : Activity() {
     private fun tsPlayFrom(wall: Long, play: Boolean) {
         val b = tsBuf ?: return
         val p = player ?: return
+        tsAudioSourceGen++
         val off = b.offsetAt(wall)
         tsBaseWall = b.wallAt(off)
         val hdr = analyzer?.psiHeader()
@@ -2652,12 +2659,41 @@ class PlayerActivity : Activity() {
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
             .setOverrideForType(TrackSelectionOverride(t.group.mediaTrackGroup, t.index))
             .build()
+        if (tsMode) tsAudioPid = mpegTsPid(t.format.id)
         val ch = playList.getOrNull(playIndex)
         if (remember && ch != null) {
             val f = t.format
             prefs.setAudioFor(ch.ref, "${f.id ?: ""}|${f.language ?: ""}|${f.sampleMimeType ?: ""}")
             AppLog.i("wybrano audio dla ${ch.name}: ${audioLabel(f)}")
         }
+    }
+
+    private fun selectedAudioPid(): Int? =
+        audioTracks().firstOrNull { it.group.isTrackSelected(it.index) }?.let { mpegTsPid(it.format.id) }
+
+    private fun applyTimeshiftAudio() {
+        if (tsAudioAppliedGen == tsAudioSourceGen) return
+        val tracks = audioTracks()
+        if (tracks.isEmpty()) return
+        tsAudioAppliedGen = tsAudioSourceGen
+        val pid = tsAudioPid
+        if (pid == null) {
+            applySavedAudio()
+            return
+        }
+        val match = tracks.firstOrNull { mpegTsPid(it.format.id) == pid }
+        if (match == null) {
+            AppLog.i("timeshift: PID audio $pid niedostępny w źródle, używam domyślnego wyboru")
+            applySavedAudio()
+            return
+        }
+        if (!match.group.isTrackSelected(match.index)) {
+            val p = player ?: return
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                .setOverrideForType(TrackSelectionOverride(match.group.mediaTrackGroup, match.index))
+                .build()
+        }
+        AppLog.i("timeshift: wybrano audio PID=$pid")
     }
 
     /** Po starcie strumienia (także po wznowieniu) ustawia zapamiętaną ścieżkę kanału. */
