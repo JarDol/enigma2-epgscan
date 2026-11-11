@@ -76,6 +76,23 @@ object ZapTimers {
         return retained.sortedByDescending { it.completedAt }
     }
 
+    internal fun withoutHistoryEntry(entries: List<History>, target: History): List<History> {
+        var removed = false
+        return entries.filter { entry ->
+            if (!removed && entry.timer.key() == target.timer.key() &&
+                entry.outcome == target.outcome && entry.completedAt == target.completedAt
+            ) {
+                removed = true
+                false
+            } else true
+        }
+    }
+
+    fun removeHistory(ctx: Context, target: History) {
+        saveHistory(ctx, withoutHistoryEntry(history(ctx), target))
+        AppLog.i("harmonogram: usunięto z historii ${target.timer.channel} — ${target.timer.title}")
+    }
+
     fun mark(ctx: Context, t: Timer, outcome: String) {
         val entries = history(ctx).toMutableList()
         entries.add(0, History(t, outcome, System.currentTimeMillis() / 1000))

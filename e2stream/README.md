@@ -30,7 +30,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV.
 * Menu podręczne z konfigurowalną widocznością i kolejnością pozycji; Ustawienia są zawsze dostępne.
 * Domyślne mapowanie OK i strzałek można zmieniać osobno z paskiem kanału i bez niego.
 * Przegląd timerów nagrań dekodera z usuwaniem oraz usuwanie plików nagrań z menu długiego OK.
-* Historia przełączeń z konfigurowalnym czasem przechowywania; zrealizowane timery dekodera są oddzielone od przyszłych, a nagranie z historii najpierw pokazuje opis i wybór odtworzenia.
+* Historia przełączeń z konfigurowalnym czasem przechowywania; długie OK na zrealizowanej pozycji otwiera szczegóły z potwierdzanym usuwaniem. Jeśli nagranie z historii zostało już skasowane, szczegóły pozwalają usunąć nieaktualny wpis.
 * Wybór widocznych bukietów, PIN do ustawień (odblokowanie na wybrany czas, wyjście z aplikacji zawsze blokuje), aktualizacja aplikacji z GitHub (menu → Aktualizacja).
 * Log diagnostyczny: lokalnie w `Android/data/pl.jardol.e2stream/files/e2stream.log`
   i co 2 minuty przez FTP na dekoder (domyślnie `/media/hdd/e2stream/e2stream-<nazwa odbiornika>-<znacznik>.log`, np. `e2stream-Salon-3F2A.log`; znacznik to 4 znaki z identyfikatora urządzenia, więc dwa takie same modele w sieci nie nadpisują sobie plików; nazwa ze znacznikiem jest też w liście odbiorników i w nazwach zrzutów TS).

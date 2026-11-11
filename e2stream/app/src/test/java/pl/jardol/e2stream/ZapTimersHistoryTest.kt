@@ -30,4 +30,16 @@ class ZapTimersHistoryTest {
 
         assertEquals(2, ZapTimers.retainHistory(entries, now, 0).size)
     }
+
+    @Test
+    fun removesOnlyMatchingHistoryEntry() {
+        val switched = ZapTimers.History(timer, ZapTimers.SWITCHED, 1000)
+        val skipped = ZapTimers.History(timer, ZapTimers.SKIPPED, 1000)
+        val laterSwitch = ZapTimers.History(timer, ZapTimers.SWITCHED, 2000)
+
+        assertEquals(
+            listOf(skipped, laterSwitch),
+            ZapTimers.withoutHistoryEntry(listOf(switched, skipped, laterSwitch), switched),
+        )
+    }
 }

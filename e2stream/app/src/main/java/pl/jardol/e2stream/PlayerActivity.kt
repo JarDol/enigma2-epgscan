@@ -1391,6 +1391,7 @@ class PlayerActivity : Activity() {
         }
         val items = ArrayList<TvDialog.Item>()
         val actions = ArrayList<(() -> Unit)?>()
+        val historyEntries = HashMap<Int, ZapTimers.History>()
         if (future.isNotEmpty()) {
             items += TvDialog.Item("PRZYSZŁE WYDARZENIA", header = true)
             actions += null
@@ -1405,14 +1406,21 @@ class PlayerActivity : Activity() {
             for (entry in history) {
                 items += TvDialog.Item(entry.timer.title,
                     "${zapOutcomeLabel(entry.outcome)}  •  ${entry.timer.channel}  •  ${zapDf.format(Date(entry.completedAt * 1000))}")
+                historyEntries[items.lastIndex] = entry
                 actions += {
-                    if (entry.outcome == ZapTimers.RECORDED) playZapRecording(entry.timer)
+                    if (entry.outcome == ZapTimers.RECORDED) playZapRecording(entry)
                     else showZapHistoryEntry(entry)
                 }
             }
         }
         TvDialog.list(this, "Przełączenia wg harmonogramu", items,
-            hint = "OK szczegóły  •  WSTECZ zamknij", widthFrac = 0.72f) { w -> actions[w]?.invoke() }
+            hint = "OK szczegóły  •  długie OK usuń  •  WSTECZ zamknij", widthFrac = 0.72f,
+            onLongPick = { position ->
+                historyEntries[position]?.let {
+                    showZapHistoryEntry(it)
+                    true
+                } ?: false
+            }) { w -> actions[w]?.invoke() }
     }
 
     private fun zapOutcomeLabel(outcome: String) = when (outcome) {
@@ -1424,14 +1432,30 @@ class PlayerActivity : Activity() {
             else -> outcome
         }
 
-    private fun showZapHistoryEntry(entry: ZapTimers.History) {
+    private fun showZapHistoryEntry(entry: ZapTimers.History, note: String? = null) {
+        val buttons = listOf(
+            TvDialog.Btn("Usuń z historii") {
+                TvDialog.confirm(this, "Potwierdź usunięcie",
+                    "Usunąć tę pozycję z historii harmonogramu?\n\n${entry.timer.channel} — ${entry.timer.title}",
+                    listOf(
+                        TvDialog.Btn("Usuń") {
+                            ZapTimers.removeHistory(this, entry)
+                            showZapTimers()
+                        },
+                        TvDialog.Btn("Anuluj"),
+                    ))
+            },
+            TvDialog.Btn("Wróć do harmonogramu") { showZapTimers() },
+        )
         TvDialog.confirm(this, zapOutcomeLabel(entry.outcome),
-            "${entry.timer.channel}\n${entry.timer.title}\n${zapDf.format(Date(entry.completedAt * 1000))}",
-            listOf(TvDialog.Btn("Wróć do harmonogramu") { showZapTimers() }),
+            listOfNotNull(note, entry.timer.channel, entry.timer.title,
+                zapDf.format(Date(entry.completedAt * 1000))).joinToString("\n"),
+            buttons,
             onBack = { showZapTimers() })
     }
 
-    private fun playZapRecording(timer: ZapTimers.Timer) {
+    private fun playZapRecording(entry: ZapTimers.History) {
+        val timer = entry.timer
         showMessage("Szukam nagrania: ${timer.title}", 5000)
         io.execute {
             val (recording, error) = try {
@@ -1456,7 +1480,7 @@ class PlayerActivity : Activity() {
                 when {
                     recording != null -> showRecordingDetails(recording)
                     error != null -> showMessage("Nie udało się wyszukać nagrania: $error", 8000)
-                    else -> showMessage("Nie znaleziono nagrania: ${timer.title}", 8000)
+                    else -> showZapHistoryEntry(entry, "Nie znaleziono pliku nagrania.")
                 }
             }
         }

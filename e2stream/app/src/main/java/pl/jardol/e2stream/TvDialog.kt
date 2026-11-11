@@ -258,12 +258,23 @@ object TvDialog {
     fun list(
         a: Activity, title: String, items: List<Item>, selected: Int = -1,
         hint: String = "OK wybierz  •  WSTECZ zamknij", widthFrac: Float = 0.55f,
-        onCancel: () -> Unit = {}, wrap: Boolean = false, onPick: (Int) -> Unit,
+        onCancel: () -> Unit = {}, wrap: Boolean = false,
+        onLongPick: ((Int) -> Boolean)? = null, onPick: (Int) -> Unit,
     ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel) { ctx, dlg ->
         listView(ctx, items, selected).apply {
             if (wrap) enableCarousel(this) { items.indexOfFirst { !it.header } to items.indexOfLast { !it.header } }
             setOnItemClickListener { _, _, w, _ ->
                 if (!items[w].header) { dlg.dismiss(); onPick(w) }
+            }
+            if (onLongPick != null) {
+                isLongClickable = true
+                setOnItemLongClickListener { _, _, position, _ ->
+                    if (items[position].header) false
+                    else {
+                        dlg.dismiss()
+                        onLongPick(position)
+                    }
+                }
             }
         }
     }
