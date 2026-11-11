@@ -1478,9 +1478,9 @@ class PlayerActivity : Activity() {
             }
             runOnUiThread {
                 when {
-                    recording != null -> showRecordingDetails(recording)
+                    recording != null -> showRecordingDetails(recording) { showZapTimers() }
                     error != null -> TvDialog.info(this@PlayerActivity, "Nie udało się wyszukać nagrania",
-                        error)
+                        error) { showZapTimers() }
                     else -> showZapHistoryEntry(entry, "Nie znaleziono pliku nagrania.")
                 }
             }
@@ -1872,7 +1872,7 @@ class PlayerActivity : Activity() {
         else if (pos > 30_000) recPos.edit().putLong(recPosKey(r), pos).apply()
     }
 
-    private fun pickRecording(r: Recording) {
+    private fun pickRecording(r: Recording, onCancel: (() -> Unit)? = null) {
         if (r.isDir) {
             if (r.path == "..") {
                 recDir = if (recStack.isNotEmpty()) recStack.removeAt(recStack.size - 1) else ""
@@ -1889,7 +1889,9 @@ class PlayerActivity : Activity() {
             TvDialog.list(this, r.title, listOf(
                 TvDialog.Item("Wznów od ${fmtMs(saved)}"),
                 TvDialog.Item("Od początku"),
-            ), 0, widthFrac = 0.45f) { w -> playRecording(r, if (w == 0) saved else 0) }
+            ), 0, widthFrac = 0.45f, onCancel = { onCancel?.invoke() }) { w ->
+                playRecording(r, if (w == 0) saved else 0)
+            }
         } else playRecording(r, 0)
     }
 
@@ -1897,10 +1899,14 @@ class PlayerActivity : Activity() {
         listOf(r.service, if (r.begin > 0) dateFmt.format(Date(r.begin * 1000)) else "", if (r.lengthSec > 0) "${r.lengthSec / 60} min" else "")
             .filter { it.isNotBlank() }.joinToString("  •  ") + "\n\n" + r.desc.ifBlank { "Brak opisu" }
 
-    private fun showRecordingDetails(r: Recording) {
+    private fun showRecordingDetails(r: Recording, onBack: (() -> Unit)? = null) {
         TvDialog.confirm(this, r.title, recordingDescription(r),
-            listOf(TvDialog.Btn("Odtwórz") { pickRecording(r) }),
-            timeoutSec = prefs.actionDialogSec)
+            listOf(TvDialog.Btn("Odtwórz") {
+                pickRecording(r, onCancel = onBack?.let { returnToSchedule ->
+                    { showRecordingDetails(r, returnToSchedule) }
+                })
+            }),
+            onBack = onBack, timeoutSec = prefs.actionDialogSec, onTimeout = onBack)
     }
 
     private fun showRecordingActions(r: Recording) {
