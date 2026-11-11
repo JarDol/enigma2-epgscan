@@ -1056,6 +1056,7 @@ class PlayerActivity : Activity() {
     private fun playIn(bIdx: Int, chList: List<Channel>, index: Int) {
         if (chList.isEmpty()) return
         if (recMode) leaveRec()
+        panelOnRec = false
         tsCtl = false; tsChBar = false
         tsNewChannel()
         val i = ((index % chList.size) + chList.size) % chList.size
@@ -1430,26 +1431,30 @@ class PlayerActivity : Activity() {
     private fun playZapRecording(timer: ZapTimers.Timer) {
         showMessage("Szukam nagrania: ${timer.title}", 5000)
         io.execute {
-            val recording = try {
+            val (recording, error) = try {
                 val movies = api.movies("").second.filterNot { it.isDir }
                 val wantedTitle = timer.title.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
                 val wantedRef = OpenWebif.key(timer.ref)
                 val exactTitle = movies.filter {
                     it.title.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ") == wantedTitle
                 }
-                exactTitle.maxWithOrNull(
+                val found = exactTitle.maxWithOrNull(
                     compareBy<Recording> { OpenWebif.key(it.sref) == wantedRef }
                         .thenBy { -abs(it.begin - timer.begin) }
                 ) ?: movies.filter {
                     OpenWebif.key(it.sref) == wantedRef && abs(it.begin - timer.begin) <= 600
                 }.minByOrNull { abs(it.begin - timer.begin) }
+                found to null
             } catch (e: Exception) {
                 AppLog.i("harmonogram: nie udało się wyszukać nagrania ${timer.title}: $e")
-                null
+                null to (e.message ?: e.toString())
             }
             runOnUiThread {
-                if (recording == null) showMessage("Nie znaleziono nagrania: ${timer.title}", 8000)
-                else pickRecording(recording)
+                when {
+                    recording != null -> showRecordingDetails(recording)
+                    error != null -> showMessage("Nie udało się wyszukać nagrania: $error", 8000)
+                    else -> showMessage("Nie znaleziono nagrania: ${timer.title}", 8000)
+                }
             }
         }
     }
@@ -1879,7 +1884,7 @@ class PlayerActivity : Activity() {
 
     private fun deleteRecording(r: Recording) {
         io.execute {
-            val result = try { api.movieDelete(r.path) } catch (e: Exception) { false to (e.message ?: e.toString()) }
+            val result = try { api.movieDelete(r.sref) } catch (e: Exception) { false to (e.message ?: e.toString()) }
             runOnUiThread {
                 if (result.first) {
                     recPos.edit().remove(recPosKey(r)).apply()

@@ -122,7 +122,10 @@ object PinLock {
             else if (pos > 0) { pos--; digits[pos] = -1 }
             redraw()
         }
-        dlg = TvDialog.panel(a, "Ustawienia zablokowane", null, widthFrac = 0.42f,
+        val requiredWidthPx = dp(70 * n + 72)
+        val widthFrac = (requiredWidthPx.toFloat() / a.resources.displayMetrics.widthPixels)
+            .coerceIn(0.42f, 0.9f)
+        dlg = TvDialog.panel(a, "Ustawienia zablokowane", null, widthFrac = widthFrac, maxH = 0.9f,
             onBack = { if (!done) { done = true; onCancel() } }) { ctx, _ ->      // WSTECZ zawsze anuluje
             val col = android.widget.LinearLayout(ctx).apply {
                 orientation = android.widget.LinearLayout.VERTICAL

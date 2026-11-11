@@ -316,9 +316,9 @@ class OpenWebif(private val p: Prefs) {
         return cur to (out + files)
     }
 
-    /** Usuwa nagranie z dysku dekodera. */
-    fun movieDelete(path: String): Pair<Boolean, String> {
-        val js = get("/api/moviedelete?sRef=" + enc(path))
+    /** Usuwa nagranie z dysku dekodera na podstawie referencji usługi z listy nagrań. */
+    fun movieDelete(serviceRef: String): Pair<Boolean, String> {
+        val js = get("/api/moviedelete?sRef=" + enc(serviceRef))
         val message = js.optString("message").ifBlank { js.optString("error") }.ifBlank { "Brak potwierdzenia z dekodera" }
         return js.optBoolean("result") to message
     }
