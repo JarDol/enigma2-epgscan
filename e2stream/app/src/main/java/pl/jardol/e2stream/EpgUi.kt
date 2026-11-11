@@ -263,7 +263,7 @@ class EpgUi(
     }
 
     private fun showActionResult(title: String, message: String) {
-        TvDialog.confirm(a, title, message, listOf(TvDialog.Btn("OK")), timeoutSec = Prefs(a).infoDialogSec)
+        TvDialog.info(a, title, message)
     }
 
     private fun confirmAction(title: String, message: String, confirmLabel: String, action: () -> Unit) {

@@ -367,6 +367,12 @@ object TvDialog {
         }
     }
 
+    fun info(a: Activity, title: String, message: CharSequence) {
+        val prefs = Prefs(a)
+        if (prefs.hideInfoDialogs) return
+        confirm(a, title, message, listOf(Btn("OK")), timeoutSec = prefs.infoDialogSec)
+    }
+
     /** Pole tekstowe u góry ekranu (nad klawiaturą ekranową) z przyciskami Zapisz / Anuluj. */
     fun input(a: Activity, title: String, hint: String, et: android.widget.EditText, saveLabel: String = "Zapisz", onSave: () -> Unit) {
         var saved = false

@@ -432,6 +432,10 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("infoDialogSec", 15).let { if (it == 0) 0 else 15 }
         set(v) = putI("infoDialogSec", if (v == 0) 0 else 15)
 
+    var hideInfoDialogs: Boolean
+        get() = sp.getBoolean("hideInfoDialogs", false)
+        set(v) = putB("hideInfoDialogs", v)
+
     var resumeLast: Boolean
         get() = sp.getBoolean("resumeLast", true)
         set(v) = putB("resumeLast", v)

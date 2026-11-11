@@ -1441,6 +1441,8 @@ class PlayerActivity : Activity() {
                         TvDialog.Btn("Usuń") {
                             ZapTimers.removeHistory(this, entry)
                             showZapTimers()
+                            TvDialog.info(this, "Usunięto z historii",
+                                "${entry.timer.channel}\n${entry.timer.title}")
                         },
                         TvDialog.Btn("Anuluj"),
                     ))

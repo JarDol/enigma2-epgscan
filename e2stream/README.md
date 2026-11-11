@@ -26,7 +26,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV.
 * Długie OK w EPG kanału i Multi-EPG otwiera wybór kanału/bukietu, a wyszukiwanie jest na końcu menu.
 * W opisie EPG „Oglądaj” dla aktualnie oglądanego kanału zamyka opis bez ponownego strojenia. Wybór innego kanału („Przełącz na kanał”), także dla bieżącej audycji, wymaga potwierdzenia.
 * Akcje „Przełącz o…”, „Nagraj na dekoderze” i „Usuń przełączenie” wymagają potwierdzenia przed wykonaniem; WSTECZ anuluje. Po wykonaniu pokazywany jest wynik.
-* Okna informacyjne z wynikiem akcji domyślnie zamykają się po 15 sekundach; można wybrać ten czas albo „Nie zamykaj” w ustawieniach Ogólne. Czas opisu EPG ustawia się osobno.
+* Okna informacyjne z wynikiem akcji domyślnie zamykają się po 15 sekundach; w ustawieniach Ogólne można też wybrać „Nie zamykaj” albo „Nie pokazuj”. Czas opisu EPG ustawia się osobno.
 * Menu podręczne z konfigurowalną widocznością i kolejnością pozycji; Ustawienia są zawsze dostępne.
 * Domyślne mapowanie OK i strzałek można zmieniać osobno z paskiem kanału i bez niego.
 * Przegląd timerów nagrań dekodera z usuwaniem oraz usuwanie plików nagrań z menu długiego OK.
