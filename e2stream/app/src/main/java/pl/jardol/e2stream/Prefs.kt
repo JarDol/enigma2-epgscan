@@ -415,9 +415,13 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("channelListSec", 30)
         set(v) = putI("channelListSec", v)
 
-    var epgEventSec: Int
-        get() = sp.getInt("epgEventSec", 30)
-        set(v) = putI("epgEventSec", v)
+    var actionDialogSec: Int
+        get() = sp.getInt("epgEventSec", 30).coerceIn(0, 600)
+        set(v) = putI("epgEventSec", v.coerceIn(0, 600))
+
+    var confirmDialogSec: Int
+        get() = sp.getInt("confirmDialogSec", 30).coerceIn(0, 600)
+        set(v) = putI("confirmDialogSec", v.coerceIn(0, 600))
 
     var epgChannelSec: Int
         get() = sp.getInt("epgChannelSec", 30)
@@ -427,10 +431,10 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("epgMultiSec", 30)
         set(v) = putI("epgMultiSec", v)
 
-    /** Czas wyświetlania komunikatów wyniku akcji w sekundach; 0 = bez limitu. */
+    /** Czas wyświetlania komunikatów w sekundach; 0 = bez limitu. */
     var infoDialogSec: Int
-        get() = sp.getInt("infoDialogSec", 15).let { if (it == 0) 0 else 15 }
-        set(v) = putI("infoDialogSec", if (v == 0) 0 else 15)
+        get() = sp.getInt("infoDialogSec", 15).coerceIn(0, 600)
+        set(v) = putI("infoDialogSec", v.coerceIn(0, 600))
 
     var hideInfoDialogs: Boolean
         get() = sp.getBoolean("hideInfoDialogs", false)

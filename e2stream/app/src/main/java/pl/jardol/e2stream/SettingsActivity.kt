@@ -207,35 +207,12 @@ class SettingsActivity : Activity() {
         num("Czas paska kanału (s)", { p.bannerSec }, { p.bannerSec = it }, 1..30),
         num("Czas paska timeshiftu (s)", { p.tsBannerSec }, { p.tsBannerSec = it }, 1..30),
         num("Czas listy kanałów (s, 0 = bez zamykania)", { p.channelListSec }, { p.channelListSec = it }, 0..600),
-        num("Czas EPG wydarzenia (s, 0 = bez zamykania)", { p.epgEventSec }, { p.epgEventSec = it }, 0..600),
+        num("Czas okien akcji (s, 0 = bez zamykania)", { p.actionDialogSec }, { p.actionDialogSec = it }, 0..600),
+        num("Czas okien potwierdzenia (s, 0 = bez zamykania)", { p.confirmDialogSec }, { p.confirmDialogSec = it }, 0..600),
         num("Czas EPG kanału (s, 0 = bez zamykania)", { p.epgChannelSec }, { p.epgChannelSec = it }, 0..600),
         num("Czas Multi EPG (s, 0 = bez zamykania)", { p.epgMultiSec }, { p.epgMultiSec = it }, 0..600),
-        Item.Action("Okna informacyjne", {
-            when {
-                p.hideInfoDialogs -> "nie pokazuj"
-                p.infoDialogSec == 0 -> "nie zamykaj"
-                else -> "${p.infoDialogSec} s"
-            }
-        }) {
-            val options = listOf("15 sekund", "Nie zamykaj", "Nie pokazuj")
-            TvDialog.single(this, "Okna informacyjne", options,
-                when {
-                    p.hideInfoDialogs -> 2
-                    p.infoDialogSec == 0 -> 1
-                    else -> 0
-                }) { selected ->
-                p.hideInfoDialogs = selected == 2
-                p.infoDialogSec = if (selected == 0) 15 else 0
-                val value = when (selected) {
-                    0 -> "15 s"
-                    1 -> "bez zamykania"
-                    else -> "nie pokazuj"
-                }
-                markChanged("okna informacyjne = $value")
-                items = buildItems()
-                refresh()
-            }
-        },
+        num("Czas okien informacyjnych (s, 0 = bez zamykania)", { p.infoDialogSec }, { p.infoDialogSec = it }, 0..600),
+        Item.Toggle("Pokazuj okna informacyjne", { !p.hideInfoDialogs }, { p.hideInfoDialogs = !it }),
         Item.Text("PIN do ustawień", { p.pin }, { p.pin = it.trim() },
             InputType.TYPE_CLASS_NUMBER, secret = true, hint = "maks. 6 cyfr; puste = bez blokady"),
         Item.Action("Pytaj o PIN ponownie po", {

@@ -37,11 +37,18 @@ object TvDialog {
 
     class Btn(val label: String, val onClick: () -> Unit = {})
 
-    private class TimedDialog(a: Activity, private val timeoutSec: Int) : Dialog(a, R.style.TvDialog) {
+    private class TimedDialog(
+        a: Activity,
+        private val timeoutSec: Int,
+        onTimeout: () -> Unit,
+    ) : Dialog(a, R.style.TvDialog) {
         private val ui = Handler(Looper.getMainLooper())
         private val timer = IdleTimeout(
             { timeoutSec }, { task, delay -> ui.postDelayed(task, delay) }, { ui.removeCallbacks(it) },
-        ) { dismiss() }
+        ) {
+            dismiss()
+            onTimeout()
+        }
 
         override fun onWindowFocusChanged(hasFocus: Boolean) {
             super.onWindowFocusChanged(hasFocus)
@@ -95,10 +102,11 @@ object TvDialog {
         a: Activity, title: String?, hint: String?, chips: List<Btn> = emptyList(),
         widthFrac: Float = 0.6f, maxH: Float = 0.85f, cancelable: Boolean = true,
         onBack: (() -> Unit)? = null, focusChip: Boolean = false, top: Boolean = false, timeoutSec: Int = 0,
+        onTimeout: (() -> Unit)? = null,
         hintBelowTitle: Boolean = false,
         content: (ctx: Context, dlg: Dialog) -> View,
     ): Dialog {
-        val dlg = if (timeoutSec > 0) TimedDialog(a, timeoutSec) else Dialog(a, R.style.TvDialog)
+        val dlg = if (timeoutSec > 0) TimedDialog(a, timeoutSec) { onTimeout?.invoke() } else Dialog(a, R.style.TvDialog)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val ctx = dlg.context
         val dm = a.resources.displayMetrics
@@ -271,8 +279,9 @@ object TvDialog {
                 setOnItemLongClickListener { _, _, position, _ ->
                     if (items[position].header) false
                     else {
-                        dlg.dismiss()
-                        onLongPick(position)
+                        val handled = onLongPick(position)
+                        if (handled) dlg.dismiss()
+                        handled
                     }
                 }
             }
@@ -359,18 +368,23 @@ object TvDialog {
     /** Komunikat z akcjami na dole (np. aktualizacja, awaria). */
     fun confirm(
         a: Activity, title: String, message: CharSequence, chips: List<Btn>,
-        cancelable: Boolean = true, onBack: (() -> Unit)? = null, timeoutSec: Int = 0,
+        cancelable: Boolean = true, onBack: (() -> Unit)? = null, timeoutSec: Int? = null,
+        onTimeout: (() -> Unit)? = null,
     ) {
         panel(a, title, null, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack,
-            focusChip = true, timeoutSec = timeoutSec) { ctx, _ ->
+            focusChip = true, timeoutSec = timeoutSec ?: Prefs(a).confirmDialogSec, onTimeout = onTimeout) { ctx, _ ->
             scrollText(ctx, message, 18f)
         }
     }
 
-    fun info(a: Activity, title: String, message: CharSequence) {
+    fun info(a: Activity, title: String, message: CharSequence, onClose: () -> Unit = {}) {
         val prefs = Prefs(a)
-        if (prefs.hideInfoDialogs) return
-        confirm(a, title, message, listOf(Btn("OK")), timeoutSec = prefs.infoDialogSec)
+        if (prefs.hideInfoDialogs) {
+            onClose()
+            return
+        }
+        confirm(a, title, message, listOf(Btn("OK", onClose)),
+            onBack = onClose, timeoutSec = prefs.infoDialogSec, onTimeout = onClose)
     }
 
     /** Pole tekstowe u góry ekranu (nad klawiaturą ekranową) z przyciskami Zapisz / Anuluj. */

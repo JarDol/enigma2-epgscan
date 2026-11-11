@@ -135,6 +135,7 @@ class EpgUi(
         val name = ev.sname.ifBlank { ch?.name ?: "" }
         val running = ev.begin <= now() && ev.end > now()
         val isCurrentChannel = host.current()?.ref?.let { OpenWebif.key(it) == OpenWebif.key(ref) } == true
+        val returnToSchedule = if (scheduledTimer != null) onReturn else null
         val btns = mutableListOf<TvDialog.Btn>()
         if (ref.isNotBlank()) {
             if (isCurrentChannel) {
@@ -145,11 +146,13 @@ class EpgUi(
                         "Potwierdź przełączenie",
                         "Przełączyć na kanał ${name.ifBlank { ref }}?",
                         "Przełącz",
+                        onBack = returnToSchedule,
                     ) {
                         host.zapTo(ref) { ok, result ->
                             showActionResult(
                                 if (ok) "Przełączono na kanał" else "Nie udało się przełączyć",
                                 result,
+                                returnToSchedule ?: {},
                             )
                         }
                     }
@@ -160,7 +163,8 @@ class EpgUi(
                     "Potwierdź nagranie",
                     "Dodać do nagrań dekodera?\n\n$name — ${ev.title}\n${t(ev.begin)}–${t(ev.end)}",
                     "Nagraj",
-                ) { record(ref, ev) }
+                    onBack = returnToSchedule,
+                ) { record(ref, ev, onInfoClose = returnToSchedule ?: {}) }
             }
             if (scheduledTimer != null) {
                 btns += TvDialog.Btn("Usuń przełączenie") {
@@ -168,10 +172,11 @@ class EpgUi(
                         "Potwierdź usunięcie",
                         "Usunąć zaplanowane przełączenie?\n\n${scheduledTimer.channel} — ${scheduledTimer.title}\n${t(scheduledTimer.begin)}",
                         "Usuń",
+                        onBack = onReturn,
                     ) {
                         ZapTimers.remove(a, scheduledTimer)
-                        host.message("Usunięto przełączenie o ${t(scheduledTimer.begin)}")
-                        onReturn()
+                        showActionResult("Usunięto przełączenie",
+                            "${scheduledTimer.channel}\n${scheduledTimer.title}", onReturn)
                     }
                 }
             // przełączenie o początku audycji (tylko na tym telewizorze, gdy aplikacja działa)
@@ -183,7 +188,8 @@ class EpgUi(
                         "Usuń",
                     ) {
                         ZapTimers.remove(a, ZapTimers.Timer(ref, name, ev.title, ev.begin, ev.end, ev.id))
-                        host.message("Usunięto przełączenie o ${t(ev.begin)}")
+                        showActionResult("Usunięto przełączenie",
+                            "${name.ifBlank { ref }}\n${ev.title}")
                     }
                 } else btns += TvDialog.Btn("Przełącz o ${t(ev.begin)}") {
                     confirmAction(
@@ -199,7 +205,8 @@ class EpgUi(
         if (btns.isEmpty()) btns += TvDialog.Btn("Zamknij")      // WSTECZ też zamyka
         // nagłówek jak wiersz listy kanałów (ikona, kanał, tytuł, czas, postęp), niżej opis, akcje na dole
         TvDialog.panel(a, null, "OK wybierz  •  WSTECZ wróć", btns, widthFrac = 0.8f,
-            onBack = if (scheduledTimer != null) onReturn else null, focusChip = true, timeoutSec = Prefs(a).epgEventSec) { ctx, _ ->
+            onBack = returnToSchedule, focusChip = true, timeoutSec = Prefs(a).actionDialogSec,
+            onTimeout = returnToSchedule) { ctx, _ ->
             EventCard.content(ctx, ev, ref, name, EventCard.body(ev).ifEmpty { "Brak opisu" })
         }
     }
@@ -243,12 +250,20 @@ class EpgUi(
             ))
     }
 
-    fun recordTimer(timer: ZapTimers.Timer, onResult: ((Boolean) -> Unit)? = null) {
+    fun recordTimer(
+        timer: ZapTimers.Timer,
+        onResult: ((Boolean) -> Unit)? = null,
+    ) {
         record(timer.ref, EpgEvent(timer.eventId, timer.begin, timer.end - timer.begin,
             timer.title, "", "", timer.ref, timer.channel), onResult)
     }
 
-    private fun record(ref: String, ev: EpgEvent, onResult: ((Boolean) -> Unit)? = null) {
+    private fun record(
+        ref: String,
+        ev: EpgEvent,
+        onResult: ((Boolean) -> Unit)? = null,
+        onInfoClose: () -> Unit = {},
+    ) {
         io.execute {
             val r = try { api.timerAdd(ref, ev) } catch (e: Exception) { false to (e.message ?: e.toString()) }
             AppLog.i("nagranie: ${ev.title} ${d(ev.begin)} ${t(ev.begin)} -> ${r.first} ${r.second}")
@@ -256,21 +271,24 @@ class EpgUi(
                 showActionResult(
                     if (r.first) "Nagranie ustawione" else "Nie udało się ustawić nagrania",
                     "${ev.title}\n${r.second}".trim(),
+                    onInfoClose,
                 )
                 onResult?.invoke(r.first)
             }
         }
     }
 
-    private fun showActionResult(title: String, message: String) {
-        TvDialog.info(a, title, message)
+    private fun showActionResult(title: String, message: String, onClose: () -> Unit = {}) {
+        TvDialog.info(a, title, message, onClose)
     }
 
-    private fun confirmAction(title: String, message: String, confirmLabel: String, action: () -> Unit) {
+    private fun confirmAction(
+        title: String, message: String, confirmLabel: String,
+        onBack: (() -> Unit)? = null, action: () -> Unit,
+    ) {
         TvDialog.confirm(a, title, message, listOf(
             TvDialog.Btn(confirmLabel, action),
-            TvDialog.Btn("Anuluj"),
-        ))
+        ), onBack = onBack, onTimeout = onBack)
     }
 
     fun clearMemory() = synchronized(cache) { cache.clear() }

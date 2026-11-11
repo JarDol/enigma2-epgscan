@@ -105,10 +105,9 @@ class PlayerActivity : Activity() {
             timer.description,
         ).filter { it.isNotBlank() }.joinToString("\n")
         TvDialog.confirm(this, timer.title.ifBlank { timer.channel }, description,
-            listOf(
-                TvDialog.Btn("Usuń z dekodera") { confirmDeleteDecoderTimer(timer) },
-                TvDialog.Btn("Wróć") { showDecoderTimers() },
-            ), onBack = { showDecoderTimers() })
+            listOf(TvDialog.Btn("Usuń z dekodera") { confirmDeleteDecoderTimer(timer) }),
+            onBack = { showDecoderTimers() }, timeoutSec = prefs.actionDialogSec,
+            onTimeout = { showDecoderTimers() })
     }
 
     private fun confirmDeleteDecoderTimer(timer: DecoderTimer) {
@@ -118,15 +117,16 @@ class PlayerActivity : Activity() {
                     io.execute {
                         val result = try { api.timerDelete(timer) } catch (e: Exception) { false to (e.message ?: e.toString()) }
                         runOnUiThread {
-                            if (result.first) {
-                                showMessage("Usunięto timer: ${timer.title}", 5000)
-                                showDecoderTimers()
-                            } else showMessage("Nie udało się usunąć timera: ${result.second}", 8000)
+                            val (title, message) = if (result.first) {
+                                "Usunięto timer" to "${timer.channel}\n${timer.title}"
+                            } else {
+                                "Nie udało się usunąć timera" to "${timer.title}\n${result.second}"
+                            }
+                            TvDialog.info(this@PlayerActivity, title, message) { showDecoderTimers() }
                         }
                     }
-                },
-                TvDialog.Btn("Anuluj"),
-            ))
+                }),
+            onBack = { showDecoderTimers() }, onTimeout = { showDecoderTimers() })
     }
 
     private lateinit var prefs: Prefs
@@ -1417,7 +1417,7 @@ class PlayerActivity : Activity() {
             hint = "OK szczegóły  •  długie OK usuń  •  WSTECZ zamknij", widthFrac = 0.72f,
             onLongPick = { position ->
                 historyEntries[position]?.let {
-                    showZapHistoryEntry(it)
+                    ui.post { showZapHistoryEntry(it) }
                     true
                 } ?: false
             }) { w -> actions[w]?.invoke() }
@@ -1444,16 +1444,14 @@ class PlayerActivity : Activity() {
                             TvDialog.info(this, "Usunięto z historii",
                                 "${entry.timer.channel}\n${entry.timer.title}")
                         },
-                        TvDialog.Btn("Anuluj"),
-                    ))
+                    ), onBack = { showZapTimers() }, onTimeout = { showZapTimers() })
             },
-            TvDialog.Btn("Wróć do harmonogramu") { showZapTimers() },
         )
         TvDialog.confirm(this, zapOutcomeLabel(entry.outcome),
             listOfNotNull(note, entry.timer.channel, entry.timer.title,
                 zapDf.format(Date(entry.completedAt * 1000))).joinToString("\n"),
-            buttons,
-            onBack = { showZapTimers() })
+            buttons, onBack = { showZapTimers() }, timeoutSec = prefs.actionDialogSec,
+            onTimeout = { showZapTimers() })
     }
 
     private fun playZapRecording(entry: ZapTimers.History) {
@@ -1481,7 +1479,8 @@ class PlayerActivity : Activity() {
             runOnUiThread {
                 when {
                     recording != null -> showRecordingDetails(recording)
-                    error != null -> showMessage("Nie udało się wyszukać nagrania: $error", 8000)
+                    error != null -> TvDialog.info(this@PlayerActivity, "Nie udało się wyszukać nagrania",
+                        error)
                     else -> showZapHistoryEntry(entry, "Nie znaleziono pliku nagrania.")
                 }
             }
@@ -1900,7 +1899,8 @@ class PlayerActivity : Activity() {
 
     private fun showRecordingDetails(r: Recording) {
         TvDialog.confirm(this, r.title, recordingDescription(r),
-            listOf(TvDialog.Btn("Odtwórz") { pickRecording(r) }))
+            listOf(TvDialog.Btn("Odtwórz") { pickRecording(r) }),
+            timeoutSec = prefs.actionDialogSec)
     }
 
     private fun showRecordingActions(r: Recording) {
@@ -1912,10 +1912,7 @@ class PlayerActivity : Activity() {
 
     private fun confirmDeleteRecording(r: Recording) {
         TvDialog.confirm(this, "Usunąć nagranie?", "${r.title}\n${r.path}",
-            listOf(
-                TvDialog.Btn("Usuń") { deleteRecording(r) },
-                TvDialog.Btn("Anuluj"),
-            ))
+            listOf(TvDialog.Btn("Usuń") { deleteRecording(r) }))
     }
 
     private fun deleteRecording(r: Recording) {
@@ -1924,9 +1921,10 @@ class PlayerActivity : Activity() {
             runOnUiThread {
                 if (result.first) {
                     recPos.edit().remove(recPosKey(r)).apply()
-                    showMessage("Usunięto nagranie: ${r.title}", 5000)
-                    reloadRecordings()
-                } else showMessage("Nie udało się usunąć nagrania: ${result.second}", 8000)
+                    TvDialog.info(this@PlayerActivity, "Usunięto nagranie", r.title) {
+                        reloadRecordings()
+                    }
+                } else TvDialog.info(this@PlayerActivity, "Nie udało się usunąć nagrania", result.second)
             }
         }
     }
