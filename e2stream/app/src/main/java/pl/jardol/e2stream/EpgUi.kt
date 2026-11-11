@@ -31,7 +31,7 @@ class EpgUi(
         fun bouquetChannels(): List<Channel>
         fun bouquetList(): List<Bouquet>
         fun currentBouquet(): Bouquet?
-        fun zapTo(ref: String)
+        fun zapTo(ref: String, onResult: ((Boolean, String) -> Unit)? = null)
         fun message(t: String)
     }
 
@@ -131,7 +131,15 @@ class EpgUi(
         val running = ev.begin <= now() && ev.end > now()
         val btns = mutableListOf<TvDialog.Btn>()
         if (ref.isNotBlank()) {
-            btns += TvDialog.Btn(if (running) "Oglądaj" else "Przełącz na kanał") { host.zapTo(ref) }
+            btns += TvDialog.Btn(if (running) "Oglądaj" else "Przełącz na kanał") {
+                if (running) host.zapTo(ref)
+                else host.zapTo(ref) { ok, result ->
+                    showActionResult(
+                        if (ok) "Przełączono na kanał" else "Nie udało się przełączyć",
+                        result,
+                    )
+                }
+            }
             if (ev.end > now()) btns += TvDialog.Btn("Nagraj na dekoderze") { record(ref, ev) }
             if (scheduledTimer != null) {
                 btns += TvDialog.Btn("Usuń przełączenie") {
@@ -176,7 +184,8 @@ class EpgUi(
         val conflicts = ZapTimers.list(a).filter { it.begin == timer.begin && it.key() != timer.key() }
         if (conflicts.isEmpty()) {
             ZapTimers.add(a, timer)
-            host.message("O ${t(timer.begin)} przełączę na ${timer.channel} — ${timer.title}")
+            showActionResult("Dodano do harmonogramu",
+                "O ${t(timer.begin)} przełączę na ${timer.channel} — ${timer.title}")
             return
         }
         val current = conflicts.joinToString("\n") { "${it.channel} — ${it.title}" }
@@ -185,7 +194,8 @@ class EpgUi(
             listOf(
                 TvDialog.Btn("Zamień") {
                     ZapTimers.replaceAt(a, timer)
-                    host.message("Zamieniono przełączenie na ${timer.channel} — ${timer.title}")
+                    showActionResult("Zamieniono w harmonogramie",
+                        "O ${t(timer.begin)} przełączę na ${timer.channel} — ${timer.title}")
                 },
                 TvDialog.Btn("Zostaw obecne"),
                 TvDialog.Btn("Nagraj na dekoderze") {
@@ -204,10 +214,17 @@ class EpgUi(
             val r = try { api.timerAdd(ref, ev) } catch (e: Exception) { false to (e.message ?: e.toString()) }
             AppLog.i("nagranie: ${ev.title} ${d(ev.begin)} ${t(ev.begin)} -> ${r.first} ${r.second}")
             a.runOnUiThread {
-                host.message(if (r.first) "Nagranie ustawione: ${ev.title}" else "Nie udało się ustawić nagrania: ${r.second}")
+                showActionResult(
+                    if (r.first) "Nagranie ustawione" else "Nie udało się ustawić nagrania",
+                    "${ev.title}\n${r.second}".trim(),
+                )
                 onResult?.invoke(r.first)
             }
         }
+    }
+
+    private fun showActionResult(title: String, message: String) {
+        TvDialog.confirm(a, title, message, listOf(TvDialog.Btn("OK")))
     }
 
     fun clearMemory() = synchronized(cache) { cache.clear() }

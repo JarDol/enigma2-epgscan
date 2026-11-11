@@ -226,7 +226,8 @@ class PlayerActivity : Activity() {
             override fun bouquetChannels(): List<Channel> = playList
             override fun bouquetList(): List<Bouquet> = this@PlayerActivity.bouquets.filter { it.ref != REC_REF }
             override fun currentBouquet(): Bouquet? = bouquets.getOrNull(playBouquet)?.takeIf { it.ref != REC_REF }
-            override fun zapTo(ref: String) = this@PlayerActivity.zapTo(ref)
+            override fun zapTo(ref: String, onResult: ((Boolean, String) -> Unit)?) =
+                this@PlayerActivity.zapTo(ref, onResult = onResult)
             override fun message(t: String) = showMessage(t, 4000)
         })
         AppLog.i("=== Start E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} | ${prefs.displayName} | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) | ekran: ${displayInfo()}")
@@ -2546,26 +2547,55 @@ class PlayerActivity : Activity() {
     }
 
     /** Przełącza na kanał o danej referencji (z bieżącego lub innego widocznego bukietu). */
-    private fun zapTo(ref: String, forceTune: Boolean = false) {
+    private fun zapTo(
+        ref: String,
+        forceTune: Boolean = false,
+        onResult: ((Boolean, String) -> Unit)? = null,
+    ) {
         val k = OpenWebif.key(ref)
         val i = playList.indexOfFirst { OpenWebif.key(it.ref) == k }
         if (!forceTune && i >= 0 && i == playIndex && currentUrl != null && !recMode) {
             // ten kanał już gra — tylko zamknij listę, bez ponownego uruchamiania strumienia
-            hidePanel(); showBanner(playList[i]); return
+            hidePanel(); showBanner(playList[i])
+            onResult?.invoke(true, "Kanał ${playList[i].name} jest już odtwarzany.")
+            return
         }
-        if (i >= 0) { hidePanel(); play(i); return }
+        if (i >= 0) {
+            hidePanel()
+            play(i)
+            onResult?.invoke(true, "Rozpoczęto przełączanie na ${playList[i].name}.")
+            return
+        }
         val bq = bouquets
         io.execute {
+            var lookupError: Exception? = null
             for ((bi, b) in bq.withIndex()) {
                 if (b.ref == REC_REF) continue
-                val ch = try { api.channels(b) } catch (e: Exception) { continue }
+                val ch = try {
+                    api.channels(b)
+                } catch (e: Exception) {
+                    lookupError = e
+                    continue
+                }
                 val j = ch.indexOfFirst { OpenWebif.key(it.ref) == k }
                 if (j >= 0) {
-                    runOnUiThread { hidePanel(); playIn(bi, ch, j) }
+                    runOnUiThread {
+                        hidePanel()
+                        playIn(bi, ch, j)
+                        onResult?.invoke(true, "Rozpoczęto przełączanie na ${ch[j].name}.")
+                    }
                     return@execute
                 }
             }
-            runOnUiThread { showMessage("Tego kanału nie ma w widocznych bukietach") }
+            runOnUiThread {
+                val message = if (lookupError == null) {
+                    "Tego kanału nie ma w widocznych bukietach."
+                } else {
+                    "Nie udało się sprawdzić kanału: ${lookupError?.message ?: lookupError.toString()}"
+                }
+                showMessage(message)
+                onResult?.invoke(false, message)
+            }
         }
     }
 
