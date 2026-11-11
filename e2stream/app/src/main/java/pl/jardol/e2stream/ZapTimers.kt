@@ -52,18 +52,28 @@ object ZapTimers {
             val outcome = o.optString("outcome")
             if (t.ref.isNotBlank() && outcome.isNotBlank()) out += History(t, outcome, o.optLong("at"))
         }
-        return out.sortedByDescending { it.completedAt }
+        val retained = retainHistory(out, System.currentTimeMillis() / 1000, Prefs(ctx).zapHistoryDays)
+        if (retained.size != out.size) saveHistory(ctx, retained)
+        return retained
     }
 
     private fun saveHistory(ctx: Context, entries: List<History>) {
         val arr = JSONArray()
-        for (h in entries.take(100)) {
+        for (h in entries) {
             val t = h.timer
             arr.put(JSONObject().put("ref", t.ref).put("ch", t.channel).put("t", t.title)
                 .put("b", t.begin).put("e", t.end).put("id", t.eventId)
                 .put("outcome", h.outcome).put("at", h.completedAt))
         }
         sp(ctx).edit().putString("history", arr.toString()).apply()
+    }
+
+    internal fun retainHistory(entries: List<History>, now: Long, retentionDays: Int): List<History> {
+        val retained = if (retentionDays <= 0) entries else {
+            val cutoff = now - retentionDays * 86_400L
+            entries.filter { it.completedAt >= cutoff }
+        }
+        return retained.sortedByDescending { it.completedAt }
     }
 
     fun mark(ctx: Context, t: Timer, outcome: String) {

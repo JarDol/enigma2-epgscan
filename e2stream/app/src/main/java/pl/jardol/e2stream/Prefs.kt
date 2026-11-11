@@ -3,6 +3,8 @@ package pl.jardol.e2stream
 import android.content.Context
 import android.content.SharedPreferences
 
+internal fun normalizePin(value: String) = value.filter { it in '0'..'9' }.take(6)
+
 class Prefs(ctx: Context) {
     private val app: Context = ctx.applicationContext ?: ctx
     private val sp: SharedPreferences =
@@ -384,8 +386,8 @@ class Prefs(ctx: Context) {
 
     /** PIN do ustawień (pusty = bez blokady). */
     var pin: String
-        get() = s("pin")
-        set(v) = putS("pin", v)
+        get() = normalizePin(s("pin"))
+        set(v) = putS("pin", normalizePin(v))
 
     var invertUpDown: Boolean
         get() = sp.getBoolean("invertUpDown", false)
@@ -395,6 +397,11 @@ class Prefs(ctx: Context) {
     var pinMin: Int
         get() = sp.getInt("pinMin", 1)
         set(v) = putI("pinMin", v)
+
+    /** Czas przechowywania zrealizowanych przełączeń w dniach; 0 = bez limitu. */
+    var zapHistoryDays: Int
+        get() = sp.getInt("zapHistoryDays", 28).let { if (it in listOf(0, 7, 14, 28)) it else 28 }
+        set(v) = putI("zapHistoryDays", if (v in listOf(7, 14, 28)) v else 0)
 
     var bannerSec: Int
         get() = sp.getInt("bannerSec", 4)

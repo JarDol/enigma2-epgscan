@@ -71,13 +71,26 @@ class PlayerActivity : Activity() {
                     showMessage("Brak harmonogramów na dekoderze", 5000)
                     return@runOnUiThread
                 }
-                val labels = timers.map { timer ->
-                    TvDialog.Item(timer.title.ifBlank { timer.channel },
-                        "${if (timer.disabled) "wyłączony • " else ""}${timer.channel}  •  ${zapDf.format(Date(timer.begin * 1000))}  •  ${if (timer.switchOnly) "przełączenie" else "nagranie"}")
+                val now = System.currentTimeMillis() / 1000
+                val future = timers.filter { it.end > now }
+                val completed = timers.filter { it.end <= now }
+                val labels = ArrayList<TvDialog.Item>()
+                val actions = ArrayList<DecoderTimer?>()
+                fun addSection(title: String, section: List<DecoderTimer>) {
+                    if (section.isEmpty()) return
+                    labels += TvDialog.Item(title, header = true)
+                    actions += null
+                    for (timer in section) {
+                        labels += TvDialog.Item(timer.title.ifBlank { timer.channel },
+                            "${if (timer.disabled) "wyłączony • " else ""}${timer.channel}  •  ${zapDf.format(Date(timer.begin * 1000))}  •  ${if (timer.switchOnly) "przełączenie" else "nagranie"}")
+                        actions += timer
+                    }
                 }
+                addSection("PRZYSZŁE", future)
+                addSection("ZREALIZOWANE", completed)
                 TvDialog.list(this, "Harmonogramy dekodera", labels,
                     hint = "OK szczegóły  •  WSTECZ zamknij", widthFrac = 0.75f) { selected ->
-                    showDecoderTimer(timers[selected])
+                    actions[selected]?.let { showDecoderTimer(it) }
                 }
             }
         }
@@ -1387,7 +1400,10 @@ class PlayerActivity : Activity() {
             for (entry in history) {
                 items += TvDialog.Item(entry.timer.title,
                     "${zapOutcomeLabel(entry.outcome)}  •  ${entry.timer.channel}  •  ${zapDf.format(Date(entry.completedAt * 1000))}")
-                actions += { showZapHistoryEntry(entry) }
+                actions += {
+                    if (entry.outcome == ZapTimers.RECORDED) playZapRecording(entry.timer)
+                    else showZapHistoryEntry(entry)
+                }
             }
         }
         TvDialog.list(this, "Przełączenia wg harmonogramu", items,
@@ -1408,6 +1424,33 @@ class PlayerActivity : Activity() {
             "${entry.timer.channel}\n${entry.timer.title}\n${zapDf.format(Date(entry.completedAt * 1000))}",
             listOf(TvDialog.Btn("Wróć do harmonogramu") { showZapTimers() }),
             onBack = { showZapTimers() })
+    }
+
+    private fun playZapRecording(timer: ZapTimers.Timer) {
+        showMessage("Szukam nagrania: ${timer.title}", 5000)
+        io.execute {
+            val recording = try {
+                val movies = api.movies("").second.filterNot { it.isDir }
+                val wantedTitle = timer.title.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
+                val wantedRef = OpenWebif.key(timer.ref)
+                val exactTitle = movies.filter {
+                    it.title.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ") == wantedTitle
+                }
+                exactTitle.maxWithOrNull(
+                    compareBy<Recording> { OpenWebif.key(it.sref) == wantedRef }
+                        .thenBy { -abs(it.begin - timer.begin) }
+                ) ?: movies.filter {
+                    OpenWebif.key(it.sref) == wantedRef && abs(it.begin - timer.begin) <= 600
+                }.minByOrNull { abs(it.begin - timer.begin) }
+            } catch (e: Exception) {
+                AppLog.i("harmonogram: nie udało się wyszukać nagrania ${timer.title}: $e")
+                null
+            }
+            runOnUiThread {
+                if (recording == null) showMessage("Nie znaleziono nagrania: ${timer.title}", 8000)
+                else pickRecording(recording)
+            }
+        }
     }
 
     // ---------------------------------------------------------------- timeshift

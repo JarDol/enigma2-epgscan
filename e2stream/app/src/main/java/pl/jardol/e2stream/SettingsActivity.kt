@@ -182,6 +182,9 @@ class SettingsActivity : Activity() {
         Item.Action("Mapowanie OK i strzałek — bez paska") { showNavigationMap(false) },
         Item.Action("Mapowanie OK i strzałek — z paskiem kanału") { showNavigationMap(true) },
         Item.Toggle("Po uruchomieniu wróć do ostatniego kanału", { p.resumeLast }, { p.resumeLast = it }),
+        Item.Action("Po uruchomieniu przełącz na kanał", {
+            if (p.resumeLast) "nieaktywne (włączony powrót do ostatniego)" else p.startChannelName.ifBlank { "pierwszy kanał" }
+        }) { if (p.resumeLast) toast("Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”") else chooseStartChannel() },
         Item.Toggle("Budź TV dla harmonogramu (eksperymentalne)", { p.wakeForZap }, { setWakeForZap(it) }),
         *(if (BuildConfig.WAKE_DIAGNOSTICS) arrayOf<Item>(Item.Action("Diagnostyka wybudzania", { if (p.wakeForZap) "status i test alarmu" else "najpierw włącz wybudzanie" }) {
             TvDialog.confirm(this, "Diagnostyka wybudzania", ZapWakeAlarms.diagnostics(this), listOf(
@@ -190,9 +193,16 @@ class SettingsActivity : Activity() {
                 TvDialog.Btn("Zamknij"),
             ))
         }) else emptyArray()),
-        Item.Action("Po uruchomieniu przełącz na kanał", {
-            if (p.resumeLast) "nieaktywne (włączony powrót do ostatniego)" else p.startChannelName.ifBlank { "pierwszy kanał" }
-        }) { if (p.resumeLast) toast("Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”") else chooseStartChannel() },
+        Item.Action("Czyść zrealizowane po", {
+            if (p.zapHistoryDays == 0) "nie czyść" else "${p.zapHistoryDays} dniach"
+        }) {
+            val days = listOf(7, 14, 28, 0)
+            TvDialog.single(this, "Czyść zrealizowane po", listOf("7 dniach", "14 dniach", "28 dniach", "Nie czyść"),
+                days.indexOf(p.zapHistoryDays).coerceAtLeast(0)) { selected ->
+                p.zapHistoryDays = days[selected]
+                markChanged("harmonogram: historia ${if (days[selected] == 0) "bez limitu" else "${days[selected]} dni"}")
+            }
+        },
         Item.Toggle("Odwróć ▲ / ▼ przy zmianie kanału", { p.invertUpDown }, { p.invertUpDown = it }),
         num("Czas paska kanału (s)", { p.bannerSec }, { p.bannerSec = it }, 1..30),
         num("Czas paska timeshiftu (s)", { p.tsBannerSec }, { p.tsBannerSec = it }, 1..30),
@@ -201,7 +211,7 @@ class SettingsActivity : Activity() {
         num("Czas EPG kanału (s, 0 = bez zamykania)", { p.epgChannelSec }, { p.epgChannelSec = it }, 0..600),
         num("Czas Multi EPG (s, 0 = bez zamykania)", { p.epgMultiSec }, { p.epgMultiSec = it }, 0..600),
         Item.Text("PIN do ustawień", { p.pin }, { p.pin = it.trim() },
-            InputType.TYPE_CLASS_NUMBER, secret = true, hint = "puste = bez blokady"),
+            InputType.TYPE_CLASS_NUMBER, secret = true, hint = "maks. 6 cyfr; puste = bez blokady"),
         Item.Action("Pytaj o PIN ponownie po", {
             if (p.pin.isEmpty()) "nieaktywne (brak PIN-u)" else PinLock.label(p.pinMin) + " • wyjście z aplikacji zawsze blokuje"
         }) { if (p.pin.isEmpty()) toast("Najpierw ustaw PIN") else choosePinTime() },
