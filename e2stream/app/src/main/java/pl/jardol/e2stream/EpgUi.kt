@@ -138,14 +138,26 @@ class EpgUi(
         if (ref.isNotBlank()) {
             btns += TvDialog.Btn(if (running) "Oglądaj" else "Przełącz na kanał") {
                 if (running) host.zapTo(ref)
-                else host.zapTo(ref) { ok, result ->
-                    showActionResult(
-                        if (ok) "Przełączono na kanał" else "Nie udało się przełączyć",
-                        result,
-                    )
+                else confirmAction(
+                    "Potwierdź przełączenie",
+                    "Przełączyć na kanał $name?",
+                    "Przełącz",
+                ) {
+                    host.zapTo(ref) { ok, result ->
+                        showActionResult(
+                            if (ok) "Przełączono na kanał" else "Nie udało się przełączyć",
+                            result,
+                        )
+                    }
                 }
             }
-            if (ev.end > now()) btns += TvDialog.Btn("Nagraj na dekoderze") { record(ref, ev) }
+            if (ev.end > now()) btns += TvDialog.Btn("Nagraj na dekoderze") {
+                confirmAction(
+                    "Potwierdź nagranie",
+                    "Dodać do nagrań dekodera?\n\n$name — ${ev.title}\n${t(ev.begin)}–${t(ev.end)}",
+                    "Nagraj",
+                ) { record(ref, ev) }
+            }
             if (scheduledTimer != null) {
                 btns += TvDialog.Btn("Usuń przełączenie") {
                     ZapTimers.remove(a, scheduledTimer)
@@ -158,7 +170,13 @@ class EpgUi(
                     ZapTimers.remove(a, ZapTimers.Timer(ref, name, ev.title, ev.begin, ev.end))
                     host.message("Usunięto przełączenie o ${t(ev.begin)}")
                 } else btns += TvDialog.Btn("Przełącz o ${t(ev.begin)}") {
-                    scheduleZap(ZapTimers.Timer(ref, name.ifBlank { ref }, ev.title, ev.begin, ev.end, ev.id))
+                    confirmAction(
+                        "Potwierdź przełączenie",
+                        "Dodać do harmonogramu przełączenie na:\n\n$name — ${ev.title}\n${t(ev.begin)}",
+                        "Dodaj",
+                    ) {
+                        scheduleZap(ZapTimers.Timer(ref, name.ifBlank { ref }, ev.title, ev.begin, ev.end, ev.id))
+                    }
                 }
             }
         }
@@ -230,6 +248,13 @@ class EpgUi(
 
     private fun showActionResult(title: String, message: String) {
         TvDialog.confirm(a, title, message, listOf(TvDialog.Btn("OK")))
+    }
+
+    private fun confirmAction(title: String, message: String, confirmLabel: String, action: () -> Unit) {
+        TvDialog.confirm(a, title, message, listOf(
+            TvDialog.Btn(confirmLabel, action),
+            TvDialog.Btn("Anuluj"),
+        ))
     }
 
     fun clearMemory() = synchronized(cache) { cache.clear() }

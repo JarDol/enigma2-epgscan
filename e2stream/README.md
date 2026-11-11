@@ -24,7 +24,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV.
 * EPG pobierane codziennie wg harmonogramu (i na żądanie) z zapisem na urządzeniu; ikony kanałów z dekodera (OpenWebif /picon/ lub FTP).
 * EPG kanału, multi-EPG bukietu i wyszukiwanie w EPG; z audycji: przełącz na kanał, zaplanuj przełączenie lub nagraj na dekoderze.
 * Długie OK w EPG kanału i Multi-EPG otwiera wybór kanału/bukietu, a wyszukiwanie jest na końcu menu.
-* Akcje „Przełącz na kanał”, „Przełącz o…” i „Nagraj na dekoderze” pokazują potwierdzenie wyniku.
+* Akcje „Przełącz na kanał”, „Przełącz o…” i „Nagraj na dekoderze” wymagają potwierdzenia przed wykonaniem; WSTECZ anuluje. Po wykonaniu pokazywany jest wynik.
 * Menu podręczne z konfigurowalną widocznością i kolejnością pozycji; Ustawienia są zawsze dostępne.
 * Domyślne mapowanie OK i strzałek można zmieniać osobno z paskiem kanału i bez niego.
 * Przegląd timerów nagrań dekodera z usuwaniem oraz usuwanie plików nagrań z menu długiego OK.
@@ -32,6 +32,14 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV.
 * Wybór widocznych bukietów, PIN do ustawień (odblokowanie na wybrany czas, wyjście z aplikacji zawsze blokuje), aktualizacja aplikacji z GitHub (menu → Aktualizacja).
 * Log diagnostyczny: lokalnie w `Android/data/pl.jardol.e2stream/files/e2stream.log`
   i co 2 minuty przez FTP na dekoder (domyślnie `/media/hdd/e2stream/e2stream-<nazwa odbiornika>-<znacznik>.log`, np. `e2stream-Salon-3F2A.log`; znacznik to 4 znaki z identyfikatora urządzenia, więc dwa takie same modele w sieci nie nadpisują sobie plików; nazwa ze znacznikiem jest też w liście odbiorników i w nazwach zrzutów TS).
+
+## Ścieżki audio
+
+Wybór z menu „Ścieżka dźwięku” jest zapamiętywany osobno dla kanału i odbiornika, a następnie synchronizowany w profilu tego urządzenia. Przy kolejnym odtwarzaniu aplikacja próbuje najpierw dopasować zapisany identyfikator ścieżki. Jeśli dekoder nadał jej inny identyfikator, dopasowanie odbywa się po języku i kodeku.
+
+Identyfikatory ścieżek mogą się zmieniać, a dekoder może udostępniać kilka ścieżek o tych samych metadanych. W takim przypadku aplikacja nie ma danych, by odróżnić ich zawartość; może zostać wybrana pierwsza pasująca ścieżka lub domyślny wybór odtwarzacza. Należy wtedy wybrać ścieżkę ponownie. Preferowany język (np. `pl`, `pol` lub `Polish`; `en`, `eng` lub `English`) jest wskazówką dla odtwarzacza, a nie gwarancją wyboru, gdy język jest niedostępny.
+
+Podczas timeshiftu z VLC aplikacja próbuje zachować bieżącą ścieżkę przez dopasowanie PID-u w buforze. Jeśli odpowiedniego PID-u nie ma, stosuje zapamiętany wybór dla kanału.
 
 ## Synchronizacja z dekoderem
 
