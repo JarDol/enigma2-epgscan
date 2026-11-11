@@ -31,6 +31,15 @@ class ZapPromptActivity : Activity() {
         showIntent(intent)
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (intent?.getBooleanExtra("test", false) == true) {
+            val id = intent.getStringExtra("test_id") ?: "?"
+            AppLog.i("wybudzanie: aktywność testu focus=$hasFocus id=$id")
+            ZapWakeAlarms.logDeviceState(this, "focus aktywności=$hasFocus", id)
+        }
+    }
+
     private fun prepareWindow() {
         if (Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
@@ -47,10 +56,23 @@ class ZapPromptActivity : Activity() {
         if (intent.getBooleanExtra("test", false)) {
             val id = intent.getStringExtra("test_id") ?: "?"
             AppLog.i("wybudzanie: ZapPromptActivity pokazuje wynik testu id=$id")
-            TvDialog.confirm(this, "Test wybudzania dotarł",
-                "Android dostarczył RTC_WAKEUP i otworzył okno E2Stream bez uruchamiania playera.\n\nJeśli nie naciskałeś pilota, alarm może pokazać popup.\nId testu: $id",
-                listOf(TvDialog.Btn("Zamknij") { finish() }),
-                onBack = { finish() })
+            ZapWakeAlarms.logDeviceState(this, "otwarcie okna testowego", id)
+            val dlg = TvDialog.panel(this, "Test wybudzania dotarł", null,
+                listOf(TvDialog.Btn("Zamknij") { finish() }), widthFrac = 0.6f,
+                onBack = { finish() }, focusChip = true, timeoutSec = Prefs(this).confirmDialogSec,
+                onTimeout = { finish() }) { ctx, _ ->
+                TvDialog.scrollText(ctx,
+                    "Android dostarczył RTC_WAKEUP i otworzył okno E2Stream bez uruchamiania playera.\n\nJeśli nie naciskałeś pilota, alarm może pokazać popup.\nId testu: $id", 18f)
+            }
+            if (BuildConfig.WAKE_DIAGNOSTICS) {
+                dlg.window?.decorView?.let { view ->
+                    AppLog.i("wybudzanie: popup testu obecny focus=${view.hasWindowFocus()} id=$id")
+                    view.viewTreeObserver.addOnWindowFocusChangeListener { hasFocus ->
+                        AppLog.i("wybudzanie: popup testu focus=$hasFocus id=$id")
+                        ZapWakeAlarms.logDeviceState(this, "focus popupu=$hasFocus", id)
+                    }
+                }
+            }
             return
         }
 

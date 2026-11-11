@@ -1,6 +1,7 @@
 package pl.jardol.e2stream
 
 import android.app.AlarmManager
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -12,6 +13,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 
 /** Systemowe alarmy RTC_WAKEUP dla harmonogramu; aplikacja może zostać uruchomiona przez pełnoekranowe powiadomienie. */
@@ -27,6 +29,28 @@ object ZapWakeAlarms {
 
     fun canUseFullScreen(ctx: Context): Boolean = Build.VERSION.SDK_INT < 34 ||
         (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).canUseFullScreenIntent()
+
+    private fun fullScreenStatus(ctx: Context): String =
+        if (Build.VERSION.SDK_INT >= 34) canUseFullScreen(ctx).toString() else "nie sprawdzono (Android < 14)"
+
+    internal fun testUsesForegroundLaunch(test: Boolean, foreground: Boolean, interactive: Boolean) =
+        test && foreground && interactive
+
+    internal fun logDeviceState(ctx: Context, phase: String, testId: String) {
+        if (!BuildConfig.WAKE_DIAGNOSTICS) return
+        val power = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val keyguard = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        val manager = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notifications = if (Build.VERSION.SDK_INT >= 24) manager.areNotificationsEnabled().toString() else "nie sprawdzono"
+        val importance = if (Build.VERSION.SDK_INT >= 26) {
+            manager.getNotificationChannel(CHANNEL)?.importance?.toString() ?: "brak kanału"
+        } else "niedostępne"
+        val idle = if (Build.VERSION.SDK_INT >= 23) power.isDeviceIdleMode.toString() else "niedostępne"
+        AppLog.i("wybudzanie: stan $phase id=$testId interactive=${power.isInteractive} " +
+            "deviceIdle=$idle keyguardLocked=${keyguard.isKeyguardLocked} " +
+            "appForegroundStored=${isAppForeground(ctx)} notificationsEnabled=$notifications " +
+            "channelImportance=$importance fullScreenAllowed=${fullScreenStatus(ctx)}")
+    }
 
     fun setAppForeground(ctx: Context, foreground: Boolean) {
         ctx.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().putBoolean("foreground", foreground).apply()
@@ -107,7 +131,7 @@ object ZapWakeAlarms {
             append("Opcja wybudzania: ${if (Prefs(ctx).wakeForZap) "włączona" else "wyłączona"}\n")
             append("Dokładne alarmy: ${if (canScheduleExact(ctx)) "dozwolone" else "BRAK ZGODY"}\n")
             append("Powiadomienia: ${if (notificationAllowed(ctx)) "dozwolone" else "BRAK ZGODY"}\n")
-            append("Pełny ekran: ${if (canUseFullScreen(ctx)) "dozwolony" else "zablokowany"}\n")
+            append("Pełny ekran: ${fullScreenStatus(ctx)}\n")
             append("Oczekujące wydarzenia: ${ZapTimers.list(ctx).size}\n")
             if (next != null) append("Najbliższy: ${next.channel} — ${next.title} (${next.begin})")
             else append("Brak oczekujących wydarzeń")
@@ -125,17 +149,19 @@ object ZapWakeAlarms {
             putExtra("test", true)
             putExtra("test_id", testId)
         }
-        val pi = pending(ctx, "test-$testId", intent)
         val at = System.currentTimeMillis() + 60_000
+        intent.putExtra("scheduled_at", at)
+        val testPendingIntent = pending(ctx, "test-$testId", intent)
         try {
             if (Build.VERSION.SDK_INT >= 23) {
                 (ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
-                    .setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+                    .setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, testPendingIntent)
             } else {
-                (ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager).setExact(AlarmManager.RTC_WAKEUP, at, pi)
+                (ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager).setExact(AlarmManager.RTC_WAKEUP, at, testPendingIntent)
             }
             Log.i("E2Stream", "Test alarm RTC_WAKEUP ustawiony: $testId na $at")
             AppLog.i("wybudzanie: test RTC_WAKEUP ustawiony id=$testId at=$at")
+            logDeviceState(ctx, "ustawienie testu", testId)
             return "Test ustawiony za 60 sekund. Zostaw aplikację i poczekaj bez naciskania pilota."
         } catch (e: SecurityException) {
             Log.e("E2Stream", "Nie można ustawić testowego alarmu RTC_WAKEUP", e)
@@ -158,6 +184,21 @@ object ZapWakeAlarms {
             putExtras(intent)
             putExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY, key)
             if (testId != null) putExtra(PlayerActivity.EXTRA_WAKE_TEST_ID, testId)
+        }
+        val power = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (BuildConfig.WAKE_DIAGNOSTICS &&
+            testUsesForegroundLaunch(testId != null, isAppForeground(ctx), power.isInteractive)
+        ) {
+            try {
+                AppLog.i("wybudzanie: próba bezpośredniego otwarcia testu na pierwszym planie id=$testId")
+                ctx.startActivity(launch)
+                AppLog.i("wybudzanie: startActivity zwróciło bez błędu id=$testId (nie potwierdza otwarcia)")
+                return
+            } catch (e: android.content.ActivityNotFoundException) {
+                AppLog.i("wybudzanie: nie znaleziono okna testowego id=$testId: $e; próba powiadomienia")
+            } catch (e: SecurityException) {
+                AppLog.i("wybudzanie: system odrzucił start testu id=$testId: $e; próba powiadomienia")
+            }
         }
         if (Build.VERSION.SDK_INT <= 28) {
             try {
@@ -185,8 +226,9 @@ object ZapWakeAlarms {
             .setAutoCancel(true)
             .build()
         try {
+            if (testId != null) logDeviceState(ctx, "przed notify", testId)
             manager.notify(key.hashCode(), notification)
-            AppLog.i("wybudzanie: NotificationManager.notify OK key=$key fullScreenAllowed=${canUseFullScreen(ctx)}")
+            AppLog.i("wybudzanie: NotificationManager.notify OK key=$key fullScreenAllowed=${fullScreenStatus(ctx)}")
         } catch (e: SecurityException) {
             Log.w("E2Stream", "Brak uprawnienia do powiadomienia harmonogramu", e)
             AppLog.i("wybudzanie: notify SecurityException key=$key: $e")
@@ -200,8 +242,11 @@ class ZapAlarmReceiver : BroadcastReceiver() {
         val prefs = Prefs(context)
         if (intent.getBooleanExtra("test", false)) {
             val id = intent.getStringExtra("test_id") ?: "?"
+            val at = intent.getLongExtra("scheduled_at", 0)
             Log.i("E2Stream", "TEST alarm RTC_WAKEUP dotarł: $id; appForeground=${ZapWakeAlarms.isForeground(context)}")
-            AppLog.i("wybudzanie: TEST RTC_WAKEUP DOSTARCZONY id=$id appForeground=${ZapWakeAlarms.isForeground(context)}")
+            AppLog.i("wybudzanie: TEST RTC_WAKEUP DOSTARCZONY id=$id appForeground=${ZapWakeAlarms.isForeground(context)} " +
+                "at=$at opoznienieMs=${if (at > 0) System.currentTimeMillis() - at else "nieznane"}")
+            ZapWakeAlarms.logDeviceState(context, "odbiór alarmu", id)
             ZapWakeAlarms.showNotification(context, intent, "test-$id", "Test alarmu E2Stream",
                 "Alarm dotarł. Czekaj na okno testowe.", System.currentTimeMillis() / 1000, id)
             return
