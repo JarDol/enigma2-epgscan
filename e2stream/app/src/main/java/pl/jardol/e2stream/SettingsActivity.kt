@@ -138,7 +138,7 @@ class SettingsActivity : Activity() {
             if (!v && p.tsDir.isBlank()) p.tsMin = 0        // bez zgody i bez dysku — timeshift wyłączony
         }),
                 Item.Header("Dźwięk"),
-        Item.Text("Preferowany język", { p.audioLang }, { p.audioLang = it.trim().ifEmpty { "pol" } }, hint = "ISO 639-2, np. pol,eng"),
+        Item.Text("Preferowany język", { p.audioLang }, { p.audioLang = it }, hint = "Kody lub nazwy, np. pl/pol/Polish, en/eng/English"),
         Item.Toggle("Preferuj AC3 / E-AC3", { p.preferAc3 }, { p.preferAc3 = it }),
             )
             "Wygląd" -> listOf(

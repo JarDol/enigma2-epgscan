@@ -435,7 +435,7 @@ class PlayerActivity : Activity() {
         if (player != null) return
 
         val trackSelector = DefaultTrackSelector(this)
-        val langs = prefs.audioLang.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val langs = AudioTrackLabels.preferredLanguages(prefs.audioLang)
         val params = trackSelector.buildUponParameters()
             .setTunnelingEnabled(prefs.tunneling)
             .setPreferredAudioLanguages(*langs.toTypedArray())
@@ -2632,18 +2632,8 @@ class PlayerActivity : Activity() {
         return out
     }
 
-    private fun audioLabel(f: Format): String {
-        val codec = when (f.sampleMimeType) {
-            MimeTypes.AUDIO_AC3 -> "AC3"
-            MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_E_AC3_JOC -> "E-AC3"
-            MimeTypes.AUDIO_MPEG, MimeTypes.AUDIO_MPEG_L1, MimeTypes.AUDIO_MPEG_L2 -> "MPEG"
-            MimeTypes.AUDIO_AAC -> "AAC"
-            else -> f.sampleMimeType ?: "?"
-        }
-        val ch = if (f.channelCount > 0) " ${f.channelCount}ch" else ""
-        val label = f.label?.let { " – $it" } ?: ""
-        return "${f.language ?: "?"}  $codec$ch$label"
-    }
+    private fun audioLabel(f: Format): String =
+        AudioTrackLabels.label(f.language, f.sampleMimeType, f.channelCount)
 
     private fun showAudioDialog(vlcAttempt: Int = 0) {
         if (prefs.engine == "vlc" && !tsMode && !recMode) {
@@ -2663,7 +2653,7 @@ class PlayerActivity : Activity() {
                 val track = tracks.getOrNull(which)
                 if (track != null && engine?.selectAudioTrack(track.id) == true) {
                     playList.getOrNull(playIndex)?.let { ch ->
-                        prefs.setAudioFor(ch.ref, "${track.id}||")
+                        prefs.setAudioFor(ch.ref, "${track.id}|${track.language}|${track.codec}")
                         AppLog.i("wybrano audio dla ${ch.name}: ${track.name} (ID ${track.id})")
                     }
                 } else {
@@ -2693,9 +2683,18 @@ class PlayerActivity : Activity() {
             if (attempt < 8) ui.postDelayed({ applySavedVlcAudio(attempt + 1) }, 250)
             return
         }
-        val match = tracks.firstOrNull { it.id == savedId } ?: return
-        if (engine.selectedAudioTrackId() != savedId && engine.selectAudioTrack(savedId)) {
-            AppLog.i("VLC: przywrócono audio dla ${ch.name}: ${match.name} (ID $savedId)")
+        val saved = prefs.audioFor(ch.ref).split("|")
+        val savedLanguage = saved.getOrElse(1) { "" }
+        val savedCodec = saved.getOrElse(2) { "" }
+        val match = tracks.firstOrNull { it.id == savedId }
+            ?: tracks.firstOrNull {
+                savedLanguage.isNotBlank() &&
+                    AudioTrackLabels.languageCode(it.language) == AudioTrackLabels.languageCode(savedLanguage) &&
+                    (savedCodec.isBlank() || AudioTrackLabels.codecName(it.codec) == AudioTrackLabels.codecName(savedCodec))
+            }
+            ?: return
+        if (engine.selectedAudioTrackId() != match.id && engine.selectAudioTrack(match.id)) {
+            AppLog.i("VLC: przywrócono audio dla ${ch.name}: ${match.name} (ID ${match.id})")
         }
     }
 
@@ -2755,7 +2754,11 @@ class PlayerActivity : Activity() {
         val lang = parts.getOrElse(1) { "" }
         val mime = parts.getOrElse(2) { "" }
         val match = tracks.firstOrNull { id.isNotEmpty() && it.format.id == id }
-            ?: tracks.firstOrNull { (it.format.language ?: "") == lang && (it.format.sampleMimeType ?: "") == mime }
+            ?: tracks.firstOrNull {
+                lang.isNotBlank() &&
+                    AudioTrackLabels.languageCode(it.format.language) == AudioTrackLabels.languageCode(lang) &&
+                    (mime.isBlank() || AudioTrackLabels.codecName(it.format.sampleMimeType) == AudioTrackLabels.codecName(mime))
+            }
             ?: return
         if (!match.group.isTrackSelected(match.index)) selectAudio(match, remember = false)
     }

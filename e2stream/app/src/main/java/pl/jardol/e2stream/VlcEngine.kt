@@ -7,6 +7,7 @@ import android.os.Looper
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
+import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -99,7 +100,7 @@ class VlcEngine(
     private val onEvent: (String) -> Unit,
     private val onFailure: (String) -> Unit,
 ) {
-    data class AudioTrack(val id: Int, val name: String)
+    data class AudioTrack(val id: Int, val name: String, val language: String, val codec: String, val channels: Int)
 
     private val ui = Handler(Looper.getMainLooper())
     private var lib: LibVLC? = null
@@ -120,7 +121,8 @@ class VlcEngine(
             "auto" -> o += "--deinterlace=-1"
             else -> { o += "--deinterlace=1"; o += "--deinterlace-mode=${prefs.vlcDeint}" }
         }
-        prefs.audioLang.split(",").firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }?.let { o += "--audio-language=$it" }
+        AudioTrackLabels.preferredVlcLanguages(prefs.audioLang).takeIf { it.isNotEmpty() }
+            ?.joinToString(",")?.let { o += "--audio-language=$it" }
         return o
     }
 
@@ -200,10 +202,20 @@ class VlcEngine(
     }
 
     fun audioTracks(): List<AudioTrack> = try {
-        mp?.audioTracks.orEmpty()
+        val player = mp ?: return emptyList()
+        val metadata = (0 until (player.media?.trackCount ?: 0))
+            .mapNotNull { player.media?.getTrack(it) as? IMedia.AudioTrack }
+            .associateBy { it.id }
+        player.audioTracks.orEmpty()
             .filter { it.id >= 0 }
             .map { track ->
-                AudioTrack(track.id, track.name?.takeIf { it.isNotBlank() } ?: "Ścieżka ${track.id}")
+                val meta = metadata[track.id]
+                val language = meta?.language
+                    ?: track.name?.substringAfterLast('[')?.substringBefore(']')?.takeIf { it.isNotBlank() }
+                val name = AudioTrackLabels.label(language, meta?.codec, meta?.channels ?: 0)
+                    .takeIf { it != "?" }
+                    ?: "Ścieżka ${track.id}"
+                AudioTrack(track.id, name, AudioTrackLabels.languageCode(language), meta?.codec.orEmpty(), meta?.channels ?: 0)
             }
     } catch (e: Exception) {
         AppLog.i("VLC: nie można pobrać ścieżek audio: ${e.message}")

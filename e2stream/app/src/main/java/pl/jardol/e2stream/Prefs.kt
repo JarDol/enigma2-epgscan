@@ -67,10 +67,10 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("afrMode", if (sp.getBoolean("force50Hz", false)) 1 else 0)
         set(v) = putI("afrMode", v)
 
-    /** Preferowany język dźwięku (kody ISO 639-2 oddzielone przecinkami). */
+    /** Preferowane języki dźwięku; starsze kody ISO 639-2 i nazwy są normalizowane do ISO 639-1. */
     var audioLang: String
-        get() = s("audioLang", "pol")
-        set(v) = putS("audioLang", v)
+        get() = AudioTrackLabels.preferredLanguages(s("audioLang", "pl")).joinToString(",").ifEmpty { "pl" }
+        set(v) = putS("audioLang", AudioTrackLabels.preferredLanguages(v).joinToString(",").ifEmpty { "pl" })
 
     /** Preferuj AC3 / E-AC3 (Dolby) przed MPEG stereo. */
     var preferAc3: Boolean
