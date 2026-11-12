@@ -9,8 +9,10 @@ Restart the app after changing the system theme. The player shows channel and
 programme information below the video for five seconds; the "Pasek" button
 shows it again. Settings and the channel list open in separate windows above
 the player, so playback continues when settings are opened and closed. The
-channel list supports mouse, arrow keys, Enter and Escape. EPG refreshes every
-minute while a bouquet is selected; an EPG error does not prevent playback.
+channel list lets you change bouquets with its selector or left/right buttons
+(left/right arrow keys also work), and supports mouse, up/down arrow keys,
+Enter and Escape. EPG refreshes every minute while a bouquet is selected; an
+EPG error does not prevent playback.
 
 This is an early test version, not yet functionally equivalent to Android:
 full EPG, recordings, true timeshift and most other Android features are not

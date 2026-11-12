@@ -115,6 +115,27 @@ fun main() = application {
                 }
             }
 
+            fun selectBouquet(bouquet: Bouquet) {
+                selectedBouquet = bouquet
+                channels = emptyList()
+                nowEvents = emptyMap()
+                val currentCatalog = catalog ?: return
+                scope.launch {
+                    busy = true
+                    try {
+                        channels = withContext(Dispatchers.IO) {
+                            DecoderClient(config).loadChannels(bouquet, currentCatalog.usesPlugin)
+                        }
+                        status = "Kanały w bukiecie „${bouquet.name}”: ${channels.size}."
+                    } catch (e: Exception) {
+                        channels = emptyList()
+                        status = e.message ?: "Nie udało się pobrać kanałów."
+                    } finally {
+                        busy = false
+                    }
+                }
+            }
+
             fun changeChannel(offset: Int): Boolean {
                 val current = channels.indexOfFirst { it.ref == playingChannel?.ref }
                 if (current < 0 || channels.isEmpty()) return false
@@ -232,28 +253,7 @@ fun main() = application {
                                         }
                                     }
                                 },
-                                onBouquetSelected = { bouquet ->
-                                    selectedBouquet = bouquet
-                                    channels = emptyList()
-                                    nowEvents = emptyMap()
-                                    val currentCatalog = catalog
-                                    if (currentCatalog != null) {
-                                        scope.launch {
-                                            busy = true
-                                            try {
-                                                channels = withContext(Dispatchers.IO) {
-                                                    DecoderClient(config).loadChannels(bouquet, currentCatalog.usesPlugin)
-                                                }
-                                                status = "Kanały w bukiecie „${bouquet.name}”: ${channels.size}."
-                                            } catch (e: Exception) {
-                                                channels = emptyList()
-                                                status = e.message ?: "Nie udało się pobrać kanałów."
-                                            } finally {
-                                                busy = false
-                                            }
-                                        }
-                                    }
-                                },
+                                onBouquetSelected = ::selectBouquet,
                             )
                             DesktopPage.PLAYER -> Unit
                             DesktopPage.REMOTE -> RemotePage(
@@ -322,10 +322,13 @@ fun main() = application {
                 if (showChannelList && page == DesktopPage.PLAYER) {
                     ChannelListDialog(
                         bouquet = selectedBouquet,
+                        bouquets = catalog?.bouquets.orEmpty(),
                         channels = channels,
                         playing = playingChannel,
                         nowEvents = nowEvents,
+                        busy = busy,
                         onClose = { showChannelList = false },
+                        onBouquetSelected = ::selectBouquet,
                         onPlay = {
                             showChannelList = false
                             startChannel(it)

@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,6 +53,13 @@ import kotlinx.coroutines.delay
 private val clockFormat = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
 
 private fun time(seconds: Long): String = clockFormat.format(Instant.ofEpochSecond(seconds))
+
+internal fun bouquetOffset(bouquets: List<Bouquet>, current: Bouquet?, offset: Int): Bouquet? {
+    if (bouquets.isEmpty() || offset == 0) return null
+    val currentIndex = bouquets.indexOfFirst { it.ref == current?.ref }
+    if (currentIndex < 0) return null
+    return bouquets[(currentIndex + offset).mod(bouquets.size)]
+}
 
 @Composable
 internal fun PlayerPage(
@@ -139,10 +148,13 @@ internal fun PlayerPage(
 @Composable
 internal fun ChannelListDialog(
     bouquet: Bouquet?,
+    bouquets: List<Bouquet>,
     channels: List<Channel>,
     playing: Channel?,
     nowEvents: Map<String, NowEvent>,
+    busy: Boolean,
     onClose: () -> Unit,
+    onBouquetSelected: (Bouquet) -> Unit,
     onPlay: (Channel) -> Unit,
 ) {
     var selected by remember(channels, playing) {
@@ -154,6 +166,7 @@ internal fun ChannelListDialog(
     val colors = MaterialTheme.colorScheme
     val accent = colors.primary
     val secondary = colors.onSurfaceVariant
+    var bouquetMenuExpanded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         while (true) {
             now = Instant.now().epochSecond
@@ -179,6 +192,14 @@ internal fun ChannelListDialog(
                     if (channels.isNotEmpty()) selected = (selected - 1 + channels.size) % channels.size
                     true
                 }
+                Key.DirectionLeft -> {
+                    bouquetOffset(bouquets, bouquet, -1)?.let(onBouquetSelected)
+                    true
+                }
+                Key.DirectionRight -> {
+                    bouquetOffset(bouquets, bouquet, 1)?.let(onBouquetSelected)
+                    true
+                }
                 Key.Enter, Key.NumPadEnter -> {
                     channels.getOrNull(selected)?.let(onPlay)
                     true
@@ -198,15 +219,38 @@ internal fun ChannelListDialog(
                     .focusable().padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text(
-                        bouquet?.name ?: "Kanały",
-                        modifier = Modifier.weight(1f),
-                        color = accent,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text("↑ ↓ kanał   •   OK oglądaj   •   Esc zamknij", color = secondary)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.weight(1f)) {
+                        OutlinedButton(
+                            onClick = { bouquetMenuExpanded = true },
+                            enabled = !busy && bouquets.size > 1,
+                        ) {
+                            Text("Bukiet: ${bouquet?.name ?: "Kanały"}")
+                        }
+                        DropdownMenu(
+                            expanded = bouquetMenuExpanded,
+                            onDismissRequest = { bouquetMenuExpanded = false },
+                        ) {
+                            bouquets.forEach { item ->
+                                DropdownMenuItem(
+                                    text = { Text(item.name) },
+                                    onClick = {
+                                        bouquetMenuExpanded = false
+                                        onBouquetSelected(item)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { bouquetOffset(bouquets, bouquet, -1)?.let(onBouquetSelected) },
+                        enabled = !busy && bouquets.size > 1,
+                    ) { Text("◀ Bukiet") }
+                    OutlinedButton(
+                        onClick = { bouquetOffset(bouquets, bouquet, 1)?.let(onBouquetSelected) },
+                        enabled = !busy && bouquets.size > 1,
+                    ) { Text("Bukiet ▶") }
+                    Text("← → bukiet   •   ↑ ↓ kanał   •   Enter oglądaj   •   Esc zamknij", color = secondary)
                 }
                 LazyColumn(Modifier.weight(3f), state = listState) {
                     itemsIndexed(channels) { index, channel ->
