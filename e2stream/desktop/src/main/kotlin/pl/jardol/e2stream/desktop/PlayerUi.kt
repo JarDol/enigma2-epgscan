@@ -48,10 +48,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 
-private val accent = Color(0xFF4FC3F7)
-private val secondary = Color(0xFFB0BEC5)
-private val panel = Color(0xFF101418)
-private val selection = Color(0xFF1E88E5)
 private val clockFormat = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
 
 private fun time(seconds: Long): String = clockFormat.format(Instant.ofEpochSecond(seconds))
@@ -81,6 +77,9 @@ internal fun PlayerPage(
         bannerVisible = false
     }
     val currentEvent = event?.takeIf { it.begin <= now && now < it.end }
+    val colors = MaterialTheme.colorScheme
+    val accent = colors.primary
+    val secondary = colors.onSurfaceVariant
     Column(Modifier.fillMaxSize().background(Color.Black)) {
         SwingPanel(
             factory = { session.view },
@@ -88,7 +87,7 @@ internal fun PlayerPage(
             background = Color.Black,
         )
         Column(
-            modifier = Modifier.fillMaxWidth().background(panel).padding(horizontal = 24.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = 24.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (bannerVisible) {
@@ -106,7 +105,7 @@ internal fun PlayerPage(
                 }
                 Text(
                     currentEvent?.title ?: "Brak danych bieżącej audycji",
-                    color = Color.White,
+                    color = colors.onSurface,
                     fontSize = 21.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -152,6 +151,9 @@ internal fun ChannelListDialog(
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
+    val colors = MaterialTheme.colorScheme
+    val accent = colors.primary
+    val secondary = colors.onSurfaceVariant
     LaunchedEffect(Unit) {
         while (true) {
             now = Instant.now().epochSecond
@@ -190,9 +192,9 @@ internal fun ChannelListDialog(
         },
     ) {
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
-        MaterialTheme {
+        MaterialTheme(colorScheme = colors) {
             Column(
-                modifier = Modifier.fillMaxSize().background(panel).focusRequester(focusRequester)
+                modifier = Modifier.fillMaxSize().background(colors.surface).focusRequester(focusRequester)
                     .focusable().padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -209,34 +211,37 @@ internal fun ChannelListDialog(
                 LazyColumn(Modifier.weight(3f), state = listState) {
                     itemsIndexed(channels) { index, channel ->
                         val event = nowEvents[serviceKey(channel.ref)]?.takeIf { it.begin <= now && now < it.end }
+                        val isSelected = index == selected
+                        val primaryText = if (isSelected) colors.onPrimaryContainer else colors.onSurface
+                        val secondaryText = if (isSelected) colors.onPrimaryContainer else secondary
                         Row(
                             modifier = Modifier.fillMaxWidth()
-                                .background(if (index == selected) selection else Color.Transparent, RoundedCornerShape(6.dp))
+                                .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(6.dp))
                                 .clickable {
                                     selected = index
                                     onPlay(channel)
                                 }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
-                            Text(channel.number.toString(), modifier = Modifier.width(55.dp), color = secondary, fontSize = 20.sp)
+                            Text(channel.number.toString(), modifier = Modifier.width(55.dp), color = secondaryText, fontSize = 20.sp)
                             Column(Modifier.weight(1f)) {
-                                Text(channel.name, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                                Text(event?.title ?: "Brak danych EPG", color = secondary, fontSize = 16.sp, maxLines = 1)
+                                Text(channel.name, color = primaryText, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text(event?.title ?: "Brak danych EPG", color = secondaryText, fontSize = 16.sp, maxLines = 1)
                             }
                             if (event != null && event.end > event.begin) {
-                                Text("${time(event.begin)}–${time(event.end)}", color = secondary, fontSize = 16.sp)
+                                Text("${time(event.begin)}–${time(event.end)}", color = secondaryText, fontSize = 16.sp)
                             }
                         }
                     }
                 }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x40FFFFFF)))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(colors.outlineVariant))
                 Column(Modifier.weight(1f).padding(8.dp)) {
                     val channel = channels.getOrNull(selected)
                     Text(channel?.name.orEmpty(), color = accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Text(
                         channel?.let { nowEvents[serviceKey(it.ref)]?.takeIf { event -> event.begin <= now && now < event.end }?.title }
                             ?: "Brak danych EPG",
-                        color = Color.White,
+                        color = colors.onSurface,
                         fontSize = 19.sp,
                     )
                     Text("Wybierz kanał myszą lub naciśnij Enter.", color = secondary)

@@ -1,6 +1,5 @@
 package pl.jardol.e2stream.desktop
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
@@ -22,8 +22,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,11 +33,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.DialogWindow
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberDialogState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -51,8 +52,10 @@ fun main() = application {
         onCloseRequest = ::exitApplication,
         title = "E2Stream",
     ) {
-        MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFF4FC3F7))) {
+        val colorScheme = appColorScheme(isSystemInDarkTheme())
+        MaterialTheme(colorScheme = colorScheme) {
             val desktopWindow = this.window
+            var settingsWindow by remember { mutableStateOf<java.awt.Window?>(null) }
             val loadedConfig = remember { runCatching { DesktopConfig.load() } }
             var config by remember { mutableStateOf(loadedConfig.getOrDefault(DesktopConfig())) }
             var page by remember { mutableStateOf(DesktopPage.CONNECTION) }
@@ -103,6 +106,7 @@ fun main() = application {
                     session.play(url, config)
                     if (existingSession == null) vlcSession = session
                     playingChannel = channel
+                    captureAction = null
                     page = DesktopPage.PLAYER
                     status = "Otwieranie strumienia: ${channel.name}"
                 } catch (e: Exception) {
@@ -124,10 +128,12 @@ fun main() = application {
                 onDispose { sessionToClose?.close() }
             }
 
-            DisposableEffect(desktopWindow, captureAction, bindings, vlcSession, page, channels, playingChannel) {
+            DisposableEffect(desktopWindow, settingsWindow, captureAction, bindings, vlcSession, page, channels, playingChannel) {
                 val dispatcher = java.awt.KeyEventDispatcher { event ->
                     val action = captureAction
-                    if (!desktopWindow.isFocused || event.id != KeyEvent.KEY_PRESSED ||
+                    val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+                    if ((focusedWindow != desktopWindow && (settingsWindow == null || focusedWindow != settingsWindow)) ||
+                        event.id != KeyEvent.KEY_PRESSED ||
                         event.keyCode == KeyEvent.VK_UNDEFINED
                     ) {
                         false
@@ -165,122 +171,154 @@ fun main() = application {
                 onDispose { manager.removeKeyEventDispatcher(dispatcher) }
             }
 
-            Column(
-                modifier = Modifier.fillMaxSize()
-                    .background(Color(0xFF101418))
-                    .focusable()
-                    .padding(if (page == DesktopPage.PLAYER) 0.dp else 20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (page != DesktopPage.PLAYER) {
-                    Text("E2Stream", style = MaterialTheme.typography.headlineMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { page = DesktopPage.CONNECTION }) { Text("Dekoder") }
-                        OutlinedButton(onClick = { page = DesktopPage.REMOTE }) { Text("Pilot / klawiatura") }
-                        if (vlcSession != null) {
-                            OutlinedButton(onClick = { page = DesktopPage.PLAYER }) { Text("Wróć do oglądania") }
+            val settingsContent: @Composable () -> Unit = {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                    contentColor = MaterialTheme.colorScheme.onBackground,
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().focusable().padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text("E2Stream", style = MaterialTheme.typography.headlineMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = {
+                                captureAction = null
+                                page = DesktopPage.CONNECTION
+                            }) { Text("Dekoder") }
+                            OutlinedButton(onClick = { page = DesktopPage.REMOTE }) { Text("Pilot / klawiatura") }
+                            if (vlcSession != null) {
+                                OutlinedButton(onClick = {
+                                    captureAction = null
+                                    page = DesktopPage.PLAYER
+                                }) { Text("Wróć do oglądania") }
+                            }
                         }
-                    }
-                    Text(status, style = MaterialTheme.typography.bodyMedium)
-                    epgError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                }
+                        Text(status, style = MaterialTheme.typography.bodyMedium)
+                        epgError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
-                when (page) {
-                    DesktopPage.CONNECTION -> ConnectionPage(
-                        config = config,
-                        onConfigChange = { config = it },
-                        busy = busy,
-                        catalog = catalog,
-                        selectedBouquet = selectedBouquet,
-                        channels = channels,
-                        onPlay = ::startChannel,
-                        onConnect = {
-                            scope.launch {
-                                busy = true
-                                status = "Łączenie z dekoderem…"
-                                try {
-                                    val result = withContext(Dispatchers.IO) {
-                                        val updated = config.copy(
-                                            httpPort = config.httpPort,
-                                            streamPort = config.streamPort,
-                                            pluginPort = config.pluginPort,
-                                        )
-                                        DecoderClient(updated).loadBouquets().also { updated.save() }
+                        when (page) {
+                            DesktopPage.CONNECTION -> ConnectionPage(
+                                config = config,
+                                onConfigChange = { config = it },
+                                busy = busy,
+                                catalog = catalog,
+                                selectedBouquet = selectedBouquet,
+                                channels = channels,
+                                onPlay = ::startChannel,
+                                onConnect = {
+                                    scope.launch {
+                                        busy = true
+                                        status = "Łączenie z dekoderem…"
+                                        try {
+                                            val result = withContext(Dispatchers.IO) {
+                                                val updated = config.copy(
+                                                    httpPort = config.httpPort,
+                                                    streamPort = config.streamPort,
+                                                    pluginPort = config.pluginPort,
+                                                )
+                                                DecoderClient(updated).loadBouquets().also { updated.save() }
+                                            }
+                                            catalog = result
+                                            selectedBouquet = null
+                                            channels = emptyList()
+                                            nowEvents = emptyMap()
+                                            status = "Połączono przez ${if (result.usesPlugin) "EPG Scan" else "OpenWebif"}; bukiety: ${result.bouquets.size}."
+                                        } catch (e: Exception) {
+                                            status = e.message ?: "Nie udało się połączyć z dekoderem."
+                                        } finally {
+                                            busy = false
+                                        }
                                     }
-                                    catalog = result
-                                    selectedBouquet = null
+                                },
+                                onBouquetSelected = { bouquet ->
+                                    selectedBouquet = bouquet
                                     channels = emptyList()
                                     nowEvents = emptyMap()
-                                    status = "Połączono przez ${if (result.usesPlugin) "EPG Scan" else "OpenWebif"}; bukiety: ${result.bouquets.size}."
-                                } catch (e: Exception) {
-                                    status = e.message ?: "Nie udało się połączyć z dekoderem."
-                                } finally {
-                                    busy = false
-                                }
-                            }
-                        },
-                        onBouquetSelected = { bouquet ->
-                            selectedBouquet = bouquet
-                            channels = emptyList()
-                            nowEvents = emptyMap()
-                            val currentCatalog = catalog
-                            if (currentCatalog != null) {
-                                scope.launch {
-                                    busy = true
-                                    try {
-                                        channels = withContext(Dispatchers.IO) {
-                                            DecoderClient(config).loadChannels(bouquet, currentCatalog.usesPlugin)
+                                    val currentCatalog = catalog
+                                    if (currentCatalog != null) {
+                                        scope.launch {
+                                            busy = true
+                                            try {
+                                                channels = withContext(Dispatchers.IO) {
+                                                    DecoderClient(config).loadChannels(bouquet, currentCatalog.usesPlugin)
+                                                }
+                                                status = "Kanały w bukiecie „${bouquet.name}”: ${channels.size}."
+                                            } catch (e: Exception) {
+                                                channels = emptyList()
+                                                status = e.message ?: "Nie udało się pobrać kanałów."
+                                            } finally {
+                                                busy = false
+                                            }
                                         }
-                                        status = "Kanały w bukiecie „${bouquet.name}”: ${channels.size}."
-                                    } catch (e: Exception) {
-                                        channels = emptyList()
-                                        status = e.message ?: "Nie udało się pobrać kanałów."
-                                    } finally {
-                                        busy = false
                                     }
-                                }
-                            }
-                        },
-                    )
-                    DesktopPage.PLAYER -> {
-                        val session = vlcSession
-                        val channel = playingChannel
-                        if (session != null && channel != null) {
-                            PlayerPage(
-                                channel = channel,
-                                session = session,
-                                event = nowEvents[serviceKey(channel.ref)],
-                                status = epgError ?: status,
-                                onChannels = { showChannelList = true },
-                                onSettings = { page = DesktopPage.CONNECTION },
-                                onBack = {
-                                    showChannelList = false
-                                    vlcSession = null
-                                    playingChannel = null
-                                    page = DesktopPage.CONNECTION
-                                    status = "Odtwarzanie zatrzymane."
+                                },
+                            )
+                            DesktopPage.PLAYER -> Unit
+                            DesktopPage.REMOTE -> RemotePage(
+                                bindings = bindings,
+                                captureAction = captureAction,
+                                onCapture = { captureAction = it },
+                                onRemove = { keyCode ->
+                                    bindings = bindings + (keyCode to RemoteAction.NONE)
+                                    config = config.copy(remoteBindings = RemoteKeyMap.encode(bindings))
+                                    runCatching { config.save() }
+                                        .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
+                                },
+                                onReset = {
+                                    bindings = RemoteKeyMap.defaults
+                                    config = config.copy(remoteBindings = "")
+                                    runCatching { config.save() }
+                                        .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
                                 },
                             )
                         }
                     }
-                    DesktopPage.REMOTE -> RemotePage(
-                        bindings = bindings,
-                        captureAction = captureAction,
-                        onCapture = { captureAction = it },
-                        onRemove = { keyCode ->
-                            bindings = bindings + (keyCode to RemoteAction.NONE)
-                            config = config.copy(remoteBindings = RemoteKeyMap.encode(bindings))
-                            runCatching { config.save() }
-                                .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
-                        },
-                        onReset = {
-                            bindings = RemoteKeyMap.defaults
-                            config = config.copy(remoteBindings = "")
-                            runCatching { config.save() }
-                                .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
-                        },
-                    )
                 }
+            }
+
+            val session = vlcSession
+            val channel = playingChannel
+            if (session != null && channel != null) {
+                PlaybackHost(
+                    settingsVisible = page != DesktopPage.PLAYER,
+                    player = {
+                        PlayerPage(
+                            channel = channel,
+                            session = session,
+                            event = nowEvents[serviceKey(channel.ref)],
+                            status = epgError ?: status,
+                            onChannels = { showChannelList = true },
+                            onSettings = { page = DesktopPage.CONNECTION },
+                            onBack = {
+                                showChannelList = false
+                                vlcSession = null
+                                playingChannel = null
+                                page = DesktopPage.CONNECTION
+                                status = "Odtwarzanie zatrzymane."
+                            },
+                        )
+                    },
+                    settings = {
+                        DialogWindow(
+                            onCloseRequest = {
+                                captureAction = null
+                                page = DesktopPage.PLAYER
+                            },
+                            title = "E2Stream — ustawienia",
+                            state = rememberDialogState(width = 900.dp, height = 600.dp),
+                            resizable = true,
+                        ) {
+                            val dialog = window
+                            DisposableEffect(dialog) {
+                                settingsWindow = dialog
+                                onDispose { settingsWindow = null }
+                            }
+                            MaterialTheme(colorScheme = colorScheme) { settingsContent() }
+                        }
+                    },
+                )
                 if (showChannelList && page == DesktopPage.PLAYER) {
                     ChannelListDialog(
                         bouquet = selectedBouquet,
@@ -294,6 +332,8 @@ fun main() = application {
                         },
                     )
                 }
+            } else {
+                settingsContent()
             }
         }
     }
