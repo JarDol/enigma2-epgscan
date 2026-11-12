@@ -44,9 +44,9 @@ jobs:
         run: |
           $exe = Get-ChildItem e2stream/desktop/build/compose/binaries/main-release/exe/*.exe
           if (@($exe).Count -ne 1) { throw "Oczekiwano jednego instalatora EXE; znaleziono $(@($exe).Count)." }
-          gh release create e2stream-windows-0.1.6-test $exe.FullName `
+          gh release create e2stream-windows-0.1.7-test $exe.FullName `
             --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA `
-            --title "E2Stream Windows 0.1.6 — wersja testowa" `
-            --notes "Poprawiono inicjalizację HID i dodano podgląd raportów oraz tłumienie klawiszy przeglądarki w aktywnym E2Stream. Dodano pełny ekran, tryby skalowania obrazu oraz listę kanałów bez paska okna. Obsługę konkretnego pilota i skalowanie VLC należy sprawdzić na urządzeniu. Wymaga VLC 3.x 64-bit; pełne EPG, nagrania i prawdziwy timeshift nie są jeszcze dostępne." `
+            --title "E2Stream Windows 0.1.7 — wersja testowa" `
+            --notes "Poprawiono responsywność obsługi pilota HID: ograniczono powtarzające się odpytywanie urządzenia i kolejkę aktualizacji diagnostycznych. Zachowano podgląd raportów i tłumienie klawiszy przeglądarki w aktywnym E2Stream. Dodano pełny ekran, tryby skalowania obrazu oraz listę kanałów bez paska okna. Obsługę konkretnego pilota i skalowanie VLC należy sprawdzić na urządzeniu. Wymaga VLC 3.x 64-bit; pełne EPG, nagrania i prawdziwy timeshift nie są jeszcze dostępne." `
             --prerelease --latest=false
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

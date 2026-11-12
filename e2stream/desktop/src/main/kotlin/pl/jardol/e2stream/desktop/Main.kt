@@ -94,6 +94,12 @@ fun main() {
             var captureButton by remember { mutableStateOf<VirtualRemoteKey?>(null) }
             var selectedRemoteButton by remember { mutableStateOf(VirtualRemoteKey.OK) }
             var hidDiagnostic by remember { mutableStateOf("Oczekiwanie na uruchomienie odbiornika HID.") }
+            val hidDiagnosticDispatcher = remember {
+                LatestValueDispatcher<String>(
+                    dispatch = { action -> EventQueue.invokeLater(action) },
+                    onValue = { hidDiagnostic = it },
+                )
+            }
             val suppressBrowserKeys = remember { AtomicBoolean(false) }
             var bindings by remember { mutableStateOf(RemoteKeyMap.defaults + RemoteKeyMap.parse(config.remoteBindings)) }
             var universalBindings by remember {
@@ -382,7 +388,7 @@ fun main() {
                             }
                         },
                         onError = { message -> EventQueue.invokeLater { hidDiagnostic = message; status = message } },
-                        onDiagnostic = { message -> EventQueue.invokeLater { hidDiagnostic = message } },
+                        onDiagnostic = hidDiagnosticDispatcher::submit,
                         suppressBrowserKeys = { suppressBrowserKeys.get() },
                     )
                 } catch (e: Exception) {

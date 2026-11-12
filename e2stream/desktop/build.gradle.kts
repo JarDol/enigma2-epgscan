@@ -39,7 +39,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe,
             )
             packageName = "E2Stream"
-            packageVersion = "0.1.6"
+            packageVersion = "0.1.7"
         }
     }
 }

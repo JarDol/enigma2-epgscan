@@ -29,10 +29,12 @@ internal class RawHidInput(
     private val failure = AtomicReference<Throwable?>()
     @Volatile private var closed = false
     @Volatile private var window: WinDef.HWND? = null
+    private val deviceInfoCache = mutableMapOf<Long, HidDeviceInfo?>()
+    private var lastDiagnostic: String? = null
     private val windowProc = WinUser.WindowProc(::windowProc)
     private val keyboardProc = WinUser.LowLevelKeyboardProc { code, wParam, data ->
         if (code >= 0 && data.vkCode in setOf(VK_BROWSER_BACK, VK_BROWSER_HOME) &&
-            isApplicationFocused() && isForegroundProcess() && suppressBrowserKeys()
+            isForegroundProcess() && isApplicationFocused() && suppressBrowserKeys()
         ) {
             WinDef.LRESULT(1)
         } else {
@@ -160,7 +162,7 @@ internal class RawHidInput(
         when (message) {
             WM_INPUT -> {
                 try {
-                    if (isApplicationFocused() && isForegroundProcess()) readInput(Pointer.createConstant(lParam.toLong()))
+                    if (isForegroundProcess() && isApplicationFocused()) readInput(Pointer.createConstant(lParam.toLong()))
                 } catch (e: Exception) {
                     onError("Nie udało się odczytać przycisku HID: ${e.message ?: e.javaClass.simpleName}")
                 }
@@ -168,6 +170,7 @@ internal class RawHidInput(
             }
             WM_INPUT_DEVICE_CHANGE -> {
                 try {
+                    deviceInfoCache.clear()
                     registerConnectedDevices(hwnd)
                 } catch (e: Exception) {
                     onError("Nie udało się odświeżyć urządzeń HID: ${e.message ?: e.javaClass.simpleName}")
@@ -202,18 +205,32 @@ internal class RawHidInput(
         val reportSize = data.getInt(headerSize.toLong())
         val reportCount = data.getInt(headerSize.toLong() + 4)
         if (reportSize <= 1 || reportCount <= 0 || reportSize.toLong() * reportCount > size.value - headerSize - 8) return
-        val path = devicePath(device) ?: return
-        val report = ByteArray(reportSize)
+        val deviceInfo = deviceInfo(device) ?: return
+        val payload = ByteArray(reportSize - 1)
         for (index in 0 until reportCount) {
-            data.read(headerSize.toLong() + 8 + reportSize.toLong() * index, report, 0, reportSize)
-            val payload = report.drop(1).toByteArray()
+            val reportOffset = headerSize.toLong() + 8 + reportSize.toLong() * index
+            data.read(reportOffset + 1, payload, 0, payload.size)
             if (payload.isEmpty() || payload.all { it == 0.toByte() }) continue
-            onDiagnostic("HID ${vendorProduct(path)} · ${report.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }}")
+            val formattedPayload = payload.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }
             onKey(
-                UniversalRemoteMap.hidId(path, payload),
-                "Pilot HID ${vendorProduct(path)} · ${payload.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }}",
+                UniversalRemoteMap.hidId(deviceInfo.path, payload),
+                "Pilot HID ${deviceInfo.vendorProduct} · $formattedPayload",
             )
+            val reportId = data.getByte(reportOffset).toInt() and 0xFF
+            val diagnostic = "HID ${deviceInfo.vendorProduct} · ${"%02X".format(reportId)}-$formattedPayload"
+            if (diagnostic != lastDiagnostic) {
+                lastDiagnostic = diagnostic
+                onDiagnostic(diagnostic)
+            }
         }
+    }
+
+    private fun deviceInfo(device: WinNT.HANDLE): HidDeviceInfo? {
+        val handle = Pointer.nativeValue(device.pointer)
+        if (deviceInfoCache.containsKey(handle)) return deviceInfoCache[handle]
+        val info = devicePath(device)?.let { path -> HidDeviceInfo(path, vendorProduct(path)) }
+        deviceInfoCache[handle] = info
+        return info
     }
 
     private fun devicePath(device: WinNT.HANDLE): String? {
@@ -238,6 +255,8 @@ internal class RawHidInput(
             .find(path)
             ?.let { "${it.groupValues[1]}:${it.groupValues[2]}" }
             ?: "nieznany"
+
+    private data class HidDeviceInfo(val path: String, val vendorProduct: String)
 
     override fun close() {
         if (closed) return
