@@ -2,8 +2,9 @@
 
 Windows desktop client for Enigma2 receivers. Current features include decoder
 connection, bouquet/channel browsing with current EPG from OpenWebif, live
-playback through an existing 64-bit VLC 3.x installation, pause/resume, and
-configurable keyboard/remote key capture. At startup, the interface selects a
+playback through an existing 64-bit VLC 3.x installation, pause/resume, and a
+universal remote-key mapping panel. Each logical E2Stream button can have
+multiple keyboard or HID aliases. At startup, the interface selects a
 light or dark palette based on the system app theme, with contrasting text.
 Restart the app after changing the system theme. The player shows channel and
 programme information below the video for five seconds; the "Pasek" button
@@ -39,5 +40,11 @@ e2stream\gradlew.bat -p e2stream\desktop packageReleaseMsi packageReleaseExe
 The app tries the EPG Scan client API first and falls back to OpenWebif. Decoder
 settings and key bindings are stored in `%APPDATA%/E2Stream/settings.properties`.
 The OpenWebif password and EPG Scan token are stored in this file as plain text.
-To map a remote button, select an action and press the button while the app is
-focused. The receiver must expose the button to Windows as a keyboard key.
+To map a button, open **Pilot / klawiatura**, select a logical button on the
+remote illustration, choose **Dodaj klawisz fizyczny**, then press a keyboard
+key or a button on a connected HID remote. HID reports are handled only while
+an E2Stream window is focused; they are not translated into system-wide
+keystrokes. Test with the specific remote because HID report formats vary by
+device. To use Power, configure the remote software or Windows to launch
+E2Stream. A second launch signals the existing instance: it restores the
+window, or asks to close the app if E2Stream is already active.

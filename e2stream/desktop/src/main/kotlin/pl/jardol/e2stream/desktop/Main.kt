@@ -5,10 +5,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -28,6 +31,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,12 +51,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.event.KeyEvent
 import java.awt.KeyboardFocusManager
+import java.awt.Frame
+import java.awt.Window as AwtWindow
+import javax.swing.SwingUtilities
+import java.awt.EventQueue
+import javax.swing.JOptionPane
 
-fun main() = application {
-    Window(
-        onCloseRequest = ::exitApplication,
-        title = "E2Stream",
-    ) {
+fun main() {
+    val instance = SingleInstance.startOrSignal() ?: return
+    application {
+        Window(
+            onCloseRequest = ::exitApplication,
+            title = "E2Stream",
+        ) {
         val colorScheme = appColorScheme(isSystemInDarkTheme())
         MaterialTheme(colorScheme = colorScheme) {
             val desktopWindow = this.window
@@ -72,11 +84,49 @@ fun main() = application {
             var nowEvents by remember { mutableStateOf<Map<String, NowEvent>>(emptyMap()) }
             var epgError by remember { mutableStateOf<String?>(null) }
             var showChannelList by remember { mutableStateOf(false) }
-            var captureAction by remember { mutableStateOf<RemoteAction?>(null) }
+            var channelListSelected by remember { mutableIntStateOf(0) }
+            var captureButton by remember { mutableStateOf<VirtualRemoteKey?>(null) }
+            var selectedRemoteButton by remember { mutableStateOf(VirtualRemoteKey.OK) }
             var bindings by remember { mutableStateOf(RemoteKeyMap.defaults + RemoteKeyMap.parse(config.remoteBindings)) }
+            var universalBindings by remember {
+                mutableStateOf<Map<VirtualRemoteKey, Set<String>>>(
+                    UniversalRemoteMap.parse(config.universalRemoteBindings),
+                )
+            }
             var vlcSession by remember { mutableStateOf<VlcSession?>(null) }
             var playingChannel by remember { mutableStateOf<Channel?>(null) }
             val scope = rememberCoroutineScope()
+            val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+            var lastVirtualKey by remember { mutableStateOf<VirtualRemoteKey?>(null) }
+            var lastVirtualKeyAt by remember { mutableLongStateOf(0L) }
+
+            DisposableEffect(instance) {
+                instance.onPowerRequest {
+                    SwingUtilities.invokeLater {
+                        val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+                        val appWasActive = belongsToApplication(focused, desktopWindow)
+                        if (appWasActive) {
+                            val answer = JOptionPane.showConfirmDialog(
+                                focused ?: desktopWindow,
+                                "Odtwarzanie zostanie zatrzymane.",
+                                "Zamknąć E2Stream?",
+                                JOptionPane.YES_NO_OPTION,
+                                JOptionPane.QUESTION_MESSAGE,
+                            )
+                            if (answer == JOptionPane.YES_OPTION) exitApplication()
+                        } else {
+                            val target = settingsWindow?.takeIf { it.isShowing } ?: desktopWindow
+                            if (target is Frame && target.extendedState and Frame.ICONIFIED != 0) {
+                                target.extendedState = target.extendedState and Frame.ICONIFIED.inv()
+                            }
+                            target.isVisible = true
+                            target.toFront()
+                            target.requestFocus()
+                        }
+                    }
+                }
+                onDispose { instance.close() }
+            }
 
             LaunchedEffect(selectedBouquet, config.host, config.httpPort, config.username, config.password) {
                 val bouquet = selectedBouquet
@@ -106,7 +156,7 @@ fun main() = application {
                     session.play(url, config)
                     if (existingSession == null) vlcSession = session
                     playingChannel = channel
-                    captureAction = null
+                    captureButton = null
                     page = DesktopPage.PLAYER
                     status = "Otwieranie strumienia: ${channel.name}"
                 } catch (e: Exception) {
@@ -119,6 +169,7 @@ fun main() = application {
                 selectedBouquet = bouquet
                 channels = emptyList()
                 nowEvents = emptyMap()
+                channelListSelected = 0
                 val currentCatalog = catalog ?: return
                 scope.launch {
                     busy = true
@@ -136,6 +187,22 @@ fun main() = application {
                 }
             }
 
+            fun savePhysicalBinding(button: VirtualRemoteKey, id: String, label: String) {
+                if (button == VirtualRemoteKey.POWER) {
+                    status = "Przypisz Power w ustawieniach pilota jako uruchomienie E2Stream."
+                    captureButton = null
+                    return
+                }
+                universalBindings = UniversalRemoteMap.assign(universalBindings, button, id)
+                config = config.copy(universalRemoteBindings = UniversalRemoteMap.encode(universalBindings))
+                status = runCatching { config.save() }
+                    .fold(
+                        onSuccess = { "Przypisano $label → ${button.label}." },
+                        onFailure = { "Nie udało się zapisać ustawień: ${it.message}" },
+                    )
+                captureButton = null
+            }
+
             fun changeChannel(offset: Int): Boolean {
                 val current = channels.indexOfFirst { it.ref == playingChannel?.ref }
                 if (current < 0 || channels.isEmpty()) return false
@@ -144,52 +211,164 @@ fun main() = application {
                 return true
             }
 
+            fun handleVirtualKey(key: VirtualRemoteKey): Boolean {
+                val now = System.currentTimeMillis()
+                if (lastVirtualKey == key && now - lastVirtualKeyAt < 90) return true
+                lastVirtualKey = key
+                lastVirtualKeyAt = now
+
+                if (page != DesktopPage.PLAYER) {
+                    return when (key) {
+                        VirtualRemoteKey.BACK, VirtualRemoteKey.HOME -> {
+                            captureButton = null
+                            page = if (vlcSession == null) DesktopPage.CONNECTION else DesktopPage.PLAYER
+                            true
+                        }
+                        VirtualRemoteKey.UP -> { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Up); true }
+                        VirtualRemoteKey.DOWN -> { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down); true }
+                        VirtualRemoteKey.LEFT -> { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Left); true }
+                        VirtualRemoteKey.RIGHT -> { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Right); true }
+                        else -> false
+                    }
+                }
+
+                if (showChannelList) {
+                    when (key) {
+                        VirtualRemoteKey.UP -> if (channels.isNotEmpty()) channelListSelected = (channelListSelected - 1 + channels.size) % channels.size
+                        VirtualRemoteKey.DOWN -> if (channels.isNotEmpty()) channelListSelected = (channelListSelected + 1) % channels.size
+                        VirtualRemoteKey.LEFT -> bouquetOffset(catalog?.bouquets.orEmpty(), selectedBouquet, -1)?.let(::selectBouquet)
+                        VirtualRemoteKey.RIGHT -> bouquetOffset(catalog?.bouquets.orEmpty(), selectedBouquet, 1)?.let(::selectBouquet)
+                        VirtualRemoteKey.OK -> channels.getOrNull(channelListSelected)?.let {
+                            showChannelList = false
+                            startChannel(it)
+                        }
+                        VirtualRemoteKey.BACK -> showChannelList = false
+                        VirtualRemoteKey.CHANNEL_UP -> if (channels.isNotEmpty()) {
+                            channelListSelected = (channelListSelected - 8).coerceAtLeast(0)
+                        }
+                        VirtualRemoteKey.CHANNEL_DOWN -> if (channels.isNotEmpty()) {
+                            channelListSelected = (channelListSelected + 8).coerceAtMost(channels.lastIndex)
+                        }
+                        else -> return false
+                    }
+                    return true
+                }
+
+                when (key) {
+                    VirtualRemoteKey.UP, VirtualRemoteKey.CHANNEL_UP -> changeChannel(1)
+                    VirtualRemoteKey.DOWN, VirtualRemoteKey.CHANNEL_DOWN -> changeChannel(-1)
+                    VirtualRemoteKey.OK -> showChannelList = true
+                    VirtualRemoteKey.SETTINGS -> page = DesktopPage.CONNECTION
+                    VirtualRemoteKey.PLAY_PAUSE -> vlcSession?.togglePause()
+                    VirtualRemoteKey.PLAY -> vlcSession?.resume()
+                    VirtualRemoteKey.PAUSE -> vlcSession?.pause()
+                    VirtualRemoteKey.BACK ->
+                        status = "Przycisk Wstecz zamyka listę kanałów lub wraca z ustawień."
+                    VirtualRemoteKey.HOME -> page = DesktopPage.CONNECTION
+                    VirtualRemoteKey.LEFT -> status = "EPG kanału nie jest jeszcze dostępne w wersji Windows."
+                    VirtualRemoteKey.RIGHT, VirtualRemoteKey.GUIDE, VirtualRemoteKey.TV_DATA ->
+                        status = "Multi-EPG nie jest jeszcze dostępne w wersji Windows."
+                    VirtualRemoteKey.INFO -> status = "EPG wydarzenia nie jest jeszcze dostępne w wersji Windows."
+                    VirtualRemoteKey.SEARCH -> status = "Wyszukiwanie EPG nie jest jeszcze dostępne w wersji Windows."
+                    VirtualRemoteKey.AUDIO -> status = "Wybór ścieżki audio nie jest jeszcze dostępny w wersji Windows."
+                    VirtualRemoteKey.MENU -> status = "Menu nie jest jeszcze dostępne w wersji Windows."
+                    VirtualRemoteKey.LAST_CHANNEL -> status = "Historia kanałów nie jest jeszcze dostępna w wersji Windows."
+                    VirtualRemoteKey.REWIND, VirtualRemoteKey.FAST_FORWARD, VirtualRemoteKey.STOP ->
+                        status = "Timeshift nie jest jeszcze dostępny w wersji Windows."
+                    VirtualRemoteKey.DIGIT_0, VirtualRemoteKey.DIGIT_1, VirtualRemoteKey.DIGIT_2,
+                    VirtualRemoteKey.DIGIT_3, VirtualRemoteKey.DIGIT_4, VirtualRemoteKey.DIGIT_5,
+                    VirtualRemoteKey.DIGIT_6, VirtualRemoteKey.DIGIT_7, VirtualRemoteKey.DIGIT_8,
+                    VirtualRemoteKey.DIGIT_9 -> status = "Wybór kanału numerem nie jest jeszcze dostępny w wersji Windows."
+                    VirtualRemoteKey.POWER -> Unit
+                }
+                return true
+            }
+
             val sessionToClose = vlcSession
             DisposableEffect(sessionToClose) {
                 onDispose { sessionToClose?.close() }
             }
 
-            DisposableEffect(desktopWindow, settingsWindow, captureAction, bindings, vlcSession, page, channels, playingChannel) {
+            DisposableEffect(desktopWindow, settingsWindow, captureButton, bindings, universalBindings, vlcSession, page, channels, playingChannel, showChannelList) {
                 val dispatcher = java.awt.KeyEventDispatcher { event ->
-                    val action = captureAction
                     val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
-                    if ((focusedWindow != desktopWindow && (settingsWindow == null || focusedWindow != settingsWindow)) ||
+                    if (!belongsToApplication(focusedWindow, desktopWindow) ||
                         event.id != KeyEvent.KEY_PRESSED ||
                         event.keyCode == KeyEvent.VK_UNDEFINED
                     ) {
                         false
-                    } else if (action == null) {
-                        when {
-                            page != DesktopPage.PLAYER -> false
-                            bindings[event.keyCode] == RemoteAction.TIMESHIFT && vlcSession != null -> {
-                                vlcSession?.togglePause()
-                                status = "Odtwarzanie wstrzymane lub wznowione."
-                                true
-                            }
-                            bindings[event.keyCode] == RemoteAction.CHANNEL_UP -> changeChannel(1)
-                            bindings[event.keyCode] == RemoteAction.CHANNEL_DOWN -> changeChannel(-1)
-                            bindings[event.keyCode] == RemoteAction.CHANNEL_LIST -> {
-                                showChannelList = true
-                                true
-                            }
-                            else -> false
-                        }
-                    } else {
-                        bindings = bindings + (event.keyCode to action)
-                        config = config.copy(remoteBindings = RemoteKeyMap.encode(bindings))
-                        val keyName = RemoteKeyMap.keyName(event.keyCode)
-                        status = runCatching { config.save() }
-                            .fold(
-                                onSuccess = { "Przypisano $keyName → ${action.label}" },
-                                onFailure = { "Nie udało się zapisać ustawień: ${it.message}" },
-                            )
-                        captureAction = null
+                    } else if (captureButton != null) {
+                        val button = captureButton ?: return@KeyEventDispatcher false
+                        savePhysicalBinding(button, UniversalRemoteMap.keyId(event.keyCode), RemoteKeyMap.keyName(event.keyCode))
                         true
+                    } else {
+                        val physicalId = UniversalRemoteMap.keyId(event.keyCode)
+                        val virtualKey = UniversalRemoteMap.findKey(universalBindings, physicalId)
+                        if (virtualKey != null && (page == DesktopPage.PLAYER ||
+                            page == DesktopPage.REMOTE && virtualKey in setOf(
+                                VirtualRemoteKey.BACK, VirtualRemoteKey.HOME,
+                                VirtualRemoteKey.UP, VirtualRemoteKey.DOWN,
+                                VirtualRemoteKey.LEFT, VirtualRemoteKey.RIGHT,
+                            ))
+                        ) {
+                            handleVirtualKey(virtualKey)
+                        } else if (page == DesktopPage.PLAYER) {
+                            when (bindings[event.keyCode]) {
+                                RemoteAction.TIMESHIFT -> {
+                                    vlcSession?.togglePause()
+                                    status = "Odtwarzanie wstrzymane lub wznowione."
+                                    true
+                                }
+                                RemoteAction.CHANNEL_UP -> changeChannel(1)
+                                RemoteAction.CHANNEL_DOWN -> changeChannel(-1)
+                                RemoteAction.CHANNEL_LIST -> {
+                                    channelListSelected = channels.indexOfFirst { it.ref == playingChannel?.ref }.coerceAtLeast(0)
+                                    showChannelList = true
+                                    true
+                                }
+                                RemoteAction.SETTINGS -> { page = DesktopPage.CONNECTION; true }
+                                RemoteAction.NONE, null -> false
+                                else -> {
+                                    status = "${bindings[event.keyCode]?.label} nie jest jeszcze dostępne w wersji Windows."
+                                    true
+                                }
+                            }
+                        } else false
                     }
                 }
                 val manager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
                 manager.addKeyEventDispatcher(dispatcher)
                 onDispose { manager.removeKeyEventDispatcher(dispatcher) }
+            }
+
+            DisposableEffect(desktopWindow) {
+                val rawInput = if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) null else try {
+                    RawHidInput(
+                        isApplicationFocused = {
+                            belongsToApplication(
+                                KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow,
+                                desktopWindow,
+                            )
+                        },
+                        onKey = { physicalId, label ->
+                            EventQueue.invokeLater {
+                                if (!belongsToApplication(
+                                        KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow,
+                                        desktopWindow,
+                                    )
+                                ) return@invokeLater
+                                val button = captureButton
+                                if (button != null) savePhysicalBinding(button, physicalId, label)
+                                else UniversalRemoteMap.findKey(universalBindings, physicalId)?.let(::handleVirtualKey)
+                            }
+                        },
+                        onError = { message -> EventQueue.invokeLater { status = message } },
+                    )
+                } catch (e: Exception) {
+                    status = "Obsługa pilota HID niedostępna: ${e.message ?: e.javaClass.simpleName}"
+                    null
+                }
+                onDispose { rawInput?.close() }
             }
 
             val settingsContent: @Composable () -> Unit = {
@@ -205,13 +384,13 @@ fun main() = application {
                         Text("E2Stream", style = MaterialTheme.typography.headlineMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = {
-                                captureAction = null
+                                captureButton = null
                                 page = DesktopPage.CONNECTION
                             }) { Text("Dekoder") }
                             OutlinedButton(onClick = { page = DesktopPage.REMOTE }) { Text("Pilot / klawiatura") }
                             if (vlcSession != null) {
                                 OutlinedButton(onClick = {
-                                    captureAction = null
+                                    captureButton = null
                                     page = DesktopPage.PLAYER
                                 }) { Text("Wróć do oglądania") }
                             }
@@ -257,18 +436,30 @@ fun main() = application {
                             )
                             DesktopPage.PLAYER -> Unit
                             DesktopPage.REMOTE -> RemotePage(
-                                bindings = bindings,
-                                captureAction = captureAction,
-                                onCapture = { captureAction = it },
-                                onRemove = { keyCode ->
-                                    bindings = bindings + (keyCode to RemoteAction.NONE)
-                                    config = config.copy(remoteBindings = RemoteKeyMap.encode(bindings))
+                                bindings = universalBindings,
+                                selected = selectedRemoteButton,
+                                captureButton = captureButton,
+                                onSelect = { selectedRemoteButton = it },
+                                onCapture = {
+                                    if (it == VirtualRemoteKey.POWER) {
+                                        status = "W ustawieniach pilota przypisz Power do uruchamiania programu E2Stream."
+                                    } else {
+                                        selectedRemoteButton = it
+                                        captureButton = it
+                                        status = "Naciśnij przycisk fizycznego pilota lub klawiatury."
+                                    }
+                                },
+                                onCancelCapture = { captureButton = null },
+                                onRemove = { key, id ->
+                                    universalBindings = UniversalRemoteMap.remove(universalBindings, key, id)
+                                    config = config.copy(universalRemoteBindings = UniversalRemoteMap.encode(universalBindings))
                                     runCatching { config.save() }
                                         .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
                                 },
                                 onReset = {
-                                    bindings = RemoteKeyMap.defaults
-                                    config = config.copy(remoteBindings = "")
+                                    universalBindings = UniversalRemoteMap.defaults
+                                    captureButton = null
+                                    config = config.copy(universalRemoteBindings = "")
                                     runCatching { config.save() }
                                         .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
                                 },
@@ -289,7 +480,10 @@ fun main() = application {
                             session = session,
                             event = nowEvents[serviceKey(channel.ref)],
                             status = epgError ?: status,
-                            onChannels = { showChannelList = true },
+                            onChannels = {
+                                channelListSelected = channels.indexOfFirst { it.ref == playingChannel?.ref }.coerceAtLeast(0)
+                                showChannelList = true
+                            },
                             onSettings = { page = DesktopPage.CONNECTION },
                             onBack = {
                                 showChannelList = false
@@ -303,7 +497,7 @@ fun main() = application {
                     settings = {
                         DialogWindow(
                             onCloseRequest = {
-                                captureAction = null
+                                captureButton = null
                                 page = DesktopPage.PLAYER
                             },
                             title = "E2Stream — ustawienia",
@@ -324,10 +518,11 @@ fun main() = application {
                         bouquet = selectedBouquet,
                         bouquets = catalog?.bouquets.orEmpty(),
                         channels = channels,
-                        playing = playingChannel,
+                        selected = channelListSelected,
                         nowEvents = nowEvents,
                         busy = busy,
                         onClose = { showChannelList = false },
+                        onSelectedChange = { channelListSelected = it },
                         onBouquetSelected = ::selectBouquet,
                         onPlay = {
                             showChannelList = false
@@ -340,9 +535,19 @@ fun main() = application {
             }
         }
     }
+    }
 }
 
 private enum class DesktopPage { CONNECTION, PLAYER, REMOTE }
+
+private fun belongsToApplication(window: AwtWindow?, mainWindow: AwtWindow): Boolean {
+    var current = window
+    while (current != null) {
+        if (current === mainWindow) return true
+        current = current.owner
+    }
+    return false
+}
 
 @Composable
 private fun ConnectionPage(
@@ -476,37 +681,123 @@ private fun BouquetPicker(
 
 @Composable
 private fun RemotePage(
-    bindings: Map<Int, RemoteAction>,
-    captureAction: RemoteAction?,
-    onCapture: (RemoteAction) -> Unit,
-    onRemove: (Int) -> Unit,
+    bindings: Map<VirtualRemoteKey, Set<String>>,
+    selected: VirtualRemoteKey,
+    captureButton: VirtualRemoteKey?,
+    onSelect: (VirtualRemoteKey) -> Unit,
+    onCapture: (VirtualRemoteKey) -> Unit,
+    onCancelCapture: () -> Unit,
+    onRemove: (VirtualRemoteKey, String) -> Unit,
     onReset: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text("Mapowanie pilota i klawiatury", style = MaterialTheme.typography.titleLarge)
-        Text("Wybierz akcję, a następnie naciśnij przycisk pilota. Windows musi przekazać go aplikacji jako klawisz.")
-        if (captureAction != null) {
-            Text("Naciśnij teraz przycisk dla akcji: ${captureAction.label}")
-        }
-        RemoteAction.entries.filter { it != RemoteAction.NONE }.forEach { action ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(action.label, modifier = Modifier.weight(1f).padding(top = 12.dp))
-                val keys = bindings.filterValues { it == action }.keys
-                Text(
-                    if (keys.isEmpty()) "Nieprzypisano"
-                    else keys.joinToString { RemoteKeyMap.keyName(it) },
-                    modifier = Modifier.weight(1f).padding(top = 12.dp),
-                )
-                OutlinedButton(onClick = { onCapture(action) }) { Text("Przypisz") }
-                if (keys.isNotEmpty()) {
-                    OutlinedButton(onClick = { keys.forEach(onRemove) }) { Text("Usuń") }
+    val colors = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Column(
+            modifier = Modifier.width(340.dp).fillMaxHeight().verticalScroll(rememberScrollState())
+                .background(colors.surfaceVariant, RoundedCornerShape(32.dp)).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("PILOT UNIWERSALNY", style = MaterialTheme.typography.titleMedium)
+            @Composable
+            fun key(key: VirtualRemoteKey, modifier: Modifier = Modifier) {
+                OutlinedButton(onClick = { onSelect(key) }, modifier = modifier, shape = RoundedCornerShape(18.dp)) {
+                    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Text(key.label, maxLines = 1)
+                        val count = bindings[key].orEmpty().size
+                        Text(
+                            if (key == VirtualRemoteKey.POWER) "uruchom E2Stream"
+                            else if (count == 0) "—" else "$count klawiszy",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                key(VirtualRemoteKey.POWER, Modifier.weight(1f))
+                key(VirtualRemoteKey.HOME, Modifier.weight(1f))
+                key(VirtualRemoteKey.BACK, Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                key(VirtualRemoteKey.MENU, Modifier.weight(1f))
+                key(VirtualRemoteKey.SETTINGS, Modifier.weight(1f))
+            }
+            key(VirtualRemoteKey.UP, Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally).width(110.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                key(VirtualRemoteKey.LEFT, Modifier.weight(1f))
+                key(VirtualRemoteKey.OK, Modifier.weight(1f))
+                key(VirtualRemoteKey.RIGHT, Modifier.weight(1f))
+            }
+            key(VirtualRemoteKey.DOWN, Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally).width(110.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                key(VirtualRemoteKey.CHANNEL_UP, Modifier.weight(1f))
+                key(VirtualRemoteKey.CHANNEL_DOWN, Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                key(VirtualRemoteKey.INFO, Modifier.weight(1f))
+                key(VirtualRemoteKey.GUIDE, Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                key(VirtualRemoteKey.TV_DATA, Modifier.weight(1f))
+                key(VirtualRemoteKey.SEARCH, Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                key(VirtualRemoteKey.AUDIO, Modifier.weight(1f))
+                key(VirtualRemoteKey.LAST_CHANNEL, Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                key(VirtualRemoteKey.REWIND, Modifier.weight(1f))
+                key(VirtualRemoteKey.PLAY_PAUSE, Modifier.weight(1f))
+                key(VirtualRemoteKey.FAST_FORWARD, Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                key(VirtualRemoteKey.PLAY, Modifier.weight(1f))
+                key(VirtualRemoteKey.PAUSE, Modifier.weight(1f))
+                key(VirtualRemoteKey.STOP, Modifier.weight(1f))
+            }
+            (1..9).chunked(3).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.forEach { number ->
+                        key(VirtualRemoteKey.valueOf("DIGIT_$number"), Modifier.weight(1f))
+                    }
+                }
+            }
+            key(VirtualRemoteKey.DIGIT_0, Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally).width(110.dp))
         }
-        Spacer(Modifier.height(4.dp))
-        Button(onClick = onReset) { Text("Przywróć domyślne mapowanie") }
+
+        Column(
+            modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(selected.label, style = MaterialTheme.typography.titleLarge, color = colors.primary)
+            if (selected == VirtualRemoteKey.POWER) {
+                Text(
+                    "W ustawieniach pilota Xiaomi przypisz Power do uruchamiania programu E2Stream. " +
+                        "Gdy program działa, kolejne uruchomienie przywoła jego okno; jeśli już jest aktywne, zapyta o zamknięcie.",
+                )
+            } else {
+                Text("Przypisz do tego przycisku kilka klawiszy fizycznych. Pilot HID jest wykrywany tylko wtedy, gdy E2Stream jest aktywny.")
+                if (captureButton == selected) {
+                    Text("Naciśnij teraz klawisz pilota lub klawiatury.", color = colors.primary)
+                    OutlinedButton(onClick = onCancelCapture) { Text("Anuluj") }
+                } else {
+                    Button(onClick = { onCapture(selected) }) { Text("Dodaj klawisz fizyczny") }
+                }
+                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(bindings[selected].orEmpty().sorted()) { physicalId ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                UniversalRemoteMap.label(physicalId),
+                                modifier = Modifier.weight(1f).padding(top = 12.dp),
+                            )
+                            OutlinedButton(onClick = { onRemove(selected, physicalId) }) { Text("Usuń") }
+                        }
+                    }
+                }
+            }
+            OutlinedButton(onClick = onReset) { Text("Przywróć domyślne klawisze") }
+        }
     }
 }

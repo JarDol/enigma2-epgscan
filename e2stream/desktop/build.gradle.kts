@@ -19,6 +19,8 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation("org.json:json:20240303")
+    implementation("net.java.dev.jna:jna:5.17.0")
+    implementation("net.java.dev.jna:jna-platform:5.17.0")
     implementation("uk.co.caprica:vlcj:4.8.4")
     testImplementation(kotlin("test"))
 }
@@ -37,7 +39,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe,
             )
             packageName = "E2Stream"
-            packageVersion = "0.1.4"
+            packageVersion = "0.1.5"
         }
     }
 }

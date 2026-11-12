@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -150,16 +151,14 @@ internal fun ChannelListDialog(
     bouquet: Bouquet?,
     bouquets: List<Bouquet>,
     channels: List<Channel>,
-    playing: Channel?,
+    selected: Int,
     nowEvents: Map<String, NowEvent>,
     busy: Boolean,
     onClose: () -> Unit,
+    onSelectedChange: (Int) -> Unit,
     onBouquetSelected: (Bouquet) -> Unit,
     onPlay: (Channel) -> Unit,
 ) {
-    var selected by remember(channels, playing) {
-        mutableIntStateOf(channels.indexOfFirst { it.ref == playing?.ref }.coerceAtLeast(0))
-    }
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
@@ -185,11 +184,11 @@ internal fun ChannelListDialog(
             if (event.type != KeyEventType.KeyDown) false
             else when (event.key) {
                 Key.DirectionDown -> {
-                    if (channels.isNotEmpty()) selected = (selected + 1) % channels.size
+                    if (channels.isNotEmpty()) onSelectedChange((selected + 1) % channels.size)
                     true
                 }
                 Key.DirectionUp -> {
-                    if (channels.isNotEmpty()) selected = (selected - 1 + channels.size) % channels.size
+                    if (channels.isNotEmpty()) onSelectedChange((selected - 1 + channels.size) % channels.size)
                     true
                 }
                 Key.DirectionLeft -> {
@@ -262,7 +261,7 @@ internal fun ChannelListDialog(
                             modifier = Modifier.fillMaxWidth()
                                 .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(6.dp))
                                 .clickable {
-                                    selected = index
+                                    onSelectedChange(index)
                                     onPlay(channel)
                                 }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),

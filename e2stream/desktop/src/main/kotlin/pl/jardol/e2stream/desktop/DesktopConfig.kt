@@ -14,6 +14,7 @@ data class DesktopConfig(
     val password: String = "",
     val pluginToken: String = "",
     val remoteBindings: String = "",
+    val universalRemoteBindings: String = "",
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -26,6 +27,7 @@ data class DesktopConfig(
             setProperty("password", password)
             setProperty("pluginToken", pluginToken)
             setProperty("remoteBindings", remoteBindings)
+            setProperty("universalRemoteBindings", universalRemoteBindings)
         }
         Files.newOutputStream(path).use { properties.store(it, "E2Stream settings") }
     }
@@ -44,6 +46,7 @@ data class DesktopConfig(
                 password = properties.getProperty("password", ""),
                 pluginToken = properties.getProperty("pluginToken", ""),
                 remoteBindings = properties.getProperty("remoteBindings", ""),
+                universalRemoteBindings = properties.getProperty("universalRemoteBindings", ""),
             )
         }
 

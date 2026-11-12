@@ -51,9 +51,22 @@ class VlcSession(private val onError: (String) -> Unit) {
     }
 
     fun togglePause() {
-        if (paused) component.mediaPlayer().controls().play()
-        else component.mediaPlayer().controls().pause()
-        paused = !paused
+        setPaused(!paused)
+    }
+
+    fun pause() {
+        setPaused(true)
+    }
+
+    fun resume() {
+        setPaused(false)
+    }
+
+    private fun setPaused(value: Boolean) {
+        if (paused == value) return
+        if (value) component.mediaPlayer().controls().pause()
+        else component.mediaPlayer().controls().play()
+        paused = value
     }
 
     fun stop() {
