@@ -73,7 +73,7 @@ internal class RawHidInput(
                 lpszClassName = className
             }
             if (User32.INSTANCE.RegisterClassEx(windowClassInfo).toInt() == 0) {
-                throw IOException("Windows nie zarejestrował okna odbiornika HID.")
+                throw IOException("Windows nie zarejestrował okna odbiornika HID (kod ${Kernel32.INSTANCE.GetLastError()}).")
             }
             registeredClass = className
             val created = User32.INSTANCE.CreateWindowEx(
@@ -85,15 +85,16 @@ internal class RawHidInput(
                 0,
                 0,
                 0,
-                WinUser.HWND_MESSAGE,
+                // HWND_MESSAGE is a sign-extended pointer on 64-bit Windows.
+                WinDef.HWND(Pointer.createConstant(-3L)),
                 null,
                 module,
                 null,
-            ) ?: throw IOException("Windows nie utworzył okna odbiornika HID.")
+            ) ?: throw IOException("Windows nie utworzył okna odbiornika HID (kod ${Kernel32.INSTANCE.GetLastError()}).")
             window = created
             registerConnectedDevices(created)
             keyboardHook = User32.INSTANCE.SetWindowsHookEx(WH_KEYBOARD_LL, keyboardProc, module, 0)
-                ?: throw IOException("Windows nie uruchomił ochrony klawiszy przeglądarki.")
+                ?: throw IOException("Windows nie uruchomił ochrony klawiszy przeglądarki (kod ${Kernel32.INSTANCE.GetLastError()}).")
             onDiagnostic("Odbiornik HID uruchomiony. Naciśnij przycisk pilota.")
             ready.countDown()
 
@@ -146,7 +147,7 @@ internal class RawHidInput(
             }
         }
         if (!RawInputApi.INSTANCE.RegisterRawInputDevices(memory, usages.size, structSize)) {
-            throw IOException("Windows nie zarejestrował urządzeń HID.")
+            throw IOException("Windows nie zarejestrował urządzeń HID (kod ${Kernel32.INSTANCE.GetLastError()}).")
         }
     }
 
