@@ -101,6 +101,19 @@ object Picons {
 
     private fun localName(ref: String) = OpenWebif.key(ref).replace(':', '_') + ".png"
 
+    /** Nagrania mogą podawać inny typ usługi niż bukiet; dopasuj SID/TSID/ONID/namespace. */
+    private fun localFile(ctx: Context, ref: String): File? {
+        val d = dir(ctx)
+        val exact = File(d, localName(ref))
+        if (exact.isFile) return exact
+        val service = piconServiceIdentity(ref) ?: return null
+        return d.listFiles()?.firstOrNull { file ->
+            if (!file.isFile || !file.name.endsWith(".png", true)) return@firstOrNull false
+            val nameFields = file.name.substringBeforeLast('.').split('_')
+            nameFields.size >= 7 && nameFields.subList(3, 7).joinToString("_").uppercase() == service
+        }
+    }
+
     /** Nazwy plików picon do wypróbowania: referencja, referencja z typem 1, nazwa (SNP). */
     fun candidates(c: Channel): List<String> {
         val f = c.ref.trimEnd(':').split(':')
@@ -123,8 +136,8 @@ object Picons {
         val k = localName(ref)
         mem.get(k)?.let { return it }
         synchronized(missing) { if (k in missing) return null }
-        val f = File(dir(ctx), k)
-        val b = if (f.exists()) try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Exception) { null } else null
+        val f = localFile(ctx, ref)
+        val b = if (f != null) try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Exception) { null } else null
         if (b != null) mem.put(k, b) else synchronized(missing) { missing.add(k) }
         return b
     }

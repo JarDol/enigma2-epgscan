@@ -412,6 +412,13 @@ class PlayerActivity : Activity() {
     override fun onStop() {
         super.onStop()
         epgReturnFromSettings = settingsOpen
+        if (settingsOpen && !recMode) {
+            val channel = playList.getOrNull(playIndex)
+            val bouquet = bouquets.getOrNull(playBouquet)
+            if (channel != null && bouquet != null && bouquet.ref != REC_REF) {
+                settingsReturnChannel = bouquet.ref to channel.ref
+            }
+        }
         panelTimer.setActive(false)
         ZapWakeAlarms.setAppForeground(this, false)
         settingsOpen = false      // po powrocie i tak pełny start (onStart)
@@ -1001,8 +1008,9 @@ class PlayerActivity : Activity() {
                 val bq = all.filter { it.ref !in hidden }.ifEmpty { all }
                 AppLog.i("bukiety: ${bq.size} z ${all.size} widocznych")
                 // start: ostatni kanał albo wybrany kanał startowy
-                val wantB = if (prefs.resumeLast) prefs.lastBouquet else prefs.startBouquet
-                val wantC = if (prefs.resumeLast) prefs.lastChannel else prefs.startChannel
+                val returnChannel = settingsReturnChannel
+                val wantB = returnChannel?.first ?: if (prefs.resumeLast) prefs.lastBouquet else prefs.startBouquet
+                val wantC = returnChannel?.second ?: if (prefs.resumeLast) prefs.lastChannel else prefs.startChannel
                 val bi = bq.indexOfFirst { it.ref == wantB }.let { if (it < 0) 0 else it }
                 val ch = if (bq.isEmpty()) emptyList() else api.channels(bq[bi])
                 runOnUiThread {
@@ -1019,7 +1027,11 @@ class PlayerActivity : Activity() {
                     if (ch.isNotEmpty() && (forced == null || playList.isEmpty())) {
                         playIndex = -1
                         playIn(bi, ch, ci)
+                        if (returnChannel != null) {
+                            AppLog.i("ustawienia: powrót do oglądanego kanału ${ch[ci].name}")
+                        }
                     }
+                    if (returnChannel != null) settingsReturnChannel = null
                     if (forced != null) {
                         AppLog.i("harmonogram: start nie nadpisuje kanału z harmonogramu ${OpenWebif.key(forced)}")
                         zapTo(forced)
@@ -2458,6 +2470,7 @@ class PlayerActivity : Activity() {
     private var backgrounded = false
     private var settingsSig = ""
     private var settingsBq = ""
+    private var settingsReturnChannel: Pair<String, String>? = null
 
     /** Ustawienia, których zmiana wymaga ponownego uruchomienia strumienia. */
     private fun streamSig(): String = listOf(
@@ -2667,7 +2680,7 @@ class PlayerActivity : Activity() {
             val engine = vlc
             val tracks = engine?.audioTracks().orEmpty()
             if (tracks.isEmpty()) {
-                if (vlcAttempt < 20) {
+                if (vlcAttempt < 12) {
                     ui.postDelayed({ showAudioDialog(vlcAttempt + 1) }, 250)
                 } else {
                     showMessage("Brak ścieżek dźwięku")
@@ -2705,7 +2718,7 @@ class PlayerActivity : Activity() {
         val engine = vlc ?: return
         val tracks = engine.audioTracks()
         if (tracks.isEmpty()) {
-            if (attempt < 20) ui.postDelayed({ applySavedVlcAudio(attempt + 1) }, 250)
+            if (attempt < 12) ui.postDelayed({ applySavedVlcAudio(attempt + 1) }, 250)
             else AppLog.i("VLC: brak ścieżek audio po uruchomieniu kanału ${ch.name}")
             return
         }
