@@ -10,6 +10,9 @@ import java.util.Base64
 data class Bouquet(val name: String, val ref: String)
 data class Channel(val number: Int, val name: String, val ref: String)
 data class DecoderCatalog(val bouquets: List<Bouquet>, val usesPlugin: Boolean)
+data class NowEvent(val title: String, val begin: Long, val end: Long)
+
+fun serviceKey(ref: String): String = ref.trim().trimEnd(':').uppercase()
 
 class DecoderClient(private val config: DesktopConfig) {
     fun loadBouquets(): DecoderCatalog {
@@ -105,6 +108,24 @@ class DecoderClient(private val config: DesktopConfig) {
         return "http://${hostForUrl(config.host)}:${config.streamPort}/${channel.ref.replace(" ", "%20")}"
     }
 
+    fun loadNow(bouquet: Bouquet): Map<String, NowEvent> {
+        validatePort(config.httpPort, "OpenWebif")
+        val events = get(config.httpPort, "/api/epgnow?bRef=${encode(bouquet.ref)}")
+            .optJSONArray("events")
+            ?: throw IOException("OpenWebif nie zwrócił bieżącego EPG.")
+        val result = mutableMapOf<String, NowEvent>()
+        for (index in 0 until events.length()) {
+            val event = events.optJSONObject(index) ?: continue
+            val ref = event.optString("sref")
+            val title = event.optString("title")
+            if (ref.isBlank() || title.isBlank() || title == "None" || title == "null") continue
+            val begin = event.optLong("begin_timestamp")
+            val duration = event.optLong("duration_sec")
+            result[serviceKey(ref)] = NowEvent(OpenWebifText.unescape(title), begin, begin + duration)
+        }
+        return result
+    }
+
     private fun validatePort(port: Int, service: String) {
         require(port in 1..65535) { "Nieprawidłowy port $service: $port." }
     }
@@ -147,7 +168,8 @@ private object OpenWebifText {
     private val entities = Regex("&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);")
     private val named = mapOf(
         "quot" to "\"", "amp" to "&", "lt" to "<", "gt" to ">", "apos" to "'",
-        "nbsp" to " ", "ndash" to "–", "mdash" to "—",
+        "nbsp" to " ", "ndash" to "–", "mdash" to "—", "hellip" to "…",
+        "bdquo" to "„", "rdquo" to "”", "ldquo" to "“",
     )
 
     fun unescape(text: String): String {

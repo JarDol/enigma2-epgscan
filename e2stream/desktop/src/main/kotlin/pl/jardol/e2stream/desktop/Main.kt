@@ -1,5 +1,6 @@
 package pl.jardol.e2stream.desktop
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,20 +23,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.event.KeyEvent
@@ -46,7 +51,7 @@ fun main() = application {
         onCloseRequest = ::exitApplication,
         title = "E2Stream",
     ) {
-        MaterialTheme {
+        MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFF4FC3F7))) {
             val desktopWindow = this.window
             val loadedConfig = remember { runCatching { DesktopConfig.load() } }
             var config by remember { mutableStateOf(loadedConfig.getOrDefault(DesktopConfig())) }
@@ -61,11 +66,33 @@ fun main() = application {
             var catalog by remember { mutableStateOf<DecoderCatalog?>(null) }
             var selectedBouquet by remember { mutableStateOf<Bouquet?>(null) }
             var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
+            var nowEvents by remember { mutableStateOf<Map<String, NowEvent>>(emptyMap()) }
+            var epgError by remember { mutableStateOf<String?>(null) }
+            var showChannelList by remember { mutableStateOf(false) }
             var captureAction by remember { mutableStateOf<RemoteAction?>(null) }
             var bindings by remember { mutableStateOf(RemoteKeyMap.defaults + RemoteKeyMap.parse(config.remoteBindings)) }
             var vlcSession by remember { mutableStateOf<VlcSession?>(null) }
             var playingChannel by remember { mutableStateOf<Channel?>(null) }
             val scope = rememberCoroutineScope()
+
+            LaunchedEffect(selectedBouquet, config.host, config.httpPort, config.username, config.password) {
+                val bouquet = selectedBouquet
+                epgError = null
+                if (bouquet == null) return@LaunchedEffect
+                val client = DecoderClient(config)
+                while (true) {
+                    try {
+                        nowEvents = withContext(Dispatchers.IO) { client.loadNow(bouquet) }
+                        epgError = null
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        nowEvents = emptyMap()
+                        epgError = "Nie udało się pobrać EPG: ${e.message ?: "nieznany błąd"}"
+                    }
+                    delay(60_000)
+                }
+            }
 
             fun startChannel(channel: Channel) {
                 val existingSession = vlcSession
@@ -115,7 +142,7 @@ fun main() = application {
                             bindings[event.keyCode] == RemoteAction.CHANNEL_UP -> changeChannel(1)
                             bindings[event.keyCode] == RemoteAction.CHANNEL_DOWN -> changeChannel(-1)
                             bindings[event.keyCode] == RemoteAction.CHANNEL_LIST -> {
-                                page = DesktopPage.CONNECTION
+                                showChannelList = true
                                 true
                             }
                             else -> false
@@ -140,16 +167,23 @@ fun main() = application {
 
             Column(
                 modifier = Modifier.fillMaxSize()
+                    .background(Color(0xFF101418))
                     .focusable()
-                    .padding(20.dp),
+                    .padding(if (page == DesktopPage.PLAYER) 0.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("E2Stream", style = MaterialTheme.typography.headlineMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { page = DesktopPage.CONNECTION }) { Text("Dekoder") }
-                    OutlinedButton(onClick = { page = DesktopPage.REMOTE }) { Text("Pilot / klawiatura") }
+                if (page != DesktopPage.PLAYER) {
+                    Text("E2Stream", style = MaterialTheme.typography.headlineMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { page = DesktopPage.CONNECTION }) { Text("Dekoder") }
+                        OutlinedButton(onClick = { page = DesktopPage.REMOTE }) { Text("Pilot / klawiatura") }
+                        if (vlcSession != null) {
+                            OutlinedButton(onClick = { page = DesktopPage.PLAYER }) { Text("Wróć do oglądania") }
+                        }
+                    }
+                    Text(status, style = MaterialTheme.typography.bodyMedium)
+                    epgError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
-                Text(status, style = MaterialTheme.typography.bodyMedium)
 
                 when (page) {
                     DesktopPage.CONNECTION -> ConnectionPage(
@@ -176,6 +210,7 @@ fun main() = application {
                                     catalog = result
                                     selectedBouquet = null
                                     channels = emptyList()
+                                    nowEvents = emptyMap()
                                     status = "Połączono przez ${if (result.usesPlugin) "EPG Scan" else "OpenWebif"}; bukiety: ${result.bouquets.size}."
                                 } catch (e: Exception) {
                                     status = e.message ?: "Nie udało się połączyć z dekoderem."
@@ -186,6 +221,8 @@ fun main() = application {
                         },
                         onBouquetSelected = { bouquet ->
                             selectedBouquet = bouquet
+                            channels = emptyList()
+                            nowEvents = emptyMap()
                             val currentCatalog = catalog
                             if (currentCatalog != null) {
                                 scope.launch {
@@ -212,7 +249,12 @@ fun main() = application {
                             PlayerPage(
                                 channel = channel,
                                 session = session,
+                                event = nowEvents[serviceKey(channel.ref)],
+                                status = epgError ?: status,
+                                onChannels = { showChannelList = true },
+                                onSettings = { page = DesktopPage.CONNECTION },
                                 onBack = {
+                                    showChannelList = false
                                     vlcSession = null
                                     playingChannel = null
                                     page = DesktopPage.CONNECTION
@@ -236,6 +278,19 @@ fun main() = application {
                             config = config.copy(remoteBindings = "")
                             runCatching { config.save() }
                                 .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
+                        },
+                    )
+                }
+                if (showChannelList && page == DesktopPage.PLAYER) {
+                    ChannelListDialog(
+                        bouquet = selectedBouquet,
+                        channels = channels,
+                        playing = playingChannel,
+                        nowEvents = nowEvents,
+                        onClose = { showChannelList = false },
+                        onPlay = {
+                            showChannelList = false
+                            startChannel(it)
                         },
                     )
                 }
@@ -306,7 +361,7 @@ private fun ConnectionPage(
         if (catalog != null) {
             Text("Bukiety", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BouquetPicker(catalog.bouquets, selectedBouquet, onBouquetSelected)
+                BouquetPicker(catalog.bouquets, selectedBouquet, busy, onBouquetSelected)
                 Text("Kanały: ${channels.size}", modifier = Modifier.padding(top = 12.dp))
             }
             if (channels.isNotEmpty()) {
@@ -328,21 +383,6 @@ private fun ConnectionPage(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun PlayerPage(channel: Channel, session: VlcSession, onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("${channel.number}. ${channel.name}", modifier = Modifier.weight(1f).padding(top = 10.dp))
-            OutlinedButton(onClick = session::togglePause) { Text("Pauza / Wznów") }
-            OutlinedButton(onClick = onBack) { Text("Zatrzymaj i wróć") }
-        }
-        SwingPanel(
-            factory = { session.view },
-            modifier = Modifier.fillMaxSize(),
-        )
     }
 }
 
@@ -369,11 +409,12 @@ private fun NumberField(label: String, value: Int, onValueChange: (Int) -> Unit)
 private fun BouquetPicker(
     bouquets: List<Bouquet>,
     selected: Bouquet?,
+    busy: Boolean,
     onSelected: (Bouquet) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column {
-        OutlinedButton(onClick = { expanded = true }, enabled = bouquets.isNotEmpty()) {
+        OutlinedButton(onClick = { expanded = true }, enabled = bouquets.isNotEmpty() && !busy) {
             Text(selected?.name ?: "Wybierz bukiet")
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {

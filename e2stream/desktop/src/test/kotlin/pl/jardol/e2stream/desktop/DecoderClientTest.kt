@@ -1,13 +1,63 @@
 package pl.jardol.e2stream.desktop
 
 import com.sun.net.httpserver.HttpServer
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class DecoderClientTest {
+    @Test
+    fun loadsCurrentEpgAndNormalizesServiceReferences() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        var requestedQuery = ""
+        var authorization = ""
+        server.createContext("/api/epgnow") { exchange ->
+            requestedQuery = exchange.requestURI.rawQuery
+            authorization = exchange.requestHeaders.getFirst("Authorization").orEmpty()
+            val response = """{"events":[
+                {"sref":"1:0:1:a:","title":"Film &amp; serial","begin_timestamp":100,"duration_sec":60},
+                {"sref":"1:0:1:b:","title":"None"},
+                {"sref":"","title":"Nieznany kanał"}
+            ]}""".toByteArray(StandardCharsets.UTF_8)
+            exchange.sendResponseHeaders(200, response.size.toLong())
+            exchange.responseBody.use { it.write(response) }
+        }
+        server.start()
+        try {
+            val client = DecoderClient(DesktopConfig(
+                host = "127.0.0.1", httpPort = server.address.port, username = "user", password = "pass",
+            ))
+            val events = client.loadNow(Bouquet("TV", "bouquet:ref"))
+            assertEquals(mapOf("1:0:1:A" to NowEvent("Film & serial", 100, 160)), events)
+            assertEquals(events["1:0:1:A"], events[serviceKey("1:0:1:a::")])
+            assertEquals("bRef=bouquet%3Aref", requestedQuery)
+            assertEquals("Basic dXNlcjpwYXNz", authorization)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun reportsInvalidEpgResponse() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/epgnow") { exchange ->
+            val response = """{"error":"unavailable"}""".toByteArray(StandardCharsets.UTF_8)
+            exchange.sendResponseHeaders(200, response.size.toLong())
+            exchange.responseBody.use { it.write(response) }
+        }
+        server.start()
+        try {
+            val client = DecoderClient(DesktopConfig(host = "127.0.0.1", httpPort = server.address.port))
+            assertFailsWith<IOException> { client.loadNow(Bouquet("TV", "bouquet")) }
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test
     fun readsPluginBouquetsAndChannels() {
         val requestedPaths = mutableListOf<String>()

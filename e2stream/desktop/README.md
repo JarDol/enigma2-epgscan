@@ -1,13 +1,18 @@
 # E2Stream for Windows
 
 Windows desktop client for Enigma2 receivers. Current features include decoder
-connection, bouquet/channel browsing, live playback through an existing
-64-bit VLC 3.x installation, pause/resume, and configurable keyboard/remote key
-capture.
+connection, bouquet/channel browsing with current EPG from OpenWebif, live
+playback through an existing 64-bit VLC 3.x installation, pause/resume, and
+configurable keyboard/remote key capture. The dark player shows channel and
+programme information below the video for five seconds; the "Pasek" button
+shows it again. The channel list opens in a separate window above the player
+and supports mouse, arrow keys, Enter and Escape. EPG refreshes every minute
+while a bouquet is selected; an EPG error does not prevent playback.
 
-This is an early test version: EPG, recordings, timeshift and most other
-Android features are not yet available. Only channel switching, channel list,
-and pause/resume actions currently work during playback.
+This is an early test version, not yet functionally equivalent to Android:
+full EPG, recordings, true timeshift and most other Android features are not
+yet available. Only channel switching, channel list, and pause/resume actions
+currently work during playback.
 
 ## Build and run
 

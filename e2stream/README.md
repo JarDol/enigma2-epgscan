@@ -6,8 +6,8 @@ Działa też bez wtyczki — wtedy przez OpenWebif i FTP.
 Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV.
 
 W katalogu [`desktop/`](desktop/) powstaje aplikacja Windows. Na tym etapie umożliwia połączenie z dekoderem,
-przeglądanie bukietów i kanałów, odtwarzanie na żywo przez zainstalowany VLC oraz konfigurowanie mapowania
-klawiatury i pilota.
+przeglądanie bukietów i kanałów z bieżącym EPG, odtwarzanie na żywo przez zainstalowany VLC oraz konfigurowanie
+mapowania klawiatury i pilota. Jest to wczesna wersja testowa, bez pełnego EPG, nagrań i prawdziwego timeshiftu.
 
 * ExoPlayer (Media3) z **tunelowaniem wideo**
   (sprzętowy deinterlacer telewizora, płynne paski informacyjne).
