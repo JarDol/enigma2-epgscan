@@ -2077,7 +2077,8 @@ class PlayerActivity : Activity() {
         val r = recItem ?: return
         bannerName.text = r.title
         bannerClock.text = hm.format(Date())
-        Picons.show(bannerIcon, this, r.sref, prefs.picons, prefs.missingPiconLogo, r.service)
+        bannerIcon.setImageDrawable(null)
+        bannerIcon.visibility = View.GONE
         updateRecBanner()
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
