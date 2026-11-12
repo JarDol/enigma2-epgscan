@@ -68,8 +68,8 @@ internal fun PlayerPage(
     event: NowEvent?,
     status: String,
     videoScaleMode: VideoScaleMode,
-    isFullscreen: Boolean,
-    onToggleFullscreen: () -> Unit,
+    isMaximized: Boolean,
+    onToggleMaximized: () -> Unit,
     onScaleChange: (VideoScaleMode) -> Unit,
     onChannels: () -> Unit,
     onSettings: () -> Unit,
@@ -156,8 +156,8 @@ internal fun PlayerPage(
                         }
                     }
                 }
-                OutlinedButton(onClick = onToggleFullscreen) {
-                    Text(if (isFullscreen) "Okno" else "Pełny ekran")
+                OutlinedButton(onClick = onToggleMaximized) {
+                    Text(if (isMaximized) "Okno" else "Maksymalizuj")
                 }
                 OutlinedButton(onClick = onSettings) { Text("Ustawienia") }
                 OutlinedButton(onClick = onBack) { Text("Zatrzymaj") }

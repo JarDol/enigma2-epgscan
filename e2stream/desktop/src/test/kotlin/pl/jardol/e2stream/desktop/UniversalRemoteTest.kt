@@ -35,4 +35,15 @@ class UniversalRemoteTest {
             bindings[VirtualRemoteKey.INFO],
         )
     }
+
+    @Test
+    fun powerBindingSurvivesSerializationAndCanBeReassigned() {
+        val id = UniversalRemoteMap.hidId("test-device", byteArrayOf(0x20, 0, 0))
+        val assigned = UniversalRemoteMap.assign(UniversalRemoteMap.defaults, VirtualRemoteKey.POWER, id)
+        val restored = UniversalRemoteMap.parse(UniversalRemoteMap.encode(assigned))
+        assertEquals(VirtualRemoteKey.POWER, UniversalRemoteMap.findKey(restored, id))
+        val moved = UniversalRemoteMap.assign(restored, VirtualRemoteKey.BACK, id)
+        assertEquals(emptySet(), moved[VirtualRemoteKey.POWER])
+        assertEquals(VirtualRemoteKey.BACK, UniversalRemoteMap.findKey(moved, id))
+    }
 }

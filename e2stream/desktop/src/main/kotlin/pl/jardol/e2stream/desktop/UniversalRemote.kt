@@ -87,7 +87,6 @@ object UniversalRemoteMap {
         return try {
             val json = JSONObject(encoded)
             VirtualRemoteKey.entries.associateWithTo(linkedMapOf()) { key ->
-                if (key == VirtualRemoteKey.POWER) return@associateWithTo emptySet()
                 val items = json.optJSONArray(key.name) ?: return@associateWithTo emptySet()
                 buildSet {
                     for (index in 0 until items.length()) {
@@ -112,7 +111,6 @@ object UniversalRemoteMap {
         key: VirtualRemoteKey,
         physicalId: String,
     ): Map<VirtualRemoteKey, Set<String>> {
-        require(key != VirtualRemoteKey.POWER) { "Power uruchamia aplikację z poziomu systemu." }
         require(isValidPhysicalId(physicalId)) { "Nieprawidłowy klawisz fizyczny." }
         return VirtualRemoteKey.entries.associateWith { candidate ->
             val current = bindings[candidate].orEmpty() - physicalId

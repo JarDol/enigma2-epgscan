@@ -54,17 +54,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.event.KeyEvent
 import java.awt.KeyboardFocusManager
-import java.awt.Frame
 import java.awt.Window as AwtWindow
 import javax.swing.SwingUtilities
 import java.awt.EventQueue
-import javax.swing.JOptionPane
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 fun main() {
+    val remoteDiagnostics = RemoteDiagnostics.fromEnvironment()
     val instance = SingleInstance.startOrSignal() ?: return
     application {
-        val mainWindowState = rememberWindowState(placement = WindowPlacement.Fullscreen)
+        val mainWindowState = rememberWindowState(placement = WindowPlacement.Maximized)
+        fun toggleMaximized() {
+            mainWindowState.placement = if (mainWindowState.placement == WindowPlacement.Maximized) {
+                WindowPlacement.Floating
+            } else WindowPlacement.Maximized
+        }
         Window(
             onCloseRequest = ::exitApplication,
             title = "E2Stream",
@@ -101,6 +106,9 @@ fun main() {
                 )
             }
             val suppressBrowserKeys = remember { AtomicBoolean(false) }
+            val globalPowerKeys = remember { AtomicReference<Set<String>>(emptySet()) }
+            val powerDialogOpen = remember { AtomicBoolean(false) }
+            var showExitConfirmation by remember { mutableStateOf(false) }
             var bindings by remember { mutableStateOf(RemoteKeyMap.defaults + RemoteKeyMap.parse(config.remoteBindings)) }
             var universalBindings by remember {
                 mutableStateOf<Map<VirtualRemoteKey, Set<String>>>(
@@ -117,33 +125,49 @@ fun main() {
                 suppressBrowserKeys.set(
                     captureButton != null || universalBindings.values.any { keys -> keys.any { it.startsWith("H:") } },
                 )
+                globalPowerKeys.set(if (captureButton == null) universalBindings[VirtualRemoteKey.POWER].orEmpty() else emptySet())
             }
 
-            DisposableEffect(instance) {
-                instance.onPowerRequest {
+            val requestPower = {
+                if (powerDialogOpen.compareAndSet(false, true)) {
                     SwingUtilities.invokeLater {
-                        val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
-                        val appWasActive = belongsToApplication(focused, desktopWindow)
-                        if (appWasActive) {
-                            val answer = JOptionPane.showConfirmDialog(
-                                focused ?: desktopWindow,
-                                "Odtwarzanie zostanie zatrzymane.",
-                                "Zamknąć E2Stream?",
-                                JOptionPane.YES_NO_OPTION,
-                                JOptionPane.QUESTION_MESSAGE,
-                            )
-                            if (answer == JOptionPane.YES_OPTION) exitApplication()
-                        } else {
-                            val target = settingsWindow?.takeIf { it.isShowing } ?: desktopWindow
-                            if (target is Frame && target.extendedState and Frame.ICONIFIED != 0) {
-                                target.extendedState = target.extendedState and Frame.ICONIFIED.inv()
+                        var confirmationShown = false
+                        try {
+                            val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+                            val appWasActive = isForegroundApplication() && belongsToApplication(focused, desktopWindow)
+                            remoteDiagnostics.log { "power=request active=$appWasActive" }
+                            if (appWasActive) {
+                                captureButton = null
+                                showExitConfirmation = true
+                                confirmationShown = true
+                            } else {
+                                val target = settingsWindow?.takeIf { it.isShowing } ?: desktopWindow
+                                val activated = activateWindow(target)
+                                remoteDiagnostics.log { "power=activate success=$activated" }
+                                if (!activated) {
+                                    status = "Nie udało się przełączyć na okno E2Stream."
+                                }
                             }
-                            target.isVisible = true
-                            target.toFront()
-                            target.requestFocus()
+                        } finally {
+                            if (!confirmationShown) powerDialogOpen.set(false)
                         }
                     }
                 }
+            }
+            fun cancelExitConfirmation() {
+                showExitConfirmation = false
+                powerDialogOpen.set(false)
+            }
+            fun handleExitConfirmation(key: VirtualRemoteKey?) {
+                when (exitConfirmationAction(key)) {
+                    ExitConfirmationAction.CONFIRM -> exitApplication()
+                    ExitConfirmationAction.CANCEL -> cancelExitConfirmation()
+                    ExitConfirmationAction.IGNORE -> Unit
+                }
+            }
+            val currentRequestPower = androidx.compose.runtime.rememberUpdatedState(requestPower)
+            DisposableEffect(instance) {
+                instance.onPowerRequest { currentRequestPower.value() }
                 onDispose { instance.close() }
             }
 
@@ -208,11 +232,6 @@ fun main() {
             }
 
             fun savePhysicalBinding(button: VirtualRemoteKey, id: String, label: String) {
-                if (button == VirtualRemoteKey.POWER) {
-                    status = "Przypisz Power w ustawieniach pilota jako uruchomienie E2Stream."
-                    captureButton = null
-                    return
-                }
                 universalBindings = UniversalRemoteMap.assign(universalBindings, button, id)
                 config = config.copy(universalRemoteBindings = UniversalRemoteMap.encode(universalBindings))
                 status = runCatching { config.save() }
@@ -232,10 +251,18 @@ fun main() {
             }
 
             fun handleVirtualKey(key: VirtualRemoteKey): Boolean {
+                if (showExitConfirmation) {
+                    handleExitConfirmation(key)
+                    return true
+                }
                 val now = System.currentTimeMillis()
-                if (lastVirtualKey == key && now - lastVirtualKeyAt < 90) return true
+                if (lastVirtualKey == key && now - lastVirtualKeyAt < 90) {
+                    remoteDiagnostics.log { "key=$key ignored=repeat intervalMs=${now - lastVirtualKeyAt}" }
+                    return true
+                }
                 lastVirtualKey = key
                 lastVirtualKeyAt = now
+                remoteDiagnostics.log { "key=$key page=$page channelList=$showChannelList" }
 
                 if (page != DesktopPage.PLAYER) {
                     return when (key) {
@@ -299,7 +326,7 @@ fun main() {
                     VirtualRemoteKey.DIGIT_3, VirtualRemoteKey.DIGIT_4, VirtualRemoteKey.DIGIT_5,
                     VirtualRemoteKey.DIGIT_6, VirtualRemoteKey.DIGIT_7, VirtualRemoteKey.DIGIT_8,
                     VirtualRemoteKey.DIGIT_9 -> status = "Wybór kanału numerem nie jest jeszcze dostępny w wersji Windows."
-                    VirtualRemoteKey.POWER -> Unit
+                    VirtualRemoteKey.POWER -> currentRequestPower.value()
                 }
                 return true
             }
@@ -309,18 +336,25 @@ fun main() {
                 onDispose { sessionToClose?.close() }
             }
 
-            DisposableEffect(desktopWindow, settingsWindow, captureButton, bindings, universalBindings, vlcSession, page, channels, playingChannel, showChannelList) {
+            DisposableEffect(desktopWindow, settingsWindow, captureButton, bindings, universalBindings, vlcSession, page, channels, playingChannel, showChannelList, showExitConfirmation) {
                 val dispatcher = java.awt.KeyEventDispatcher { event ->
                     val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
                     if (!belongsToApplication(focusedWindow, desktopWindow) ||
+                        !isForegroundApplication() ||
                         event.id != KeyEvent.KEY_PRESSED ||
                         event.keyCode == KeyEvent.VK_UNDEFINED
                     ) {
                         false
+                    } else if (showExitConfirmation) {
+                        val key = when (event.keyCode) {
+                            KeyEvent.VK_ENTER -> VirtualRemoteKey.OK
+                            KeyEvent.VK_ESCAPE -> VirtualRemoteKey.BACK
+                            else -> UniversalRemoteMap.findKey(universalBindings, UniversalRemoteMap.keyId(event.keyCode))
+                        }
+                        handleExitConfirmation(key)
+                        true
                     } else if (event.keyCode == KeyEvent.VK_F11 && captureButton == null) {
-                        mainWindowState.placement = if (mainWindowState.placement == WindowPlacement.Fullscreen) {
-                            WindowPlacement.Floating
-                        } else WindowPlacement.Fullscreen
+                        toggleMaximized()
                         true
                     } else if (captureButton != null) {
                         val button = captureButton ?: return@KeyEventDispatcher false
@@ -329,6 +363,9 @@ fun main() {
                     } else {
                         val physicalId = UniversalRemoteMap.keyId(event.keyCode)
                         val virtualKey = UniversalRemoteMap.findKey(universalBindings, physicalId)
+                        if (virtualKey != null) {
+                            remoteDiagnostics.log { "source=keyboard key=$virtualKey page=$page" }
+                        }
                         if (virtualKey != null && (page == DesktopPage.PLAYER ||
                             page == DesktopPage.REMOTE && virtualKey in setOf(
                                 VirtualRemoteKey.BACK, VirtualRemoteKey.HOME,
@@ -376,23 +413,43 @@ fun main() {
                             )
                         },
                         onKey = { physicalId, label ->
+                            val receivedAt = System.nanoTime()
                             EventQueue.invokeLater {
-                                if (!belongsToApplication(
+                                val queueMs = (System.nanoTime() - receivedAt) / 1_000_000
+                                if (!isForegroundApplication() || !belongsToApplication(
                                         KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow,
                                         desktopWindow,
                                     )
-                                ) return@invokeLater
+                                ) {
+                                    remoteDiagnostics.log { "source=hid $label queueMs=$queueMs ignored=focus" }
+                                    return@invokeLater
+                                }
                                 val button = captureButton
-                                if (button != null) savePhysicalBinding(button, physicalId, label)
-                                else UniversalRemoteMap.findKey(universalBindings, physicalId)?.let(::handleVirtualKey)
+                                if (button != null) {
+                                    remoteDiagnostics.log { "source=hid $label queueMs=$queueMs capture=$button" }
+                                    savePhysicalBinding(button, physicalId, label)
+                                } else {
+                                    val key = UniversalRemoteMap.findKey(universalBindings, physicalId)
+                                    remoteDiagnostics.log { "source=hid $label queueMs=$queueMs mapped=${key ?: "none"}" }
+                                    key?.let(::handleVirtualKey)
+                                }
                             }
                         },
-                        onError = { message -> EventQueue.invokeLater { hidDiagnostic = message; status = message } },
+                        onError = { message ->
+                            EventQueue.invokeLater {
+                                remoteDiagnostics.log { "error=$message" }
+                                hidDiagnostic = message
+                                status = message
+                            }
+                        },
                         onDiagnostic = hidDiagnosticDispatcher::submit,
                         suppressBrowserKeys = { suppressBrowserKeys.get() },
+                        isPowerKey = { it in globalPowerKeys.get() },
+                        onPower = { currentRequestPower.value() },
                     )
                 } catch (e: Exception) {
                     status = "Obsługa pilota HID niedostępna: ${e.message ?: e.javaClass.simpleName}"
+                    remoteDiagnostics.log { "error=$status" }
                     hidDiagnostic = status
                     null
                 }
@@ -470,13 +527,9 @@ fun main() {
                                 hidDiagnostic = hidDiagnostic,
                                 onSelect = { selectedRemoteButton = it },
                                 onCapture = {
-                                    if (it == VirtualRemoteKey.POWER) {
-                                        status = "W ustawieniach pilota przypisz Power do uruchamiania programu E2Stream."
-                                    } else {
-                                        selectedRemoteButton = it
-                                        captureButton = it
-                                        status = "Naciśnij przycisk fizycznego pilota lub klawiatury."
-                                    }
+                                    selectedRemoteButton = it
+                                    captureButton = it
+                                    status = "Naciśnij przycisk fizycznego pilota lub klawiatury."
                                 },
                                 onCancelCapture = { captureButton = null },
                                 onRemove = { key, id ->
@@ -510,12 +563,8 @@ fun main() {
                             event = nowEvents[serviceKey(channel.ref)],
                             status = epgError ?: status,
                             videoScaleMode = config.videoScaleMode,
-                            isFullscreen = mainWindowState.placement == WindowPlacement.Fullscreen,
-                            onToggleFullscreen = {
-                                mainWindowState.placement = if (mainWindowState.placement == WindowPlacement.Fullscreen) {
-                                    WindowPlacement.Floating
-                                } else WindowPlacement.Fullscreen
-                            },
+                            isMaximized = mainWindowState.placement == WindowPlacement.Maximized,
+                            onToggleMaximized = ::toggleMaximized,
                             onScaleChange = {
                                 config = config.copy(videoScaleMode = it)
                                 session.setVideoScale(it)
@@ -574,6 +623,33 @@ fun main() {
                 }
             } else {
                 settingsContent()
+            }
+            if (showExitConfirmation) {
+                DialogWindow(
+                    onCloseRequest = ::cancelExitConfirmation,
+                    title = "Wyłączyć E2Stream?",
+                    state = rememberDialogState(width = 440.dp, height = 220.dp),
+                    undecorated = true,
+                    resizable = false,
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = colorScheme.surface,
+                        contentColor = colorScheme.onSurface,
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(24.dp),
+                            verticalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Wyłączyć E2Stream?", style = MaterialTheme.typography.titleLarge)
+                            Text("Odtwarzanie zostanie zatrzymane.")
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(onClick = ::exitApplication) { Text("OK — wyłącz") }
+                                OutlinedButton(onClick = ::cancelExitConfirmation) { Text("Wróć — anuluj") }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -748,8 +824,7 @@ private fun RemotePage(
                         Text(key.label, maxLines = 1)
                         val count = bindings[key].orEmpty().size
                         Text(
-                            if (key == VirtualRemoteKey.POWER) "uruchom E2Stream"
-                            else if (count == 0) "—" else "$count klawiszy",
+                            if (count == 0) "—" else "$count klawiszy",
                             style = MaterialTheme.typography.labelSmall,
                             color = colors.onSurfaceVariant,
                             maxLines = 1,
@@ -818,26 +893,25 @@ private fun RemotePage(
             Text(hidDiagnostic, style = MaterialTheme.typography.bodySmall)
             if (selected == VirtualRemoteKey.POWER) {
                 Text(
-                    "W ustawieniach pilota Xiaomi przypisz Power do uruchamiania programu E2Stream. " +
-                        "Gdy program działa, kolejne uruchomienie przywoła jego okno; jeśli już jest aktywne, zapyta o zamknięcie.",
+                    "Power działa globalnie, gdy E2Stream jest uruchomiony: przywołuje jego okno lub pyta o zamknięcie.",
                 )
             } else {
                 Text("Przypisz do tego przycisku kilka klawiszy fizycznych. Pilot HID jest wykrywany tylko wtedy, gdy E2Stream jest aktywny.")
-                if (captureButton == selected) {
-                    Text("Naciśnij teraz klawisz pilota lub klawiatury.", color = colors.primary)
-                    OutlinedButton(onClick = onCancelCapture) { Text("Anuluj") }
-                } else {
-                    Button(onClick = { onCapture(selected) }) { Text("Dodaj klawisz fizyczny") }
-                }
-                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(bindings[selected].orEmpty().sorted()) { physicalId ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                UniversalRemoteMap.label(physicalId),
-                                modifier = Modifier.weight(1f).padding(top = 12.dp),
-                            )
-                            OutlinedButton(onClick = { onRemove(selected, physicalId) }) { Text("Usuń") }
-                        }
+            }
+            if (captureButton == selected) {
+                Text("Naciśnij teraz klawisz pilota lub klawiatury.", color = colors.primary)
+                OutlinedButton(onClick = onCancelCapture) { Text("Anuluj") }
+            } else {
+                Button(onClick = { onCapture(selected) }) { Text("Dodaj klawisz fizyczny") }
+            }
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(bindings[selected].orEmpty().sorted()) { physicalId ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            UniversalRemoteMap.label(physicalId),
+                            modifier = Modifier.weight(1f).padding(top = 12.dp),
+                        )
+                        OutlinedButton(onClick = { onRemove(selected, physicalId) }) { Text("Usuń") }
                     }
                 }
             }
