@@ -2667,7 +2667,7 @@ class PlayerActivity : Activity() {
             val engine = vlc
             val tracks = engine?.audioTracks().orEmpty()
             if (tracks.isEmpty()) {
-                if (vlcAttempt < 8) {
+                if (vlcAttempt < 20) {
                     ui.postDelayed({ showAudioDialog(vlcAttempt + 1) }, 250)
                 } else {
                     showMessage("Brak ścieżek dźwięku")
@@ -2702,26 +2702,37 @@ class PlayerActivity : Activity() {
 
     private fun applySavedVlcAudio(attempt: Int = 0) {
         val ch = playList.getOrNull(playIndex) ?: return
-        val savedId = prefs.audioFor(ch.ref).substringBefore('|')
-            .substringAfterLast('/').toIntOrNull() ?: return
         val engine = vlc ?: return
         val tracks = engine.audioTracks()
         if (tracks.isEmpty()) {
-            if (attempt < 8) ui.postDelayed({ applySavedVlcAudio(attempt + 1) }, 250)
+            if (attempt < 20) ui.postDelayed({ applySavedVlcAudio(attempt + 1) }, 250)
+            else AppLog.i("VLC: brak ścieżek audio po uruchomieniu kanału ${ch.name}")
             return
         }
         val saved = prefs.audioFor(ch.ref).split("|")
+        val savedId = saved.firstOrNull()?.substringAfterLast('/')?.toIntOrNull()
         val savedLanguage = saved.getOrElse(1) { "" }
         val savedCodec = saved.getOrElse(2) { "" }
-        val match = tracks.firstOrNull { it.id == savedId }
+        val match = tracks.firstOrNull { savedId != null && it.id == savedId }
             ?: tracks.firstOrNull {
                 savedLanguage.isNotBlank() &&
                     AudioTrackLabels.languageCode(it.language) == AudioTrackLabels.languageCode(savedLanguage) &&
                     (savedCodec.isBlank() || AudioTrackLabels.codecName(it.codec) == AudioTrackLabels.codecName(savedCodec))
             }
-            ?: return
-        if (engine.selectedAudioTrackId() != match.id && engine.selectAudioTrack(match.id)) {
-            AppLog.i("VLC: przywrócono audio dla ${ch.name}: ${match.name} (ID ${match.id})")
+        val selectedId = engine.selectedAudioTrackId()
+        val fallback = if (selectedId == null) {
+            val preferred = AudioTrackLabels.preferredLanguages(prefs.audioLang)
+            preferred.firstNotNullOfOrNull { language -> tracks.firstOrNull { it.language == language } }
+                ?: tracks.first()
+        } else null
+        val target = match ?: fallback ?: return
+        if (selectedId != target.id) {
+            if (engine.selectAudioTrack(target.id)) {
+                val action = if (match != null) "przywrócono zapamiętaną" else "ustawiono domyślną"
+                AppLog.i("VLC: $action ścieżkę audio dla ${ch.name}: ${target.name} (ID ${target.id})")
+            } else {
+                AppLog.i("VLC: nie udało się wybrać ścieżki audio dla ${ch.name}: ${target.name} (ID ${target.id})")
+            }
         }
     }
 
