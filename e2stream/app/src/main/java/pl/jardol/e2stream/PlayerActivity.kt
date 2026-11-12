@@ -2735,15 +2735,19 @@ class PlayerActivity : Activity() {
                     (savedCodec.isBlank() || AudioTrackLabels.codecName(it.codec) == AudioTrackLabels.codecName(savedCodec))
             }
         val selectedId = engine.selectedAudioTrackId()
-        val fallback = if (selectedId == null) {
-            val preferred = AudioTrackLabels.preferredLanguages(prefs.audioLang)
-            preferred.firstNotNullOfOrNull { language -> tracks.firstOrNull { it.language == language } }
-                ?: tracks.first()
-        } else null
+        val preferred = preferredAudioTrackIndex(
+            tracks.map { it.language },
+            AudioTrackLabels.preferredLanguages(prefs.audioLang),
+        )?.let(tracks::get)
+        val fallback = preferred ?: tracks.firstOrNull { it.id == selectedId } ?: tracks.firstOrNull()
         val target = match ?: fallback ?: return
         if (selectedId != target.id) {
             if (engine.selectAudioTrack(target.id)) {
-                val action = if (match != null) "przywrócono zapamiętaną" else "ustawiono domyślną"
+                val action = when {
+                    match != null -> "przywrócono zapamiętaną"
+                    preferred != null -> "ustawiono preferowaną"
+                    else -> "ustawiono domyślną"
+                }
                 AppLog.i("VLC: $action ścieżkę audio dla ${ch.name}: ${target.name} (ID ${target.id})")
             } else {
                 AppLog.i("VLC: nie udało się wybrać ścieżki audio dla ${ch.name}: ${target.name} (ID ${target.id})")

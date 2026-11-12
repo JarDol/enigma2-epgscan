@@ -14,4 +14,19 @@ class AudioTrackSelectionTest {
         assertNull(mpegTsPid("4325/8192"))
         assertNull(mpegTsPid("4325/not-a-pid"))
     }
+
+    @Test
+    fun preferredAudioLanguageWinsOverThePlayerDefault() {
+        assertEquals(1, preferredAudioTrackIndex(listOf("?", "pl"), listOf("pl", "en")))
+    }
+
+    @Test
+    fun preferredLanguageOrderWinsOverTrackOrder() {
+        assertEquals(1, preferredAudioTrackIndex(listOf("en", "pl"), listOf("pl", "en")))
+    }
+
+    @Test
+    fun returnsNullWhenNoTrackMatchesPreferredLanguages() {
+        assertNull(preferredAudioTrackIndex(listOf("en", "?"), listOf("pl")))
+    }
 }
