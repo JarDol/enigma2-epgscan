@@ -2117,7 +2117,8 @@ class PlayerActivity : Activity() {
         val selected = position == list.selectedItemPosition && list.hasFocus()
         v.findViewById<TextView>(R.id.num).text = if (r.isDir) "" else c.num.toString()
         val iv = v.findViewById<android.widget.ImageView>(R.id.icon)
-        Picons.show(iv, this, r.sref, !r.isDir && prefs.picons, prefs.missingPiconLogo, r.service)
+        iv.setImageDrawable(null)
+        iv.visibility = View.GONE
         val name = v.findViewById<TextView>(R.id.name)
         val playing = recMode && recItem?.path == r.path
         name.text = when {
