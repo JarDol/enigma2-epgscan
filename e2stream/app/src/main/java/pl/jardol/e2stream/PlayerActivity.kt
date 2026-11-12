@@ -2077,7 +2077,7 @@ class PlayerActivity : Activity() {
         val r = recItem ?: return
         bannerName.text = r.title
         bannerClock.text = hm.format(Date())
-        Picons.show(bannerIcon, this, r.sref, prefs.picons, prefs.missingPiconLogo)
+        Picons.show(bannerIcon, this, r.sref, prefs.picons, prefs.missingPiconLogo, r.service)
         updateRecBanner()
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
@@ -2117,7 +2117,7 @@ class PlayerActivity : Activity() {
         val selected = position == list.selectedItemPosition && list.hasFocus()
         v.findViewById<TextView>(R.id.num).text = if (r.isDir) "" else c.num.toString()
         val iv = v.findViewById<android.widget.ImageView>(R.id.icon)
-        Picons.show(iv, this, r.sref, !r.isDir && prefs.picons, prefs.missingPiconLogo)
+        Picons.show(iv, this, r.sref, !r.isDir && prefs.picons, prefs.missingPiconLogo, r.service)
         val name = v.findViewById<TextView>(R.id.name)
         val playing = recMode && recItem?.path == r.path
         name.text = when {

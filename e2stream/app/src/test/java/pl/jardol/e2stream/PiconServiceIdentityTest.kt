@@ -27,4 +27,12 @@ class PiconServiceIdentityTest {
         )
         assertNull(piconServiceIdentity("1:0:1:1234:5678:"))
     }
+
+    @Test
+    fun transponderIdentityCanMatchWhenNamespaceDiffers() {
+        assertEquals(
+            piconTransponderIdentity("1:0:1:1234:5678:9ABC:00000000:0:0:0:"),
+            piconTransponderIdentity("1:0:1:1234:5678:9ABC:00000001:0:0:0:"),
+        )
+    }
 }

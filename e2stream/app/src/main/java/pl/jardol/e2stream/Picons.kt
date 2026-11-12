@@ -102,16 +102,34 @@ object Picons {
     private fun localName(ref: String) = OpenWebif.key(ref).replace(':', '_') + ".png"
 
     /** Nagrania mogą podawać inny typ usługi niż bukiet; dopasuj SID/TSID/ONID/namespace. */
-    private fun localFile(ctx: Context, ref: String): File? {
+    private fun localFile(ctx: Context, ref: String, serviceName: String): File? {
         val d = dir(ctx)
-        val exact = File(d, localName(ref))
-        if (exact.isFile) return exact
-        val service = piconServiceIdentity(ref) ?: return null
-        return d.listFiles()?.firstOrNull { file ->
-            if (!file.isFile || !file.name.endsWith(".png", true)) return@firstOrNull false
-            val nameFields = file.name.substringBeforeLast('.').split('_')
-            nameFields.size >= 7 && nameFields.subList(3, 7).joinToString("_").uppercase() == service
+        if (ref.isNotBlank()) {
+            val exact = File(d, localName(ref))
+            if (exact.isFile) return exact
         }
+        val files = d.listFiles()?.filter { it.isFile && it.name.endsWith(".png", true) }.orEmpty()
+        val service = piconServiceIdentity(ref)
+        val transponder = piconTransponderIdentity(ref)
+        val serviceFile = service?.let { id ->
+            files.firstOrNull { file ->
+                val nameFields = file.name.substringBeforeLast('.').split('_')
+                nameFields.size >= 7 && nameFields.subList(3, 7).joinToString("_").uppercase() == id
+            }
+        }
+        if (serviceFile != null) return serviceFile
+        if (transponder != null) {
+            val matches = files.filter { file ->
+                val nameFields = file.name.substringBeforeLast('.').split('_')
+                nameFields.size >= 6 && nameFields.subList(3, 6).joinToString("_").uppercase() == transponder
+            }
+            if (matches.size == 1) return matches.single()
+        }
+        if (serviceName.isNotBlank()) {
+            val byName = File(d, snp(serviceName) + ".png")
+            if (byName.isFile) return byName
+        }
+        return null
     }
 
     /** Nazwy plików picon do wypróbowania: referencja, referencja z typem 1, nazwa (SNP). */
@@ -132,19 +150,21 @@ object Picons {
         return n.replace("&", "and").replace("+", "plus").replace("*", "star").replace(Regex("[^a-z0-9]"), "")
     }
 
-    fun bitmap(ctx: Context, ref: String): Bitmap? {
-        val k = localName(ref)
+    fun bitmap(ctx: Context, ref: String, serviceName: String = ""): Bitmap? {
+        val k = localName(ref) + if (serviceName.isBlank()) "" else "|${snp(serviceName)}"
         mem.get(k)?.let { return it }
         synchronized(missing) { if (k in missing) return null }
-        val f = localFile(ctx, ref)
+        val f = localFile(ctx, ref, serviceName)
         val b = if (f != null) try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Exception) { null } else null
         if (b != null) mem.put(k, b) else synchronized(missing) { missing.add(k) }
         return b
     }
 
     /** Ustawia ikonę kanału, zachowując miejsce w układzie także przy pustym piconie. */
-    fun show(image: ImageView, ctx: Context, ref: String, enabled: Boolean, appFallback: Boolean) {
-        val picon = if (enabled && ref.isNotBlank()) bitmap(ctx, ref) else null
+    fun show(
+        image: ImageView, ctx: Context, ref: String, enabled: Boolean, appFallback: Boolean, serviceName: String = "",
+    ) {
+        val picon = if (enabled && (ref.isNotBlank() || serviceName.isNotBlank())) bitmap(ctx, ref, serviceName) else null
         when {
             picon != null -> {
                 image.setImageBitmap(picon)
