@@ -170,6 +170,7 @@ class SettingsActivity : Activity() {
             InputType.TYPE_CLASS_DATETIME or InputType.TYPE_DATETIME_VARIATION_TIME, hint = "HH:MM"),
         num("EPG na ile dni do przodu", { p.epgDays }, { p.epgDays = it }, 1..14),
         Item.Toggle("Ikony kanałów z dekodera", { p.picons }, { p.picons = it }),
+        Item.Toggle("Zastępuj brakujące picony logo E2Stream", { p.missingPiconLogo }, { p.missingPiconLogo = it }),
         Item.Text("Katalog picon na dekoderze", { p.piconDir }, { p.piconDir = it.trim().trimEnd('/') },
             hint = "puste = odczytaj z ustawień Enigmy2"),
         Item.Action("Pobierz EPG i ikony teraz", { status.ifBlank { epgStatus() } }) { sync(false) },

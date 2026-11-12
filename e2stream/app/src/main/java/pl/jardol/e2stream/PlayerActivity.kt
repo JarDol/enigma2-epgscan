@@ -503,10 +503,19 @@ class PlayerActivity : Activity() {
             override fun onTracksChanged(tracks: Tracks) {
                 val aud = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
                 if (aud.isNotEmpty() && aud.none { it.isSelected }) {
-                    AppLog.i("dźwięk: żadna ścieżka nie jest odtwarzana (" + aud.joinToString { g ->
-                        val f = g.getTrackFormat(0)
-                        "${f.sampleMimeType} ${if (g.isTrackSupported(0)) "obsługiwana" else "brak dekodera"}"
-                    } + ")")
+                    val available = audioTracks().firstOrNull()
+                    if (available != null) {
+                        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                            .setOverrideForType(TrackSelectionOverride(available.group.mediaTrackGroup, available.index))
+                            .build()
+                        AppLog.i("dźwięk: brak automatycznego wyboru, wymuszam ${audioLabel(available.format)} (id=${available.format.id})")
+                    } else {
+                        AppLog.i("dźwięk: żadna ścieżka nie jest odtwarzana (" + aud.joinToString { g ->
+                            val f = g.getTrackFormat(0)
+                            "${f.sampleMimeType} ${if (g.isTrackSupported(0)) "obsługiwana" else "brak dekodera"}"
+                        } + ")")
+                    }
                 }
                 if (tsMode) applyTimeshiftAudio() else applySavedAudio()
             }
@@ -1261,9 +1270,7 @@ class PlayerActivity : Activity() {
             c.rec?.let { return recRow(v, c, it, position) }
             v.findViewById<TextView>(R.id.num).text = c.num.toString()
             val iv = v.findViewById<android.widget.ImageView>(R.id.icon)
-            val bmp = if (prefs.picons) Picons.bitmap(this@PlayerActivity, c.ref) else null
-            iv.setImageBitmap(bmp)
-            iv.visibility = if (bmp != null) View.VISIBLE else View.INVISIBLE
+            Picons.show(iv, this@PlayerActivity, c.ref, prefs.picons, prefs.missingPiconLogo)
             val name = v.findViewById<TextView>(R.id.name)
             val playing = panelBouquet == playBouquet && position == playIndex
             val selected = position == list.selectedItemPosition && list.hasFocus()
@@ -1689,9 +1696,7 @@ class PlayerActivity : Activity() {
         tsChBar = false
         val ch = playList.getOrNull(playIndex)
         bannerName.text = ch?.let { "${it.num}   ${it.name}" } ?: ""
-        val icon = if (prefs.picons && ch != null) Picons.bitmap(this, ch.ref) else null
-        bannerIcon.setImageBitmap(icon)
-        bannerIcon.visibility = if (icon != null) View.VISIBLE else View.GONE
+        Picons.show(bannerIcon, this, ch?.ref.orEmpty(), prefs.picons, prefs.missingPiconLogo)
         val span = (tsBuf?.takeIf { it.total > 0 }?.spanMs() ?: 0L)
         bannerClock.text = hm.format(Date())
         bannerNow.text = "▶  Na żywo  •  Timeshift " + if (span > 0) "(w buforze ${fmtMs(span)})" else "(bufor rusza po pauzie)"
@@ -1770,9 +1775,7 @@ class PlayerActivity : Activity() {
         tsCtl = true
         val ch = playList.getOrNull(playIndex)
         bannerName.text = ch?.let { "${it.num}   ${it.name}" } ?: ""
-        val icon = if (prefs.picons && ch != null) Picons.bitmap(this, ch.ref) else null
-        bannerIcon.setImageBitmap(icon)
-        bannerIcon.visibility = if (icon != null) View.VISIBLE else View.GONE
+        Picons.show(bannerIcon, this, ch?.ref.orEmpty(), prefs.picons, prefs.missingPiconLogo)
         tsChBar = false
         tsUpdateBanner()
         banner.visibility = View.VISIBLE
@@ -2062,9 +2065,7 @@ class PlayerActivity : Activity() {
         val r = recItem ?: return
         bannerName.text = r.title
         bannerClock.text = hm.format(Date())
-        val icon = if (prefs.picons && r.sref.isNotBlank()) Picons.bitmap(this, r.sref) else null
-        bannerIcon.setImageBitmap(icon)
-        bannerIcon.visibility = if (icon != null) View.VISIBLE else View.GONE
+        Picons.show(bannerIcon, this, r.sref, prefs.picons, prefs.missingPiconLogo)
         updateRecBanner()
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
@@ -2104,9 +2105,7 @@ class PlayerActivity : Activity() {
         val selected = position == list.selectedItemPosition && list.hasFocus()
         v.findViewById<TextView>(R.id.num).text = if (r.isDir) "" else c.num.toString()
         val iv = v.findViewById<android.widget.ImageView>(R.id.icon)
-        val bmp = if (!r.isDir && prefs.picons && r.sref.isNotBlank()) Picons.bitmap(this, r.sref) else null
-        iv.setImageBitmap(bmp)
-        iv.visibility = if (bmp != null) View.VISIBLE else View.INVISIBLE
+        Picons.show(iv, this, r.sref, !r.isDir && prefs.picons, prefs.missingPiconLogo)
         val name = v.findViewById<TextView>(R.id.name)
         val playing = recMode && recItem?.path == r.path
         name.text = when {
@@ -2177,9 +2176,7 @@ class PlayerActivity : Activity() {
         tsChBar = true
         bannerName.text = "${ch.num}   ${ch.name}"
         bannerClock.text = hm.format(Date())
-        val icon = if (prefs.picons) Picons.bitmap(this, ch.ref) else null
-        bannerIcon.setImageBitmap(icon)
-        bannerIcon.visibility = if (icon != null) View.VISIBLE else View.GONE
+        Picons.show(bannerIcon, this, ch.ref, prefs.picons, prefs.missingPiconLogo)
         bannerNow.text = ch.now
         bannerStart.text = ""
         bannerEnd.text = ""

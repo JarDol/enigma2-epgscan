@@ -291,6 +291,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("picons", true)
         set(v) = putB("picons", v)
 
+    /** Logo aplikacji zamiast pustego miejsca, gdy kanał nie ma pobranego piconu. */
+    var missingPiconLogo: Boolean
+        get() = sp.getBoolean("missingPiconLogo", false)
+        set(v) = putB("missingPiconLogo", v)
+
     /** Katalog picon na dekoderze dla FTP (pusty = szukaj w typowych). */
     var piconDir: String
         get() = s("piconDir")

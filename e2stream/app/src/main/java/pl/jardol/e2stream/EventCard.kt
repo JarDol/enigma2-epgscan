@@ -22,7 +22,8 @@ object EventCard {
     fun content(ctx: Context, ev: EpgEvent, ref: String, name: String, body: String?): View {
         val dp = ctx.resources.displayMetrics.density
         fun px(v: Int) = (v * dp).toInt()
-        val scale = UiScale.pct(Prefs(ctx).uiEpgFont)
+        val prefs = Prefs(ctx)
+        val scale = UiScale.pct(prefs.uiEpgFont)
         val n = System.currentTimeMillis() / 1000
         val running = ev.begin <= n && ev.end > n
         val pct = if (running && ev.duration > 0) ((n - ev.begin) * 1000 / ev.duration).toInt() else -1
@@ -34,9 +35,9 @@ object EventCard {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val bmp = if (ref.isNotBlank()) try { Picons.bitmap(ctx, ref) } catch (_: Exception) { null } else null
-        if (bmp != null) head.addView(ImageView(ctx).apply {
-            setImageBitmap(bmp); scaleType = ImageView.ScaleType.FIT_CENTER
+        head.addView(ImageView(ctx).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            Picons.show(this, ctx, ref, prefs.picons, prefs.missingPiconLogo)
         }, LinearLayout.LayoutParams(px(96), px(56)).apply { marginEnd = px(16) })
         val info = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         if (name.isNotBlank()) info.addView(TextView(ctx).apply {

@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import android.view.View
+import android.widget.ImageView
 import java.io.BufferedReader
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -125,6 +127,25 @@ object Picons {
         val b = if (f.exists()) try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Exception) { null } else null
         if (b != null) mem.put(k, b) else synchronized(missing) { missing.add(k) }
         return b
+    }
+
+    /** Ustawia ikonę kanału, zachowując miejsce w układzie także przy pustym piconie. */
+    fun show(image: ImageView, ctx: Context, ref: String, enabled: Boolean, appFallback: Boolean) {
+        val picon = if (enabled && ref.isNotBlank()) bitmap(ctx, ref) else null
+        when {
+            picon != null -> {
+                image.setImageBitmap(picon)
+                image.visibility = View.VISIBLE
+            }
+            enabled && appFallback -> {
+                image.setImageResource(R.drawable.ic_launcher)
+                image.visibility = View.VISIBLE
+            }
+            else -> {
+                image.setImageDrawable(null)
+                image.visibility = View.INVISIBLE
+            }
+        }
     }
 
     private fun httpGet(url: String, auth: String?): ByteArray? = try {
