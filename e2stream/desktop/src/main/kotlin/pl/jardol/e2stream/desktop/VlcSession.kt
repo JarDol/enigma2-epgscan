@@ -10,6 +10,7 @@ import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 
 class VlcSession(private val onError: (String) -> Unit) {
     private val component: EmbeddedMediaPlayerComponent
+    private val playbackGate: SurfacePlaybackGate
     private var paused = false
 
     val view: JComponent
@@ -26,6 +27,7 @@ class VlcSession(private val onError: (String) -> Unit) {
         } catch (e: LinkageError) {
             throw IllegalStateException("Nie można załadować bibliotek VLC. Sprawdź instalację VLC 64-bit.", e)
         }
+        playbackGate = SurfacePlaybackGate(component.videoSurfaceComponent(), onError)
         component.mediaPlayer().events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
             override fun error(mediaPlayer: MediaPlayer) {
                 SwingUtilities.invokeLater {
@@ -41,9 +43,11 @@ class VlcSession(private val onError: (String) -> Unit) {
             options += ":http-user=${config.username}"
             options += ":http-pwd=${config.password}"
         }
-        val started = component.mediaPlayer().media().play(url, *options.toTypedArray())
-        if (!started) throw IOException("VLC nie przyjął strumienia.")
-        paused = false
+        playbackGate.request {
+            val started = component.mediaPlayer().media().play(url, *options.toTypedArray())
+            if (!started) throw IOException("VLC nie przyjął strumienia.")
+            paused = false
+        }
     }
 
     fun togglePause() {
@@ -58,6 +62,7 @@ class VlcSession(private val onError: (String) -> Unit) {
     }
 
     fun close() {
+        playbackGate.close()
         component.release()
     }
 }
