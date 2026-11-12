@@ -3,7 +3,7 @@
 Część repozytorium EPG Scan: aplikacja kliencka współpracująca z wtyczką (moduł „serwer dla klientów”).
 Działa też bez wtyczki — wtedy przez OpenWebif i FTP.
 
-Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV.
+Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wymaga Androida 6.0 (API 23) lub nowszego.
 
 W katalogu [`desktop/`](desktop/) powstaje aplikacja Windows. Na tym etapie umożliwia połączenie z dekoderem,
 przeglądanie bukietów i kanałów z bieżącym EPG, odtwarzanie na żywo przez zainstalowany VLC oraz konfigurowanie
@@ -114,7 +114,7 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 Workflow `.github/workflows/e2stream.yml` (w katalogu głównym repozytorium) buduje APK przy każdej zmianie w `e2stream/`
 i wydaje go jako `e2stream-X.Y.Z` z plikiem `e2stream-X.Y.Z.apk`. Aplikacja aktualizuje się z tych wydań.
 
-Lokalnie: `cd e2stream && ./gradlew assembleRelease` (JDK 17, Android SDK 35).
+Lokalnie: `cd e2stream && ./gradlew assembleRelease` (JDK 17, Android SDK 36).
 
 APK jest podpisywany stałym kluczem `keystore/e2stream.jks` – kolejne wersje instalują się jako aktualizacja.
 
