@@ -7,13 +7,13 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
-import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -81,6 +81,7 @@ internal class SingleInstance private constructor(
 
         fun startOrSignal(lockPath: Path = instancePath()): SingleInstance? {
             Files.createDirectories(lockPath.parent)
+            val infoPath = lockPath.resolveSibling("${lockPath.fileName}.info")
             repeat(30) {
                 val channel = FileChannel.open(
                     lockPath,
@@ -93,33 +94,56 @@ internal class SingleInstance private constructor(
                 } catch (_: OverlappingFileLockException) {
                     null
                 }
-                if (lock != null) return startPrimary(lockPath, channel, lock)
+                if (lock != null) return startPrimary(infoPath, channel, lock)
                 channel.close()
-                if (signalPrimary(lockPath)) return null
+                if (signalPrimary(infoPath)) return null
                 Thread.sleep(100)
             }
             throw IOException("Nie udało się przekazać polecenia do uruchomionej aplikacji E2Stream.")
         }
 
-        private fun startPrimary(path: Path, channel: FileChannel, lock: FileLock): SingleInstance {
+        private fun startPrimary(infoPath: Path, channel: FileChannel, lock: FileLock): SingleInstance {
+            var server: ServerSocket? = null
             try {
-                val server = ServerSocket().apply {
+                val createdServer = ServerSocket().apply {
                     reuseAddress = false
                     bind(InetSocketAddress(loopback, 0), 8)
                 }
+                server = createdServer
                 val tokenBytes = ByteArray(32).also(SecureRandom()::nextBytes)
                 val token = tokenBytes.joinToString("") { "%02x".format(it) }
-                val state = "${server.localPort}\n$token\n".toByteArray(StandardCharsets.UTF_8)
-                channel.truncate(0)
-                channel.position(0)
-                val buffer = ByteBuffer.wrap(state)
-                while (buffer.hasRemaining()) channel.write(buffer)
-                channel.force(true)
-                return SingleInstance(channel, lock, server, token)
+                writeState(infoPath, "${createdServer.localPort}\n$token\n")
+                return SingleInstance(channel, lock, createdServer, token)
             } catch (e: Exception) {
+                runCatching { server?.close() }
                 runCatching { lock.release() }
                 runCatching { channel.close() }
                 throw e
+            }
+        }
+
+        private fun writeState(path: Path, state: String) {
+            val temporaryPath = Files.createTempFile(path.parent, "${path.fileName}.", ".tmp")
+            try {
+                Files.writeString(
+                    temporaryPath,
+                    state,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                )
+                try {
+                    Files.move(
+                        temporaryPath,
+                        path,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING,
+                    )
+                } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                    Files.move(temporaryPath, path, StandardCopyOption.REPLACE_EXISTING)
+                }
+            } finally {
+                Files.deleteIfExists(temporaryPath)
             }
         }
 

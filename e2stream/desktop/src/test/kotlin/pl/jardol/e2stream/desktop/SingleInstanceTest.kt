@@ -23,6 +23,7 @@ class SingleInstanceTest {
         } finally {
             primary.close()
             Files.deleteIfExists(lockPath)
+            Files.deleteIfExists(lockPath.resolveSibling("${lockPath.fileName}.info"))
             Files.deleteIfExists(directory)
         }
     }
