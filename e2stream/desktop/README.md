@@ -15,6 +15,11 @@ channel list lets you change bouquets with its selector or left/right buttons
 Enter and Escape. EPG refreshes every minute while a bouquet is selected; an
 EPG error does not prevent playback.
 
+The app starts in full screen; use F11 or the player button to return to a
+window. The **Obraz** menu selects fit, fill with cropping, or stretch to fill.
+The selection is saved. The borderless channel list can be closed with Escape,
+Alt+F4 or **Zamknij**.
+
 This is an early test version, not yet functionally equivalent to Android:
 full EPG, recordings, true timeshift and most other Android features are not
 yet available. Only channel switching, channel list, and pause/resume actions
@@ -48,3 +53,10 @@ keystrokes. Test with the specific remote because HID report formats vary by
 device. To use Power, configure the remote software or Windows to launch
 E2Stream. A second launch signals the existing instance: it restores the
 window, or asks to close the app if E2Stream is already active.
+
+The remote page displays the last nonzero HID report and receiver errors to
+help diagnose unsupported devices. While mapping a key or after a HID binding
+is present, Windows browser Home and Back keystrokes are suppressed only while
+an E2Stream window has focus; other applications retain their normal behavior.
+This suppression applies to those browser keys from any input device while
+E2Stream is active, not just the remote.

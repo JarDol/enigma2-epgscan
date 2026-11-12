@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -44,6 +45,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.DialogWindow
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberDialogState
+import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.window.WindowPlacement
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -56,13 +59,16 @@ import java.awt.Window as AwtWindow
 import javax.swing.SwingUtilities
 import java.awt.EventQueue
 import javax.swing.JOptionPane
+import java.util.concurrent.atomic.AtomicBoolean
 
 fun main() {
     val instance = SingleInstance.startOrSignal() ?: return
     application {
+        val mainWindowState = rememberWindowState(placement = WindowPlacement.Fullscreen)
         Window(
             onCloseRequest = ::exitApplication,
             title = "E2Stream",
+            state = mainWindowState,
         ) {
         val colorScheme = appColorScheme(isSystemInDarkTheme())
         MaterialTheme(colorScheme = colorScheme) {
@@ -87,6 +93,8 @@ fun main() {
             var channelListSelected by remember { mutableIntStateOf(0) }
             var captureButton by remember { mutableStateOf<VirtualRemoteKey?>(null) }
             var selectedRemoteButton by remember { mutableStateOf(VirtualRemoteKey.OK) }
+            var hidDiagnostic by remember { mutableStateOf("Oczekiwanie na uruchomienie odbiornika HID.") }
+            val suppressBrowserKeys = remember { AtomicBoolean(false) }
             var bindings by remember { mutableStateOf(RemoteKeyMap.defaults + RemoteKeyMap.parse(config.remoteBindings)) }
             var universalBindings by remember {
                 mutableStateOf<Map<VirtualRemoteKey, Set<String>>>(
@@ -99,6 +107,11 @@ fun main() {
             val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
             var lastVirtualKey by remember { mutableStateOf<VirtualRemoteKey?>(null) }
             var lastVirtualKeyAt by remember { mutableLongStateOf(0L) }
+            SideEffect {
+                suppressBrowserKeys.set(
+                    captureButton != null || universalBindings.values.any { keys -> keys.any { it.startsWith("H:") } },
+                )
+            }
 
             DisposableEffect(instance) {
                 instance.onPowerRequest {
@@ -152,6 +165,7 @@ fun main() {
                 var newSession: VlcSession? = null
                 try {
                     val session = existingSession ?: VlcSession { status = it }.also { newSession = it }
+                    session.setVideoScale(config.videoScaleMode)
                     val url = DecoderClient(config).streamUrl(channel)
                     session.play(url, config)
                     if (existingSession == null) vlcSession = session
@@ -297,6 +311,11 @@ fun main() {
                         event.keyCode == KeyEvent.VK_UNDEFINED
                     ) {
                         false
+                    } else if (event.keyCode == KeyEvent.VK_F11 && captureButton == null) {
+                        mainWindowState.placement = if (mainWindowState.placement == WindowPlacement.Fullscreen) {
+                            WindowPlacement.Floating
+                        } else WindowPlacement.Fullscreen
+                        true
                     } else if (captureButton != null) {
                         val button = captureButton ?: return@KeyEventDispatcher false
                         savePhysicalBinding(button, UniversalRemoteMap.keyId(event.keyCode), RemoteKeyMap.keyName(event.keyCode))
@@ -362,10 +381,13 @@ fun main() {
                                 else UniversalRemoteMap.findKey(universalBindings, physicalId)?.let(::handleVirtualKey)
                             }
                         },
-                        onError = { message -> EventQueue.invokeLater { status = message } },
+                        onError = { message -> EventQueue.invokeLater { hidDiagnostic = message; status = message } },
+                        onDiagnostic = { message -> EventQueue.invokeLater { hidDiagnostic = message } },
+                        suppressBrowserKeys = { suppressBrowserKeys.get() },
                     )
                 } catch (e: Exception) {
                     status = "Obsługa pilota HID niedostępna: ${e.message ?: e.javaClass.simpleName}"
+                    hidDiagnostic = status
                     null
                 }
                 onDispose { rawInput?.close() }
@@ -439,6 +461,7 @@ fun main() {
                                 bindings = universalBindings,
                                 selected = selectedRemoteButton,
                                 captureButton = captureButton,
+                                hidDiagnostic = hidDiagnostic,
                                 onSelect = { selectedRemoteButton = it },
                                 onCapture = {
                                     if (it == VirtualRemoteKey.POWER) {
@@ -480,6 +503,19 @@ fun main() {
                             session = session,
                             event = nowEvents[serviceKey(channel.ref)],
                             status = epgError ?: status,
+                            videoScaleMode = config.videoScaleMode,
+                            isFullscreen = mainWindowState.placement == WindowPlacement.Fullscreen,
+                            onToggleFullscreen = {
+                                mainWindowState.placement = if (mainWindowState.placement == WindowPlacement.Fullscreen) {
+                                    WindowPlacement.Floating
+                                } else WindowPlacement.Fullscreen
+                            },
+                            onScaleChange = {
+                                config = config.copy(videoScaleMode = it)
+                                session.setVideoScale(it)
+                                runCatching { config.save() }
+                                    .onFailure { error -> status = "Nie udało się zapisać ustawień: ${error.message}" }
+                            },
                             onChannels = {
                                 channelListSelected = channels.indexOfFirst { it.ref == playingChannel?.ref }.coerceAtLeast(0)
                                 showChannelList = true
@@ -684,6 +720,7 @@ private fun RemotePage(
     bindings: Map<VirtualRemoteKey, Set<String>>,
     selected: VirtualRemoteKey,
     captureButton: VirtualRemoteKey?,
+    hidDiagnostic: String,
     onSelect: (VirtualRemoteKey) -> Unit,
     onCapture: (VirtualRemoteKey) -> Unit,
     onCancelCapture: () -> Unit,
@@ -772,6 +809,7 @@ private fun RemotePage(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(selected.label, style = MaterialTheme.typography.titleLarge, color = colors.primary)
+            Text(hidDiagnostic, style = MaterialTheme.typography.bodySmall)
             if (selected == VirtualRemoteKey.POWER) {
                 Text(
                     "W ustawieniach pilota Xiaomi przypisz Power do uruchamiania programu E2Stream. " +

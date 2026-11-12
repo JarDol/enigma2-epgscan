@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -68,6 +67,10 @@ internal fun PlayerPage(
     session: VlcSession,
     event: NowEvent?,
     status: String,
+    videoScaleMode: VideoScaleMode,
+    isFullscreen: Boolean,
+    onToggleFullscreen: () -> Unit,
+    onScaleChange: (VideoScaleMode) -> Unit,
     onChannels: () -> Unit,
     onSettings: () -> Unit,
     onBack: () -> Unit,
@@ -75,6 +78,7 @@ internal fun PlayerPage(
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     var bannerVisible by remember { mutableStateOf(true) }
     var bannerGeneration by remember { mutableIntStateOf(0) }
+    var scaleMenuExpanded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         while (true) {
             now = Instant.now().epochSecond
@@ -138,6 +142,23 @@ internal fun PlayerPage(
                 OutlinedButton(onClick = onChannels) { Text("Lista kanałów") }
                 OutlinedButton(onClick = { bannerGeneration++ }) { Text("Pasek") }
                 OutlinedButton(onClick = session::togglePause) { Text("Pauza / Wznów") }
+                Box {
+                    OutlinedButton(onClick = { scaleMenuExpanded = true }) { Text("Obraz") }
+                    DropdownMenu(expanded = scaleMenuExpanded, onDismissRequest = { scaleMenuExpanded = false }) {
+                        VideoScaleMode.entries.forEach { mode ->
+                            DropdownMenuItem(
+                                text = { Text("${if (mode == videoScaleMode) "✓ " else ""}${mode.label}") },
+                                onClick = {
+                                    scaleMenuExpanded = false
+                                    onScaleChange(mode)
+                                },
+                            )
+                        }
+                    }
+                }
+                OutlinedButton(onClick = onToggleFullscreen) {
+                    Text(if (isFullscreen) "Okno" else "Pełny ekran")
+                }
                 OutlinedButton(onClick = onSettings) { Text("Ustawienia") }
                 OutlinedButton(onClick = onBack) { Text("Zatrzymaj") }
                 Text(status, modifier = Modifier.weight(1f).padding(top = 12.dp), color = secondary, maxLines = 1)
@@ -179,7 +200,8 @@ internal fun ChannelListDialog(
         onCloseRequest = onClose,
         title = "Lista kanałów — ${bouquet?.name.orEmpty()}",
         state = rememberDialogState(width = 950.dp, height = 700.dp),
-        resizable = true,
+        undecorated = true,
+        resizable = false,
         onPreviewKeyEvent = { event ->
             if (event.type != KeyEventType.KeyDown) false
             else when (event.key) {
@@ -250,6 +272,7 @@ internal fun ChannelListDialog(
                         enabled = !busy && bouquets.size > 1,
                     ) { Text("Bukiet ▶") }
                     Text("← → bukiet   •   ↑ ↓ kanał   •   Enter oglądaj   •   Esc zamknij", color = secondary)
+                    OutlinedButton(onClick = onClose) { Text("Zamknij") }
                 }
                 LazyColumn(Modifier.weight(3f), state = listState) {
                     itemsIndexed(channels) { index, channel ->

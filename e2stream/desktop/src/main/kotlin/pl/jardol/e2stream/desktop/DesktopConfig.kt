@@ -15,6 +15,7 @@ data class DesktopConfig(
     val pluginToken: String = "",
     val remoteBindings: String = "",
     val universalRemoteBindings: String = "",
+    val videoScaleMode: VideoScaleMode = VideoScaleMode.FIT,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -28,6 +29,7 @@ data class DesktopConfig(
             setProperty("pluginToken", pluginToken)
             setProperty("remoteBindings", remoteBindings)
             setProperty("universalRemoteBindings", universalRemoteBindings)
+            setProperty("videoScaleMode", videoScaleMode.name)
         }
         Files.newOutputStream(path).use { properties.store(it, "E2Stream settings") }
     }
@@ -47,6 +49,7 @@ data class DesktopConfig(
                 pluginToken = properties.getProperty("pluginToken", ""),
                 remoteBindings = properties.getProperty("remoteBindings", ""),
                 universalRemoteBindings = properties.getProperty("universalRemoteBindings", ""),
+                videoScaleMode = VideoScaleMode.valueOf(properties.getProperty("videoScaleMode", VideoScaleMode.FIT.name)),
             )
         }
 

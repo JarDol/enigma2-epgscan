@@ -1,6 +1,8 @@
 package pl.jardol.e2stream.desktop
 
 import java.io.IOException
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
 import javax.swing.JComponent
 import javax.swing.SwingUtilities
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
@@ -12,6 +14,8 @@ class VlcSession(private val onError: (String) -> Unit) {
     private val component: EmbeddedMediaPlayerComponent
     private val playbackGate: SurfacePlaybackGate
     private var paused = false
+    private var scaleMode = VideoScaleMode.FIT
+    private var closed = false
 
     val view: JComponent
         get() = component
@@ -28,13 +32,35 @@ class VlcSession(private val onError: (String) -> Unit) {
             throw IllegalStateException("Nie można załadować bibliotek VLC. Sprawdź instalację VLC 64-bit.", e)
         }
         playbackGate = SurfacePlaybackGate(component.videoSurfaceComponent(), onError)
+        component.videoSurfaceComponent().addComponentListener(object : ComponentAdapter() {
+            override fun componentResized(e: ComponentEvent) = applyVideoScale()
+        })
         component.mediaPlayer().events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
+            override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) {
+                if (newCount > 0) SwingUtilities.invokeLater { applyVideoScale() }
+            }
             override fun error(mediaPlayer: MediaPlayer) {
                 SwingUtilities.invokeLater {
                     onError("VLC: nie udało się odtworzyć strumienia. Sprawdź połączenie i dane logowania.")
                 }
             }
         })
+    }
+
+    fun setVideoScale(mode: VideoScaleMode) {
+        scaleMode = mode
+        applyVideoScale()
+    }
+
+    private fun applyVideoScale() {
+        if (closed) return
+        val surface = component.videoSurfaceComponent()
+        val geometry = videoGeometry(scaleMode, surface.width, surface.height)
+        component.mediaPlayer().video().apply {
+            setAspectRatio(geometry.aspect)
+            setCropGeometry(geometry.crop)
+            setScale(0f)
+        }
     }
 
     fun play(url: String, config: DesktopConfig) {
@@ -75,6 +101,8 @@ class VlcSession(private val onError: (String) -> Unit) {
     }
 
     fun close() {
+        if (closed) return
+        closed = true
         playbackGate.close()
         component.release()
     }

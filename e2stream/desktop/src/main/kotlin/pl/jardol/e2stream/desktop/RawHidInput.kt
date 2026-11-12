@@ -22,12 +22,28 @@ internal class RawHidInput(
     private val isApplicationFocused: () -> Boolean,
     private val onKey: (id: String, label: String) -> Unit,
     private val onError: (String) -> Unit,
+    private val onDiagnostic: (String) -> Unit,
+    private val suppressBrowserKeys: () -> Boolean,
 ) : AutoCloseable {
     private val ready = CountDownLatch(1)
     private val failure = AtomicReference<Throwable?>()
     @Volatile private var closed = false
     @Volatile private var window: WinDef.HWND? = null
     private val windowProc = WinUser.WindowProc(::windowProc)
+    private val keyboardProc = WinUser.LowLevelKeyboardProc { code, wParam, data ->
+        if (code >= 0 && data.vkCode in setOf(VK_BROWSER_BACK, VK_BROWSER_HOME) &&
+            isApplicationFocused() && isForegroundProcess() && suppressBrowserKeys()
+        ) {
+            WinDef.LRESULT(1)
+        } else {
+            User32.INSTANCE.CallNextHookEx(
+                null,
+                code,
+                wParam,
+                WinDef.LPARAM(Pointer.nativeValue(data.pointer)),
+            )
+        }
+    }
     private val thread = Thread(::runMessageLoop, "E2Stream-HID").apply {
         isDaemon = true
         start()
@@ -46,6 +62,7 @@ internal class RawHidInput(
 
     private fun runMessageLoop() {
         var registeredClass: String? = null
+        var keyboardHook: WinUser.HHOOK? = null
         try {
             val className = "E2StreamRawInput${System.nanoTime()}"
             val module = Kernel32.INSTANCE.GetModuleHandle(null)
@@ -75,6 +92,9 @@ internal class RawHidInput(
             ) ?: throw IOException("Windows nie utworzył okna odbiornika HID.")
             window = created
             registerConnectedDevices(created)
+            keyboardHook = User32.INSTANCE.SetWindowsHookEx(WH_KEYBOARD_LL, keyboardProc, module, 0)
+                ?: throw IOException("Windows nie uruchomił ochrony klawiszy przeglądarki.")
+            onDiagnostic("Odbiornik HID uruchomiony. Naciśnij przycisk pilota.")
             ready.countDown()
 
             val message = WinUser.MSG()
@@ -89,6 +109,8 @@ internal class RawHidInput(
             ready.countDown()
             if (!closed) onError(e.message ?: "Błąd odbiornika HID.")
         } finally {
+            keyboardHook?.let { User32.INSTANCE.UnhookWindowsHookEx(it) }
+            window?.let { if (User32.INSTANCE.IsWindow(it)) User32.INSTANCE.DestroyWindow(it) }
             window = null
             registeredClass?.let { User32.INSTANCE.UnregisterClass(it, Kernel32.INSTANCE.GetModuleHandle(null)) }
         }
@@ -110,7 +132,7 @@ internal class RawHidInput(
             ) continue
             usages += info.getShort(20) to info.getShort(22)
         }
-        if (usages.isEmpty()) usages += CONSUMER_CONTROL_USAGE
+        usages += CONSUMER_CONTROL_USAGE
 
         val structSize = RawInputDevice().size()
         val memory = Memory((structSize * usages.size).toLong())
@@ -137,7 +159,7 @@ internal class RawHidInput(
         when (message) {
             WM_INPUT -> {
                 try {
-                    if (isApplicationFocused()) readInput(Pointer.createConstant(lParam.toLong()))
+                    if (isApplicationFocused() && isForegroundProcess()) readInput(Pointer.createConstant(lParam.toLong()))
                 } catch (e: Exception) {
                     onError("Nie udało się odczytać przycisku HID: ${e.message ?: e.javaClass.simpleName}")
                 }
@@ -185,6 +207,7 @@ internal class RawHidInput(
             data.read(headerSize.toLong() + 8 + reportSize.toLong() * index, report, 0, reportSize)
             val payload = report.drop(1).toByteArray()
             if (payload.isEmpty() || payload.all { it == 0.toByte() }) continue
+            onDiagnostic("HID ${vendorProduct(path)} · ${report.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }}")
             onKey(
                 UniversalRemoteMap.hidId(path, payload),
                 "Pilot HID ${vendorProduct(path)} · ${payload.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }}",
@@ -202,6 +225,13 @@ internal class RawHidInput(
         return buffer.getWideString(0).takeIf(String::isNotBlank)
     }
 
+    private fun isForegroundProcess(): Boolean {
+        val foreground = User32.INSTANCE.GetForegroundWindow() ?: return false
+        val processId = IntByReference()
+        if (User32.INSTANCE.GetWindowThreadProcessId(foreground, processId) == 0) return false
+        return processId.value == Kernel32.INSTANCE.GetCurrentProcessId()
+    }
+
     private fun vendorProduct(path: String): String =
         Regex("VID_([0-9A-F]{4}).*PID_([0-9A-F]{4})", RegexOption.IGNORE_CASE)
             .find(path)
@@ -215,7 +245,7 @@ internal class RawHidInput(
         if (Thread.currentThread() !== thread) thread.join(2000)
     }
 
-    private class RawInputDevice(pointer: Pointer? = null) : Structure(pointer) {
+    class RawInputDevice(pointer: Pointer? = null) : Structure(pointer) {
         @JvmField var usUsagePage: Short = 0
         @JvmField var usUsage: Short = 0
         @JvmField var dwFlags: Int = 0
@@ -248,6 +278,9 @@ internal class RawHidInput(
 
     companion object {
         private const val WM_INPUT = 0x00FF
+        private const val WH_KEYBOARD_LL = 13
+        private const val VK_BROWSER_BACK = 0xA6
+        private const val VK_BROWSER_HOME = 0xAC
         private const val WM_INPUT_DEVICE_CHANGE = 0x00FE
         private const val WM_CLOSE = 0x0010
         private const val WM_DESTROY = 0x0002

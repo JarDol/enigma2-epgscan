@@ -18,6 +18,7 @@ class DesktopConfigTest {
             password = "test-password",
             pluginToken = "test-token",
             remoteBindings = "119=CHANNEL_UP",
+            videoScaleMode = VideoScaleMode.CROP,
         )
 
         try {
