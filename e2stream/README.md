@@ -121,7 +121,7 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 Workflow `.github/workflows/e2stream.yml` (w katalogu głównym repozytorium) buduje APK przy każdej zmianie w `e2stream/`
 i wydaje go jako `e2stream-X.Y.Z` z plikiem `e2stream-X.Y.Z.apk`. Aplikacja aktualizuje się z tych wydań.
 
-Gałąź `beta` buduje dwa prerelease'y porównawcze libVLC: 3.7.0 i 3.7.7. Wersja stabilna korzysta z 3.6.5.
+Gałąź `beta` buduje obecnie prerelease porównawczy z libVLC 3.7.6; wcześniej wydano warianty 3.7.0 i 3.7.7. Wersja stabilna korzysta z 3.6.5.
 Są widoczne w APK Updaterze w wyborze `Wersje`; wersja biblioteki jest częścią numeru wydania.
 Testuj je po kolei rosnącą wersją — Android może zablokować instalację starszego APK bez odinstalowania aplikacji.
 

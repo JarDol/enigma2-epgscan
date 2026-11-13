@@ -3,10 +3,11 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val betaVlcIndex = providers.gradleProperty("betaVlcIndex").getOrElse("2").toInt()
+val betaVlcIndex = providers.gradleProperty("betaVlcIndex").getOrElse("3").toInt()
 val expectedVlc = when (betaVlcIndex) {
     1 -> "3.7.0"
     2 -> "3.7.7"
+    3 -> "3.7.6"
     else -> error("Nieznany wariant beta: $betaVlcIndex")
 }
 val libvlcVersion = providers.gradleProperty("libvlcVersion").getOrElse(expectedVlc)
