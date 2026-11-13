@@ -11,15 +11,17 @@ import time
 from Components.config import config, ConfigSubsection, ConfigSelection, ConfigYesNo, \
 	ConfigText, ConfigDirectory, ConfigInteger, ConfigSelectionNumber, ConfigClock
 from enigma import eServiceReference, eServiceCenter, eEPGCache, iServiceInformation
+from .bouquetchannels import read_bouquet_channels
 
 try:
 	from Components.NimManager import nimmanager
 except Exception:
 	nimmanager = None
 
-VERSION = "2.16.1"
+VERSION = "2.17.0"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
+CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
 TP_STATS = "/etc/enigma2/epgscan_tps.json"
 WAKEUP_FILE = "/etc/enigma2/epgscan_wakeup"
 RADIO_TYPES = {2, 10}
@@ -98,6 +100,16 @@ cfg.sched_skip_rec = ConfigYesNo(default=False)
 cfg.sched_wakeup = ConfigYesNo(default=False)
 cfg.sched_deep_after = ConfigYesNo(default=True)
 cfg.last_auto_run = ConfigInteger(default=0)
+# skan PID-ow i wybor sciezki dzwiekowej
+cfg.cp_language_source = ConfigSelection(default="enigma", choices=[
+	("enigma", "preferencje jezykow z Enigma2"),
+	("manual", "wlasna kolejnosc jezykow")])
+cfg.cp_languages = ConfigText(default="pol,eng", fixed_size=False)
+cfg.cp_sched = ConfigYesNo(default=False)
+CP_SCHED_DAYS = []
+for _i in range(7):
+	setattr(cfg, "cp_sched_day%d" % _i, ConfigYesNo(default=True))
+	CP_SCHED_DAYS.append(getattr(cfg, "cp_sched_day%d" % _i))
 # doczytywanie brakow w ciagu dnia
 cfg.topup = ConfigYesNo(default=False)
 cfg.topup_mode = ConfigSelection(default="all", choices=[
@@ -515,6 +527,11 @@ def bouquet_refs(files):
 	for f in files:
 		walk(f)
 	return groups
+
+
+def bouquet_channels(files):
+	"""Wszystkie pozycje kanalow bukietu, lacznie z IPTV i nieobslugiwanymi ref."""
+	return read_bouquet_channels(files, E2, service_name)
 
 
 _lamedb = {"mtime": None, "groups": {}}

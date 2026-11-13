@@ -1,0 +1,289 @@
+import importlib
+import base64
+import os
+import sys
+import tempfile
+import types
+import unittest
+from unittest.mock import patch
+
+
+ROOT = os.path.dirname(os.path.dirname(__file__))
+PACKAGE = "channelparamscan_test_plugin"
+package = types.ModuleType(PACKAGE)
+package.__path__ = [os.path.join(ROOT, "EPGScan")]
+sys.modules[PACKAGE] = package
+
+
+class FakeTimer:
+	def __init__(self):
+		self.callback = []
+
+	def start(self, *_args):
+		pass
+
+	def stop(self):
+		pass
+
+
+enigma = types.ModuleType("enigma")
+enigma.eTimer = FakeTimer
+enigma.eServiceReference = lambda ref: ref
+enigma.iRecordableService = types.SimpleNamespace(evTunedIn=1, evTuneFailed=2, evRecordFailed=3)
+enigma.eEPGCache = type("FakeEPGCache", (), {})
+sys.modules.setdefault("enigma", enigma)
+
+navigation = types.ModuleType("NavigationInstance")
+navigation.instance = types.SimpleNamespace(record_event=[], RecordTimer=types.SimpleNamespace(isRecording=lambda: False))
+sys.modules.setdefault("NavigationInstance", navigation)
+
+
+def setting(value):
+	return types.SimpleNamespace(value=value)
+
+
+common = types.ModuleType(PACKAGE + ".common")
+common.CHANNEL_PARAMS_FILE = os.path.join(tempfile.gettempdir(), "channel-params-test.json")
+common.CP_SCHED_DAYS = [setting(True) for _ in range(7)]
+common.MAX_RETRIES = 3
+common.NO_TUNER_WAIT = 15
+common.TUNE_GAP = 2
+common.TUNE_TIMEOUT = 30
+common.bouquet_channels = lambda _files: []
+common.cfg = types.SimpleNamespace(cp_language_source=setting("manual"), cp_languages=setting("pol"), cp_sched=setting(False),
+	max_parallel=setting(2), reserve=setting(1))
+common.configured_tuners = lambda: 4
+common.frontend_of = lambda _service: (-1, None)
+common.log = lambda _message: None
+common.same_tp = lambda a, b: bool(a and b and a == b)
+common.selected_bouquets = lambda: []
+common.service_name = lambda ref: ref
+common.tp_params = lambda _ref: None
+sys.modules[common.__name__] = common
+
+channelparams = importlib.import_module(PACKAGE + ".channelparams")
+scanner_module = importlib.import_module(PACKAGE + ".channelparamscan")
+bouquetchannels = importlib.import_module(PACKAGE + ".bouquetchannels")
+clients = types.ModuleType(PACKAGE + ".clients")
+sys.modules[clients.__name__] = clients
+store_module = importlib.import_module(PACKAGE + ".channelparamsstore")
+
+PMT_BASE64 = "ArAsQo/DAADhGPAAG+EY8AAE4hjwBgoEcG9sAAbjGPAKegKAAgoEcWFhAEkPdSI="
+
+
+class ChannelParamScanTests(unittest.TestCase):
+	def test_bouquet_scan_flattens_subbouquets_and_reports_iptv(self):
+		with tempfile.TemporaryDirectory() as directory:
+			with open(os.path.join(directory, "bouquets.tv"), "w") as f:
+				f.write('#SERVICE 1:64:1:0:0:0:0:0:0:0:FROM BOUQUET "main.tv" ORDER BY bouquet\n')
+			with open(os.path.join(directory, "main.tv"), "w") as f:
+				f.write('#SERVICE 1:0:1:428f:1:1:13e:0:0:0:\n#DESCRIPTION DVB channel\n')
+				f.write('#SERVICE 4097:0:1:0:0:0:0:0:0:0:http%3a//example/stream\n#DESCRIPTION IPTV channel\n')
+				f.write('#SERVICE 1:64:1:0:0:0:0:0:0:0:FROM BOUQUET "main.tv" ORDER BY bouquet\n')
+			rows = bouquetchannels.read_bouquet_channels(["bouquets.tv"], directory, lambda ref: ref)
+		self.assertEqual(len(rows), 2)
+		self.assertEqual(rows[0]["name"], "DVB channel")
+		self.assertTrue(rows[0]["supported"])
+		self.assertEqual(rows[1]["name"], "IPTV channel")
+		self.assertFalse(rows[1]["supported"])
+
+	def test_successful_channel_recommends_only_unique_preferred_audio_and_keeps_raw_pmt(self):
+		section = base64.b64decode(PMT_BASE64)
+		pmt = channelparams.parse_pmt(section, 17039)
+		engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None)
+		scan = scanner_module.ChannelParamsScan(engine)
+		job = types.SimpleNamespace(ref="1:0:1:428f:1:1:13e:0:0:0:", name="test", pmt_pid=307,
+			pat_section=b"pat", state="")
+
+		scan._save_channel(job, pmt)
+
+		result = scan.results[job.ref]
+		self.assertEqual(result["preferredAudioPid"], 536)
+		self.assertEqual(result["selectedAudioPid"], 536)
+		self.assertFalse(result["selectedConfirmed"])
+		self.assertEqual(__import__("base64").b64decode(result["section"]), section)
+		self.assertEqual(job.state, "gotowe")
+
+	def test_previous_manual_audio_is_preserved_when_pid_is_still_available(self):
+		section = base64.b64decode(PMT_BASE64)
+		pmt = channelparams.parse_pmt(section, 17039)
+		ref = "1:0:1:428f:1:1:13e:0:0:0:"
+		engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None, timer_hold=0, max_parallel=1,
+			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 0, free_tuners=lambda: 1)
+		scan = scanner_module.ChannelParamsScan(engine)
+		scan.results[ref] = {"selectedAudioPid": 792, "selectedConfirmed": True}
+		job = types.SimpleNamespace(ref=ref, name="test", pmt_pid=307, pat_section=b"pat", state="")
+
+		scan._save_channel(job, pmt)
+
+		self.assertEqual(scan.results[ref]["selectedAudioPid"], 792)
+		self.assertTrue(scan.results[ref]["selectedConfirmed"])
+
+	def test_language_preference_is_read_from_enigma_when_configured(self):
+		common.cfg.cp_language_source.value = "enigma"
+		config_module = types.ModuleType("Components.config")
+		config_module.config = types.SimpleNamespace(autolanguage=types.SimpleNamespace(
+			audio_autoselect1=setting("pol"), audio_autoselect2=setting("eng"),
+			audio_autoselect3=setting(""), audio_autoselect4=setting("")))
+		with patch.dict(sys.modules, {"Components.config": config_module}):
+			self.assertEqual(scanner_module.preferred_languages(), ["pol", "eng", "", ""])
+		common.cfg.cp_language_source.value = "manual"
+
+	def test_schedule_day_uses_the_planned_start_weekday(self):
+		common.cfg.cp_sched.value = True
+		common.CP_SCHED_DAYS[3].value = False
+		with patch.object(scanner_module.time, "localtime", return_value=types.SimpleNamespace(tm_wday=3)):
+			self.assertFalse(scanner_module.scheduled_day_enabled(1))
+		common.CP_SCHED_DAYS[3].value = True
+		with patch.object(scanner_module.time, "localtime", return_value=types.SimpleNamespace(tm_wday=3)):
+			self.assertTrue(scanner_module.scheduled_day_enabled(1))
+
+	def test_common_defaults_only_fill_missing_entries_and_backup_file(self):
+		with tempfile.TemporaryDirectory() as directory:
+			clients.DIR = directory
+			clients.COMMON = os.path.join(directory, "common.json")
+			key = "audio_1_0_1_428F_1_1_13E_0_0_0"
+			with open(clients.COMMON, "w") as f:
+				import json
+				json.dump({"data": {key: {"v": "old"}}}, f)
+			results = {"r": {"ref": "1:0:1:428f:1:1:13e:0:0:0:", "selectedConfirmed": True,
+				"selectedAudioPid": 536, "sid": 17039, "section": PMT_BASE64,
+				"streams": [{"kind": "audio", "pid": 536, "languages": ["pol"], "codec": "audio/mpeg"}]}}
+
+			message, conflicts = store_module.add_common_defaults(results)
+
+			self.assertIn("Dodano 1 wartosci", message)
+			self.assertIn(key, conflicts)
+			with open(clients.COMMON) as f:
+				data = __import__("json").load(f)
+			self.assertEqual(data["data"][key]["v"], "old")
+			self.assertEqual(data["data"]["pmts_17039"]["v"], PMT_BASE64)
+			self.assertTrue(any(name.startswith("common.json.bak-") for name in os.listdir(directory)))
+
+	def test_device_profiles_are_backed_up_and_only_selected_device_is_updated(self):
+		with tempfile.TemporaryDirectory() as directory:
+			clients.DIR = directory
+			for name in ("device-one.json", "device-two.json"):
+				with open(os.path.join(directory, name), "w") as f:
+					import json
+					json.dump({"data": {}, "device": {"name": name}}, f)
+			results = {"r": {"ref": "1:0:1:428f:1:1:13e:0:0:0:", "selectedConfirmed": True,
+				"selectedAudioPid": 536, "sid": 17039, "section": PMT_BASE64,
+				"streams": [{"kind": "audio", "pid": 536, "languages": ["pol"], "codec": "audio/mpeg"}]}}
+
+			message, conflicts = store_module.apply_to_devices(results, ["device-one.json"])
+
+			self.assertEqual(message, "Zapisano ustawienia w 1 odbiornikach.")
+			self.assertEqual(conflicts, [])
+			with open(os.path.join(directory, "device-one.json")) as f:
+				updated = __import__("json").load(f)
+			with open(os.path.join(directory, "device-two.json")) as f:
+				untouched = __import__("json").load(f)
+			self.assertEqual(updated["data"]["audio_1_0_1_428F_1_1_13E_0_0_0"]["v"], "536|pol|audio/mpeg")
+			self.assertNotIn("audio_1_0_1_428F_1_1_13E_0_0_0", untouched["data"])
+			self.assertTrue(any(name.startswith("device-one.json.bak-") for name in os.listdir(directory)))
+
+	def test_device_write_failure_rolls_back_already_written_profiles(self):
+		with tempfile.TemporaryDirectory() as directory:
+			clients.DIR = directory
+			originals = {}
+			for name in ("device-one.json", "device-two.json"):
+				path = os.path.join(directory, name)
+				originals[name] = b'{"data": {}, "device": {}}'
+				with open(path, "wb") as f:
+					f.write(originals[name])
+			results = {"r": {"ref": "1:0:1:428f:1:1:13e:0:0:0:", "selectedConfirmed": True,
+				"selectedAudioPid": 536, "sid": 17039, "section": PMT_BASE64,
+				"streams": [{"kind": "audio", "pid": 536, "languages": ["pol"], "codec": "audio/mpeg"}]}}
+			real_write = store_module._atomic_json
+			calls = []
+
+			def fail_second(path, data):
+				calls.append(path)
+				if len(calls) == 2:
+					raise OSError("disk full")
+				real_write(path, data)
+
+			with patch.object(store_module, "_atomic_json", side_effect=fail_second):
+				with self.assertRaisesRegex(OSError, "disk full"):
+					store_module.apply_to_devices(results, ["device-one.json", "device-two.json"])
+			for name, content in originals.items():
+				with open(os.path.join(directory, name), "rb") as f:
+					self.assertEqual(f.read(), content)
+
+	def test_unsupported_only_bouquets_still_write_an_explicit_report(self):
+		with tempfile.TemporaryDirectory() as directory:
+			result_path = os.path.join(directory, "channelparams.json")
+			engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None, timer_hold=0, max_parallel=1,
+				scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 0, free_tuners=lambda: 1)
+			row = {"ref": "4097:0:1:0:0:0:0:0:0:0:http%3a//example/stream",
+				"name": "IPTV channel", "supported": False, "error": "Nieobslugiwany typ kanalu"}
+			with patch.object(scanner_module, "CHANNEL_PARAMS_FILE", result_path), \
+					patch.object(scanner_module, "bouquet_channels", return_value=[row]):
+				scan = scanner_module.ChannelParamsScan(engine)
+				self.assertTrue(scan.start())
+				scan.tick()
+			with open(result_path, encoding="utf-8") as f:
+				data = __import__("json").load(f)
+			self.assertEqual(data["last_scan"]["scanned"], 0)
+			self.assertEqual(data["last_scan"]["unsupported"], [row])
+
+	def test_retry_requeues_failed_job_and_cancel_releases_active_service(self):
+		engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None)
+		engine.release = lambda job: engine.active.remove(job) if job in engine.active else None
+		scan = scanner_module.ChannelParamsScan(engine)
+		job = types.SimpleNamespace(
+			pat_reader=None, pmt_reader=None, rec=None, state="", retries=0, not_before=0, name="test")
+		scan.active.append(job)
+		engine.active.append(job)
+
+		scan._retry_or_fail(job, "timeout")
+
+		self.assertEqual(scan.active, [])
+		self.assertEqual(engine.active, [])
+		self.assertEqual(job.retries, 1)
+		self.assertEqual(job.state, "czeka (ponownie)")
+		self.assertEqual(scan.queue, [job])
+
+		scan.active.append(job)
+		engine.active.append(job)
+		scan.queue = [types.SimpleNamespace()]
+		navigation.instance.record_event.append(scan.rec_event)
+		scan.cancel()
+
+		self.assertEqual(scan.active, [])
+		self.assertEqual(engine.active, [])
+		self.assertEqual(scan.queue, [])
+		self.assertEqual(job.state, "przerwany")
+		self.assertNotIn(scan.rec_event, navigation.instance.record_event)
+
+	def test_conflicting_pmts_with_same_sid_are_not_exported(self):
+		first = bytearray(base64.b64decode(PMT_BASE64))
+		second = bytearray(first)
+		second[9] ^= 1
+		second[-4:] = channelparams._crc32(second[:-4]).to_bytes(4, "big")
+
+		def result(ref, section):
+			return {"ref": ref, "selectedConfirmed": True, "selectedAudioPid": 536, "sid": 17039,
+				"section": base64.b64encode(section).decode("ascii"),
+				"streams": [{"kind": "audio", "pid": 536, "languages": ["pol"], "codec": "audio/mpeg"}]}
+
+		audio, pmts, conflicts = store_module._sync_payload({
+			"first": result("1:0:1:428f:1:1:13e:0:0:0:", first),
+			"second": result("1:0:1:4290:1:1:13e:0:0:0:", second),
+		})
+
+		self.assertEqual(len(audio), 2)
+		self.assertEqual(pmts, {})
+		self.assertEqual(conflicts, {"pmts_17039"})
+
+	def test_corrupt_pmt_is_rejected_before_profile_write(self):
+		results = {"r": {"ref": "1:0:1:428f:1:1:13e:0:0:0:", "selectedConfirmed": True,
+			"selectedAudioPid": 536, "sid": 17039, "section": "not-base64",
+			"streams": [{"kind": "audio", "pid": 536, "languages": ["pol"], "codec": "audio/mpeg"}]}}
+		with self.assertRaisesRegex(ValueError, "Nieprawidlowa PMT"):
+			store_module._sync_payload(results)
+
+
+if __name__ == "__main__":
+	unittest.main()

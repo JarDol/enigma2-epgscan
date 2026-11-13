@@ -27,7 +27,7 @@ sys.modules[common.__name__] = common
 intervals = importlib.import_module(package.__name__ + ".epgintervals")
 xmltv = importlib.import_module(package.__name__ + ".xmltv")
 clientpack = importlib.import_module(package.__name__ + ".clientpack")
-for name in ("is_due", "sched_active", "next_run", "fmt_ts", "topup_candidates", "topup_label"):
+for name in ("is_due", "sched_active", "next_run", "last_slot", "fmt_ts", "topup_candidates", "topup_label"):
 	setattr(common, name, lambda *args, **kwargs: None)
 common.WAKEUP_FILE = "/tmp/epgscan-test-wakeup"
 common.TOPUP_INFO = {"recent": 0, "backoff": 0}

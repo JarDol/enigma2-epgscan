@@ -4,6 +4,8 @@ An Enigma2 plugin (OpenPLi 9.x, Python 3) that keeps the electronic programme gu
 date on its own. It combines three listing sources and one tool that looks after your channel list:
 
 - **satellite** – parallel scanning of transponders on free tuners (EIT),
+- **channel parameters** – separate PAT/PMT and audio/video/subtitle/teletext PID scan for each DVB channel in the
+  selected bouquets, with audio selection and optional E2Stream propagation,
 - **internet listings** – Polish TV listings downloaded directly on the receiver
   (teleman.pl, programtv.onet.pl, programtv.naziemna.info, pilot.wp.pl) plus XMLTV import,
 - **epgpl server** (optional) – a ready-made listings file prepared on a server in your home network,
@@ -31,6 +33,7 @@ Polish version of this description: [README.md](README.md).
 4. [Actions and profile](#4-actions-and-profile)
 5. [What happens during a run](#5-what-happens-during-a-run)
 6. [Satellite – transponder scan](#6-satellite--transponder-scan)
+   - [Channel parameters (PAT/PMT)](#channel-parameters-patpmt)
 7. [Internet listings](#7-internet-listings)
 8. [SatWatch – satellite changes and bouquets](#8-satwatch--satellite-changes-and-bouquets)
    - [8.4 Tuner setup – what to set in the system and what in the plugin](#84-tuner-setup--what-to-set-in-the-system-and-what-in-the-plugin)
@@ -175,6 +178,33 @@ the importer skips the conflicting entry and logs a warning rather than risk rep
   all tuners and a note in the night summary; at night in standby Enigma2 is restarted and the run repeated (at most
   once per night), on a manual start you are asked about a restart.
 - Before a timer recording the plugin keeps tuners free and pauses new scans.
+
+---
+
+### Channel parameters (PAT/PMT)
+
+This is a separate task: it does not replace the EPG scan and does not clear or modify the EPG database. It scans
+each unique DVB service in the selected bouquets, including multiple services on one transponder. It uses
+EPG Scan's tuner reserve, parallel limit and tuning gap. IPTV and unknown service types are reported as
+unsupported; tuning and table-read errors are included in the report.
+
+Run it manually from **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**, then press **Menu** and confirm.
+Audio preferences can come from Enigma2's automatic-audio settings or a manually ordered list (for example
+`pol,eng`). A unique preferred-language match is recommended automatically; missing or ambiguous matches need
+review. **OK** selects an audio PID. **Yellow** tunes the channel and opens Enigma2's standard audio selector so
+you can listen to tracks. Preview is refused while recording, and the original channel is restored when leaving
+the screen. **Green** confirms and saves the choices.
+
+The schedule can add this stage after EPG and select its weekdays. It uses the existing EPG schedule time and
+planned start date, even if the run continues past midnight. It finishes before backup and return to deep standby.
+
+**Blue** in the results screen provides two separate, confirmed operations:
+
+- add only missing audio/PMT values to `common.json` as defaults for new devices (existing entries are preserved);
+- select specific E2Stream receivers and update their profiles; backups are made before writing.
+
+PMT data is sent only when its SID is not ambiguous across scanned services. Results are stored in
+`/etc/enigma2/epgscan/channelparams.json`.
 
 ---
 
@@ -365,6 +395,7 @@ streaming to clients.**
   considers all EPG, including XMLTV, and does not detect internal gaps. It can run always or only in standby,
   optionally at a fixed time. A new E2Stream pack is built after the scan if the client server and packs are enabled.
 - **SatWatch: full scan once a week** on a chosen day (on other days – checking for changes only).
+- **Channel parameters**: optional stage after EPG, on selected weekdays, before backup and return to deep standby.
 - **Restart after the night run** (*never* / *when needed* / *always*). "When needed" means: tuners do not tune, low
   free memory, Enigma2 uses much more memory than after start-up, SatWatch updated `satellites.xml`, optionally
   preventively every N days. Restart only in standby, with no recording now or within 15 min, at most once per 20 h.
@@ -396,7 +427,10 @@ item ticks/unticks it, green saves, red cancels.
 
 1. **SatWatch** – list of SatWatch actions: check, scan, channels awaiting decision (8.3), snapshot, backups, tuner
    setup (settings are in *Ustawienia*, SatWatch reports and log in *Raporty*).
-2. ***Dopasowanie kanałów: dekoder*** (channel matching: receiver) – channels from your bouquets and their assigned
+2. **Channel parameters (PAT/PMT)** – scans all DVB channels in the selected bouquets. Menu starts or stops a
+   scan, OK selects an audio PID, yellow opens the listening preview, green confirms choices, and blue writes
+   them to E2Stream.
+3. ***Dopasowanie kanałów: dekoder*** (channel matching: receiver) – channels from your bouquets and their assigned
    stations. Keys: **OK** – choose the source (station selection window), **Menu** – sorting (bouquet order /
    alphabetical) and listings download (on the server, ready file, on the receiver), **Info/EPG** – differences with
    the other map and synchronisation (below), red – close, green – refresh, yellow – filter (all / unmatched / no
@@ -553,6 +587,7 @@ below the settings list.
 |---|---|
 | `/etc/enigma2/settings` | settings `config.plugins.epgscan.*` and `config.plugins.satwatch.*` |
 | `/etc/enigma2/epgscan/wskazania.txt`, `aliases.txt` | manual station choices, your own mappings (same names as on the server) |
+| `/etc/enigma2/epgscan/channelparams.json` | PAT/PMT scan results and confirmed audio selections |
 | `/etc/enigma2/epgscan_sources/` | copies of XMLTV source lists, your own lists, the "EPG PL (dekoder)" source |
 | `/etc/enigma2/epgscan_tps.json`, `epgscan_xmltv.json`, `epgscan_wakeup` | transponder state, sources, wake-up |
 | `/etc/enigma2/satwatch/` | SatWatch state, bouquet snapshot, backups of bouquets and `satellites.xml` |

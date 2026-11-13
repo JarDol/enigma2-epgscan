@@ -15,7 +15,7 @@ from Components.SelectionList import SelectionList, SelectionEntryComponent
 from enigma import eTimer, eEPGCache
 
 from .common import S, cfg, log, VERSION, profile_default, profile_text, log_path, log_count, save_cfg, list_bouquets, selected_bouquets, epg_path, copy_backup, list_backups, \
-	SCHED_DAYS, DAYS, next_run, fmt_ts, keys_skin, init_keys, set_keys, apply_clear_choices, single_flush_supported
+	SCHED_DAYS, CP_SCHED_DAYS, DAYS, next_run, fmt_ts, keys_skin, init_keys, set_keys, apply_clear_choices, single_flush_supported
 
 
 def all_items():
@@ -26,7 +26,9 @@ def all_items():
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
 		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto,
+		cfg.cp_language_source, cfg.cp_languages, cfg.cp_sched,
 		cfg.topup, cfg.topup_mode, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
+all_items += CP_SCHED_DAYS
 
 
 ROW_H = 46
@@ -115,6 +117,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		if cur and cur[1] in (cfg.backup, cfg.scope, cfg.sched_mode, cfg.sched_wakeup, cfg.skip_empty, cfg.xmltv, cfg.topup,
 				cfg.topup_mode, cfg.topup_fixed, cfg.sat_import, cfg.rs_mode, cfg.cl_on, cfg.cli_api) or (cur and is_sw_full(cur[1])):
 			self.build()
+		if cur and cur[1] in (cfg.cp_sched, cfg.cp_language_source):
+			self.build()
 		if cur and cur[1] is cfg.xmltv and cfg.xmltv.value:
 			self.check_sources()
 		self.update_help()
@@ -151,6 +155,9 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		lst = []
 		if sec == "sat":
 			lst.append(e("Import EPG z satelity (skan transponderow)", cfg.sat_import))
+			lst.append(e("Preferencje jezykow skanu kanalow", cfg.cp_language_source))
+			if cfg.cp_language_source.value == "manual":
+				lst.append(e("  Jezyki, kolejnosc (np. pol,eng)", cfg.cp_languages))
 			if not cfg.sat_import.value:
 				lst.append(e("  Wymuszaj wylaczenie EIT", cfg.eit_force_off))
 			else:
@@ -194,8 +201,11 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			if cfg.sched_mode.value != "off":
 				lst += [e("  Kiedy uruchamiac", cfg.sched_when), e("  Czekaj, gdy trwa nagrywanie", cfg.sched_skip_rec),
 					e("  Wybudzaj z glebokiego czuwania", cfg.sched_wakeup)]
+				lst.append(e("  Po EPG skanuj parametry kanałów (PAT/PMT)", cfg.cp_sched))
 				if cfg.sched_wakeup.value:
 					lst.append(e("  Po skanie wroc do glebokiego czuwania", cfg.sched_deep_after))
+				if cfg.cp_sched.value:
+					lst += [e("  " + DAYS[i], day) for i, day in enumerate(CP_SCHED_DAYS)]
 			try:
 				from .satwatch.sw import cfg as swcfg
 				lst.append(e("SatWatch: pelny skan raz w tygodniu", swcfg.full_enable))

@@ -658,6 +658,7 @@ def channels_menu(session, sel=0):
 	opts = [("SatWatch - sprawdzenie, skan, kanaly do decyzji, zrzut, kopie", "sw")]
 	if satwatch_installed():
 		opts.append(("UWAGA: osobna wtyczka SatWatch jest zainstalowana - odinstaluj ja", "swno"))
+	opts.append(("Skan parametrow kanalow (PAT/PMT), wybor audio i E2Stream", "params"))
 	opts.append(("Dopasowanie kanalow: dekoder%s" % ("" if cfg.map_mode.value == "dekoder" else
 		"  (mapa dekodera nieuzywana - Ustawienia -> Program z internetu)"), "dek"))
 	for base, desc in srv:
@@ -689,6 +690,9 @@ def channels_menu(session, sel=0):
 			session.openWithCallback(back, EPGScanText, "mapa kanalow dekodera", backup_dir() + "lokalne/raport.txt")
 		elif k == "sw":
 			satwatch_menu(session, back=back)
+		elif k == "params":
+			from .channelparamsui import ChannelParamsScreen
+			session.openWithCallback(back, ChannelParamsScreen)
 		else:
 			session.openWithCallback(back, MessageBox, "Osobna wtyczka SatWatch dalej dziala z wlasnym harmonogramem. Odinstaluj ja:\n"
 				"rm -rf %s; init 4; sleep 2; init 3\nUstawienia, raporty i kopie bukietow zostaja." % SATWATCH_DIR,

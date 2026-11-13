@@ -4,6 +4,8 @@ Wtyczka do odbiorników Enigma2 (OpenPLi 9.x, Python 3), która sama dba o pełn
 programowy (EPG). *English: [README.en.md](README.en.md).* Łączy trzy źródła programu i jedno narzędzie do pilnowania listy kanałów:
 
 - **satelita** – równoległe skanowanie transponderów na wolnych tunerach (EIT),
+- **parametry kanałów** – osobny odczyt PAT/PMT, PID-ów audio/wideo/napisów/teletekstu każdego kanału DVB z bukietów,
+  z wyborem ścieżki audio i opcjonalnym przekazaniem jej do E2Stream,
 - **program z internetu** – pobieranie polskiego programu TV bezpośrednio na dekoderze
   (teleman.pl, programtv.onet.pl, programtv.naziemna.info, pilot.wp.pl) oraz import XMLTV,
 - **serwer epgpl** (opcjonalny) – gotowy plik programu przygotowany na serwerze w sieci domowej,
@@ -27,6 +29,7 @@ i SatWatch działają z dowolną pozycją i dowolnymi bukietami.
 4. [Akcje i profil](#4-akcje-i-profil)
 5. [Przebieg: co dzieje się po kolei](#5-przebieg-co-dzieje-się-po-kolei)
 6. [Satelita – skan transponderów](#6-satelita--skan-transponderów)
+   - [Skan parametrów kanałów (PAT/PMT)](#skan-parametrów-kanałów-patpmt)
 7. [Program z internetu](#7-program-z-internetu)
 8. [SatWatch – zmiany na satelicie i bukiety](#8-satwatch--zmiany-na-satelicie-i-bukiety)
    - [8.4 Konfiguracja tunerów – co ustawić w systemie, a co we wtyczce](#84-konfiguracja-tunerów--co-ustawić-w-systemie-a-co-we-wtyczce)
@@ -175,6 +178,34 @@ zamiast ryzykować zastąpienie istniejącej audycji.
   wpis w logu ze stanem wszystkich tunerów i w podsumowaniu nocy; w nocy w czuwaniu restart Enigma2
   i powtórka przebiegu (najwyżej raz na noc), przy ręcznym starcie pytanie o restart.
 - Przed nagraniem z timera wtyczka trzyma tunery wolne i wstrzymuje nowe skany.
+
+---
+
+### Skan parametrów kanałów (PAT/PMT)
+
+To osobne zadanie; nie zastępuje skanu EPG i nie czyści ani nie zmienia bazy EPG. Obejmuje każdy unikalny kanał
+DVB w wybranych bukietach, również wtedy, gdy kilka kanałów jest na tym samym transponderze. Korzysta z rezerwacji,
+limitu równoległości i odstępów strojenia EPG Scan. IPTV i nierozpoznane typy są jawnie wymieniane jako
+nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
+
+Uruchom ręcznie: **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**, następnie **Menu** i potwierdź.
+Preferencje języków można pobierać z ustawień automatycznego audio Enigma2 albo ustawić własną kolejność (np.
+`pol,eng`). Jednoznaczna ścieżka zgodna z preferencją jest proponowana automatycznie; brak języka lub kilka
+pasujących PID-ów wymaga decyzji. **OK** wybiera PID, a **Żółty** przełącza na kanał i otwiera standardowy wybór
+audio Enigma2 do odsłuchu. Podgląd nie jest uruchamiany podczas nagrywania; po wyjściu z ekranu przywracany jest
+poprzedni kanał. **Zielony** zapisuje potwierdzone wybory.
+
+W harmonogramie można włączyć etap po skanie EPG i wybrać jego dni tygodnia. Używa on godziny i zaplanowanego
+startu harmonogramu EPG; przy pracy przechodzącej przez północ dzień jest liczony od planowanego startu.
+Etap kończy się przed kopią i powrotem do głębokiego czuwania.
+
+**Niebieski** w ekranie wyników udostępnia dwa osobne, potwierdzane działania:
+
+- dopisanie brakujących wpisów audio/PMT do `common.json` jako wartości domyślnych (bez nadpisywania istniejących),
+- wybranie konkretnych odbiorników E2Stream i aktualizację ich profili; przed zapisem tworzona jest kopia.
+
+PMT jest przekazywana tylko wtedy, gdy SID nie koliduje z inną zeskanowaną treścią. Plik wyników skanu:
+`/etc/enigma2/epgscan/channelparams.json`.
 
 ---
 
@@ -376,6 +407,8 @@ albo decyzja z kandydatami „ta sama nazwa”; kanał ze zmienioną nazwą i SI
   tylko w czuwaniu, opcjonalnie także o stałej godzinie. Po zakończonym skanie powstaje nowa paczka
   dla E2Stream, gdy włączono serwer i dane dla aplikacji.
 - **SatWatch: pełny skan raz w tygodniu** w wybrany dzień (w pozostałe dni – sprawdzenie zmian).
+- **Skan parametrów kanałów**: opcjonalny etap po EPG, tylko w zaznaczone dni tygodnia, przed kopią i powrotem
+  odbiornika do głębokiego czuwania.
 - **Restart po nocnym przebiegu** (*nigdy* / *gdy potrzebny* / *zawsze*). „Gdy potrzebny” oznacza:
   tunery nie stroją, mało wolnej pamięci, Enigma2 zajmuje dużo więcej pamięci niż po starcie,
   SatWatch zaktualizował `satellites.xml`, opcjonalnie profilaktycznie co N dni. Restart tylko w czuwaniu,
@@ -407,7 +440,10 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 
 1. **SatWatch** – lista akcji SatWatch: sprawdzenie, skan, kanały do decyzji (rozdział 8.3), zrzut, kopie, konfiguracja
    tunerów (ustawienia – w Ustawieniach, raporty i log SatWatch – w Raportach).
-2. **Dopasowanie kanałów: dekoder** – lista kanałów z bukietów i przypisanych stacji.
+2. **Skan parametrów kanałów (PAT/PMT)** – skanuje wszystkie kanały DVB w wybranych bukietach; Menu uruchamia
+   lub przerywa skan, OK pozwala ręcznie wybrać audio, żółty otwiera odsłuch, zielony potwierdza wybory,
+   a niebieski zapisuje je do E2Stream.
+3. **Dopasowanie kanałów: dekoder** – lista kanałów z bukietów i przypisanych stacji.
    Klawisze: **OK** – wskaż źródło (okno wyboru stacji), **Menu** – sortowanie (zgodnie z bukietami / alfabetycznie) i pobieranie programu (na serwerze, gotowy plik, na dekoderze),
    **Info/EPG** – różnice z drugą mapą i synchronizacja (niżej), czerwony – zamknij, zielony – odśwież,
    żółty – filtr (lista z liczbą kanałów: wszystkie / bez dopasowania / bez programu / tylko ręczne / teleman / onet /
@@ -580,6 +616,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | `/media/hdd/epgscan/` | kopie EPG, log, `lokalne/` (pobrany program, mapa kanałów, raporty) |
 | `/media/hdd/satwatch/` | log i historia raportów SatWatch (gdy wybrano ten katalog) |
 | `/etc/enigma2/epgscan/clients/` | dane aplikacji E2Stream: `common.json` (domyślne dla nowych odbiorników, wspólne PMT kanałów), `device-<id>.json` (każdy odbiornik) |
+| `/etc/enigma2/epgscan/channelparams.json` | wyniki skanu PAT/PMT i potwierdzone wybory audio |
 
 Wtyczka **nie zmienia**: bukietów (poza naprawą przez SatWatch, zawsze z kopią), ustawień tunerów,
 pliku systemowego `/etc/tuxbox/satellites.xml`, crona. Zmienia ustawienie EIT w Menu → EPG tylko

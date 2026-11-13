@@ -2,6 +2,53 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """DVB program tables used by the channel-parameter scanner."""
 
+import errno
+import os
+import platform
+import struct
+
+
+class SectionReader:
+	"""Read one PSI table from the demux already allocated to a tuned service."""
+
+	DMX_SET_FILTER = 0x403c6f2b
+	DMX_CHECK_CRC = 1
+	DMX_IMMEDIATE_START = 4
+
+	def __init__(self, adapter, demux, pid, table_id):
+		if not (0 <= adapter <= 255 and 0 <= demux <= 255 and 0 <= pid <= 0x1fff and 0 <= table_id <= 255):
+			raise ValueError("Invalid DVB demux parameters")
+		if platform.machine().lower() not in ("armv6l", "armv7l", "armv8l", "aarch64", "i386", "i686", "x86_64", "amd64"):
+			raise OSError("Unsupported DVB ioctl architecture: %s" % platform.machine())
+		import fcntl
+		path = "/dev/dvb/adapter%d/demux%d" % (adapter, demux)
+		fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+		try:
+			filter_bytes = bytes([table_id]) + bytes(15)
+			mask = bytes([0xff]) + bytes(15)
+			params = struct.pack("@H16s16s16sII", pid, filter_bytes, mask, bytes(16), 0,
+				self.DMX_CHECK_CRC | self.DMX_IMMEDIATE_START)
+			fcntl.ioctl(fd, self.DMX_SET_FILTER, params)
+		except BaseException:
+			os.close(fd)
+			raise
+		self.fd = fd
+
+	def read(self):
+		if self.fd is None:
+			raise ValueError("DVB section reader is closed")
+		try:
+			return os.read(self.fd, 4096)
+		except OSError as e:
+			if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+				return None
+			raise
+
+	def close(self):
+		if self.fd is not None:
+			fd, self.fd = self.fd, None
+			os.close(fd)
+
 
 def _crc32(data):
 	crc = 0xffffffff

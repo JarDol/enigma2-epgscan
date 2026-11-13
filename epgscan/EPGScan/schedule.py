@@ -8,7 +8,7 @@ import time
 from enigma import eTimer
 import NavigationInstance
 
-from .common import cfg, log, save_cfg, is_due, sched_active, next_run, fmt_ts, WAKEUP_FILE, topup_candidates, topup_label, TOPUP_INFO
+from .common import cfg, log, save_cfg, is_due, sched_active, next_run, last_slot, fmt_ts, WAKEUP_FILE, topup_candidates, topup_label, TOPUP_INFO
 from .engine import get_engine
 
 CHECK_EVERY = 60    # co ile sekund sprawdzac, czy pora na skan
@@ -130,9 +130,12 @@ class Scheduler(object):
 		if self.resume:
 			log("Harmonogram: powtorka przerwanego skanu")
 			self.resume = False
+			scheduled_start = cfg.last_auto_run.value or int(time.time())
 		else:
-			cfg.last_auto_run.value = int(time.time())
+			scheduled_start = last_slot() if cfg.sched_mode.value == "daily" else int(time.time())
+			cfg.last_auto_run.value = scheduled_start
 		save_cfg()
+		eng.auto_start_time = scheduled_start
 		if eng.start(auto=True, woke=self.woke):
 			log("Harmonogram: skan uruchomiony, nastepny: %s" % fmt_ts(next_run()))
 			self.report()

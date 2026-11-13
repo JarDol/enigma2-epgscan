@@ -286,6 +286,12 @@ class EPGScanScreen(Screen):
 				st = ""
 			head = "SatWatch (przed skanem EPG, czas %d:%02d): %s" % (int(time.time() - e.t_start) // 60,
 				int(time.time() - e.t_start) % 60, st)
+		elif e.running and e.phase == "channelparams":
+			scan = getattr(e, "channel_params_scan", None)
+			active = len(scan.active) if scan else 0
+			queued = len(scan.queue) if scan else 0
+			head = "Skan PAT/PMT kanalow: aktywne %d, w kolejce %d, czas %d:%02d   %s" % (
+				active, queued, el // 60, el % 60, tun)
 		elif e.running and e.phase == "xmltv_wait":
 			try:
 				from .mapping import server_grab
@@ -356,19 +362,25 @@ class EPGScanScreen(Screen):
 			set_keys(self, red="Wyjscie", green="Akcje", yellow="Kopie EPG", blue="Ustawienia")
 		now = time.time()
 		lines = []
-		for j in e.active + [x for x in e.jobs if x not in e.active]:
-			sh = " wspoldz." if j.shared else ""
-			cov = "EPG %d/%d, wszystkie %d/%d" % (j.covered, len(j.refs), j.all_covered, len(j.all_refs))
-			if j in e.active:
-				t = int(now - j.t0)
-				txt = "[%s%s] %s %ds  zdarzen %d (bylo %d, %+d)  %s" % (
-					j.tuner, sh, j.state, t, j.events, j.events_start, j.events - j.events_start, cov)
-			elif j.state.startswith("gotowe"):
-				txt = "[%s%s] %s %ds  zdarzen %d (bylo %d, %+d)  %s" % (
-					j.tuner, sh, j.state, j.duration, j.events, j.events_start, j.events - j.events_start, cov)
-			else:
-				txt = "%s  (kanalow %d, wszystkich %d)" % (j.state, len(j.refs), len(j.all_refs))
-			lines.append("%s  -  %s" % (j.name, txt))
+		if e.running and e.phase == "channelparams":
+			scan = getattr(e, "channel_params_scan", None)
+			if scan:
+				lines += ["AKTYWNE: %s - %s" % (j.name, j.state) for j in scan.active]
+				lines += ["OCZEKUJE: %s - %s" % (j.name, j.state) for j in scan.queue]
+		else:
+			for j in e.active + [x for x in e.jobs if x not in e.active]:
+				sh = " wspoldz." if j.shared else ""
+				cov = "EPG %d/%d, wszystkie %d/%d" % (j.covered, len(j.refs), j.all_covered, len(j.all_refs))
+				if j in e.active:
+					t = int(now - j.t0)
+					txt = "[%s%s] %s %ds  zdarzen %d (bylo %d, %+d)  %s" % (
+						j.tuner, sh, j.state, t, j.events, j.events_start, j.events - j.events_start, cov)
+				elif j.state.startswith("gotowe"):
+					txt = "[%s%s] %s %ds  zdarzen %d (bylo %d, %+d)  %s" % (
+						j.tuner, sh, j.state, j.duration, j.events, j.events_start, j.events - j.events_start, cov)
+				else:
+					txt = "%s  (kanalow %d, wszystkich %d)" % (j.state, len(j.refs), len(j.all_refs))
+				lines.append("%s  -  %s" % (j.name, txt))
 		if getattr(e, "xmltv_only", False):
 			lines = ["Sam import XMLTV (bez skanu satelity) - szczegoly w Raportach (Info/EPG) i w logu."]
 		if not e.running:
