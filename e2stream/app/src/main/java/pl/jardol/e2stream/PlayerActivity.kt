@@ -203,6 +203,11 @@ class PlayerActivity : Activity() {
     private var readyLogged = false
     private var lastStartMs = -1L
     private var audioAppliedGen = -1
+    private var audioCheckGen = -1
+    private var audioCheckStarted = 0L
+    private var audioWindow = AudioSelectionWindow()
+    private var audioCheckLastTarget: String? = null
+    private var audioCheckDescription = ""
     private var wakeTimerKey: String? = null
     private var wakeTestId: String? = null
     private var scheduledChannelRef: String? = null
@@ -687,7 +692,12 @@ class PlayerActivity : Activity() {
                         } + ")")
                     }
                 }
-                if (tsMode) applyTimeshiftAudio() else applySavedAudio()
+                if (tsMode) applyTimeshiftAudio()
+                else if (recMode) applySavedAudio()
+                else if (prefs.engine != "vlc" && aud.isNotEmpty() &&
+                    p.currentMediaItem?.localConfiguration?.uri?.toString() == currentUrl) {
+                    startAudioCheck()
+                }
             }
         })
 
@@ -966,6 +976,8 @@ class PlayerActivity : Activity() {
     }
 
     private fun releasePlayer() {
+        ui.removeCallbacks(audioCheck)
+        audioCheckGen = -1
         tsStopAll()
         ui.removeCallbacks(vlcTick)
         proxy?.stop(); proxy = null          // najpierw źródło danych — VLC kończy odczyt
@@ -1008,6 +1020,8 @@ class PlayerActivity : Activity() {
         val p = player ?: return
         currentUrl = url
         streamGen++
+        ui.removeCallbacks(audioCheck)
+        audioCheckGen = -1
         streamStartAt = SystemClock.elapsedRealtime()
         readyLogged = false
         cushionReset()
@@ -1061,7 +1075,10 @@ class PlayerActivity : Activity() {
         px.setTarget(url)
         val v = vlc ?: VlcEngine(this, prefs, vlcLayout,
             onEvent = { m ->
-                if (m == "VLC: odtwarzanie") ui.post { applySavedVlcAudio() }
+                if (m == "VLC: odtwarzanie") {
+                    val generation = streamGen
+                    ui.post { if (generation == streamGen) startAudioCheck() }
+                }
                 if (m == "VLC: obraz") ui.post { markPlaybackHealthy() }
                 if (!readyLogged) { readyLogged = true; AppLog.i("start: $m po ${SystemClock.elapsedRealtime() - streamStartAt} ms") }
             },
@@ -3026,10 +3043,13 @@ class PlayerActivity : Activity() {
             val selected = tracks.indexOfFirst { it.id == engine?.selectedAudioTrackId() }
             TvDialog.single(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels, selected) { which ->
                 val track = tracks.getOrNull(which)
-                if (track != null && engine?.selectAudioTrack(track.id) == true) {
+                val previous = engine?.selectedAudioTrackId()
+                ui.removeCallbacks(audioCheck)
+                audioCheckGen = streamGen
+                if (track != null && (previous == track.id || engine?.selectAudioTrack(track.id) == true)) {
                     playList.getOrNull(playIndex)?.let { ch ->
                         prefs.setAudioFor(ch.ref, "${track.id}|${track.language}|${track.codec}")
-                        AppLog.i("wybrano audio dla ${ch.name}: ${track.name} (ID ${track.id})")
+                        AppLog.i("wybrano audio dla ${ch.name}: ${track.name} (ID ${track.id}, poprzedni $previous, VLC)")
                     }
                 } else {
                     showMessage(getString(R.string.message_could_not_select_audio_track))
@@ -3048,57 +3068,99 @@ class PlayerActivity : Activity() {
         }
     }
 
-    private fun applySavedVlcAudio(attempt: Int = 0) {
-        val ch = playList.getOrNull(playIndex) ?: return
-        val engine = vlc ?: return
-        val tracks = engine.audioTracks()
-        if (tracks.isEmpty()) {
-            if (attempt < 12) ui.postDelayed({ applySavedVlcAudio(attempt + 1) }, 250)
-            else AppLog.i("VLC: brak ścieżek audio po uruchomieniu kanału ${ch.name}")
-            return
-        }
-        val saved = prefs.audioFor(ch.ref).split("|")
-        val savedId = saved.firstOrNull()?.substringAfterLast('/')?.toIntOrNull()
-        val savedLanguage = saved.getOrElse(1) { "" }
-        val savedCodec = saved.getOrElse(2) { "" }
-        val match = tracks.firstOrNull { savedId != null && it.id == savedId }
-            ?: tracks.firstOrNull {
-                savedLanguage.isNotBlank() &&
-                    AudioTrackLabels.languageCode(it.language) == AudioTrackLabels.languageCode(savedLanguage) &&
-                    (savedCodec.isBlank() || AudioTrackLabels.codecName(it.codec) == AudioTrackLabels.codecName(savedCodec))
+    private fun startAudioCheck() {
+        if (audioCheckGen == streamGen || tsMode || recMode) return
+        audioCheckGen = streamGen
+        audioCheckStarted = SystemClock.elapsedRealtime()
+        audioWindow = AudioSelectionWindow()
+        audioCheckLastTarget = null
+        audioCheckDescription = ""
+        ui.post(audioCheck)
+    }
+
+    private val audioCheck = object : Runnable {
+        override fun run() {
+            if (audioCheckGen != streamGen || backgrounded || tsMode || recMode) return
+            val ch = playList.getOrNull(playIndex) ?: return
+            val usingVlc = prefs.engine == "vlc"
+            val vlcEngine = if (usingVlc) vlc ?: return else null
+            val exoTracks = if (usingVlc) emptyList() else audioTracks()
+            val vlcTracks = vlcEngine?.audioTracks().orEmpty()
+            val selectedId = vlcEngine?.selectedAudioTrackId()
+            val candidates = if (usingVlc) vlcTracks.map {
+                AudioCandidate(it.id.toString(), it.language, it.codec, it.id == selectedId)
+            } else exoTracks.map {
+                AudioCandidate(it.format.id.orEmpty(), it.format.language, it.format.sampleMimeType,
+                    it.group.isTrackSelected(it.index))
             }
-        val selectedId = engine.selectedAudioTrackId()
-        val preferred = preferredAudioTrackIndex(
-            tracks.map { it.language },
-            AudioTrackLabels.preferredLanguages(prefs.audioLang),
-        )?.let(tracks::get)
-        val fallback = preferred ?: tracks.firstOrNull { it.id == selectedId } ?: tracks.firstOrNull()
-        val target = match ?: fallback ?: return
-        if (selectedId != target.id) {
-            if (engine.selectAudioTrack(target.id)) {
-                val action = when {
-                    match != null -> "przywrócono zapamiętaną"
-                    preferred != null -> "ustawiono preferowaną"
-                    else -> "ustawiono domyślną"
+            val now = SystemClock.elapsedRealtime()
+            if (candidates.isEmpty()) {
+                if (now - audioCheckStarted >= 3000) {
+                    AppLog.i("audio: brak obsługiwanych ścieżek dla ${ch.name}")
+                    return
                 }
-                AppLog.i("VLC: $action ścieżkę audio dla ${ch.name}: ${target.name} (ID ${target.id})")
+                ui.postDelayed(this, 250)
+                return
+            }
+            val saved = prefs.audioFor(ch.ref)
+            val languages = AudioTrackLabels.preferredLanguages(prefs.audioLang)
+            val (choice, remaining) = audioWindow.check(now, candidates, saved, languages, prefs.preferAc3)
+            val finalCheck = remaining == 0L
+            val description = "zapis=${saved.ifEmpty { "-" }}, preferowane=${languages.joinToString(",")}, dostępne=" +
+                candidates.joinToString { "${it.id}:${it.language}:${it.codec}${if (it.selected) "*" else ""}" }
+            if (description != audioCheckDescription) {
+                audioCheckDescription = description
+                AppLog.i("audio: ${ch.name}, $description")
+            }
+            if (choice != null) {
+                val target = candidates[choice.index]
+                val targetKey = "${choice.index}:${target.id}:${target.language}:${target.codec}"
+                if (target.selected) audioCheckLastTarget = null
+                if (!target.selected && targetKey != audioCheckLastTarget) {
+                    audioCheckLastTarget = targetKey
+                    if (usingVlc) {
+                        if (vlcEngine?.selectAudioTrack(vlcTracks[choice.index].id) == true) {
+                            AppLog.i("audio: wybieram ${choice.reason} ${target.id} dla ${ch.name}")
+                        } else {
+                            AppLog.i("audio: nie udało się wybrać ${choice.reason} ${target.id} dla ${ch.name}")
+                        }
+                    } else {
+                        AppLog.i("audio: wybieram ${choice.reason} ${target.id} dla ${ch.name}")
+                        selectAudio(exoTracks[choice.index], remember = false)
+                    }
+                }
+            }
+            if (finalCheck) {
+                if (saved.isNotEmpty() && choice?.reason != "zapamiętana") {
+                    AppLog.i("audio: zapamiętana ścieżka niedostępna dla ${ch.name}: $saved")
+                }
+                if (choice == null) AppLog.i("audio: brak zapamiętanej lub preferowanej ścieżki dla ${ch.name}")
+                else if (!candidates[choice.index].selected) AppLog.i("audio: wybór ${choice.reason} nie został jeszcze potwierdzony dla ${ch.name}")
+                else AppLog.i("audio: potwierdzono ${choice.reason} ${candidates[choice.index].id} dla ${ch.name}")
             } else {
-                AppLog.i("VLC: nie udało się wybrać ścieżki audio dla ${ch.name}: ${target.name} (ID ${target.id})")
+                ui.postDelayed(this, minOf(250L, remaining))
             }
         }
     }
 
     private fun selectAudio(t: AudioTrack, remember: Boolean) {
         val p = player ?: return
-        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-            .setOverrideForType(TrackSelectionOverride(t.group.mediaTrackGroup, t.index))
-            .build()
+        val previous = if (remember) audioTracks().firstOrNull { it.group.isTrackSelected(it.index) }?.format?.id else null
+        if (remember) {
+            ui.removeCallbacks(audioCheck)
+            audioCheckGen = streamGen
+        }
+        if (!t.group.isTrackSelected(t.index)) {
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                .setOverrideForType(TrackSelectionOverride(t.group.mediaTrackGroup, t.index))
+                .build()
+        }
         if (tsMode) tsAudioPid = mpegTsPid(t.format.id)
         val ch = playList.getOrNull(playIndex)
         if (remember && ch != null) {
             val f = t.format
             prefs.setAudioFor(ch.ref, "${f.id ?: ""}|${f.language ?: ""}|${f.sampleMimeType ?: ""}")
-            AppLog.i("wybrano audio dla ${ch.name}: ${audioLabel(f)}")
+            AppLog.i("wybrano audio dla ${ch.name}: ${audioLabel(f)} (id=${f.id}, poprzedni=$previous, tunelowanie=${prefs.tunneling})")
         }
     }
 

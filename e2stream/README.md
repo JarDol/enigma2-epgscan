@@ -41,6 +41,8 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 
 Wybór z menu „Ścieżka dźwięku” jest zapamiętywany osobno dla kanału i odbiornika, a następnie synchronizowany w profilu tego urządzenia. Przy kolejnym odtwarzaniu aplikacja próbuje najpierw dopasować zapisany identyfikator ścieżki. Jeśli dekoder nadał jej inny identyfikator, dopasowanie odbywa się po języku i kodeku.
 
+Na kanale na żywo aplikacja sprawdza wybór przez dwie sekundy od pojawienia się dostępnych ścieżek, bez opóźniania odtwarzania. Jeśli zapamiętana ścieżka się nie pojawi, próbuje użyć preferowanego języka; ręczny wybór przerywa sprawdzanie. Automatyczny wybór nie nadpisuje zapamiętanej preferencji, a szczegóły wyboru trafiają do logu.
+
 Identyfikatory ścieżek mogą się zmieniać, a dekoder może udostępniać kilka ścieżek o tych samych metadanych. W takim przypadku aplikacja nie ma danych, by odróżnić ich zawartość; może zostać wybrana pierwsza pasująca ścieżka lub domyślny wybór odtwarzacza. Należy wtedy wybrać ścieżkę ponownie. Preferowany język (np. `pl`, `pol` lub `Polish`; `en`, `eng` lub `English`) jest wskazówką dla odtwarzacza, a nie gwarancją wyboru, gdy język jest niedostępny.
 
 Podczas timeshiftu z VLC aplikacja próbuje zachować bieżącą ścieżkę przez dopasowanie PID-u w buforze. Jeśli odpowiedniego PID-u nie ma, stosuje zapamiętany wybór dla kanału.
