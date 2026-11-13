@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Notatki z opisu zmiany
-        run: git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md || true
+        run: git log -1 --pretty=%B | perl -pe 's/\\n/\n/g' | grep -iv -E '^(Co-authored-by|Claude-Session):' > notes.md || true
 
       - name: EPG Scan (zip + ipk)
         run: |
