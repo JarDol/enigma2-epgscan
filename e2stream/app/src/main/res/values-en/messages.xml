@@ -57,7 +57,7 @@
     <string name="message_delete_timer_from_receiver" formatted="false">Delete timer from receiver?</string>
     <string name="message_delete" formatted="false">Delete</string>
     <string name="message_starting_in_safe_mode" formatted="false">Starting in safe mode</string>
-    <string name="message_start_anyway" formatted="false">Start anyway</string>
+    <string name="message_open_safe_menu" formatted="false">Open menu</string>
     <string name="message_go_to_settings" formatted="false">Go to settings</string>
     <string name="message_wake_up_test_received" formatted="false">Wake-up test received</string>
     <string name="message_checking_settings_backups_on_receiver" formatted="false">Checking settings backups on receiver…</string>

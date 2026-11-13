@@ -57,7 +57,7 @@
     <string name="message_delete_timer_from_receiver" formatted="false">Usunąć timer z dekodera?</string>
     <string name="message_delete" formatted="false">Usuń</string>
     <string name="message_starting_in_safe_mode" formatted="false">Uruchomienie w trybie bezpiecznym</string>
-    <string name="message_start_anyway" formatted="false">Uruchom mimo problemów</string>
+    <string name="message_open_safe_menu" formatted="false">Otwórz menu</string>
     <string name="message_go_to_settings" formatted="false">Przejdź do ustawień</string>
     <string name="message_wake_up_test_received" formatted="false">Test wybudzania dotarł</string>
     <string name="message_checking_settings_backups_on_receiver" formatted="false">Sprawdzam kopie ustawień na dekoderze…</string>
