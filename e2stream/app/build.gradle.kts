@@ -3,8 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val betaVlcIndex = providers.gradleProperty("betaVlcIndex").getOrElse("3").toInt()
-val libvlcVersion = providers.gradleProperty("libvlcVersion").getOrElse("3.7.7")
+val betaVlcIndex = providers.gradleProperty("betaVlcIndex").getOrElse("2").toInt()
+val expectedVlc = when (betaVlcIndex) {
+    1 -> "3.7.0"
+    2 -> "3.7.7"
+    else -> error("Nieznany wariant beta: $betaVlcIndex")
+}
+val libvlcVersion = providers.gradleProperty("libvlcVersion").getOrElse(expectedVlc)
+require(libvlcVersion == expectedVlc) { "Nieprawidłowa wersja libVLC dla beta.$betaVlcIndex" }
 
 android {
     namespace = "pl.jardol.e2stream"
@@ -14,8 +20,8 @@ android {
         applicationId = "pl.jardol.e2stream"
         minSdk = 23
         targetSdk = 35
-        versionCode = 148 + betaVlcIndex
-        versionName = "0.18.32-beta.$betaVlcIndex-vlc.$libvlcVersion"
+        versionCode = 152 + betaVlcIndex
+        versionName = "0.18.34-beta.$betaVlcIndex-vlc.$libvlcVersion"
         buildConfigField("boolean", "WAKE_DIAGNOSTICS", versionName!!.contains("-beta.").toString())
         // biblioteki natywne VLC tylko dla ARM (telewizory i przystawki) - mniejszy plik APK
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }

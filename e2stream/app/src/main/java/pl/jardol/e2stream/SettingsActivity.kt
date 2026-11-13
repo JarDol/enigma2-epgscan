@@ -765,6 +765,10 @@ class SettingsActivity : Activity() {
     }
 
     private fun syncNow() {
+        if (SyncManager.needsBackupDecision) {
+            toast("Zakończ konfigurację dekodera i wybierz, czy przywrócić kopię ustawień")
+            return
+        }
         toast("Synchronizuję…")
         SyncManager.syncAsync { r -> toast("Synchronizacja: $r"); refresh() }
     }
@@ -772,18 +776,29 @@ class SettingsActivity : Activity() {
     private fun chooseProfile() {
         toast("Pobieram profile odbiorników…")
         Thread {
-            val list = try { SyncManager.profiles(p) } catch (e: Exception) { null }
+            val result = runCatching { SyncManager.profiles(p) }
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
-                val others = list?.filter { !it.file.contains(SyncManager.deviceId()) }
-                if (others.isNullOrEmpty()) { toast("Brak profili innych odbiorników na dekoderze"); return@runOnUiThread }
+                if (result.isFailure) {
+                    val error = result.exceptionOrNull()
+                    AppLog.i("kopia ustawień: błąd pobierania: $error")
+                    toast("Nie udało się pobrać profili: ${error?.message ?: error}")
+                    return@runOnUiThread
+                }
+                val others = result.getOrThrow().filter { !it.file.contains(SyncManager.deviceId()) || it.file.endsWith("#previous") }
+                if (others.isEmpty()) { toast("Brak profili innych odbiorników na dekoderze"); return@runOnUiThread }
                 val fmt = SimpleDateFormat("dd.MM HH:mm", Locale("pl"))
                 TvDialog.list(this, "Przenieś ustawienia z odbiornika",
                     others.map { TvDialog.Item(it.name.ifBlank { it.model }, "${it.model}, ${fmt.format(Date(it.updated))}") }) { w ->
-                    val n = SyncManager.restore(others[w])
-                    markChanged("przeniesiono $n ustawień z ${others[w].name}")
-                    toast("Przeniesiono $n ustawień z „${others[w].name}”")
-                    recreate()
+                    try {
+                        val n = SyncManager.restore(others[w])
+                        markChanged("przeniesiono $n ustawień z ${others[w].name}")
+                        toast("Przeniesiono $n ustawień z „${others[w].name}”")
+                        recreate()
+                    } catch (e: Exception) {
+                        AppLog.i("kopia ustawień: błąd przywracania: $e")
+                        toast("Nie udało się przywrócić kopii: ${e.message ?: e}")
+                    }
                 }
             }
         }.start()

@@ -49,9 +49,16 @@ Podczas timeshiftu z VLC aplikacja próbuje zachować bieżącą ścieżkę prze
 Na dekoderze w `<katalog FTP>/sync/` (domyślnie `/media/hdd/e2stream/sync/`):
 
 * `common.json` — wartości domyślne dla nowych odbiorników i wspólne PMT kanałów,
-* `device-<id>.json` — ustawienia i wybrane ścieżki dźwięku każdego odbiornika (z nazwą i modelem).
+* `device-<id>.json` — ustawienia, kopia ustawień i wybrane ścieżki dźwięku każdego odbiornika (z nazwą i modelem).
 
-Nowy odbiornik przy pierwszym uruchomieniu bierze swój profil (reinstalacja) albo wartości domyślne.
+Po nowej instalacji i wybraniu dekodera aplikacja sprawdza wtyczkę EPG Scan i proponuje import znalezionej kopii
+albo pozostanie przy ustawieniach domyślnych. Można wybrać także profil innego odbiornika. Starsze profile
+zawierają tylko ustawienia zapisywane przez wcześniejsze wersje. Przy imporcie pozostaje wybrany adres dekodera.
+Kopia obejmuje wszystkie ustawienia aplikacji, w tym PIN, dane logowania, ustawienia odtwarzania, menu i lokalne
+ścieżki; przed przeniesieniem na inne urządzenie sprawdź ścieżki i zgodność odtwarzacza. Kopia nie obejmuje danych
+użytkowych, np. lokalnego harmonogramu ani plików timeshiftu. Kopie na dekoderze są zapisane bez szyfrowania,
+dlatego zabezpiecz dostęp do sieci i API wtyczki. Aktualizacja kopii wymaga włączonej synchronizacji i dostępu do dekodera;
+przed odinstalowaniem aplikacji upewnij się, że synchronizacja się powiodła.
 Zmiany zapisują się w pliku odbiornika; klucz nieobecny w części wspólnej jest tam dopisywany jako domyślny.
 Synchronizacja działa w tle: przy starcie, kilka sekund po zmianie, co 2 minuty i przy wyjściu.
 Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś ustawienia z innego odbiornika.
@@ -111,7 +118,7 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 Workflow `.github/workflows/e2stream.yml` (w katalogu głównym repozytorium) buduje APK przy każdej zmianie w `e2stream/`
 i wydaje go jako `e2stream-X.Y.Z` z plikiem `e2stream-X.Y.Z.apk`. Aplikacja aktualizuje się z tych wydań.
 
-Gałąź `beta` buduje trzy prerelease'y porównawcze libVLC: 3.6.5, 3.7.0 i 3.7.7.
+Gałąź `beta` buduje dwa prerelease'y porównawcze libVLC: 3.7.0 i 3.7.7. Wersja stabilna korzysta z 3.6.5.
 Są widoczne w APK Updaterze w wyborze `Wersje`; wersja biblioteki jest częścią numeru wydania.
 Testuj je po kolei rosnącą wersją — Android może zablokować instalację starszego APK bez odinstalowania aplikacji.
 
