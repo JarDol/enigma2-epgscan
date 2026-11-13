@@ -123,11 +123,33 @@ class EPGScanScreen(Screen):
 
 	def actions_cb(self, profile=None):
 		if profile == "channelparams":
-			from .channelparamsui import ChannelParamsScreen
-			self.session.open(ChannelParamsScreen)
+			self.start_channel_params()
 			return
 		if profile:
 			self.start(profile)
+
+	def start_channel_params(self):
+		if self.engine.running:
+			self.session.open(MessageBox, "Inne zadanie EPG Scan juz trwa. Skan parametrow nie moze go przerwac.",
+				MessageBox.TYPE_INFO, timeout=5)
+			return
+		if self.grab_active():
+			self.session.open(MessageBox, "Trwa pobieranie programu uruchomione z dekodera. Zakoncz je przed "
+				"uruchomieniem skanu parametrow.", MessageBox.TYPE_INFO, timeout=8)
+			return
+		from .channelparamscan import start_manual
+		try:
+			started = start_manual(self.engine)
+		except Exception as e:
+			log("Nie mozna uruchomic skanu parametrow: %s" % e)
+			self.session.open(MessageBox, "Nie mozna uruchomic skanu parametrow: %s" % e,
+				MessageBox.TYPE_ERROR, timeout=8)
+			return
+		if not started:
+			self.session.open(MessageBox, "Brak kanalow DVB w wybranych bukietach albo skaner jest zajety.",
+				MessageBox.TYPE_INFO, timeout=6)
+			return
+		self.redraw()
 
 	def channels(self):
 		from .menus import channels_menu
@@ -273,8 +295,6 @@ class EPGScanScreen(Screen):
 			head = "%s\nPo zakonczeniu: %s" % (self.grab.text, self.grab.plan())
 		elif not e.running and self.sw_scanning():
 			head = "SatWatch: %s" % self.sw_status()
-		elif not e.jobs:
-			head = "Brak kanalow - sprawdz zakres skanowania i bukiety w ustawieniach"
 		elif e.running and e.phase == "xmltv" and e.xmltv:
 			if getattr(e, "xmltv_only", False):
 				head = "Import XMLTV: %s   czas %d:%02d\nSatelita: bez skanu (sam import XMLTV)" % (
@@ -296,6 +316,8 @@ class EPGScanScreen(Screen):
 			queued = len(scan.queue) if scan else 0
 			head = "Skan PAT/PMT kanalow: aktywne %d, w kolejce %d, czas %d:%02d   %s" % (
 				active, queued, el // 60, el % 60, tun)
+		elif not e.jobs:
+			head = "Brak kanalow - sprawdz zakres skanowania i bukiety w ustawieniach"
 		elif e.running and e.phase == "xmltv_wait":
 			try:
 				from .mapping import server_grab

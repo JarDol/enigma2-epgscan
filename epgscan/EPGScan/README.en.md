@@ -189,8 +189,10 @@ EPG Scan's tuner reserve, parallel limit and tuning gap. IPTV and unknown servic
 unsupported; tuning and table-read errors are included in the report.
 
 Run it independently of EPG: on the main screen choose **Actions**, select
-**Channel parameters (PAT/PMT)**, then press **OK** or **Green**. Alternatively, choose
-**Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**, then press **Menu** and confirm.
+**Channel parameters (PAT/PMT)**, then press **OK** or **Green**. The scan runs in the background and the main
+screen shows progress; **Blue** closes the screen without stopping the scan, so you can resume watching.
+Review results and choose audio tracks from **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. You can also
+start the scan from that screen with **Menu**.
 Audio preferences can come from Enigma2's automatic-audio settings or a manually ordered list (for example
 `pol,eng`). A unique preferred-language match is recommended automatically; missing or ambiguous matches need
 review. **OK** selects an audio PID. **Yellow** tunes the channel and opens Enigma2's standard audio selector so

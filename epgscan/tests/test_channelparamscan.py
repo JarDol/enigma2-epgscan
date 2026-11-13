@@ -64,8 +64,29 @@ common.service_name = lambda ref: ref
 common.tp_params = lambda _ref: None
 common.save_cfg = lambda: None
 common.keys_skin = lambda *_args: ""
+common.hints_skin = lambda *_args: ""
 common.init_keys = lambda _screen: None
+common.init_hints = lambda _screen: None
 common.set_keys = lambda *_args, **_kwargs: None
+common.set_key_color = lambda *_args: None
+common.KEY_COLORS = [(0, 0)] * 4
+common.KEY_EXIT = 0
+common.EPGChoiceBox = type("FakeChoiceBox", (), {})
+common.eit_on = lambda: True
+common.VERSION = "test"
+common.log_path = lambda: ""
+common.epgrefresh_active = lambda: False
+common.list_backups = lambda: []
+common.restore_backup = lambda *_args: None
+common.backup_label = lambda _path: ""
+common.new_bouquets = lambda: []
+common.clears_now = lambda *_args: False
+common.epg_stats = lambda *_args: {}
+common.stats_text = lambda *_args: ""
+common.all_refs = lambda: []
+common.log_dups = lambda *_args: None
+common.export_dups = lambda *_args: None
+common.scale_skins = lambda *_args: None
 common.is_due = lambda: False
 common.sched_active = lambda: False
 common.next_run = lambda: 0
@@ -108,14 +129,18 @@ menulist_module.MenuList = type("FakeMenuList", (), {})
 selection_module = types.ModuleType("Components.SelectionList")
 selection_module.SelectionList = type("FakeSelectionList", (), {})
 selection_module.SelectionEntryComponent = lambda *args: args
+scroll_module = types.ModuleType("Components.ScrollLabel")
+scroll_module.ScrollLabel = type("FakeScrollLabel", (), {})
 ui_modules = {
 	"Screens": screens, "Screens.Screen": screen_module, "Screens.MessageBox": messagebox_module,
 	"Screens.AudioSelection": audio_module, "Components": components,
 	"Components.ActionMap": action_module, "Components.Label": label_module,
 	"Components.MenuList": menulist_module, "Components.SelectionList": selection_module,
+	"Components.ScrollLabel": scroll_module,
 }
 with patch.dict(sys.modules, ui_modules):
 	channelparamsui = importlib.import_module(PACKAGE + ".channelparamsui")
+	scan_module = importlib.import_module(PACKAGE + ".scan")
 
 PMT_BASE64 = "ArAsQo/DAADhGPAAG+EY8AAE4hjwBgoEcG9sAAbjGPAKegKAAgoEcWFhAEkPdSI="
 
@@ -133,10 +158,29 @@ class ChannelParamScanTests(unittest.TestCase):
 		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
 		screen["list"] = FakeList()
 		screen["summary"] = FakeLabel()
+		screen["help"] = FakeLabel()
 		screen.engine = None
-		with patch.object(channelparamsui, "load_results", return_value={"results": {}, "last_scan": {}}):
+		with patch.object(channelparamsui, "load_results", return_value={"results": {}, "last_scan": {}}), \
+				patch.object(channelparamsui, "set_keys") as set_keys:
 			screen.refresh()
-		self.assertEqual(set(screen.keys()), {"list", "summary"})
+		self.assertEqual(set(screen.keys()), {"list", "summary", "help"})
+		self.assertEqual(set_keys.call_args.kwargs["green"], "")
+		self.assertEqual(set_keys.call_args.kwargs["yellow"], "")
+
+	def test_actions_channel_params_choice_starts_background_scan(self):
+		engine = types.SimpleNamespace(running=False)
+		screen = scan_module.EPGScanScreen.__new__(scan_module.EPGScanScreen)
+		screen.engine = engine
+		screen.grab = None
+		opened = []
+		redrawn = []
+		screen.session = types.SimpleNamespace(open=lambda *args, **kwargs: opened.append((args, kwargs)))
+		screen.redraw = lambda: redrawn.append(True)
+		with patch.object(scanner_module, "start_manual", return_value=True) as start_scan:
+			screen.actions_cb("channelparams")
+		start_scan.assert_called_once_with(engine)
+		self.assertEqual(redrawn, [True])
+		self.assertEqual(opened, [])
 
 	def test_bouquet_scan_flattens_subbouquets_and_reports_iptv(self):
 		with tempfile.TemporaryDirectory() as directory:

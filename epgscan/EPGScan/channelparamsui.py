@@ -38,7 +38,7 @@ class ChannelParamsScreen(Screen):
 		self.setTitle("EPG Scan - parametry kanałów")
 		self["summary"] = Label("")
 		self["list"] = MenuList([])
-		self["help"] = Label("OK: wybor sciezki   Zielony: potwierdz i zapisz   Zolty: podglad/odsluch   Niebieski: E2Stream")
+		self["help"] = Label("")
 		init_keys(self)
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions", "MenuActions"], {
 			"ok": self.choose_audio, "green": self.confirm_all, "yellow": self.preview,
@@ -90,7 +90,13 @@ class ChannelParamsScreen(Screen):
 		else:
 			self["summary"].setText("Wyniki: %d kanalow | ostatni skan: %d poprawnych, %d bledow, %d nieobslugiwanych" %
 				(len(self.channel_refs), run.get("scanned", 0), len(run.get("errors", [])), len(run.get("unsupported", []))))
-		set_keys(self, red="Zamknij", green="Potwierdz/zapisz", yellow="Podglad", blue="E2Stream")
+		has_results = bool(self.results)
+		set_keys(self, red="Zamknij", green="Potwierdz/zapisz" if has_results else "",
+			yellow="Podglad" if has_results else "", blue="E2Stream" if has_results else "")
+		if has_results:
+			self["help"].setText("OK: wybor sciezki   Zielony: potwierdz i zapisz   Zolty: podglad/odsluch   Niebieski: E2Stream")
+		else:
+			self["help"].setText("Brak wynikow. Uruchom skan z ekranu Akcje albo nacisnij Menu.")
 
 	def current(self):
 		i = self["list"].getSelectedIndex()
@@ -169,7 +175,7 @@ class ChannelParamsScreen(Screen):
 		if not yes:
 			return
 		try:
-			started = start_manual(self.engine, lambda _report: self.refresh())
+			started = start_manual(self.engine)
 		except Exception as e:
 			self.session.open(MessageBox, "Nie mozna odczytac/uruchomic skanu: %s" % e,
 				MessageBox.TYPE_ERROR, timeout=8)
@@ -177,7 +183,9 @@ class ChannelParamsScreen(Screen):
 		if not started:
 			self.session.open(MessageBox, "Nie mozna uruchomic skanu. Sprawdz bukiety lub status EPG Scan.",
 				MessageBox.TYPE_ERROR, timeout=6)
-		self.refresh()
+			self.refresh()
+			return
+		self.close()
 
 	def preview(self):
 		result = self.current()

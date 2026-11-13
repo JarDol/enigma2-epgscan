@@ -189,8 +189,10 @@ limitu równoległości i odstępów strojenia EPG Scan. IPTV i nierozpoznane ty
 nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
 
 Uruchom niezależnie od EPG: na ekranie głównym wybierz **Akcje**, zaznacz wiersz
-**Skan parametrów kanałów (PAT/PMT)** i naciśnij **OK** lub **zielony**. Możesz też wybrać
-**Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**, następnie **Menu** i potwierdź.
+**Skan parametrów kanałów (PAT/PMT)** i naciśnij **OK** lub **zielony**. Skan ruszy w tle, a ekran główny pokaże
+postęp; **niebieski** zamyka ekran bez przerywania pracy, więc możesz wrócić do oglądania. Wyniki i wybór audio
+otworzysz przez **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. Można go też uruchomić z tego ekranu
+przyciskiem **Menu**.
 Preferencje języków można pobierać z ustawień automatycznego audio Enigma2 albo ustawić własną kolejność (np.
 `pol,eng`). Jednoznaczna ścieżka zgodna z preferencją jest proponowana automatycznie; brak języka lub kilka
 pasujących PID-ów wymaga decyzji. **OK** wybiera PID, a **Żółty** przełącza na kanał i otwiera standardowy wybór

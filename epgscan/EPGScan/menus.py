@@ -82,8 +82,8 @@ class EPGScanActions(Screen, ConfigListScreen):
 		set_keys(self, red="Anuluj", green="Uruchom skan parametrow" if channelparams_selected else "Start EPG",
 			yellow="" if channelparams_selected else "Zapisz jako domyslne")
 		if channelparams_selected:
-			self["help"].setText("Niezalezny skan PAT/PMT kanalow z wybranych bukietow. Nie uruchamia skanu EPG; "
-				"wybierz ten wiersz i nacisnij OK lub zielony.")
+			self["help"].setText("Niezalezny skan PAT/PMT kanalow z wybranych bukietow. Nacisnij OK lub zielony, "
+				"aby uruchomic skan w tle i wrocic do ekranu postepu EPG Scan.")
 			return
 		lines = ["Kolejnosc: %s  (zmiana: Ustawienia -> Program z internetu)" % profile_text(p)]
 		if p["sw"] != "nie":
