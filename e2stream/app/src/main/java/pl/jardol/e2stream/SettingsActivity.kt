@@ -31,6 +31,10 @@ import java.util.Locale
  */
 class SettingsActivity : Activity() {
 
+    companion object {
+        const val EXTRA_FOCUS_TIMESHIFT = "focus_timeshift"
+    }
+
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(AppLanguage.wrap(newBase))
     }
@@ -400,6 +404,12 @@ class SettingsActivity : Activity() {
         listView.setOnItemClickListener { _, _, pos, _ -> onPick(items[pos]) }
         listView.setSelection(0)
         listView.requestFocus()
+        if (intent.getBooleanExtra(EXTRA_FOCUS_TIMESHIFT, false)) {
+            openSection("Odtwarzanie i obraz")
+            val index = items.indexOfFirst { it is Item.Action && it.label == getString(R.string.setting_timeshift) }
+            check(index >= 0) { "Brak ustawienia timeshiftu" }
+            listView.setSelection(index)
+        }
     }
 
     override fun onResume() {

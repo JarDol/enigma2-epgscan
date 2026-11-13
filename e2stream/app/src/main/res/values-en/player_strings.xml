@@ -49,6 +49,9 @@
     <string name="player_ts_usb_unavailable">USB unavailable</string>
     <string name="player_ts_disabled">Timeshift disabled: drive %1$s</string>
     <string name="player_ts_error">Timeshift unavailable: %1$s</string>
+    <string name="player_ts_setup_no_location">Timeshift is not configured: no buffer location has been selected. Choose a location and enable timeshift in settings.</string>
+    <string name="player_ts_setup_disabled">Timeshift is disabled. Enable it in settings.</string>
+    <string name="player_ts_setup_disk_unavailable">The selected timeshift drive is unavailable. Connect it or check the buffer location in settings. Device storage may be used instead if allowed.</string>
     <string name="player_ts_live_buffer">▶  Live  •  Timeshift (%1$s buffered)</string>
     <string name="player_ts_live_empty">▶  Live  •  Timeshift (buffer starts after pause)</string>
     <string name="player_live_lower">live</string>

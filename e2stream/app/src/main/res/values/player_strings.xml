@@ -49,6 +49,9 @@
     <string name="player_ts_usb_unavailable">USB niedostępny</string>
     <string name="player_ts_disabled">Timeshift wyłączony: dysk %1$s</string>
     <string name="player_ts_error">Timeshift niedostępny: %1$s</string>
+    <string name="player_ts_setup_no_location">Timeshift nie jest skonfigurowany: nie wybrano miejsca bufora. W ustawieniach wybierz miejsce i włącz timeshift.</string>
+    <string name="player_ts_setup_disabled">Timeshift jest wyłączony. Włącz go w ustawieniach.</string>
+    <string name="player_ts_setup_disk_unavailable">Wybrany dysk timeshiftu jest niedostępny. Podłącz go lub sprawdź miejsce bufora w ustawieniach. Jeśli zezwolono na pamięć urządzenia, może ona zostać użyta zamiast dysku.</string>
     <string name="player_ts_live_buffer">▶  Na żywo  •  Timeshift (w buforze %1$s)</string>
     <string name="player_ts_live_empty">▶  Na żywo  •  Timeshift (bufor rusza po pauzie)</string>
     <string name="player_live_lower">na żywo</string>

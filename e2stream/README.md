@@ -88,11 +88,14 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 EPG kanału pokazuje datę oraz godzinę rozpoczęcia i zakończenia każdej audycji; ◀ ▶ przewijają listę o stronę. Jeśli brak krótkiego opisu, lista pokazuje początek opisu rozszerzonego. Multi EPG pokazuje zakresy godzin bieżącej i następnej audycji oraz nazwy kanałów w maksymalnie dwóch liniach. Listy EPG kanału, kanałów Multi EPG i wyboru bukietu przewijają się w pętli.
 
 Przy włączonym timeshifcie długie OK na pasku kanału otwiera pasek przewijania.
+Jeśli timeshift jest wyłączony, nie wybrano miejsca bufora lub wybrany dysk jest niedostępny,
+pojawia się komunikat z przejściem do pozycji Timeshift w ustawieniach (z zachowaniem blokady PIN).
+Przy niedostępnym dysku można kontynuować, jeśli wcześniej zezwolono na użycie pamięci urządzenia.
 Strzałki przewijają tylko na widocznym pasku timeshiftu, również po dotarciu do transmisji na żywo;
 na pasku kanału i po ukryciu paska działają jak podczas zwykłego oglądania.
 W ustawieniach Ogólne dostępne są osobne mapowania OK i strzałek dla ekranu bez paska oraz z paskiem kanału.
 Domyślnie strzałki zachowują dotychczasowe przypisania, również zmienione w starszych wersjach,
-a OK zachowuje dotychczasowe działanie. Długie OK i obsługa paska timeshiftu pozostają bez zmian;
+a OK zachowuje dotychczasowe działanie. Mapowanie nie zmienia działania długiego OK ani paska timeshiftu;
 mapowanie nie dotyczy też listy kanałów ani odtwarzania nagrań. Każde z dwóch mapowań można osobno przywrócić.
 Na nagraniu długie OK otwiera wybór Odtwórz/Usuń; usunięcie wymaga potwierdzenia.
 PIN do ustawień może mieć maksymalnie 6 cyfr. Historię przełączeń można czyścić po 7, 14 lub 28 dniach albo zachować bez limitu.

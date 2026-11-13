@@ -2712,13 +2712,33 @@ class PlayerActivity : Activity() {
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
-            // widoczny pasek + timeshift: menu przewijania; w pozostałych przypadkach menu główne
-            if (prefs.tsMin > 0 && !recMode && banner.visibility == View.VISIBLE) {
-                if (tsShifted) tsShowBanner(sticky = player?.playWhenReady == false) else tsCtlOpen()
+            if (!recMode && banner.visibility == View.VISIBLE) {
+                val diskUnavailable = prefs.tsDir.isNotBlank() && !TimeshiftBuffer.available(prefs.tsDir)
+                val reason = when {
+                    diskUnavailable -> R.string.player_ts_setup_disk_unavailable
+                    prefs.tsDir.isBlank() && !prefs.tsInternalOk -> R.string.player_ts_setup_no_location
+                    prefs.tsMin <= 0 -> R.string.player_ts_setup_disabled
+                    else -> null
+                }
+                if (reason != null) {
+                    val message = getString(reason) +
+                        if (diskUnavailable && prefs.tsMin <= 0) "\n\n${getString(R.string.player_ts_setup_disabled)}" else ""
+                    val buttons = mutableListOf(
+                        TvDialog.Btn(getString(R.string.message_settings)) { openSettings(focusTimeshift = true) },
+                    )
+                    if (diskUnavailable && prefs.tsMin > 0 && prefs.tsInternalOk) {
+                        buttons += TvDialog.Btn(getString(R.string.message_continue)) { openTimeshiftControls() }
+                    } else buttons += TvDialog.Btn(getString(R.string.message_close))
+                    TvDialog.confirm(this, getString(R.string.setting_timeshift), message, buttons)
+                } else openTimeshiftControls()
             } else showQuickMenu()
             return true
         }
         return super.onKeyLongPress(keyCode, event)
+    }
+
+    private fun openTimeshiftControls() {
+        if (tsShifted) tsShowBanner(sticky = player?.playWhenReady == false) else tsCtlOpen()
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
@@ -2787,12 +2807,14 @@ class PlayerActivity : Activity() {
         }
     }
 
-    private fun openSettings(onCancel: () -> Unit = {}) {
+    private fun openSettings(onCancel: () -> Unit = {}, focusTimeshift: Boolean = false) {
         PinLock.ask(this, prefs, onCancel = onCancel) {
             settingsOpen = true
             settingsSig = streamSig()
             settingsBq = prefs.hiddenBouquets.toString()
-            startActivity(Intent(this, SettingsActivity::class.java))
+            startActivity(Intent(this, SettingsActivity::class.java).apply {
+                if (focusTimeshift) putExtra(SettingsActivity.EXTRA_FOCUS_TIMESHIFT, true)
+            })
         }
     }
 
