@@ -94,6 +94,20 @@ class OpenWebif(private val p: Prefs) {
         return "Basic " + Base64.encodeToString(raw, Base64.NO_WRAP)
     }
 
+    internal fun probe(): DecoderProbe.Result {
+        val auth = authHeader()?.let { mapOf("Authorization" to it) } ?: emptyMap()
+        val endpoints = mutableListOf(
+            DecoderProbe.Endpoint("http://${p.host}:${p.httpPort}/api/about", auth),
+        )
+        if (p.pluginToken.isNotBlank()) {
+            endpoints += DecoderProbe.Endpoint(
+                "http://${p.host}:${p.pluginPort}/api/info",
+                mapOf("X-E2S-Token" to p.pluginToken),
+            )
+        }
+        return DecoderProbe.check(endpoints)
+    }
+
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
 
     private fun get(path: String): JSONObject {

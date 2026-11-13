@@ -95,6 +95,8 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     // --- liczniki sesji (od startu strumienia)
     @Volatile var bytes = 0L
         private set
+    @Volatile var lastFeedAt = 0L
+        private set
     @Volatile var packets = 0L
         private set
     @Volatile var ccErrors = 0L
@@ -178,7 +180,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         burstAvgMs = 0
         ivBurstN = 0
         ivBurstSum = 0
-        bytes = 0; packets = 0; ccErrors = 0; teiErrors = 0; scrambled = 0
+        bytes = 0; lastFeedAt = 0; packets = 0; ccErrors = 0; teiErrors = 0; scrambled = 0
         syncLoss = 0; pcrJumps = 0; pmtChanges = 0; maxGapMs = 0; bitrateKbps = 0
         lastErrorAt = 0
         pidCc.fill(-1); pidCcErr.fill(0); lastPcrMs.fill(-1)
@@ -227,6 +229,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     @Synchronized
     fun feed(buf: ByteArray, off: Int, len: Int) {
         if (len <= 0) return
+        lastFeedAt = SystemClock.elapsedRealtime()
         feedInner(buf, off, len)
         // kopia po czyszczeniu (pakiety zmieniane w miejscu); niepełny pakiet z końca dochodzi w całości
         tee?.let { t -> try { t(buf, off, len) } catch (_: Exception) {} }

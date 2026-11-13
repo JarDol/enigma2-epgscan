@@ -2,6 +2,7 @@ package pl.jardol.e2stream
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -160,6 +161,7 @@ class PlayerActivity : Activity() {
     private var watchdog: StreamWatchdog? = null
     private val ui = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
+    private val probeIo = Executors.newSingleThreadExecutor()
 
     private var bouquets: List<Bouquet> = emptyList()
     private var playBouquet = 0
@@ -201,6 +203,11 @@ class PlayerActivity : Activity() {
     private var scheduledChannelRef: String? = null
     private var scheduledAppliedRef: String? = null      // kanał z harmonogramu dostrojony przed końcem startu
     private var scheduledAppliedAt = 0L
+    private var connectionDialog: Dialog? = null
+    private var connectionProbePending = false
+    private var decoderUnavailable = false
+    private var lastProbeAt = 0L
+    @Volatile private var startupProbeGeneration = 0
 
     // ---------------------------------------------------------------- cykl życia
 
@@ -363,6 +370,8 @@ class PlayerActivity : Activity() {
         ui.postDelayed(zapTick, if (wakeTimerKey != null) 0 else 5000)
         ensureAnalyzer()
         buildPlayer()
+        ui.removeCallbacks(connectionGuardTick)
+        ui.post(connectionGuardTick)
         applyDisplayMode()
         if (!updateChecked) {
             updateChecked = true
@@ -411,6 +420,7 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        startupProbeGeneration++
         epgReturnFromSettings = settingsOpen
         if (settingsOpen && !recMode) {
             val channel = playList.getOrNull(playIndex)
@@ -425,6 +435,9 @@ class PlayerActivity : Activity() {
         backgrounded = true       // wyjście do ekranu głównego — po powrocie start jak przy uruchomieniu
         ui.removeCallbacks(epgTick)
         ui.removeCallbacks(zapTick)
+        ui.removeCallbacks(connectionGuardTick)
+        connectionProbePending = false
+        dismissConnectionDialog()
         releasePlayer()
         ui.removeCallbacks(logTick)
         if (AppLog.dirty) uploadLog(false)
@@ -434,6 +447,7 @@ class PlayerActivity : Activity() {
     override fun onDestroy() {
         super.onDestroy()
         io.shutdownNow()
+        probeIo.shutdownNow()
     }
 
     // ---------------------------------------------------------------- odtwarzacz
@@ -854,6 +868,12 @@ class PlayerActivity : Activity() {
         // nagranie z pliku: bez poprawiania strumienia — po przewinięciu znaczniki czasu skaczą względem
         // ostatniego PCR i „poprawka” przesuwała dźwięk (obraz wyprzedzał dźwięk)
         analyzer?.clean = if (recMode) false else prefs.cleanTs
+        if (decoderUnavailable && !recMode) {
+            p.stop()
+            proxy?.stop(); proxy = null
+            vlc?.stop()
+            return
+        }
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
             return
@@ -924,6 +944,101 @@ class PlayerActivity : Activity() {
 
     private val restartRunnable = Runnable { doRestart() }
 
+    private val connectionGuardTick = object : Runnable {
+        override fun run() {
+            if (isFinishing || backgrounded) return
+            ui.postDelayed(this, 1000)
+            if (recMode || currentUrl == null) return
+            val now = SystemClock.elapsedRealtime()
+            val lastFeed = analyzer?.lastFeedAt ?: 0L
+            if (decoderUnavailable && lastFeed >= lastProbeAt && lastFeed > 0) {
+                decoderUnavailable = false
+                AppLog.i("dekoder: strumień wznowił się")
+                dismissConnectionDialog()
+            }
+            if (decoderUnavailable) {
+                if (!connectionProbePending && now - lastProbeAt >= 3000) probeStalledStream()
+                return
+            }
+            val lastData = lastFeed.takeIf { it > 0 } ?: streamStartAt
+            if (lastData <= 0 || now - lastData < 8000) return
+            if (!connectionProbePending) probeStalledStream()
+        }
+    }
+
+    private fun probeStalledStream() {
+        if (connectionProbePending) return
+        val url = currentUrl ?: return
+        val generation = streamGen
+        connectionProbePending = true
+        lastProbeAt = SystemClock.elapsedRealtime()
+        probeIo.execute {
+            val result = try { api.probe() } catch (e: java.io.IOException) {
+                DecoderProbe.Result(false, "${e.javaClass.simpleName}: ${e.message}")
+            } catch (e: IllegalArgumentException) {
+                DecoderProbe.Result(false, "${e.javaClass.simpleName}: ${e.message}")
+            }
+            runOnUiThread {
+                connectionProbePending = false
+                if (isFinishing || backgrounded || generation != streamGen || currentUrl != url) return@runOnUiThread
+                if (!result.reachable) {
+                    if (!decoderUnavailable) AppLog.i("dekoder: brak komunikacji (${result.detail})")
+                    decoderUnavailable = true
+                    if (prefs.blockOnDisconnect) showConnectionDialog(false, result.detail)
+                    else if (!connectionDialogShown()) showMessage("Brak komunikacji z dekoderem ${prefs.host}; ponawiam sprawdzanie", 4000)
+                    return@runOnUiThread
+                }
+                val wasUnavailable = decoderUnavailable
+                decoderUnavailable = false
+                dismissConnectionDialog()
+                if (wasUnavailable) AppLog.i("dekoder: komunikacja przywrócona")
+                val lastData = analyzer?.lastFeedAt?.takeIf { it > 0 } ?: streamStartAt
+                if (SystemClock.elapsedRealtime() - lastData >= 8000) {
+                    showMessage("Dekoder odpowiada, ale strumień nie napływa — ponawiam połączenie", 6000)
+                    if (tsMode) restartTimeshiftRecorder(url, generation) else {
+                        failStreak = 0
+                        restartPending = false
+                        ui.removeCallbacks(restartRunnable)
+                        startStream(url, if (recMode) (player?.currentPosition ?: 0) else 0)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun connectionDialogShown() = connectionDialog?.isShowing == true
+
+    private fun showConnectionDialog(startup: Boolean, detail: String) {
+        if (connectionDialogShown()) {
+            TvDialog.setMessage(connectionDialog, "Brak komunikacji z dekoderem ${prefs.host}.\n\n$detail\n\nSprawdzam ponownie co 3 sekundy.")
+            return
+        }
+        val buttons = mutableListOf(
+            TvDialog.Btn("Czekaj", closeOnClick = false) {
+                TvDialog.setMessage(connectionDialog, "Oczekuję na dekoder ${prefs.host}.\n\nSprawdzam ponownie co 3 sekundy.")
+            },
+            TvDialog.Btn(if (startup) "Wyjdź" else "Zamknij") { finish() },
+        )
+        if (startup) buttons += TvDialog.Btn("Ustawienia") {
+            startupProbeGeneration++
+            settingsVersion = -1
+            openSettings(onCancel = { if (!isFinishing && !backgrounded) loadBouquets() })
+        }
+        connectionDialog = TvDialog.confirm(
+            this,
+            "Brak komunikacji z dekoderem",
+            "Nie mogę połączyć się z ${prefs.host}.\n\n$detail\n\nSprawdzam ponownie co 3 sekundy.",
+            buttons,
+            cancelable = false,
+            timeoutSec = 0,
+        )
+    }
+
+    private fun dismissConnectionDialog() {
+        connectionDialog?.let { if (it.isShowing) it.dismiss() }
+        connectionDialog = null
+    }
+
     private fun scheduleRestart(reason: String) {
         if (currentUrl == null || restartPending || encrypted) return
         restartPending = true
@@ -939,6 +1054,15 @@ class PlayerActivity : Activity() {
     private fun doRestart() {
         restartPending = false
         val url = currentUrl ?: return
+        if (decoderUnavailable || connectionProbePending) return
+        val lastFeed = analyzer?.lastFeedAt ?: 0L
+        val lastData = lastFeed.takeIf { it > 0 } ?: streamStartAt
+        val silence = SystemClock.elapsedRealtime() - lastData
+        if (silence >= 8000) {
+            probeStalledStream()
+            return
+        }
+        if (lastFeed == 0L) return
         restarts++
         lastRestartReason = pendingReason
         if (tsMode) { tsGoLive(pendingReason); return }
@@ -956,52 +1080,30 @@ class PlayerActivity : Activity() {
         cm.activeNetworkInfo?.isConnected == true
     } catch (_: Exception) { true }
 
-    /**
-     * Po włączeniu Mi Box łączy się z Wi-Fi kilkanaście sekund — najpierw czekamy na sieć (do 60 s),
-     * potem dekoder dostaje kilka prób; błąd połączenia z dekoderem dopiero, gdy sieć jest, a dekoder milczy.
-     */
-    private fun waitForNetwork(): Boolean {
-        if (networkUp()) return true
-        AppLog.i("sieć: brak połączenia — czekam")
-        runOnUiThread { showMessage("Czekam na połączenie z siecią…", 60_000) }
-        val until = android.os.SystemClock.elapsedRealtime() + 60_000
-        while (android.os.SystemClock.elapsedRealtime() < until) {
-            Thread.sleep(1000)
-            if (networkUp()) {
-                AppLog.i("sieć: połączono")
-                runOnUiThread { showMessage("Łączenie z ${prefs.host}…", 10_000) }
-                Thread.sleep(1500)      // adres IP i trasy chwilę po zgłoszeniu połączenia
-                return true
-            }
-        }
-        AppLog.i("sieć: brak połączenia po 60 s")
-        return false
-    }
-
     private fun loadBouquets() {
+        val generation = ++startupProbeGeneration
         showMessage("Łączenie z ${prefs.host}…", 10_000)
         io.execute {
-            if (!waitForNetwork()) {
-                runOnUiThread {
-                    showMessage("Brak połączenia z siecią (Wi-Fi / kabel).\nSprawdź sieć telewizora — spróbuję ponownie, gdy wróci.", 30_000)
-                }
-                ui.postDelayed({ if (!isFinishing && bouquets.isEmpty()) loadBouquets() }, 15_000)
-                return@execute
-            }
-            var attempt = 0
-            while (true) {
-                attempt++
-                try {
-                    api.bouquets()
-                    break
-                } catch (e: Exception) {
-                    if (attempt >= 4 || isFinishing) break     // ostateczny błąd zgłosi pełna próba niżej
-                    AppLog.i("dekoder: brak odpowiedzi (próba $attempt): $e")
-                    runOnUiThread { showMessage("Łączenie z ${prefs.host}… (próba ${attempt + 1})", 10_000) }
+            try {
+                while (generation == startupProbeGeneration && !isFinishing) {
+                    val result = if (networkUp()) api.probe()
+                    else DecoderProbe.Result(false, "Brak połączenia Wi-Fi / Ethernet na urządzeniu")
+                    if (result.reachable) break
+                    AppLog.i("dekoder: brak komunikacji przy starcie (${result.detail})")
+                    runOnUiThread {
+                        if (generation == startupProbeGeneration && !isFinishing) {
+                            showConnectionDialog(true, result.detail)
+                        }
+                    }
                     Thread.sleep(3000)
                 }
-            }
-            try {
+                if (generation != startupProbeGeneration || isFinishing) return@execute
+                runOnUiThread {
+                    if (generation == startupProbeGeneration) {
+                        decoderUnavailable = false
+                        dismissConnectionDialog()
+                    }
+                }
                 PluginApi.check(prefs)   // wtyczka EPG Scan na dekoderze?
                 val all = api.bouquets()
                 val hidden = prefs.hiddenBouquets
@@ -1039,9 +1141,10 @@ class PlayerActivity : Activity() {
                     applyScheduledChannel()
                 }
             } catch (e: Exception) {
+                if (generation != startupProbeGeneration || isFinishing) return@execute
                 AppLog.i("błąd połączenia z OpenWebif: $e")
                 runOnUiThread {
-                    showMessage("Błąd połączenia z dekoderem: ${e.message}\nPrzytrzymaj OK → menu → Ustawienia", 15_000)
+                    showMessage("Błąd pobierania danych z dekodera: ${e.message}\nPrzytrzymaj OK → menu → Ustawienia", 15_000)
                 }
             }
         }
@@ -1211,15 +1314,24 @@ class PlayerActivity : Activity() {
         refreshPanel(0)
         val bq = bouquets[b]
         io.execute {
-            val ch = try { channelsOf(bq) } catch (e: Exception) {
-                if (bq.ref == REC_REF) runOnUiThread { showMessage("Nagrania: ${e.message}", 6000) }
-                emptyList()
-            }
+            val result = try { channelsOf(bq) to null } catch (e: Exception) { null to e }
             runOnUiThread {
                 if (panelBouquet == b) {
-                    panelList = ch
+                    val ch = result.first
+                    val error = result.second
+                    if (error != null) {
+                        AppLog.i("bukiet: nie udało się pobrać kanałów ${bq.name}: $error")
+                        showMessage(
+                            if (bq.ref == REC_REF) "Nagrania: ${error.message}"
+                            else "Nie udało się pobrać kanałów bukietu ${bq.name}: ${error.message}",
+                            8000,
+                        )
+                        return@runOnUiThread
+                    }
+                    panelList = ch.orEmpty()
+                    if (panelList.isEmpty() && bq.ref != REC_REF) showMessage("Bukiet ${bq.name} nie zawiera kanałów", 5000)
                     // nagrania: zaznaczone ostatnio oglądane
-                    val sel = if (bq.ref == REC_REF) ch.indexOfFirst { it.rec?.path == recLastPath }.coerceAtLeast(0) else 0
+                    val sel = if (bq.ref == REC_REF) panelList.indexOfFirst { it.rec?.path == recLastPath }.coerceAtLeast(0) else 0
                     refreshPanel(sel)
                     loadPanelEpg()
                 }
@@ -1593,6 +1705,27 @@ class PlayerActivity : Activity() {
         tsPending = 0
     }
 
+    private fun restartTimeshiftRecorder(url: String, generation: Int) {
+        if (!tsMode || tsLiveUrl != url || streamGen != generation) return
+        tsRec?.stop()
+        lateinit var recorder: TimeshiftRecorder
+        recorder = TimeshiftRecorder(
+            url, api.authHeader(), { analyzer },
+            { analyzer?.dropCarry(); tsBuf?.resync() },
+            onFailure = {
+                runOnUiThread {
+                    if (tsMode && tsLiveUrl == url && streamGen == generation && tsRec === recorder) {
+                        tsRec = null
+                        AppLog.i("timeshift: brak strumienia na żywo — sprawdzam dekoder")
+                        probeStalledStream()
+                    }
+                }
+            },
+        )
+        tsRec = recorder
+        recorder.start()
+    }
+
     /** Chwila (odbioru), którą teraz widać na ekranie. */
     private fun tsShownWall(): Long = tsBaseWall + (player?.currentPosition ?: 0)
 
@@ -1634,8 +1767,8 @@ class PlayerActivity : Activity() {
         vlc?.release(); vlc = null
         p.stop()
         tsLiveUrl = url
-        tsRec = TimeshiftRecorder(url, api.authHeader(), { analyzer }, { analyzer?.dropCarry(); tsBuf?.resync() }).also { it.start() }
         tsMode = true
+        restartTimeshiftRecorder(url, streamGen)
         tsSetShifted(true)
         tsCtl = true
         tsPlayFrom(target, play = !pause)
@@ -2459,8 +2592,8 @@ class PlayerActivity : Activity() {
         }
     }
 
-    private fun openSettings() {
-        PinLock.ask(this, prefs) {
+    private fun openSettings(onCancel: () -> Unit = {}) {
+        PinLock.ask(this, prefs, onCancel = onCancel) {
             settingsOpen = true
             settingsSig = streamSig()
             settingsBq = prefs.hiddenBouquets.toString()
@@ -2538,7 +2671,6 @@ class PlayerActivity : Activity() {
                 else -> "za mało danych"
             }
             AppLog.i("start: restart ($reason) — $why; ${a.summary()}")
-            if (a.bytes == 0L && failStreak >= 2) showMessage("Dekoder nie wysyła danych dla tego kanału", 6000)
             return
         }
         AppLog.i("ZAWIESZENIE ($reason) | ${a.summary()} | ${decoderInfo()}")

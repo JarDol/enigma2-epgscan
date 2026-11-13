@@ -42,6 +42,10 @@ class Prefs(ctx: Context) {
         get() = s("pass")
         set(v) = putS("pass", v)
 
+    var blockOnDisconnect: Boolean
+        get() = sp.getBoolean("blockOnDisconnect", true)
+        set(v) = putB("blockOnDisconnect", v)
+
     /** Tunelowanie wideo (ExoPlayer). */
     var tunneling: Boolean
         get() = sp.getBoolean("tunneling", true)

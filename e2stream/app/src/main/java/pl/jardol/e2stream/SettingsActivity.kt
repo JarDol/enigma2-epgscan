@@ -82,6 +82,7 @@ class SettingsActivity : Activity() {
         Item.Action("Szukaj dekoderów w sieci") { discover() },
         num("Port OpenWebif", { p.httpPort }, { p.httpPort = it }, 1..65535),
         num("Port streamingu", { p.streamPort }, { p.streamPort = it }, 1..65535),
+        Item.Toggle("Blokuj zmiany przy braku komunikacji z dekoderem", { p.blockOnDisconnect }, { p.blockOnDisconnect = it }),
         Item.Text("Użytkownik OpenWebif", { p.user }, { p.user = it.trim() }, hint = "puste = bez logowania"),
         Item.Text("Hasło OpenWebif", { p.pass }, { p.pass = it }, secret = true),
                 Item.Header("Wtyczka EPG Scan na dekoderze"),
