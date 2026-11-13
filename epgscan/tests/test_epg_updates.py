@@ -68,10 +68,11 @@ class CoverageTests(unittest.TestCase):
 		job.cancelled = False
 		job.targets = {key: start + 7200}
 		job.coverage = {key: [(start + 3600, start + 7200)]}
-		with tempfile.NamedTemporaryFile() as f:
-			f.write(data)
-			f.flush()
-			got, _, _ = job.parse(f.name, "guide.xml", {"a": [key]}, start - 1)
+		with tempfile.TemporaryDirectory() as directory:
+			path = os.path.join(directory, "guide.xml")
+			with open(path, "wb") as f:
+				f.write(data)
+			got, _, _ = job.parse(path, "guide.xml", {"a": [key]}, start - 1)
 		self.assertEqual([(e[0], e[1], e[2]) for e in got[key]], [(start, 3600, "Missing")])
 
 	def test_import_skips_id_collision_without_replacing_existing_event(self):

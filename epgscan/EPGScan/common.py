@@ -18,7 +18,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.17.5"
+VERSION = "2.18.0-beta.1"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
@@ -46,7 +46,7 @@ RESTORE_RATIO = 0.3 # odtworz kopie, gdy w EPG jest mniej niz 30% zdarzen z osta
 config.plugins.epgscan = ConfigSubsection()
 cfg = config.plugins.epgscan
 cfg.max_parallel = ConfigSelectionNumber(1, 8, 1, default=4)
-cfg.reserve = ConfigSelectionNumber(0, 4, 1, default=1)
+cfg.reserve = ConfigSelectionNumber(0, 8, 1, default=1)
 cfg.min_time = ConfigSelectionNumber(10, 600, 10, default=30)
 cfg.idle_time = ConfigSelectionNumber(10, 600, 10, default=60)
 cfg.max_time = ConfigSelectionNumber(60, 1800, 30, default=180)
@@ -105,20 +105,12 @@ cfg.cp_language_source = ConfigSelection(default="enigma", choices=[
 	("enigma", "preferencje jezykow z Enigma2"),
 	("manual", "wlasna kolejnosc jezykow")])
 cfg.cp_languages = ConfigText(default="pol,eng", fixed_size=False)
-cfg.cp_sched = ConfigYesNo(default=False)
-cfg.cp_sched_time = ConfigClock(default=int(time.mktime((2000, 1, 1, 3, 30, 0, 0, 1, -1))))
-cfg.cp_sched_when = ConfigSelection(default="standby", choices=[
-	("standby", "tylko w czuwaniu (poczekaj na czuwanie)"),
-	("always", "zawsze")])
-cfg.cp_sched_skip_rec = ConfigYesNo(default=False)
-cfg.cp_sched_wakeup = ConfigYesNo(default=False)
-cfg.cp_sched_deep_after = ConfigYesNo(default=True)
+cfg.cp_group_tp = ConfigYesNo(default=True)
+cfg.cp_interval = ConfigSelection(default="7", choices=[(str(x), "%d dni" % x) for x in (1, 2, 4, 7)])
 cfg.cp_last_run = ConfigInteger(default=0)
 cfg.cp_auto_in_progress = ConfigYesNo(default=False)
-CP_SCHED_DAYS = []
-for _i in range(7):
-	setattr(cfg, "cp_sched_day%d" % _i, ConfigYesNo(default=True))
-	CP_SCHED_DAYS.append(getattr(cfg, "cp_sched_day%d" % _i))
+cfg.cp_common_overwrite = ConfigYesNo(default=False)
+cfg.cp_devices_overwrite = ConfigYesNo(default=False)
 # doczytywanie brakow w ciagu dnia
 cfg.topup = ConfigYesNo(default=False)
 cfg.topup_mode = ConfigSelection(default="all", choices=[

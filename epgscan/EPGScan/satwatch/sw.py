@@ -729,8 +729,8 @@ class SatWatchSetup(ConfigListScreen, Screen):
         "autoscan": "Po aktualizacji satellites.xml skanuje tylko nowe i zmienione transpondery jednym wolnym tunerem. "
                     "Sprawdzenie: w nocnym przebiegu EPG Scan albo Kanały -> SatWatch -> Sprawdź teraz.",
         "full": "Raz w tygodniu, w wybrany dzień, nocny przebieg EPG Scan robi pełny skan wszystkich TP monitorowanych pozycji "
-                "(13.0E: ok. 70 TP, kilka minut); w pozostałe dni - tylko sprawdzenie zmian. To samo ustawienie jest "
-                "w EPG Scan -> Ustawienia -> Harmonogram.",
+                "(13.0E: ok. 70 TP, kilka minut); w pozostałe dni - tylko sprawdzenie zmian. Harmonogram EPG Scan określa "
+                "wyłącznie kiedy ten przebieg może się uruchomić.",
         "remove_stale": "Serwisy, których skan nie znalazł na zeskanowanym TP, są usuwane z lamedb (TP z mniej niż połową "
                         "znanych kanałów - nic nie usuwa). Wyłączone: zostają, ale raport je wypisuje, a kanały z bukietów "
                         "na nich trafiają do podmiany / decyzji.",

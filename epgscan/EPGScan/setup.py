@@ -15,7 +15,7 @@ from Components.SelectionList import SelectionList, SelectionEntryComponent
 from enigma import eTimer, eEPGCache
 
 from .common import S, cfg, log, VERSION, profile_default, profile_text, log_path, log_count, save_cfg, list_bouquets, selected_bouquets, epg_path, copy_backup, list_backups, \
-	SCHED_DAYS, CP_SCHED_DAYS, DAYS, next_run, fmt_ts, keys_skin, init_keys, set_keys, apply_clear_choices, single_flush_supported
+	SCHED_DAYS, DAYS, next_run, fmt_ts, keys_skin, init_keys, set_keys, apply_clear_choices, single_flush_supported
 
 
 def all_items():
@@ -26,9 +26,9 @@ def all_items():
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
 		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto,
-		cfg.cp_language_source, cfg.cp_languages, cfg.cp_sched, cfg.cp_sched_time, cfg.cp_sched_when,
-		cfg.cp_sched_skip_rec, cfg.cp_sched_wakeup, cfg.cp_sched_deep_after, cfg.cp_last_run, cfg.cp_auto_in_progress,
-		cfg.topup, cfg.topup_mode, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS + CP_SCHED_DAYS
+		cfg.cp_language_source, cfg.cp_languages, cfg.cp_group_tp, cfg.cp_interval, cfg.cp_last_run, cfg.cp_auto_in_progress,
+		cfg.cp_common_overwrite, cfg.cp_devices_overwrite,
+		cfg.topup, cfg.topup_mode, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
 
 
 ROW_H = 46
@@ -80,8 +80,9 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		%s
 	</screen>""" % keys_skin(20, 845, 1460)
 
-	TITLES = {"sat": "satelita - EPG", "net": "program z internetu", "sched": "harmonogram i doczytywanie",
-		"misc": "kopie, log, powiadomienia, restart, sprzatanie"}
+	TITLES = {"sat": "satelita - EPG", "params": "skan parametrow kanalow", "net": "program z internetu",
+		"sched": "harmonogram", "misc": "powiadomienia, restart, sprzatanie",
+		"updates": "aktualizacje, kopie, log, E2Stream"}
 
 	def __init__(self, session, section="sat"):
 		Screen.__init__(self, session)
@@ -90,8 +91,9 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		self["help"] = Label("")
 		init_keys(self)
 		self.p_pack = NoSave(ConfigSelection(choices=[("v", "OK - przygotuj teraz")]))   # paczka dla E2Stream recznie
-		self.p_upd = NoSave(ConfigSelection(choices=[("v", "OK - sprawdz i zainstaluj")]))   # reczna aktualizacja
+		self.p_upd = NoSave(ConfigSelection(choices=[("v", "OK - wybierz wydanie GitHub")]))   # reczna aktualizacja
 		self.p_cldirs = NoSave(ConfigSelection(choices=[("v", cl_dirs_text())]))   # katalogi sprzatania - wybor z listy (OK)
+		self.available_updates = {}
 		ConfigListScreen.__init__(self, [], session=session, on_change=self.changed)
 		self["actions"] = ActionMap(["SetupActions", "ColorActions"], {
 			"ok": self.ok,
@@ -117,7 +119,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		if cur and cur[1] in (cfg.backup, cfg.scope, cfg.sched_mode, cfg.sched_wakeup, cfg.skip_empty, cfg.xmltv, cfg.topup,
 				cfg.topup_mode, cfg.topup_fixed, cfg.sat_import, cfg.rs_mode, cfg.cl_on, cfg.cli_api) or (cur and is_sw_full(cur[1])):
 			self.build()
-		if cur and cur[1] in (cfg.cp_sched, cfg.cp_language_source, cfg.cp_sched_wakeup):
+		if cur and cur[1] in (cfg.cp_language_source, cfg.cp_common_overwrite, cfg.cp_devices_overwrite):
 			self.build()
 		if cur and cur[1] is cfg.xmltv and cfg.xmltv.value:
 			self.check_sources()
@@ -165,19 +167,23 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				e("Pomijaj transpondery bez EPG", cfg.skip_empty)]
 			if cfg.skip_empty.value:
 				lst.append(e("  Sprawdzaj je ponownie co [dni]", cfg.skip_recheck))
+			if cfg.sat_import.value:
+				lst.append(e("Aktualizacja satelitarna w ciagu dnia", cfg.topup))
+				if cfg.topup.value:
+					lst += [e("  Tryb aktualizacji", cfg.topup_mode), e("  Sprawdzaj co [h]", cfg.topup_every)]
+					if cfg.topup_mode.value == "short":
+						lst.append(e("  Doczytaj, gdy EPG konczy sie za mniej niz", cfg.topup_hours))
+					lst += [e("  Kiedy", cfg.topup_when), e("  Dodatkowo raz dziennie o stalej godzinie", cfg.topup_fixed)]
+					if cfg.topup_fixed.value:
+						lst.append(e("    Godzina", cfg.topup_fixed_time))
 		elif sec == "params":
 			lst.append(e("Preferencje jezykow skanu kanalow", cfg.cp_language_source))
 			if cfg.cp_language_source.value == "manual":
 				lst.append(e("  Jezyki, kolejnosc (np. pol,eng)", cfg.cp_languages))
-			lst.append(e("Niezalezny harmonogram skanu kanalow (bez EPG)", cfg.cp_sched))
-			if cfg.cp_sched.value:
-				lst.append(e("  Godzina", cfg.cp_sched_time))
-				lst += [e("  " + DAYS[i], day) for i, day in enumerate(CP_SCHED_DAYS)]
-				lst += [e("  Kiedy uruchamiac", cfg.cp_sched_when),
-					e("  Czekaj, gdy trwa nagrywanie", cfg.cp_sched_skip_rec),
-					e("  Wybudzaj z glebokiego czuwania", cfg.cp_sched_wakeup)]
-				if cfg.cp_sched_wakeup.value:
-					lst.append(e("  Po skanie wroc do glebokiego czuwania", cfg.cp_sched_deep_after))
+			lst += [e("Kanaly z bukietow (jak Satelita - EPG)", cfg.scope),
+				e("Maks. rownoleglych skanow", cfg.max_parallel), e("Rezerwa wolnych tunerow", cfg.reserve),
+				e("Grupowanie kanalow po transponderze", cfg.cp_group_tp),
+				e("Skanuj kanaly co", cfg.cp_interval)]
 		elif sec == "net":
 			lst.append(e("Program z internetu (XMLTV)", cfg.xmltv))
 			if cfg.xmltv.value:
@@ -213,37 +219,23 @@ class EPGScanSetup(Screen, ConfigListScreen):
 					e("  Wybudzaj z glebokiego czuwania", cfg.sched_wakeup)]
 				if cfg.sched_wakeup.value:
 					lst.append(e("  Po skanie wroc do glebokiego czuwania", cfg.sched_deep_after))
-			try:
-				from .satwatch.sw import cfg as swcfg
-				lst.append(e("SatWatch: pelny skan raz w tygodniu", swcfg.full_enable))
-				if swcfg.full_enable.value:
-					lst.append(e("  dzien (w pozostale dni: zmiany)", swcfg.full_day))
-			except Exception:
-				pass
-			if cfg.sat_import.value:
-				lst.append(e("Aktualizacja satelitarna w ciagu dnia", cfg.topup))
-				if cfg.topup.value:
-					lst += [e("  Tryb aktualizacji", cfg.topup_mode),
-						e("  Sprawdzaj co [h]", cfg.topup_every)]
-					if cfg.topup_mode.value == "short":
-						lst.append(e("  Doczytaj, gdy EPG konczy sie za mniej niz", cfg.topup_hours))
-					lst += [e("  Kiedy", cfg.topup_when), e("  Dodatkowo raz dziennie o stalej godzinie", cfg.topup_fixed)]
-					if cfg.topup_fixed.value:
-						lst.append(e("    Godzina", cfg.topup_fixed_time))
-		else:
-			lst += [e("Powiadomienie po pracy w tle", cfg.notify), e("Kopia EPG po skanie", cfg.backup)]
+		elif sec == "updates":
+			lst += [e("Kopia EPG po skanie", cfg.backup)]
 			if cfg.backup.value:
 				lst += [e("Katalog kopii (OK = wybierz)", cfg.backup_dir), e("Liczba zachowanych kopii", cfg.backup_keep)]
 			lst += [e("Odtwarzanie EPG po starcie, gdy puste", cfg.restore), e("Zapisuj log", cfg.log_place),
-				e("Restart po nocnym przebiegu", cfg.rs_mode)]
-			if cfg.rs_mode.value == "need":
-				lst += [e("  Profilaktycznie co [dni]", cfg.rs_days), e("  Gdy wolnej pamieci mniej niz [MB]", cfg.rs_mem)]
-			lst += [e("Aktualizacja automatyczna", cfg.upd_auto), e("Aktualizuj teraz (wersja %s)" % VERSION, self.p_upd)]
-			lst.append(e("Serwer dla aplikacji E2Stream (klienci streamingu)", cfg.cli_api))
+				e("Aktualizacja automatyczna", cfg.upd_auto), e("Aktualizuj teraz (wybierz wydanie GitHub)", self.p_upd),
+				e("Serwer dla aplikacji E2Stream", cfg.cli_api)]
 			if cfg.cli_api.value:
 				lst += [e("  Port", cfg.cli_port), e("  Token (puste = bez, siec lokalna)", cfg.cli_token),
 					e("  Dane dla aplikacji po skanach (EPG, ikony, referencje)", cfg.cli_pack),
+					e("  Dane domyslne nadpisuj", cfg.cp_common_overwrite),
+					e("  Zamieniaj w konfiguracji klientow", cfg.cp_devices_overwrite),
 					e("  Przygotuj dane teraz", self.p_pack)]
+		else:
+			lst += [e("Powiadomienie po pracy w tle", cfg.notify), e("Restart po nocnym przebiegu", cfg.rs_mode)]
+			if cfg.rs_mode.value == "need":
+				lst += [e("  Profilaktycznie co [dni]", cfg.rs_days), e("  Gdy wolnej pamieci mniej niz [MB]", cfg.rs_mem)]
 			lst.append(e("Sprzatanie dysku (timeshift, crash logi)", cfg.cl_on))
 			if cfg.cl_on.value:
 				lst += [e("  Katalogi (OK - lista)", self.p_cldirs), e("  Timeshift starszy niz [h]", cfg.cl_ts_hours),
@@ -271,9 +263,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		allb = len(list_bouquets())
 		txt = "Bukiety: %s.  Plik EPG: %s" % ("wszystkie (%d)" % allb if cfg.scope.value == "all" else "%d z %d" % (nb, allb), epg_path())
 		if item in (cfg.upd_auto, self.p_upd):
-			txt = "Nowe wersje wtyczki pobierane z wydan GitHub (JarDol/enigma2-epgscan). Automatycznie: raz na dobe sprawdza, " \
-				"instaluje, a Enigma2 restartuje dopiero w czuwaniu, gdy nic nie nagrywa i nie trwa skan. " \
-				"'Aktualizuj teraz' (OK) dziala zawsze - takze przy wylaczonej automatycznej (pyta o restart)."
+			txt = "Automatycznie instalowane sa tylko stabilne wydania. 'Aktualizuj teraz' (OK) pokazuje wszystkie dostepne " \
+				"wydania GitHub z paczka ZIP, takze beta i starsze. Przy starszej wersji pojawi sie ostrzezenie przed instalacja."
 			if cfg.upd_pending.value and cfg.upd_pending.value != VERSION:
 				txt += " Zainstalowana %s czeka na restart Enigma2." % cfg.upd_pending.value
 		elif item in (cfg.cli_pack, self.p_pack):
@@ -291,8 +282,14 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			txt = "Aplikacja E2Stream (Android TV, tablet, telefon) pobiera z dekodera bukiety, kanaly z PID-ami i zapisuje " \
 				"tu swoje ustawienia i dane kanalow (czesc wspolna dla nowych odbiornikow + plik kazdego odbiornika). " \
 				"Dziala w sieci lokalnej; token - opcjonalne zabezpieczenie (ten sam wpisz w aplikacji). Stan: %s" % st
+		elif item is cfg.cp_common_overwrite:
+			txt = "Tak: nadpisuje zgodne klucze audio i PMT w common.json. Nie: dopisuje tylko klucze brakujace albo " \
+				"nieprawidlowe; istniejace poprawne wartosci pozostawia bez zmian."
+		elif item is cfg.cp_devices_overwrite:
+			txt = "Tak: nadpisuje klucze audio i PMT w zaznaczonych profilach klientow. Nie: dopisuje tylko klucze " \
+				"brakujace albo nieprawidlowe; istniejace poprawne wartosci pozostawia bez zmian."
 		elif item is cfg.scope:
-			txt = "Ktore kanaly skanowac z satelity. OK - lista bukietow do zaznaczenia (zapis ustawia 'wybrane bukiety'); " \
+			txt = "Ktore kanaly skanowac z satelity i skanem parametrow. OK - lista bukietow do zaznaczenia (zapis ustawia 'wybrane bukiety'); " \
 				"strzalki - tryb. Wszystkie bukiety: takze bukiety dodane w przyszlosci. Wybrane: tylko zaznaczone. " \
 				"Wszystkie transpondery: cala lista kanalow (lamedb) - skan kilka razy dluzszy, wiekszy plik EPG " \
 				"i zuzycie pamieci. Nowe kanaly sa wykrywane zawsze same."
@@ -302,13 +299,18 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		elif item in (cfg.sched_wakeup, cfg.sched_deep_after):
 			txt = "Odbiornik wstanie z glebokiego czuwania ok. 2 min przed skanem. Po skanie wroci do glebokiego " \
 				"czuwania, jesli nikt go nie uzywa i nie ma nagrania w ciagu 15 min."
-		elif item in (cfg.cp_sched, cfg.cp_sched_time, cfg.cp_sched_when, cfg.cp_sched_skip_rec) or item in CP_SCHED_DAYS:
-			from .channelparamscan import next_scheduled_slot
-			txt = "Samodzielny skan PAT/PMT, niezalezny od harmonogramu i uruchamiania skanu EPG. Nastepny termin: %s." % (
-				fmt_ts(next_scheduled_slot()))
-		elif item in (cfg.cp_sched_wakeup, cfg.cp_sched_deep_after):
-			txt = "Niezalezny harmonogram moze wybudzic odbiornik ok. 2 min przed skanem i po jego zakonczeniu " \
-				"wrocic do glebokiego czuwania, jesli nie trwa ogladanie ani nagranie."
+		elif item is cfg.cp_group_tp:
+			txt = "Zalecane: Tak. Skaner grupuje uslugi z tego samego transpondera i utrzymuje dla nich tuner, co ogranicza " \
+				"ponowne strojenia i przyspiesza skan. Nie: kazdy kanal jest osobna grupa."
+		elif item is cfg.cp_interval:
+			from .channelparamscan import scan_due
+			txt = "Skan PAT/PMT uruchamia sie po zakonczonym przebiegu z glownego harmonogramu, nie czesciej niz co %s dni. " \
+				"Nadrzedne sa warunki z okna Harmonogram (czuwanie, nagrania i wybudzanie). Doczytywanie EPG nie uruchamia " \
+				"skanu parametrow. Teraz: %s." % (cfg.cp_interval.value,
+					"oczekuje na skan" if scan_due() else "odstep jeszcze nie uplynal")
+		elif item is cfg.cp_language_source:
+			txt = "Jezyki stosowane do wskazania proponowanej sciezki audio. Wybor propozycji wymaga potwierdzenia w oknie " \
+				"parametrow kanalow; wynik nigdy sam nie nadpisuje profili E2Stream."
 		elif item in (cfg.skip_empty, cfg.skip_recheck):
 			txt = "Transponder, ktory w 2 kolejnych skanach nie dal zadnego EPG, jest pomijany i sprawdzany " \
 				"ponownie po podanej liczbie dni."
@@ -439,7 +441,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				txt += " Czyszczenie pojedynczych kanalow jest niedostepne w tym obrazie."
 		elif item is cfg.topup:
 			txt = "Cykliczny skan satelity w ciagu dnia bez czyszczenia EPG, wolnymi tunerami z rezerwa. " \
-				"Po skanie przygotowuje nowa paczke dla E2Stream, gdy wlaczono dane dla aplikacji."
+				"Jest niezalezny od harmonogramu nocnego. Po skanie przygotowuje nowa paczke dla E2Stream, gdy wlaczono dane dla aplikacji."
 		elif item is cfg.topup_mode:
 			txt = "Wszystkie: skanuj wszystkie transpondery co podana liczbe godzin, niezaleznie od zasiegu EPG. " \
 				"Krotkie EPG: tylko transpondery z konczacym sie programem, z uwzglednieniem odstepow."
@@ -489,12 +491,12 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			txt = "Log: %s (zachowywanych logow: %d - tyle, ile kopii EPG, min. 2). W katalogu kopii log przetrwa " \
 				"restart dekodera i wybudzenie z glebokiego czuwania." % (log_path(), log_count())
 		elif item is cfg.max_parallel:
-			txt = "Gorna granica wlasnych skanow naraz. Nowy tuner jest zajmowany tylko wtedy, gdy po tym zostanie " \
+			txt = "Gorna granica wlasnych skanow EPG i skanu parametrow naraz. Nowy tuner jest zajmowany tylko wtedy, gdy po tym zostanie " \
 				"rezerwa wolnych - liczone sa wszystkie zajete (ogladanie, nagrania, streamy, PiP). Np. 8 tunerow, " \
 				"limit 6, rezerwa 1, ogladanie + nagranie: skan zajmie najwyzej 5. Skan na transponderze ogladanego " \
 				"kanalu nie zajmuje dodatkowego tunera."
 		elif item is cfg.reserve:
-			txt = "Tyle tunerow skan zawsze zostawia wolnych - na zmiane kanalu lub nowy stream. Dodatkowo 2 min " \
+			txt = "Wspolna rezerwa dla skanow EPG i skanu parametrow - tyle tunerow skan zostawia wolnych na zmiane kanalu lub nowy stream. Dodatkowo 2 min " \
 				"przed nagraniem z timera skan zwalnia/trzyma tyle tunerow, ile nagran ma ruszyc."
 			try:
 				from .satwatch.scanner import tuner_advice
@@ -538,25 +540,44 @@ class EPGScanSetup(Screen, ConfigListScreen):
 
 	# ------------------------------------------------------------ aktualizacja reczna
 	def upd_check(self):
-		from .updater import check_async
-		self["help"].setText("Sprawdzanie wydan na GitHub...")
-		check_async(self.upd_checked)
+		from .updater import releases_async
+		self["help"].setText("Pobieranie listy wydan z GitHub...")
+		releases_async(self.upd_checked)
 
-	def upd_checked(self, info):
-		from .updater import newer
-		if not info:
+	def upd_checked(self, releases):
+		if not releases:
 			self.session.open(MessageBox, "Nie udalo sie sprawdzic wydan (brak internetu lub GitHub). Szczegoly w logu.",
 				MessageBox.TYPE_ERROR, timeout=8)
 			self.update_help()
 			return
-		ver, url = info
-		if newer(ver, VERSION):
-			q = "Dostepna wersja %s (zainstalowana %s). Zainstalowac?" % (ver, VERSION)
-		else:
-			q = "Masz najnowsza wersje (%s). Zainstalowac ja ponownie?" % VERSION
+		from .common import EPGChoiceBox as ChoiceBox
+		options = []
+		for ver, _url, prerelease in releases:
+			label = "%s%s%s" % (ver, " (beta)" if prerelease else "",
+				"  [zainstalowana]" if ver == VERSION else "")
+			options.append((label, ver))
+		self.available_updates = {item[0]: item for item in releases}
+		self["help"].setText("Wybierz wydanie. Lista zawiera tylko wersje z dostepna paczka ZIP.")
+		self.session.openWithCallback(self.upd_release_chosen, ChoiceBox, title="Wydania EPG Scan", list=options)
+
+	def upd_release_chosen(self, choice):
+		if not choice:
+			self.update_help()
+			return
+		ver = choice[1]
+		from .updater import newer
+		release = self.available_updates.get(ver)
+		if not release:
+			self.session.open(MessageBox, "Wybrane wydanie nie jest juz dostepne. Sprawdz ponownie.", MessageBox.TYPE_ERROR, timeout=8)
+			self.update_help()
+			return
+		ver, url, prerelease = release
+		older = newer(VERSION, ver)
+		q = "Zainstalowac EPG Scan %s? (obecnie %s)%s" % (
+			ver, VERSION, "\nUwaga: to starsza wersja." if older else ("\nTo wydanie testowe." if prerelease else ""))
 		self.update_help()
-		self.session.openWithCallback(lambda yes: yes and self.upd_install(url, ver), MessageBox, q, MessageBox.TYPE_YESNO,
-			default=newer(ver, VERSION))
+		self.session.openWithCallback(lambda yes: yes and self.upd_install(url, ver), MessageBox, q,
+			MessageBox.TYPE_YESNO, default=not older)
 
 	def upd_install(self, url, ver):
 		from .updater import install_async
@@ -669,12 +690,6 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		sync = cfg.site_order.isChanged() or cfg.xmltv_bouquets.isChanged() or cfg.one_place.isChanged() or cfg.cand_night.isChanged()
 		for x in all_items():
 			x.save()
-		try:
-			from .satwatch.sw import cfg as swcfg
-			swcfg.full_enable.save()
-			swcfg.full_day.save()
-		except Exception:
-			pass
 		save_cfg()
 		try:
 			from .common import apply_eit_policy

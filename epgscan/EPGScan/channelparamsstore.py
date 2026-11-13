@@ -22,12 +22,33 @@ def _audio_value(stream):
 	return "%s|%s|%s" % (stream["pid"], language, stream.get("codec", ""))
 
 
+def _stored_value(entry):
+	return entry.get("v") if isinstance(entry, dict) else entry
+
+
+def _valid_audio_entry(entry, result):
+	try:
+		pid = int(str(_stored_value(entry)).split("|", 1)[0])
+	except (TypeError, ValueError):
+		return False
+	return _audio(result, pid) is not None
+
+
+def _valid_pmt_entry(entry, sid):
+	try:
+		parsed = parse_pmt(base64.b64decode(_stored_value(entry), validate=True), int(sid))
+		return parsed["sid"] == int(sid)
+	except Exception:
+		return False
+
+
 def _sync_key(ref):
 	return re.sub(r"[^A-Z0-9]", "_", ref.strip().rstrip(":").upper()).strip("_")
 
 
 def _sync_payload(results):
 	audio = {}
+	audio_sources = {}
 	pmts = {}
 	collisions = set()
 	for result in results.values():
@@ -38,6 +59,7 @@ def _sync_payload(results):
 		if stream is None:
 			continue
 		audio["audio_" + _sync_key(result["ref"])] = _audio_value(stream)
+		audio_sources["audio_" + _sync_key(result["ref"])] = result
 		sid = result.get("sid")
 		section = result.get("section")
 		if sid is None or not section:
@@ -54,7 +76,7 @@ def _sync_payload(results):
 			pmts[key] = value
 	for key in collisions:
 		pmts.pop(key, None)
-	return audio, pmts, collisions
+	return audio, audio_sources, pmts, collisions
 
 
 def _atomic_json(path, data):
@@ -93,9 +115,9 @@ def _backup(path, stamp):
 	return name
 
 
-def add_common_defaults(results):
+def add_common_defaults(results, overwrite=False):
 	from . import clients
-	audio, pmts, conflicts = _sync_payload(results)
+	audio, audio_sources, pmts, conflicts = _sync_payload(results)
 	if not audio and not pmts:
 		raise ValueError("Brak potwierdzonych wyborow sciezki do zapisania")
 	data = _read_json(clients.COMMON)
@@ -103,12 +125,20 @@ def add_common_defaults(results):
 	if not isinstance(values, dict):
 		raise ValueError("Nieprawidlowa sekcja data w common.json")
 	changed = []
-	for key, value in list(audio.items()) + list(pmts.items()):
+	for key, value in audio.items():
 		old = values.get(key)
-		if old is None:
+		if overwrite or old is None or not _valid_audio_entry(old, audio_sources[key]):
 			values[key] = {"v": value, "t": int(time.time() * 1000)}
 			changed.append(key)
-		elif not isinstance(old, dict) or old.get("v") != value:
+		elif _stored_value(old) != value:
+			conflicts.add(key)
+	for key, value in pmts.items():
+		old = values.get(key)
+		sid = int(key.split("_", 1)[1])
+		if overwrite or old is None or not _valid_pmt_entry(old, sid):
+			values[key] = {"v": value, "t": int(time.time() * 1000)}
+			changed.append(key)
+		elif _stored_value(old) != value:
 			conflicts.add(key)
 	if not changed:
 		return "Wartosci wspolne juz istnieja; niczego nie nadpisano.", sorted(conflicts)
@@ -122,9 +152,9 @@ def add_common_defaults(results):
 	return "Dodano %d wartosci jako domyslne dla nowych urzadzen." % len(changed), sorted(conflicts)
 
 
-def apply_to_devices(results, selected_files):
+def apply_to_devices(results, selected_files, overwrite=False):
 	from . import clients
-	audio, pmts, conflicts = _sync_payload(results)
+	audio, audio_sources, pmts, conflicts = _sync_payload(results)
 	if not audio and not pmts:
 		raise ValueError("Brak potwierdzonych wyborow sciezki do zapisania")
 	if not os.path.isdir(clients.DIR):
@@ -147,12 +177,17 @@ def apply_to_devices(results, selected_files):
 		originals[path] = raw
 		entries = data.setdefault("data", {})
 		for key, value in audio.items():
-			entries[key] = {"v": value, "t": stamp}
+			old = entries.get(key)
+			if overwrite or old is None or not _valid_audio_entry(old, audio_sources[key]):
+				entries[key] = {"v": value, "t": stamp}
+			elif _stored_value(old) != value:
+				conflicts.add(key)
 		for key, value in pmts.items():
 			old = entries.get(key)
-			if old is None or (isinstance(old, dict) and old.get("v") == value):
+			sid = int(key.split("_", 1)[1])
+			if overwrite or old is None or not _valid_pmt_entry(old, sid):
 				entries[key] = {"v": value, "t": stamp}
-			else:
+			elif _stored_value(old) != value:
 				conflicts.add(key)
 		data["updated"] = stamp
 		updated[path] = data

@@ -225,10 +225,11 @@ def readme_text(base=None):
 SETTINGS = (
 	("satwatch", "SatWatch - transpondery: zmiany na satelicie, skan, tunery, bukiety"),
 	("sat", "Satelita - EPG: skan transponderow, EIT, bukiety"),
-	("params", "Skan parametrow kanalow (PAT/PMT)"),
+	("params", "Skan parametrow: jezyki, bukiety, tunery, czestotliwosc"),
 	("net", "Program z internetu - dekoder, serwer, zrodla XMLTV, kolejnosc"),
-	("sched", "Harmonogram EPG i doczytywanie"),
-	("misc", "Kopie EPG, log, powiadomienia, restart, sprzatanie dysku (timeshift, crash logi)"),
+	("sched", "Harmonogram"),
+	("misc", "Powiadomienia, restart, sprzatanie dysku"),
+	("updates", "Aktualizacje, kopie, log, serwer E2Stream"),
 )
 
 

@@ -113,6 +113,7 @@ class ScanEngine(object):
 		clear: None = wg profilu, True/False = wymuszenie."""
 		if self.running:
 			return False
+		self.channelparams_report = None
 		if topup_jobs is None:
 			self.profile = dict(profile or profile_default())
 			if not local:
@@ -1088,10 +1089,25 @@ class ScanEngine(object):
 	def after_backup(self):
 		if self.auto:
 			self.night_notes()
+			if not getattr(self, "topup", False):
+				try:
+					from .channelparamscan import scan_due, start_scheduled
+					if scan_due() and start_scheduled(self, self.auto_start_time, woke=self.woke,
+							done=self.after_channelparams):
+						return
+				except Exception as e:
+					log("Skan parametrow po harmonogramie nieudany: %s" % e)
 			from .health import maybe_restart
 			if maybe_restart(self):
 				return
 			self.need_restart_gui = ""
+		self.maybe_deep_standby()
+
+	def after_channelparams(self, _report):
+		from .health import maybe_restart
+		if maybe_restart(self):
+			return
+		self.need_restart_gui = ""
 		self.maybe_deep_standby()
 
 	def night_notes(self):
@@ -1111,15 +1127,7 @@ class ScanEngine(object):
 		"""Po skanie z harmonogramu, ktory wybudzil odbiornik, wroc do glebokiego czuwania."""
 		if not (self.auto and self.woke):
 			return
-		if getattr(self, "channelparams_auto", False):
-			deep_after = cfg.cp_sched_deep_after.value
-		else:
-			if cfg.cp_sched.value:
-				from .channelparamscan import scheduled_slot
-				if scheduled_slot():
-					log("Powrot do glebokiego czuwania odlozony do osobnego skanu parametrow")
-					return
-			deep_after = cfg.sched_deep_after.value
+		deep_after = cfg.sched_deep_after.value
 		if not deep_after or self.session is None:
 			return
 		try:

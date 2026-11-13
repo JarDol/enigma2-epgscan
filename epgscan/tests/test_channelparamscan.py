@@ -1,5 +1,6 @@
 import importlib
 import base64
+import json
 import os
 import sys
 import tempfile
@@ -45,15 +46,14 @@ def setting(value):
 
 common = types.ModuleType(PACKAGE + ".common")
 common.CHANNEL_PARAMS_FILE = os.path.join(tempfile.gettempdir(), "channel-params-test.json")
-common.CP_SCHED_DAYS = [setting(True) for _ in range(7)]
 common.MAX_RETRIES = 3
 common.NO_TUNER_WAIT = 15
 common.TUNE_GAP = 2
 common.TUNE_TIMEOUT = 30
 common.channel_params_bouquet_channels = lambda _files: []
-common.cfg = types.SimpleNamespace(cp_language_source=setting("manual"), cp_languages=setting("pol"), cp_sched=setting(False),
-	cp_sched_time=setting((3, 30)), cp_sched_when=setting("standby"), cp_sched_skip_rec=setting(False),
-	cp_sched_wakeup=setting(False), cp_last_run=setting(0), cp_auto_in_progress=setting(False),
+common.cfg = types.SimpleNamespace(cp_language_source=setting("manual"), cp_languages=setting("pol"),
+	cp_group_tp=setting(True), cp_interval=setting("7"), cp_last_run=setting(0), cp_auto_in_progress=setting(False),
+	cp_common_overwrite=setting(False), cp_devices_overwrite=setting(False),
 	sched_when=setting("standby"), sched_skip_rec=setting(False),
 	max_parallel=setting(2), reserve=setting(1))
 common.configured_tuners = lambda: 4
@@ -110,6 +110,7 @@ engine_module = types.ModuleType(PACKAGE + ".engine")
 engine_module.get_engine = lambda _session: None
 sys.modules[engine_module.__name__] = engine_module
 schedule_module = importlib.import_module(PACKAGE + ".schedule")
+updater_module = importlib.import_module(PACKAGE + ".updater")
 
 
 screens = types.ModuleType("Screens")
@@ -222,6 +223,15 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertEqual([[job.ref for job in group.pending] for group in groups],
 			[["service-one", "service-three"], ["service-two"]])
 
+	def test_channel_jobs_can_disable_transponder_grouping(self):
+		rows = [{"ref": "service-one", "name": "One"}, {"ref": "service-two", "name": "Two"}]
+		with patch.object(scanner_module, "tp_params", return_value=(11000, 0, 192)):
+			jobs = [scanner_module.ChannelJob(row) for row in rows]
+
+		groups = scanner_module.group_channel_jobs(jobs, group_by_transponder=False)
+
+		self.assertEqual(len(groups), 2)
+
 	def test_channel_jobs_use_service_reference_when_transponder_data_is_missing(self):
 		rows = [{"ref": "service-one", "name": "One"}, {"ref": "service-two", "name": "Two"}]
 		with patch.object(scanner_module, "tp_params", return_value=None), \
@@ -331,10 +341,10 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertEqual(group.pending, [next_job])
 		self.assertGreater(group.not_before, time.time())
 
-	def test_six_tuners_and_two_reserved_allow_four_transponder_groups(self):
-		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=4,
+	def test_eight_tuners_and_two_reserved_allow_six_transponder_groups(self):
+		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=6,
 			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 2,
-			free_tuners=lambda: 6, on_busy_tp=lambda _job: False, notify=lambda: None)
+			free_tuners=lambda: 8, on_busy_tp=lambda _job: False, notify=lambda: None)
 		scan = scanner_module.ChannelParamsScan(engine)
 		jobs = [scanner_module.ChannelJob({"ref": "tp-%d" % i, "name": "TP %d" % i}) for i in range(6)]
 		for i, job in enumerate(jobs):
@@ -355,8 +365,39 @@ class ChannelParamScanTests(unittest.TestCase):
 			scan.last_tune = 0
 			scan.tick()
 
-		self.assertEqual(len(started), 4)
-		self.assertEqual(len(scan.active), 4)
+		self.assertEqual(len(started), 6)
+		self.assertEqual(len(scan.active), 6)
+
+	def test_scanner_can_start_a_second_tune_while_first_is_still_tuning(self):
+		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=2,
+			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 1,
+			free_tuners=lambda: 4, on_busy_tp=lambda _job: False, notify=lambda: None)
+		engine.release = lambda job: engine.active.remove(job) if job in engine.active else None
+		scan = scanner_module.ChannelParamsScan(engine)
+		jobs = [scanner_module.ChannelJob({"ref": "tp-%d" % i, "name": "TP %d" % i}) for i in range(2)]
+		for i, job in enumerate(jobs):
+			job.tp = (11000 + i * 1000, 0, 192)
+		scan.groups = scanner_module.group_channel_jobs(jobs)
+		scan.queue = list(jobs)
+		started = []
+
+		def start(job, shared):
+			started.append(job)
+			job.state = "strojenie"
+			job.t0 = time.time()
+			job.group.current = job
+			scan.active.append(job)
+			engine.active.append(job)
+			return True
+
+		scan._start = start
+		scan.last_tune = 0
+		scan.tick()
+		scan.last_tune = 0
+		scan.tick()
+
+		self.assertEqual(len(started), 2)
+		self.assertTrue(all(job.state == "strojenie" for job in started))
 
 	def test_successful_channel_recommends_only_unique_preferred_audio_and_keeps_raw_pmt(self):
 		section = base64.b64decode(PMT_BASE64)
@@ -400,65 +441,67 @@ class ChannelParamScanTests(unittest.TestCase):
 			self.assertEqual(scanner_module.preferred_languages(), ["pol", "eng", "", ""])
 		common.cfg.cp_language_source.value = "manual"
 
-	def test_schedule_day_uses_the_planned_start_weekday(self):
-		common.cfg.cp_sched.value = True
-		common.CP_SCHED_DAYS[3].value = False
-		with patch.object(scanner_module.time, "localtime", return_value=types.SimpleNamespace(tm_wday=3)):
-			self.assertFalse(scanner_module.scheduled_day_enabled(1))
-		common.CP_SCHED_DAYS[3].value = True
-		with patch.object(scanner_module.time, "localtime", return_value=types.SimpleNamespace(tm_wday=3)):
-			self.assertTrue(scanner_module.scheduled_day_enabled(1))
-
-	def test_standalone_schedule_is_due_without_an_epg_schedule(self):
-		common.cfg.cp_sched.value = True
-		common.cfg.cp_sched_time.value = (3, 30)
+	def test_scan_due_uses_interval_and_interrupted_scan_flag(self):
+		common.cfg.cp_interval.value = "2"
 		common.cfg.cp_last_run.value = 0
-		local = types.SimpleNamespace(tm_year=2026, tm_mon=1, tm_mday=7, tm_wday=2)
-		slot = int(scanner_module.time.mktime((2026, 1, 7, 3, 30, 0, 0, 0, -1)))
-		with patch.object(scanner_module.time, "localtime", return_value=local):
-			self.assertEqual(scanner_module.scheduled_slot(slot + 3600), slot)
-			common.cfg.cp_last_run.value = slot
-			self.assertEqual(scanner_module.scheduled_slot(slot + 3600), 0)
+		self.assertTrue(scanner_module.scan_due(0))
+		common.cfg.cp_last_run.value = 100
+		self.assertFalse(scanner_module.scan_due(100 + 2 * 86400 - 1))
+		self.assertTrue(scanner_module.scan_due(100 + 2 * 86400))
+		common.cfg.cp_auto_in_progress.value = True
+		self.assertTrue(scanner_module.scan_due(101))
+		common.cfg.cp_auto_in_progress.value = False
+		common.cfg.cp_interval.value = "7"
+		common.cfg.cp_last_run.value = 0
 
-	def test_scheduler_starts_channel_scan_when_epg_schedule_is_off(self):
-		common.cfg.cp_sched.value = True
-		common.cfg.cp_sched_when.value = "always"
-		engine = types.SimpleNamespace(running=False, auto=False, woke=False)
+	def test_scan_report_counts_only_channels_scanned_in_this_run(self):
+		engine = types.SimpleNamespace(channel_params_scan=object())
+		scan = scanner_module.ChannelParamsScan(engine)
+		scan.started = 100
+		scan.results = {
+			"previous": {"scannedAt": 100, "readDuration": 10},
+			"current": {"scannedAt": 100, "readDuration": 2},
+		}
+		scan.scanned_refs = {"current"}
+		with patch.object(scanner_module, "save_results") as save:
+			scan._finish()
+		report = save.call_args[0][0]["last_scan"]
+		self.assertEqual(report["scanned"], 1)
+		self.assertEqual(report["read_average"], 2)
+
+	def test_channel_scan_does_not_run_without_main_schedule(self):
 		scheduler = object.__new__(schedule_module.Scheduler)
 		scheduler.first = False
 		scheduler.resume = False
-		scheduler.cp_resume = False
 		scheduler.woke = False
 		scheduler.waiting = ""
 		scheduler.session = object()
-		with patch.object(scanner_module, "scheduled_slot", return_value=123), \
-				patch.object(scanner_module, "start_scheduled", return_value=True) as start_scan, \
-				patch.object(schedule_module, "get_engine", return_value=engine):
+		with patch.object(common, "sched_active", return_value=False), \
+				patch.object(scheduler, "check_topup") as check_topup, \
+				patch.object(schedule_module, "get_engine") as get_engine:
 			scheduler.check()
-		start_scan.assert_called_once_with(engine, 123, woke=False)
+		check_topup.assert_called_once()
+		get_engine.assert_not_called()
 
-	def test_channel_scan_can_run_while_due_epg_scan_waits_for_standby(self):
-		common.cfg.cp_sched.value = True
-		common.cfg.sched_when.value = "standby"
-		common.cfg.cp_sched_when.value = "always"
+	def test_main_scheduler_remains_authoritative_for_scheduled_scan(self):
 		engine = types.SimpleNamespace(running=False, auto=False, woke=False)
 		scheduler = object.__new__(schedule_module.Scheduler)
 		scheduler.first = False
 		scheduler.resume = False
-		scheduler.cp_resume = False
 		scheduler.woke = False
 		scheduler.waiting = ""
 		scheduler.session = object()
-		with patch.object(common, "sched_active", return_value=True), \
-				patch.object(common, "is_due", return_value=True), \
-				patch.object(scanner_module, "scheduled_slot", return_value=123), \
-				patch.object(scanner_module, "start_scheduled", return_value=True) as start_scan, \
+		with patch.object(schedule_module, "sched_active", return_value=True), \
+				patch.object(schedule_module, "is_due", return_value=True), \
 				patch.object(schedule_module, "get_engine", return_value=engine), \
-				patch.object(schedule_module, "in_standby", return_value=False):
+		patch.object(schedule_module, "in_standby", return_value=False), \
+		patch.object(scheduler, "check_topup"), \
+		patch.object(schedule_module.Scheduler, "blocked_reason", return_value="odbiornik nie jest w czuwaniu") as blocked:
 			scheduler.check()
-		start_scan.assert_called_once_with(engine, 123, woke=False)
+		blocked.assert_called_once_with("standby", False)
+		self.assertEqual(scheduler.waiting, "odbiornik nie jest w czuwaniu")
 
-	def test_standalone_scheduled_scan_finishes_and_clears_resume_flag(self):
+	def test_scheduled_scan_finishes_and_clears_resume_flag(self):
 		with tempfile.TemporaryDirectory() as directory:
 			engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None, running=False,
 				timer_hold=0, max_parallel=1, scan_usage=lambda: None, upcoming_recordings=lambda: 0,
@@ -467,11 +510,11 @@ class ChannelParamScanTests(unittest.TestCase):
 				"name": "IPTV channel", "supported": False, "error": "Nieobslugiwany typ kanalu"}
 			with patch.object(scanner_module, "CHANNEL_PARAMS_FILE", os.path.join(directory, "results.json")), \
 					patch.object(scanner_module, "channel_params_bouquet_channels", return_value=[row]):
-				self.assertTrue(scanner_module.start_scheduled(engine, 123))
+				self.assertTrue(scanner_module.start_scheduled(engine))
 				self.assertTrue(common.cfg.cp_auto_in_progress.value)
 				engine.channel_params_scan.tick()
 			self.assertFalse(common.cfg.cp_auto_in_progress.value)
-			self.assertEqual(common.cfg.cp_last_run.value, 123)
+			self.assertGreater(common.cfg.cp_last_run.value, 0)
 
 	def test_common_defaults_only_fill_missing_entries_and_backup_file(self):
 		with tempfile.TemporaryDirectory() as directory:
@@ -480,7 +523,7 @@ class ChannelParamScanTests(unittest.TestCase):
 			key = "audio_1_0_1_428F_1_1_13E_0_0_0"
 			with open(clients.COMMON, "w") as f:
 				import json
-				json.dump({"data": {key: {"v": "old"}}}, f)
+				json.dump({"data": {key: {"v": "536|eng|audio/mpeg"}}}, f)
 			results = {"r": {"ref": "1:0:1:428f:1:1:13e:0:0:0:", "selectedConfirmed": True,
 				"selectedAudioPid": 536, "sid": 17039, "section": PMT_BASE64,
 				"streams": [{"kind": "audio", "pid": 536, "languages": ["pol"], "codec": "audio/mpeg"}]}}
@@ -491,9 +534,27 @@ class ChannelParamScanTests(unittest.TestCase):
 			self.assertIn(key, conflicts)
 			with open(clients.COMMON) as f:
 				data = __import__("json").load(f)
-			self.assertEqual(data["data"][key]["v"], "old")
+			self.assertEqual(data["data"][key]["v"], "536|eng|audio/mpeg")
 			self.assertEqual(data["data"]["pmts_17039"]["v"], PMT_BASE64)
 			self.assertTrue(any(name.startswith("common.json.bak-") for name in os.listdir(directory)))
+
+	def test_overwrite_mode_replaces_existing_common_audio_and_pmt(self):
+		with tempfile.TemporaryDirectory() as directory:
+			clients.DIR = directory
+			clients.COMMON = os.path.join(directory, "common.json")
+			key = "audio_1_0_1_428F_1_1_13E_0_0_0"
+			with open(clients.COMMON, "w") as f:
+				json.dump({"data": {key: {"v": "536|eng|audio/mpeg"}}}, f)
+			results = {"r": {"ref": "1:0:1:428f:1:1:13e:0:0:0:", "selectedConfirmed": True,
+				"selectedAudioPid": 536, "sid": 17039, "section": PMT_BASE64,
+				"streams": [{"kind": "audio", "pid": 536, "languages": ["pol"], "codec": "audio/mpeg"}]}}
+
+			store_module.add_common_defaults(results, overwrite=True)
+
+			with open(clients.COMMON) as f:
+				data = json.load(f)
+			self.assertEqual(data["data"][key]["v"], "536|pol|audio/mpeg")
+			self.assertEqual(data["data"]["pmts_17039"]["v"], PMT_BASE64)
 
 	def test_device_profiles_are_backed_up_and_only_selected_device_is_updated(self):
 		with tempfile.TemporaryDirectory() as directory:
@@ -606,7 +667,7 @@ class ChannelParamScanTests(unittest.TestCase):
 				"section": base64.b64encode(section).decode("ascii"),
 				"streams": [{"kind": "audio", "pid": 536, "languages": ["pol"], "codec": "audio/mpeg"}]}
 
-		audio, pmts, conflicts = store_module._sync_payload({
+		audio, _sources, pmts, conflicts = store_module._sync_payload({
 			"first": result("1:0:1:428f:1:1:13e:0:0:0:", first),
 			"second": result("1:0:1:4290:1:1:13e:0:0:0:", second),
 		})
@@ -621,6 +682,24 @@ class ChannelParamScanTests(unittest.TestCase):
 			"streams": [{"kind": "audio", "pid": 536, "languages": ["pol"], "codec": "audio/mpeg"}]}}
 		with self.assertRaisesRegex(ValueError, "Nieprawidlowa PMT"):
 			store_module._sync_payload(results)
+
+	def test_manual_release_list_filters_invalid_assets_and_sorts_versions(self):
+		releases = [
+			{"tag_name": "epgscan-2.2.0", "assets": [
+				{"name": "epgscan-2.2.0.zip", "browser_download_url": "https://example/2.2.0.zip"}]},
+			{"tag_name": "epgscan-2.3.0-beta.1", "prerelease": True, "assets": [
+				{"name": "epgscan-2.3.0-beta.1.zip", "browser_download_url": "https://example/beta.zip"}]},
+			{"tag_name": "epgscan-2.4.0", "draft": True, "assets": [
+				{"name": "epgscan-2.4.0.zip", "browser_download_url": "https://example/draft.zip"}]},
+			{"tag_name": "epgscan-2.5.0", "assets": [{"name": "source.zip", "browser_download_url": "https://example/source.zip"}]},
+		]
+		response = types.SimpleNamespace(read=lambda: json.dumps(releases).encode("utf-8"))
+		with patch("urllib.request.urlopen", return_value=response):
+			available = updater_module.available_releases()
+
+		self.assertEqual([release[0] for release in available], ["2.3.0-beta.1", "2.2.0"])
+		self.assertTrue(available[0][2])
+		self.assertFalse(available[1][2])
 
 
 if __name__ == "__main__":

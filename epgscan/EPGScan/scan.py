@@ -334,6 +334,12 @@ class EPGScanScreen(Screen):
 		elif e.running:
 			head = "Skanowanie%s: %d/%d gotowe, aktywne %d, bledy %d%s, czas %d:%02d   %s" % (
 				" (harmonogram)" if e.auto else "", done, len(e.jobs) - nskip, len(e.active), err, sk, el // 60, el % 60, tun)
+		elif e.finished and getattr(e, "channelparams_report", None):
+			report = e.channelparams_report
+			duration = int(report.get("duration", 0))
+			head = "Zakonczono skan parametrow: %d kanalow, %d bledow, %d nieobslugiwanych, czas %d:%02d" % (
+				report.get("scanned", 0), len(report.get("errors", [])), len(report.get("unsupported", [])),
+				duration // 60, duration % 60)
 		elif e.finished and getattr(e, "xmltv_only", False):
 			head = "Zakonczono %s, czas %d:%02d" % (e.summary, el // 60, el % 60)
 		elif e.running and getattr(e, "xmltv_only", False):

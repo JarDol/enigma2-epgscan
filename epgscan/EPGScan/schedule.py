@@ -48,11 +48,6 @@ def wakeup_time():
 		ts = next_run()
 		if ts:
 			times.append(ts)
-	if cfg.cp_sched.value and cfg.cp_sched_wakeup.value:
-		from .channelparamscan import next_scheduled_slot
-		ts = next_scheduled_slot()
-		if ts:
-			times.append(ts)
 	if not times:
 		_write_wakeup(0)
 		return -1
@@ -75,11 +70,8 @@ class Scheduler(object):
 		self.woke = False
 		self.t_boot = time.time()
 		self.resume = bool(cfg.auto_in_progress.value)   # skan z harmonogramu przerwany restartem
-		self.cp_resume = bool(cfg.cp_auto_in_progress.value)
 		if self.resume:
 			log("Poprzedni skan z harmonogramu nie zostal dokonczony (restart odbiornika) - zostanie powtorzony")
-		if self.cp_resume:
-			log("Poprzedni skan parametrow z harmonogramu zostal przerwany - zostanie powtorzony")
 		self.waiting = ""            # powod oczekiwania (do logu, bez powtarzania)
 		self.timer = eTimer()
 		self.timer.callback.append(self.check)
@@ -88,7 +80,7 @@ class Scheduler(object):
 
 	def detect_wake(self):
 		ts = read_wakeup()
-		if not ts or not (cfg.sched_wakeup.value or cfg.cp_sched_wakeup.value):
+		if not ts or not cfg.sched_wakeup.value:
 			return False
 		fp = was_timer_wakeup()
 		near = abs(time.time() - ts) < WAKE_TOL
@@ -124,50 +116,26 @@ class Scheduler(object):
 						Notifications.AddNotification(Screens.Standby.Standby)
 					except Exception:
 						pass
-		if (self.resume or self.cp_resume) and time.time() - self.t_boot < 240:
+		if self.resume and time.time() - self.t_boot < 240:
 			return       # po starcie najpierw kontrola/odtworzenie EPG, potem powtorka skanu
 		if not sched_active() and self.resume:
 			self.resume = False
 			cfg.auto_in_progress.value = False
 			save_cfg()
-		if self.cp_resume and not cfg.cp_sched.value:
-			self.cp_resume = False
-			cfg.cp_auto_in_progress.value = False
-			save_cfg()
-		from .channelparamscan import scheduled_slot, start_scheduled
-		cp_slot = int(cfg.cp_last_run.value) if self.cp_resume else scheduled_slot()
 		epg_due = sched_active() and (is_due() or self.resume)
-		if not epg_due and not cp_slot:
+		if not epg_due:
 			self.waiting = ""
 			self.check_topup()
 			return
 		eng = get_engine(self.session)
 		if eng.running:
 			return
-		run_epg = epg_due
-		when = cfg.sched_when.value if run_epg else cfg.cp_sched_when.value
-		skip_recording = cfg.sched_skip_rec.value if run_epg else cfg.cp_sched_skip_rec.value
+		when = cfg.sched_when.value
+		skip_recording = cfg.sched_skip_rec.value
 		blocked = self.blocked_reason(when, skip_recording)
-		if blocked and run_epg and cp_slot:
-			run_epg = False
-			blocked = self.blocked_reason(cfg.cp_sched_when.value, cfg.cp_sched_skip_rec.value)
 		if blocked:
 			return self.wait(blocked)
 		self.waiting = ""
-		if not run_epg:
-			slot = cp_slot
-			self.cp_resume = False
-			try:
-				if start_scheduled(eng, slot, woke=self.woke or bool(eng.auto and eng.woke)):
-					log("Samodzielny skan parametrow uruchomiony na %s" % fmt_ts(slot))
-				else:
-					log("Samodzielny skan parametrow: brak kanalow DVB w bukietach")
-			except Exception as e:
-				cfg.cp_auto_in_progress.value = False
-				save_cfg()
-				log("Samodzielny skan parametrow nieudany: %s" % e)
-			self.woke = False
-			return
 		if self.resume:
 			log("Harmonogram: powtorka przerwanego skanu")
 			self.resume = False

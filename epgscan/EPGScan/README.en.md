@@ -187,9 +187,10 @@ This is a separate task: it does not replace the EPG scan and does not clear or 
 each unique DVB service in the selected bouquets, grouped by transponder. The scan keeps a tuner reserved for each
 group and tunes its channels in sequence before releasing the tuner for another group. EPG Scan's parallel limit
 and free-tuner reserve are respected; at least two tuners are kept free (one on receivers with fewer than three
-tuners). With six tuners and a reserve of two, up to four groups can run at once. If watching, streaming or a
-recording needs a tuner, the scan releases a group and resumes it later. IPTV and unknown service types are reported
-as unsupported; tuning and table-read errors are included in the report.
+tuners). With six tuners and a reserve of two, up to four groups can run at once; with eight, up to six. Transponder
+grouping can be disabled, at the cost of more retunes. If watching, streaming or a recording needs a tuner, the scan
+releases a group and resumes it later. IPTV and unknown service types are reported as unsupported; tuning and
+table-read errors are included in the report.
 
 Run it independently of EPG: on the main screen choose **Actions**, select
 **Channel parameters (PAT/PMT)**, then press **OK** or **Green**. The scan runs in the background and the main
@@ -198,17 +199,19 @@ Review results and choose audio tracks from **Menu → Kanały → Skan parametr
 start the scan from that screen with **Menu**.
 Audio preferences can come from Enigma2's automatic-audio settings or a manually ordered list (for example
 `pol,eng`). A unique preferred-language match is recommended automatically; missing or ambiguous matches need
-review. **OK** selects an audio PID. **Yellow** tunes the channel and opens Enigma2's standard audio selector so
-you can listen to tracks. Preview is refused while recording, and the original channel is restored when leaving
-the screen. **Green** confirms and saves the choices.
+review. **OK** opens the audio tracks found in PMT, **Green** previews the selected channel, and **Yellow** filters
+results. During preview, **OK** assigns an available audio track. Preview is refused while recording, and the
+original channel is restored when leaving the screen. **Menu** offers confirmation of proposals, saving changes,
+and restarting the scan.
 
-Channel parameters have a separate settings group and an independent schedule with its own time and weekdays,
-standby/recording conditions, and optional wake-up/return from deep standby. This schedule runs even when EPG
-scheduling is off or no EPG scan was started.
+The **Channel parameters (PAT/PMT)** settings group selects language preferences, bouquets, parallel limit,
+tuner reserve, transponder grouping and an interval of 1/2/4/7 days. An automatic scan runs only after a completed
+main EPG schedule run, when the selected interval has elapsed; it follows the **Schedule** conditions (standby,
+recordings and wake-up). EPG top-ups do not trigger it.
 
 **Blue** in the results screen provides two separate, confirmed operations:
 
-- add only missing audio/PMT values to `common.json` as defaults for new devices (existing entries are preserved);
+- fill missing or invalid audio/PMT values in `common.json`, or replace existing values when overwrite is enabled;
 - select specific E2Stream receivers and update their profiles; backups are made before writing.
 
 PMT data is sent only when its SID is not ambiguous across scanned services. Results are stored in
@@ -402,8 +405,10 @@ streaming to clients.**
   transponders (default, including existing installations) or only those with soon-ending EPG. The latter
   considers all EPG, including XMLTV, and does not detect internal gaps. It can run always or only in standby,
   optionally at a fixed time. A new E2Stream pack is built after the scan if the client server and packs are enabled.
-- **SatWatch: full scan once a week** on a chosen day (on other days – checking for changes only).
-- **Channel parameters**: a separate schedule with its own time and weekdays, independent of EPG scanning.
+- **Channel parameters**: after the main scheduled EPG run, no more often than every 1/2/4/7 days; it follows the
+  main schedule's run conditions and is not triggered by top-ups.
+- **SatWatch: full scan once a week** is configured in *Ustawienia → SatWatch – transpondery*; the EPG schedule
+  controls when SatWatch may run.
 - **Restart after the night run** (*never* / *when needed* / *always*). "When needed" means: tuners do not tune, low
   free memory, Enigma2 uses much more memory than after start-up, SatWatch updated `satellites.xml`, optionally
   preventively every N days. Restart only in standby, with no recording now or within 15 min, at most once per 20 h.
@@ -414,6 +419,8 @@ streaming to clients.**
 
 ## 10. EPG backups, log, disk cleanup
 
+Configure backups and the log in *Ustawienia → Updates, backups, log, E2Stream*; disk cleanup is in
+*Ustawienia → Notifications, restart, cleanup*.
 - **EPG backup after a scan** to the backup directory (default `/media/hdd/epgscan/`), keeping the last N.
 - **Restore at start-up when the EPG is empty** – automatically or after asking (two measurements a minute apart).
 - **Yellow – *Kopie EPG*** on the main screen: restore a chosen backup or back up now.
@@ -435,9 +442,8 @@ item ticks/unticks it, green saves, red cancels.
 
 1. **SatWatch** – list of SatWatch actions: check, scan, channels awaiting decision (8.3), snapshot, backups, tuner
    setup (settings are in *Ustawienia*, SatWatch reports and log in *Raporty*).
-2. **Channel parameters (PAT/PMT)** – scans all DVB channels in the selected bouquets. Menu starts or stops a
-   scan, OK selects an audio PID, yellow opens the listening preview, green confirms choices, and blue writes
-   them to E2Stream.
+2. **Channel parameters (PAT/PMT)** – scans DVB channels in the selected bouquets. Menu starts or stops a scan,
+   OK selects an audio track, green previews, yellow filters, and blue synchronizes with E2Stream.
 3. ***Dopasowanie kanałów: dekoder*** (channel matching: receiver) – channels from your bouquets and their assigned
    stations. Keys: **OK** – choose the source (station selection window), **Menu** – sorting (bouquet order /
    alphabetical) and listings download (on the server, ready file, on the receiver), **Info/EPG** – differences with
@@ -502,8 +508,9 @@ item ticks/unticks it, green saves, red cancels.
 
 ## 13. All settings
 
-**Blue → *Ustawienia***, five groups, starting with SatWatch. Defaults in brackets. Every option has a description
-below the settings list.
+**Blue → *Ustawienia***. Main groups: *Satelita – EPG*, *Channel parameters*, *Program z internetu*, *Harmonogram*,
+*Notifications, restart, cleanup* and *Updates, backups, log, E2Stream*. SatWatch has its own settings. Defaults
+are in brackets. Every option has a description below the settings list.
 
 ### *SatWatch – transpondery*
 | Setting | Description |
@@ -541,6 +548,16 @@ below the settings list.
 | Min. / max. time on a transponder | (30 s / 180 s) |
 | End after no new events | (60 s) |
 | Skip transponders without EPG / recheck every | (no / 7 days) |
+| Daytime satellite update | (no); all TPs / short EPG; interval, standby and fixed-time options |
+
+### Channel parameters (PAT/PMT)
+| Setting | Description |
+|---|---|
+| Audio language preferences | Enigma2 automatic-audio settings / custom order (Enigma2) |
+| Channels from bouquets | same selected bouquets as the satellite scan |
+| Max parallel scans / free-tuner reserve | shared with *Satelita – EPG* |
+| Group channels by transponder | recommended; one tuner tunes channels in a TP group in sequence |
+| Scan channels every | 1 / 2 / 4 / 7 days; scan follows the main EPG schedule |
 
 ### *Program z internetu* (internet listings)
 
@@ -565,7 +582,7 @@ below the settings list.
 | Log download errors | (yes) |
 | Yellow: other XMLTV sources | tick lists, add your own addresses (blue) |
 
-### *Harmonogram* (schedule and top-up)
+### *Harmonogram*
 | Setting | Description |
 |---|---|
 | Schedule on / mode | switch (yes); mode: off / at a time on chosen days / every N hours (off) |
@@ -573,16 +590,25 @@ below the settings list.
 | When to run | only in standby / always (only in standby) |
 | Wait while recording | (no) |
 | Wake from deep standby / return afterwards | (no / yes) |
-| SatWatch: full scan once a week, day | (yes, Sunday) |
-| Daytime satellite update | (no); all transponders (default, including existing installations) / short EPG only; every (3 h), threshold for short EPG (6 h), when (always), optionally at a fixed time (no, 14:00) |
+| Schedule | controls the main EPG run and the channel-parameter scan that follows it |
 
-### *Kopie EPG* (backups, log, notifications, restart, disk cleanup)
+### Updates, backups, log and E2Stream
 | Setting | Description |
 |---|---|
-| Notification after background work | (yes) |
 | EPG backup after scan, directory, number of backups | (yes, `/media/hdd/epgscan/`, 3) |
 | Restore EPG at start-up when empty | off / ask / automatically (automatically) |
 | Write log | in the backup directory / in `/tmp` (in the backup directory) |
+| Automatic update | (no); checks stable GitHub releases and installs/restarts only in safe standby |
+| Update now | OK – lists releases with a ZIP asset, including beta and older versions; installation requires confirmation |
+| E2Stream data overwrite | no – fill only missing/invalid values; yes – replace existing values too |
+| Replace in client configuration | same behavior, limited to selected receivers |
+| Server for E2Stream | (yes); receiver API, port (8770), optional token |
+| Build client data now | OK – immediately build the EPG/icons/reference package |
+
+### Notifications, restart and cleanup
+| Setting | Description |
+|---|---|
+| Notification after background work | (yes) |
 | Restart after the night run | never / when needed / always (when needed) |
 | Preventively every [days], free memory threshold | (no, 100 MB) |
 | Disk cleanup | (no); directories (OK – list: storage devices, timeshift and crash-log directories from Enigma2, your own – yellow add, blue remove; `/media/hdd`), timeshift older than (6 h), keep crash logs – in total (10), every N minutes (15) |

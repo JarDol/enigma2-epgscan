@@ -11,7 +11,7 @@ from enigma import eServiceReference, eTimer, iRecordableService
 import NavigationInstance
 
 from . import channelparams
-from .common import CHANNEL_PARAMS_FILE, CP_SCHED_DAYS, MAX_RETRIES, NO_TUNER_WAIT, TUNE_GAP, TUNE_TIMEOUT, \
+from .common import CHANNEL_PARAMS_FILE, MAX_RETRIES, NO_TUNER_WAIT, TUNE_GAP, TUNE_TIMEOUT, \
 	channel_params_bouquet_channels, cfg, configured_tuners, frontend_of, log, same_tp, selected_bouquets, service_name, tp_key, tp_params, save_cfg
 
 
@@ -82,6 +82,7 @@ class ChannelJob(object):
 		self.covered = 0
 		self.all_covered = 0
 		self.duration = 0
+		self.capture_started_at = 0
 		self.adapter = -1
 		self.demux = -1
 		self.pmt_pid = -1
@@ -103,10 +104,10 @@ class TransponderGroup(object):
 		self.done = False
 
 
-def group_channel_jobs(jobs):
+def group_channel_jobs(jobs, group_by_transponder=True):
 	groups = []
 	for job in jobs:
-		group = next((item for item in groups if same_transponder(job, item)), None)
+		group = next((item for item in groups if group_by_transponder and same_transponder(job, item)), None)
 		if group is None:
 			group = TransponderGroup(job.tp)
 			group.tp_key = job.tp_key
@@ -139,6 +140,7 @@ class ChannelParamsScan(object):
 		self.groups = []
 		self.reservations = []
 		self.results = load_results().get("results", {})
+		self.scanned_refs = set()
 		self.errors = []
 		self.unsupported = []
 		self.started = 0
@@ -154,7 +156,7 @@ class ChannelParamsScan(object):
 		rows = channel_params_bouquet_channels(selected_bouquets())
 		self.unsupported = [row for row in rows if not row["supported"]]
 		self.queue = [ChannelJob(row) for row in rows if row["supported"]]
-		self.groups = group_channel_jobs(self.queue)
+		self.groups = group_channel_jobs(self.queue, bool(cfg.cp_group_tp.value))
 		if not self.queue and not self.unsupported:
 			return False
 		self.started = int(time.time())
@@ -332,6 +334,7 @@ class ChannelParamsScan(object):
 			job.pmt_reader = channelparams.SectionReader(job.adapter, job.demux, job.pmt_pid, 0x02)
 			job.state = "zbieranie PAT/PMT"
 			job.tuned_at = time.time()
+			job.capture_started_at = job.tuned_at
 		except Exception as e:
 			self._retry_or_fail(job, "odczyt PID/demux: %s" % e)
 
@@ -373,7 +376,10 @@ class ChannelParamsScan(object):
 			"preferredAudioPid": selected["pid"] if selected else None, "selectedAudioPid": selected_pid,
 			"selectedConfirmed": bool(old.get("selectedConfirmed", False)) and selected_pid is not None,
 			"scannedAt": int(time.time()),
+			"readDuration": round(max(0, time.time() - getattr(job, "capture_started_at", 0)), 2)
+				if getattr(job, "capture_started_at", 0) else 0,
 		}
+		self.scanned_refs.add(job.ref)
 		job.state = "gotowe"
 
 	def _finish(self):
@@ -382,8 +388,13 @@ class ChannelParamsScan(object):
 			NavigationInstance.instance.record_event.remove(self.rec_event)
 		except Exception:
 			pass
-		report = {"started": self.started, "finished": int(time.time()),
-			"scanned": len([x for x in self.results.values() if x.get("scannedAt", 0) >= self.started]),
+		finished = int(time.time())
+		scanned_results = [self.results[ref] for ref in self.scanned_refs if ref in self.results]
+		read_times = [result.get("readDuration", 0) for result in scanned_results if result.get("readDuration", 0) > 0]
+		report = {"started": self.started, "finished": finished, "duration": max(0, finished - self.started),
+			"scanned": len(scanned_results),
+			"read_average": round(sum(read_times) / len(read_times), 2) if read_times else 0,
+			"read_max": round(max(read_times), 2) if read_times else 0,
 			"errors": self.errors, "unsupported": self.unsupported}
 		data = {
 			"updated": int(time.time()), "results": self.results,
@@ -446,8 +457,7 @@ class ChannelParamsScan(object):
 				self._yield_group(group, now)
 
 		own_groups = len([group for group in self.groups if group_owns_tuner(group)])
-		tuning = any(job.state == "strojenie" for job in self.active)
-		if not tuning and now - self.last_tune >= TUNE_GAP:
+		if now - self.last_tune >= TUNE_GAP:
 			job = None
 			group = None
 			shared = False
@@ -483,41 +493,12 @@ class ChannelParamsScan(object):
 		self.timer.start(250, False)
 
 
-def scheduled_day_enabled(timestamp):
-	try:
-		import time as _time
-		return bool(CP_SCHED_DAYS[_time.localtime(timestamp).tm_wday].value)
-	except Exception:
-		return False
-
-
-def scheduled_slot(now=None):
-	if not cfg.cp_sched.value:
-		return 0
-	if cfg.cp_auto_in_progress.value and cfg.cp_last_run.value:
-		return int(cfg.cp_last_run.value)
-	now = int(now or time.time())
-	hour, minute = cfg.cp_sched_time.value
-	local = time.localtime(now)
-	slot = int(time.mktime((local.tm_year, local.tm_mon, local.tm_mday, hour, minute, 0, 0, 0, -1)))
-	if slot > now or now - slot >= 12 * 3600 or not scheduled_day_enabled(slot):
-		return 0
-	if cfg.cp_last_run.value >= slot:
-		return 0
-	return slot
-
-
-def next_scheduled_slot(now=None):
-	if not cfg.cp_sched.value:
-		return 0
-	now = int(now or time.time())
-	hour, minute = cfg.cp_sched_time.value
-	for days_ahead in range(0, 8):
-		local = time.localtime(now + days_ahead * 86400)
-		slot = int(time.mktime((local.tm_year, local.tm_mon, local.tm_mday, hour, minute, 0, 0, 0, -1)))
-		if slot > now and scheduled_day_enabled(slot):
-			return slot
-	return 0
+def scan_due(now=None):
+	if cfg.cp_auto_in_progress.value:
+		return True
+	last = int(cfg.cp_last_run.value or 0)
+	now = int(time.time() if now is None else now)
+	return last <= 0 or now - last >= int(cfg.cp_interval.value) * 86400
 
 
 def _start_scan(engine, done, auto=False, woke=False):
@@ -529,6 +510,7 @@ def _start_scan(engine, done, auto=False, woke=False):
 		engine.running = False
 		engine.finished = True
 		engine.t_end = time.time()
+		engine.channelparams_report = report
 		engine.summary = "Skan parametrow: %d kanalow, %d bledow" % (report["scanned"], len(report["errors"]))
 		engine.note = engine.summary
 		engine.notify()
@@ -541,6 +523,7 @@ def _start_scan(engine, done, auto=False, woke=False):
 	scan = ChannelParamsScan(engine, finished)
 	engine.running = True
 	engine.finished = False
+	engine.channelparams_report = None
 	engine.auto = auto
 	engine.topup = False
 	engine.woke = woke
@@ -577,22 +560,29 @@ def start_manual(engine, done=None):
 	return _start_scan(engine, done)
 
 
-def start_scheduled(engine, slot, woke=False):
+def start_scheduled(engine, slot=None, woke=False, done=None):
 	if engine.running or engine.phase == "channelparams":
 		return False
-	slot = int(slot)
-	cfg.cp_last_run.value = slot
 	cfg.cp_auto_in_progress.value = True
 	save_cfg()
 
 	def finished(report):
 		cfg.cp_auto_in_progress.value = False
+		cfg.cp_last_run.value = int(report["finished"])
 		save_cfg()
 		engine.auto = True
+		engine.channelparams_auto = False
+		if done:
+			try:
+				done(report)
+			finally:
+				engine.auto = False
+				engine.woke = False
+				engine.channelparams_only = False
+			return
 		engine.maybe_deep_standby()
 		engine.auto = False
 		engine.woke = False
-		engine.channelparams_auto = False
 		engine.channelparams_only = False
 
 	try:

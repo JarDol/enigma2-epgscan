@@ -57,8 +57,8 @@ opkg install /tmp/enigma2-plugin-extensions-epgscan_X.Y.Z_all.ipk && init 4; sle
 rm -rf /usr/lib/enigma2/python/Plugins/Extensions/EPGScan;cd /tmp && unzip -o epgscan-X.Y.Z.zip -d /usr/lib/enigma2/python/Plugins/Extensions/;init 4; sleep 2; init 3
 ```
 
-**Aktualizacja**: *Ustawienia → Kopie EPG, log… → Aktualizuj teraz* (OK) pobiera najnowsze wydanie z GitHub
-i pyta o restart Enigma2 – działa zawsze. Opcja *Aktualizacja automatyczna* (domyślnie nie) sprawdza raz na dobę,
+**Aktualizacja**: *Ustawienia → Aktualizacje → Aktualizuj teraz* (OK) pokazuje dostępne wydania GitHub
+(także beta i starsze) i pyta o instalację oraz restart Enigma2 – działa zawsze. Opcja *Aktualizacja automatyczna* (domyślnie nie) sprawdza raz na dobę,
 instaluje nową wersję, a Enigma2 restartuje dopiero w czuwaniu, gdy nic nie nagrywa i nie trwa praca wtyczki.
 Poprzednia wersja zostaje w `/tmp/EPGScan.poprzednia` (do restartu dekodera).
 
@@ -187,9 +187,10 @@ To osobne zadanie; nie zastępuje skanu EPG i nie czyści ani nie zmienia bazy E
 DVB w wybranych bukietach, grupując je po transponderach. Skan trzyma tuner dla grupy i przełącza kolejno kanały
 z tego samego transpondera, zanim zwolni tuner dla następnej grupy. Limit równoległości i rezerwa wolnych tunerów
 EPG Scan są respektowane; skaner zostawia co najmniej dwa wolne tunery (na dekoderach z mniej niż trzema tunerami
-zostawia jeden). Przy sześciu tunerach i rezerwie dwóch może pracować do czterech grup naraz. Gdy oglądanie,
-streaming lub nagranie potrzebuje tunera, skaner zwalnia grupę i wznawia ją później. IPTV i nierozpoznane typy są
-jawnie wymieniane jako nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
+zostawia jeden). Przy sześciu tunerach i rezerwie dwóch może pracować do czterech grup naraz, a przy ośmiu – do
+sześciu. Grupowanie po transponderze można wyłączyć, kosztem dodatkowych strojeń. Gdy oglądanie, streaming lub
+nagranie potrzebuje tunera, skaner zwalnia grupę i wznawia ją później. IPTV i nierozpoznane typy są jawnie wymieniane
+jako nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
 
 Uruchom niezależnie od EPG: na ekranie głównym wybierz **Akcje**, zaznacz wiersz
 **Skan parametrów kanałów (PAT/PMT)** i naciśnij **OK** lub **zielony**. Skan ruszy w tle, a ekran główny pokaże
@@ -198,18 +199,20 @@ otworzysz przez **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. M
 przyciskiem **Menu**.
 Preferencje języków można pobierać z ustawień automatycznego audio Enigma2 albo ustawić własną kolejność (np.
 `pol,eng`). Jednoznaczna ścieżka zgodna z preferencją jest proponowana automatycznie; brak języka lub kilka
-pasujących PID-ów wymaga decyzji. **OK** wybiera PID, a **Żółty** przełącza na kanał i otwiera standardowy wybór
-audio Enigma2 do odsłuchu. Podgląd nie jest uruchamiany podczas nagrywania; po wyjściu z ekranu przywracany jest
-poprzedni kanał. **Zielony** zapisuje potwierdzone wybory.
+pasujących PID-ów wymaga decyzji. **OK** otwiera listę ścieżek z PMT, **Zielony** uruchamia podgląd kanału,
+a **Żółty** filtruje wyniki. Podczas podglądu **OK** pozwala przypisać dostępną ścieżkę audio. Podgląd nie jest
+uruchamiany podczas nagrywania; po wyjściu z ekranu przywracany jest poprzedni kanał. **Menu** udostępnia
+potwierdzenie propozycji, zapis zmian i ponowne uruchomienie skanu.
 
-Ustawienia harmonogramu skanera są osobną pozycją **Skan parametrów kanałów (PAT/PMT)**. Ma własną godzinę,
-wybór dni, warunek pracy w czuwaniu, opcję oczekiwania na koniec nagrania oraz opcjonalne wybudzanie i powrót
-do głębokiego czuwania. Działa niezależnie od tego, czy harmonogram EPG jest włączony i czy skan EPG został
-uruchomiony.
+W ustawieniach **Skan parametrów kanałów (PAT/PMT)** wybiera się języki, bukiety, limit równoległości,
+rezerwę tunerów, grupowanie po transponderze i odstęp 1/2/4/7 dni. Automatyczny skan uruchamia się dopiero po
+głównym przebiegu EPG z harmonogramu, jeśli minął ustawiony odstęp; nadrzędne są warunki z **Harmonogramu**
+(czuwanie, nagrania i wybudzanie). Doczytywanie EPG nie uruchamia skanu parametrów.
 
 **Niebieski** w ekranie wyników udostępnia dwa osobne, potwierdzane działania:
 
-- dopisanie brakujących wpisów audio/PMT do `common.json` jako wartości domyślnych (bez nadpisywania istniejących),
+- uzupełnienie brakujących lub nieprawidłowych wpisów audio/PMT w `common.json` albo – po włączeniu opcji nadpisywania –
+  zastąpienie istniejących,
 - wybranie konkretnych odbiorników E2Stream i aktualizację ich profili; przed zapisem tworzona jest kopia.
 
 PMT jest przekazywana tylko wtedy, gdy SID nie koliduje z inną zeskanowaną treścią. Plik wyników skanu:
@@ -414,8 +417,10 @@ albo decyzja z kandydatami „ta sama nazwa”; kanał ze zmienioną nazwą i SI
   Próg uwzględnia całe EPG, także z XMLTV, i nie wykrywa luk w środku programu. Skan działa zawsze albo
   tylko w czuwaniu, opcjonalnie także o stałej godzinie. Po zakończonym skanie powstaje nowa paczka
   dla E2Stream, gdy włączono serwer i dane dla aplikacji.
-- **SatWatch: pełny skan raz w tygodniu** w wybrany dzień (w pozostałe dni – sprawdzenie zmian).
-- **Skan parametrów kanałów**: osobny harmonogram z własną godziną i dniami, niezależny od skanu EPG.
+- **Skan parametrów kanałów**: po głównym przebiegu z harmonogramu EPG, nie częściej niż co 1/2/4/7 dni; warunki
+  uruchomienia są wspólne z harmonogramem EPG. Doczytywanie nie uruchamia tego skanu.
+- **SatWatch: pełny skan raz w tygodniu** konfiguruje się w *Ustawienia → SatWatch – transpondery*;
+  harmonogram EPG określa, kiedy SatWatch może działać.
 - **Restart po nocnym przebiegu** (*nigdy* / *gdy potrzebny* / *zawsze*). „Gdy potrzebny” oznacza:
   tunery nie stroją, mało wolnej pamięci, Enigma2 zajmuje dużo więcej pamięci niż po starcie,
   SatWatch zaktualizował `satellites.xml`, opcjonalnie profilaktycznie co N dni. Restart tylko w czuwaniu,
@@ -426,6 +431,9 @@ albo decyzja z kandydatami „ta sama nazwa”; kanał ze zmienioną nazwą i SI
 ---
 
 ## 10. Kopie EPG, log, sprzątanie dysku
+
+Kopie i log konfiguruje się w *Ustawienia → Aktualizacje*; sprzątanie dysku znajduje się w
+*Ustawienia → Powiadomienia, restart, sprzątanie*.
 
 - **Kopia EPG po skanie** do katalogu kopii (domyślnie `/media/hdd/epgscan/`), zachowywanych N ostatnich.
 - **Odtwarzanie po starcie, gdy EPG puste** – automatycznie albo z pytaniem (dwa pomiary w odstępie minuty).
@@ -447,9 +455,8 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 
 1. **SatWatch** – lista akcji SatWatch: sprawdzenie, skan, kanały do decyzji (rozdział 8.3), zrzut, kopie, konfiguracja
    tunerów (ustawienia – w Ustawieniach, raporty i log SatWatch – w Raportach).
-2. **Skan parametrów kanałów (PAT/PMT)** – skanuje wszystkie kanały DVB w wybranych bukietach; Menu uruchamia
-   lub przerywa skan, OK pozwala ręcznie wybrać audio, żółty otwiera odsłuch, zielony potwierdza wybory,
-   a niebieski zapisuje je do E2Stream.
+2. **Skan parametrów kanałów (PAT/PMT)** – skanuje kanały DVB w wybranych bukietach; Menu uruchamia lub przerywa
+   skan, OK wybiera ścieżkę audio, zielony uruchamia podgląd, żółty filtruje, a niebieski synchronizuje z E2Stream.
 3. **Dopasowanie kanałów: dekoder** – lista kanałów z bukietów i przypisanych stacji.
    Klawisze: **OK** – wskaż źródło (okno wyboru stacji), **Menu** – sortowanie (zgodnie z bukietami / alfabetycznie) i pobieranie programu (na serwerze, gotowy plik, na dekoderze),
    **Info/EPG** – różnice z drugą mapą i synchronizacja (niżej), czerwony – zamknij, zielony – odśwież,
@@ -518,7 +525,9 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 
 ## 13. Wszystkie ustawienia
 
-**Niebieski → Ustawienia**, pięć grup, od SatWatch – transpondery. Wartości domyślne w nawiasach.
+**Niebieski → Ustawienia**. Główne grupy: *Satelita – EPG*, *Skan parametrów kanałów*, *Program z internetu*,
+*Harmonogram*, *Powiadomienia, restart, sprzątanie* i *Aktualizacje, kopie, log, E2Stream*. SatWatch ma osobne
+ustawienia. Wartości domyślne w nawiasach.
 
 ### SatWatch – transpondery
 | Ustawienie | Opis |
@@ -558,6 +567,16 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Min. / maks. czas na transponderze | (30 s / 180 s) |
 | Koniec po braku nowych zdarzeń | (60 s) |
 | Pomijaj transpondery bez EPG / sprawdzaj ponownie co | (nie / 7 dni) |
+| Aktualizacja satelitarna w ciągu dnia | (nie); tryb: wszystkie TP / krótkie EPG; odstęp, czuwanie i stała godzina |
+
+### Skan parametrów kanałów (PAT/PMT)
+| Ustawienie | Opis |
+|---|---|
+| Preferencje języków | automatyczne audio Enigma2 / własna kolejność (Enigma2) |
+| Kanały z bukietów | te same wybrane bukiety co w skanie satelitarnym |
+| Maks. równoległych skanów / rezerwa wolnych tunerów | wspólne ustawienia z *Satelita – EPG* |
+| Grupowanie kanałów po transponderze | zalecane; jeden tuner przełącza kolejno kanały tej samej grupy |
+| Skanuj kanały co | 1 / 2 / 4 / 7 dni; skan po głównym przebiegu harmonogramu EPG |
 
 ### Program z internetu
 
@@ -582,7 +601,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Zapisuj błędy pobierania | (tak) |
 | Żółty: pozostałe źródła XMLTV | zaznaczanie list, dodawanie własnych adresów (niebieski) |
 
-### Harmonogram i doczytywanie
+### Harmonogram
 | Ustawienie | Opis |
 |---|---|
 | Harmonogram włączony / Tryb | wyłącznik (tak); tryb: wyłączony / o godzinie w wybrane dni / co N godzin (wyłączony) |
@@ -590,23 +609,28 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Kiedy uruchamiać | tylko w czuwaniu / zawsze (tylko w czuwaniu) |
 | Czekaj, gdy trwa nagrywanie | (nie) |
 | Wybudzaj z głębokiego czuwania / wróć po skanie | (nie / tak) |
-| SatWatch: pełny skan raz w tygodniu, dzień | (tak, niedziela) |
-| Aktualizacja satelitarna w ciągu dnia | (nie); tryb: wszystkie transpondery (domyślnie, także po aktualizacji) / tylko krótkie EPG; co (3 h), próg dla krótkiego EPG (6 h), kiedy (zawsze), dodatkowo o stałej godzinie (nie, 14:00) |
+| Harmonogram | nadrzędny dla nocnego skanu EPG i uruchamianego po nim skanu parametrów |
 
-### Kopie EPG, log, powiadomienia, restart, sprzątanie dysku
+### Aktualizacje, kopie, log, E2Stream
 | Ustawienie | Opis |
 |---|---|
-| Powiadomienie po pracy w tle | (tak) |
 | Kopia EPG po skanie, katalog, liczba kopii | (tak, `/media/hdd/epgscan/`, 3) |
 | Odtwarzanie EPG po starcie, gdy puste | wyłączone / zapytaj / automatycznie (automatycznie) |
 | Zapisuj log | w katalogu kopii / w `/tmp` (w katalogu kopii) |
-| Restart po nocnym przebiegu | nigdy / gdy potrzebny / zawsze (gdy potrzebny) |
-| Profilaktycznie co [dni], próg wolnej pamięci | (nie, 100 MB) |
-| Aktualizacja automatyczna | (nie) raz na dobę nowa wersja z wydań GitHub; restart Enigma2 tylko w czuwaniu, bez nagrań i pracy wtyczki |
-| Aktualizuj teraz | OK – sprawdzenie i instalacja najnowszej wersji (zawsze, także przy wyłączonej automatycznej) |
+| Aktualizacja automatyczna | (nie) sprawdza stabilne wydania GitHub; instaluje i restartuje tylko w bezpiecznym czuwaniu |
+| Aktualizuj teraz | OK – lista dostępnych wydań z ZIP-em, także beta i starszych; instalacja wymaga potwierdzenia |
 | Dane dla aplikacji po skanach | (tak) paczka EPG (wszystkie bukiety TV), ikon i zamian referencji po pracy z harmonogramu oraz po cyklicznym skanie satelity; *Przygotuj dane teraz* (OK) – od razu |
 | Serwer dla aplikacji E2Stream | (tak) API dla klientów streamingu w sieci lokalnej: bukiety, kanały z PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników; port (8770), token (puste = bez) |
-| Sprzątanie dysku | (nie); katalogi (OK – lista: nośniki, katalog timeshift i crash logów z ustawień Enigma2, własne – żółty dodaj, niebieski usuń; `/media/hdd`), timeshift starszy niż (6 h), zostaw crash logów – łącznie (10), co ile minut (15) |
+| Dane domyślne nadpisuj | nie – tylko brakujące/błędne; tak – zastąp również istniejące wartości |
+| Zamieniaj w konfiguracji klientów | tak samo, ale tylko dla wybranych odbiorników |
+
+### Powiadomienia, restart, sprzątanie
+| Ustawienie | Opis |
+|---|---|
+| Powiadomienie po pracy w tle | (tak) |
+| Restart po nocnym przebiegu | nigdy / gdy potrzebny / zawsze (gdy potrzebny) |
+| Profilaktycznie co [dni], próg wolnej pamięci | (nie, 100 MB) |
+| Sprzątanie dysku | (nie); katalogi, timeshift starszy niż (6 h), limit crash logów (10), co ile minut (15) |
 
 ---
 
