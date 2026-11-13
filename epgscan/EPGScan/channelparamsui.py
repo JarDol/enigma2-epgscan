@@ -179,7 +179,7 @@ class ChannelParamsScreen(Screen):
 	def show_info(self):
 		result = self.current()
 		if not result:
-			self["info"].setText("OK: przelacz kanal i wybierz sciezke audio. Menu: sortowanie lub skan kanalow. "
+			self["info"].setText("OK: przelacz kanal i wybierz sciezke audio. Menu: sortowanie/skan kanalow. "
 				"Info/EPG: synchronizacja.")
 			return
 		pid = result.get("selectedAudioPid")
@@ -191,7 +191,8 @@ class ChannelParamsScreen(Screen):
 		video = next((item for item in streams if item.get("kind") == "video"), None)
 		video_text = ("%s PID %s" % (video.get("codec", "video"), video.get("pid"))
 			if video else "brak danych video")
-		self["info"].setText("%s | Obecnie: %s | Audio: %d sciezek | Video: %s" %
+		self["info"].setText("%s | Obecnie: %s | Audio: %d sciezek | Video: %s\n"
+			"OK: wybor kanalu/audio   Menu: sortowanie/skan   Info/EPG: synchronizacja" %
 			(result.get("name", ""), selected, audio_count, video_text))
 
 	def choose_audio(self):
@@ -240,10 +241,20 @@ class ChannelParamsScreen(Screen):
 				return
 			self["preview"].setText("Enigma2 nie przelaczyla kanalu. Sprobuj ponownie lub wybierz inny kanal.")
 			return
-		_live_streams, current_pid = self._live_audio_tracks()
+		live_streams, current_pid = self._live_audio_tracks()
 		scanned = [s for s in result.get("streams", []) if s.get("kind") == "audio"]
-		if scanned:
-			self.open_audio_picker(result, scanned, current_pid)
+		if scanned or live_streams:
+			result = copy.deepcopy(result)
+			streams = result.setdefault("streams", [])
+			known_pids = {stream.get("pid") for stream in streams if stream.get("kind") == "audio"}
+			for stream in live_streams:
+				if stream.get("pid") not in known_pids:
+					live_stream = copy.deepcopy(stream)
+					live_stream["source"] = "enigma"
+					streams.append(live_stream)
+					known_pids.add(stream.get("pid"))
+			self.pending_result = result
+			self.open_audio_picker(result, [s for s in streams if s.get("kind") == "audio"], current_pid)
 			return
 		if self.engine.running:
 			self.session.open(MessageBox, "Skan jest zajety. Nie odczytano jeszcze sciezek dla tego kanalu.",
@@ -285,10 +296,21 @@ class ChannelParamsScreen(Screen):
 			return
 		self.refresh()
 		result = self.results.get(result["ref"], result)
+		live_streams, current_pid = self._live_audio_tracks()
+		if live_streams:
+			result = copy.deepcopy(result)
+			result_streams = result.setdefault("streams", [])
+			known_pids = {stream.get("pid") for stream in result_streams if stream.get("kind") == "audio"}
+			for stream in live_streams:
+				if stream.get("pid") not in known_pids:
+					live_stream = copy.deepcopy(stream)
+					live_stream["source"] = "enigma"
+					result_streams.append(live_stream)
+					known_pids.add(stream.get("pid"))
 		streams = [s for s in result.get("streams", []) if s.get("kind") == "audio"]
 		if streams:
 			self.pending_result = result
-			self.open_audio_picker(result, streams, None)
+			self.open_audio_picker(result, streams, current_pid)
 		else:
 			self["preview"].setText("Odczyt PAT/PMT nie zwrocil sciezek audio dla %s." % result.get("name", "kanalu"))
 			self.session.open(MessageBox, "Nie znaleziono sciezek audio w PAT/PMT tego kanalu.",
@@ -297,10 +319,13 @@ class ChannelParamsScreen(Screen):
 	def open_audio_picker(self, result, streams, current_pid):
 		self["preview"].setText("Wybor sciezki audio: %s. Po zamknieciu wroci poprzedni kanal." %
 			result.get("name", "kanal"))
-		self.session.openWithCallback(self.audio_chosen, ChannelAudioScreen, result, streams, current_pid)
+		self.session.openWithCallback(self.audio_chosen, ChannelAudioScreen, result, streams, current_pid,
+			self._select_preview_track)
 
-	def audio_chosen(self, choice):
+	def audio_chosen(self, choice=None):
 		if not choice or not self.pending_result:
+			self.pending_result = None
+			self.pending_ref = None
 			return
 		pid, source = choice
 		self._select_preview_track(pid)
@@ -308,6 +333,7 @@ class ChannelParamsScreen(Screen):
 		self.pending_result["selectedConfirmed"] = True
 		self.pending_result["selectionSource"] = source
 		self.pending_result["selectedAt"] = int(time.time())
+		self.results[self.pending_result["ref"]] = self.pending_result
 		self.store_results()
 		self.pending_result = None
 		self.pending_ref = None
@@ -548,11 +574,12 @@ class ChannelAudioScreen(Screen):
 		%s
 	</screen>""" % keys_skin(20, 850, 1560)
 
-	def __init__(self, session, result, streams, current_pid=None):
+	def __init__(self, session, result, streams, current_pid=None, preview_track=None):
 		Screen.__init__(self, session)
 		self.result = result
 		self.streams = [stream for stream in streams if stream.get("kind") == "audio"]
 		self.current_pid = current_pid
+		self.preview_track = preview_track
 		self.setTitle("Sciezki audio: %s" % result.get("name", "kanal"))
 		self["head"] = Label("")
 		self["list"] = MenuList([])
@@ -560,7 +587,7 @@ class ChannelAudioScreen(Screen):
 		self["details"] = Label("")
 		init_keys(self)
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions", "EPGSelectActions"], {
-			"ok": self.choose, "red": self.close, "cancel": self.close,
+			"ok": self.choose, "red": self.cancel, "cancel": self.cancel,
 			"green": self.choose_automatic, "yellow": lambda: self.choose_user(0),
 			"blue": lambda: self.choose_user(1), "info": self.show_full_info,
 			"up": self["list"].up, "down": self["list"].down,
@@ -583,11 +610,24 @@ class ChannelAudioScreen(Screen):
 				marks.append("zapisana")
 			if pid == current_pid:
 				marks.append("aktywna")
+			if stream.get("source") == "enigma":
+				marks.append("Enigma2")
 			rows.append("%s   PID %s   %s%s" % (language, pid, stream.get("codec", ""),
 				("   [" + ", ".join(marks) + "]") if marks else ""))
 		self["list"].setList(rows or ["Brak odczytanych sciezek audio"])
-		self["list"].onSelectionChanged.append(self.show_details)
+		self["list"].onSelectionChanged.append(self.selection_changed)
 		self.show_details()
+
+	def selection_changed(self):
+		self.show_details()
+		index = self["list"].getSelectedIndex()
+		if 0 <= index < len(self.view_streams) and self.preview_track:
+			self.preview_track(self.view_streams[index].get("pid"))
+
+	def cancel(self):
+		if self.current_pid is not None and self.preview_track:
+			self.preview_track(self.current_pid)
+		self.close()
 
 	def _decoder_languages(self):
 		try:
@@ -674,9 +714,10 @@ class ChannelParamsInfoScreen(Screen):
 			"Ostatni skan: %s" % result.get("scannedAt", "brak"),
 			"PAT PID: 0 | PMT PID: %s" % result.get("pmtPid", "brak")]
 		for stream in result.get("streams", []):
-			lines.append("%s PID %s | %s | jezyki: %s" % (
+			source = " | Enigma2" if stream.get("source") == "enigma" else ""
+			lines.append("%s PID %s | %s | jezyki: %s%s" % (
 				stream.get("kind", "stream"), stream.get("pid", "?"), stream.get("codec", "?"),
-				", ".join(stream.get("languages", [])) or "brak"))
+				", ".join(stream.get("languages", [])) or "brak", source))
 		lines += ["", "PAT:", result.get("pat", "brak"), "", "PMT:", result.get("section", "brak")]
 		return "\n".join(lines)
 

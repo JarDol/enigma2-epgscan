@@ -230,7 +230,101 @@ class ChannelParamScanTests(unittest.TestCase):
 			screen.choose_audio()
 			screen.channel_ready()
 		self.assertEqual(screen.pending_ref, "service:chosen")
-		open_picker.assert_called_once_with(result, result["streams"], None)
+		self.assertEqual(open_picker.call_count, 1)
+		self.assertEqual(open_picker.call_args[0][1:3], (result["streams"], None))
+		self.assertIsNot(open_picker.call_args[0][0], result)
+
+	def test_live_enigma_tracks_open_picker_when_pat_pmt_has_no_audio(self):
+		result = {"ref": "service:chosen", "name": "Chosen", "streams": []}
+		live_streams = [{"kind": "audio", "pid": 562, "languages": ["pol"], "codec": "audio/mpeg-L2"}]
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.pending_result = result
+		screen.pending_ref = result["ref"]
+		screen.engine = types.SimpleNamespace(running=False)
+		screen.zap_attempts = 0
+		screen.current = lambda: result
+		screen._currently_on = lambda _ref: True
+		screen._live_audio_tracks = lambda: (live_streams, 562)
+		screen.open_audio_picker = lambda result_arg, streams, pid: opened.append((result_arg, streams, pid))
+		opened = []
+
+		screen.channel_ready()
+
+		self.assertEqual(len(opened), 1)
+		self.assertEqual(opened[0][1][0]["pid"], 562)
+		self.assertEqual(opened[0][1][0]["source"], "enigma")
+		self.assertEqual(opened[0][2], 562)
+		self.assertIs(screen.pending_result, opened[0][0])
+
+	def test_single_scan_fallback_rechecks_live_enigma_tracks(self):
+		result = {"ref": "service:chosen", "name": "Chosen", "streams": []}
+		live_streams = [{"kind": "audio", "pid": 563, "languages": ["mis"], "codec": "audio/mpeg-L2"}]
+		opened = []
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.pending_result = result
+		screen.results = {result["ref"]: result}
+		screen.refresh = lambda: None
+		screen._live_audio_tracks = lambda: (live_streams, 563)
+		screen.open_audio_picker = lambda result_arg, streams, pid: opened.append((result_arg, streams, pid))
+
+		screen.single_scan_done({}, result)
+
+		self.assertEqual(len(opened), 1)
+		self.assertEqual(opened[0][1][0]["pid"], 563)
+		self.assertEqual(opened[0][1][0]["source"], "enigma")
+		self.assertEqual(opened[0][2], 563)
+
+	def test_audio_picker_auditions_highlight_and_restores_track_on_cancel(self):
+		class FakeList(object):
+			def getSelectedIndex(self):
+				return 1
+
+		class FakeLabel(object):
+			def setText(self, _text):
+				pass
+
+		previewed = []
+		screen = channelparamsui.ChannelAudioScreen.__new__(channelparamsui.ChannelAudioScreen)
+		screen["list"] = FakeList()
+		screen["details"] = FakeLabel()
+		screen.view_streams = [
+			{"pid": 562, "languages": ["pol"], "codec": "audio/mpeg-L2"},
+			{"pid": 563, "languages": ["mis"], "codec": "audio/mpeg-L2"},
+		]
+		screen.current_pid = 562
+		screen.preview_track = previewed.append
+		screen.close = lambda: previewed.append("closed")
+
+		screen.selection_changed()
+		screen.cancel()
+
+		self.assertEqual(previewed, [563, 562, "closed"])
+
+	def test_audio_cancel_callback_without_choice_is_safe(self):
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.pending_result = {"ref": "service:chosen"}
+		screen.pending_ref = "service:chosen"
+
+		screen.audio_chosen()
+
+		self.assertIsNone(screen.pending_result)
+		self.assertIsNone(screen.pending_ref)
+
+	def test_channel_parameters_info_shows_ok_menu_and_info_keys(self):
+		result = {"name": "TV6 HD", "selectedAudioPid": 562,
+			"selectedConfirmed": True, "streams": [
+				{"kind": "audio", "pid": 562, "languages": ["pol"]},
+				{"kind": "video", "pid": 1542, "codec": "H.264"},
+			]}
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.current = lambda: result
+		screen["info"] = types.SimpleNamespace(setText=lambda text: setattr(screen, "info_text", text))
+
+		screen.show_info()
+
+		self.assertIn("OK:", screen.info_text)
+		self.assertIn("Menu:", screen.info_text)
+		self.assertIn("Info/EPG:", screen.info_text)
 
 	def test_channel_params_screen_does_not_shadow_enigma_screen_keys(self):
 		class FakeList(object):

@@ -204,10 +204,13 @@ kanału. **Zielony** odświeża, **Żółty** filtruje, **Niebieski** wybiera bu
 i skan kanałów, a **Info/EPG** otwiera synchronizację danych.
 
 W oknie ścieżek audio: **Czerwony** wraca, **Zielony** wybiera ścieżkę aktywną według Enigma2, **Żółty** i
-**Niebieski** wybierają pierwszą lub drugą preferencję użytkownika, a **OK** wybiera ścieżkę z listy.
+**Niebieski** wybierają pierwszą lub drugą preferencję użytkownika. Strzałki **Góra/Dół** odsłuchują
+zaznaczoną ścieżkę bez zamykania okna, **OK** zatwierdza wybór, a **Czerwony** wraca i przywraca ścieżkę
+aktywną przed podglądem.
 **Info/EPG** pokazuje pełne dane PAT/PMT i strumieni. Preferencje języków można pobierać z ustawień
-automatycznego audio Enigma2 albo ustawić własną kolejność (np. `pol,eng`). Wybór ścieżki jest zapisywany
-od razu; zamknięcie okna nie pyta o zapis.
+automatycznego audio Enigma2 albo ustawić własną kolejność (np. `pol,eng`). Gdy skan PAT/PMT nie rozpozna
+ścieżek, okno wyboru korzysta z listy audio udostępnionej przez bieżącą usługę Enigma2. Wybór ścieżki jest
+zapisywany od razu; zamknięcie głównego okna nie pyta o zapis.
 
 W ustawieniach **Skan parametrów kanałów (PAT/PMT)** wybiera się języki, bukiety, limit równoległości,
 rezerwę tunerów, grupowanie po transponderze i odstęp 1/2/4/7 dni. Automatyczny skan uruchamia się dopiero po

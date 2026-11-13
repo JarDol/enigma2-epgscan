@@ -204,9 +204,12 @@ its available audio tracks; if scan data is missing, the plugin attempts a PAT/P
 and **Info/EPG** opens data synchronization.
 
 In the audio-track screen, **Red** returns, **Green** selects the track active according to Enigma2,
-**Yellow/Blue** choose the first/second user language preference, **OK** selects a listed track, and
-**Info/EPG** shows full PAT/PMT and stream data. Audio preferences can come from Enigma2's automatic-audio
-settings or a manually ordered list (for example `pol,eng`). Track selection is saved immediately.
+**Yellow/Blue** choose the first/second user language preference. **Up/Down** auditions the highlighted
+track without closing the screen, **OK** confirms it, and **Red** returns and restores the track that was
+active before preview. **Info/EPG** shows full PAT/PMT and stream data. Audio preferences can come from
+Enigma2's automatic-audio settings or a manually ordered list (for example `pol,eng`). If PAT/PMT scanning
+does not identify audio tracks, the picker uses the audio list supplied by the current Enigma2 service.
+Track selection is saved immediately.
 
 The **Channel parameters (PAT/PMT)** settings group selects language preferences, bouquets, parallel limit,
 tuner reserve, transponder grouping and an interval of 1/2/4/7 days. An automatic scan runs only after a completed
