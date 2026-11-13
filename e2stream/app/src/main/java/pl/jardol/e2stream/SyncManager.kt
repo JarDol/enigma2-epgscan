@@ -18,7 +18,7 @@ import org.json.JSONObject
  *  - device-<id>.json     — pełne ustawienia każdego odbiornika (nazwa, model, wartości ze znacznikami czasu).
  *
  * Zasady:
- *  - nowy odbiornik przy pierwszym uruchomieniu bierze swój plik (reinstalacja) albo domyślne z common.json,
+ *  - po nowej instalacji import profilu wymaga decyzji użytkownika przed rozpoczęciem synchronizacji,
  *  - każda zmiana trafia do pliku odbiornika; jeśli w common.json nie ma takiego klucza — dopisuje go jako domyślny,
  *  - PMT kanałów zawsze wspólne (wygrywa nowszy wpis),
  *  - ścieżki dźwięku: brakujące lokalnie są przejmowane z części wspólnej (nowe kanały wybrane na innym TV),
@@ -63,7 +63,9 @@ object SyncManager {
     private lateinit var app: Context
     private lateinit var sp: SharedPreferences
     private lateinit var meta: SharedPreferences
+    private lateinit var backupKeys: Set<String>
     private val ui = Handler(Looper.getMainLooper())
+    private val changeLock = Any()
 
     @Volatile private var applying = false
     @Volatile var running = false
@@ -78,8 +80,12 @@ object SyncManager {
 
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == null || applying) return@OnSharedPreferenceChangeListener
-        if (isDeviceKey(key) || isPmt(key)) {
-            meta.edit().putLong("t_$key", System.currentTimeMillis()).putBoolean("dirty", true).apply()
+        if (isDeviceKey(key) || isPmt(key) || key in backupKeys) {
+            synchronized(changeLock) {
+                val timestamp = maxOf(System.currentTimeMillis(), meta.getLong("t_$key", 0) + 1)
+                meta.edit().putLong("t_$key", timestamp).putBoolean("dirty", true)
+                    .putLong("changeVersion", meta.getLong("changeVersion", 0) + 1).apply()
+            }
             ui.removeCallbacks(soon)
             ui.postDelayed(soon, 5000)
         }
@@ -89,6 +95,15 @@ object SyncManager {
         app = ctx.applicationContext
         sp = app.getSharedPreferences("e2stream", Context.MODE_PRIVATE)
         meta = app.getSharedPreferences("e2sync", Context.MODE_PRIVATE)
+        backupKeys = SettingsBackup.values(Prefs(app)).keys
+        if (!meta.contains("backupFlowEnrolled")) {
+            val edit = meta.edit().putBoolean("backupFlowEnrolled", true)
+            if (!meta.contains("backupDecision") &&
+                (meta.getBoolean("initialized", false) || !sp.getString("host", "").isNullOrBlank())) {
+                edit.putBoolean("backupDecision", true)
+            }
+            check(edit.commit()) { "Nie udało się zapisać stanu konfiguracji kopii" }
+        }
         sp.registerOnSharedPreferenceChangeListener(listener)
     }
 
@@ -99,17 +114,26 @@ object SyncManager {
 
     val dirty: Boolean get() = meta.getBoolean("dirty", false)
     val lastSyncAt: Long get() = meta.getLong("lastSync", 0)
+    val needsBackupDecision: Boolean get() = !meta.getBoolean("backupDecision", false)
+
+    fun finishBackupDecision(skipCommonAudio: Boolean = false) {
+        meta.edit().putBoolean("backupDecision", true).putBoolean("freshBackupDecision", true)
+            .putBoolean("skipCommonAudio", skipCommonAudio)
+            .putBoolean("dirty", true).commit()
+    }
 
     fun syncAsync(done: ((String) -> Unit)? = null) {
-        if (!::app.isInitialized || running) return
+        if (!::app.isInitialized || running || needsBackupDecision) return
         val prefs = Prefs(app)
         if (!prefs.channelSync || prefs.host.isBlank()) return
         running = true
         Thread {
-            val r = try { sync(prefs) } catch (e: Exception) { "błąd: ${e.message ?: e}" }
+            val result = runCatching { sync(prefs) }
+            val r = result.getOrElse { "błąd: ${it.message ?: it}" }
             lastResult = r
             AppLog.i("synchronizacja: $r")
             running = false
+            if (result.isSuccess && dirty) ui.postDelayed(soon, 5000)
             done?.let { cb -> ui.post { cb(r) } }
         }.start()
     }
@@ -180,6 +204,7 @@ object SyncManager {
         val dData = dev?.optJSONObject("data")
 
         val first = !meta.getBoolean("initialized", false)
+        val freshDecision = meta.getBoolean("freshBackupDecision", false)
         val local = sp.all
         var applied = 0
         var settingsApplied = false
@@ -187,7 +212,14 @@ object SyncManager {
         applying = true
         try {
             val ed = sp.edit()
-            if (first) {
+            if (freshDecision) {
+                dData?.let { data ->
+                    for (k in data.keys()) {
+                        val t = data.optJSONObject(k)?.optLong("t") ?: continue
+                        metaEd.putLong("t_$k", maxOf(t, meta.getLong("t_$k", 0)))
+                    }
+                }
+            } else if (first) {
                 val configured = local.keys.count { isSetting(it) && it !in KEEP_ON_FIRST } >= 3
                 if (configured && dData == null) {
                     // istniejąca instalacja sprzed synchronizacji: lokalne ustawienia są ważne
@@ -218,7 +250,8 @@ object SyncManager {
             for (k in cData.keys()) {
                 val e = cData.optJSONObject(k) ?: continue
                 val lt = meta.getLong("t_$k", 0)
-                if ((isPmt(k) && (k !in local || e.optLong("t") > lt)) || (isAudio(k) && k !in local)) {
+                if ((isPmt(k) && (k !in local || e.optLong("t") > lt)) ||
+                    (isAudio(k) && k !in local && !freshDecision && !meta.getBoolean("skipCommonAudio", false))) {
                     put(ed, k, e.opt("v")); metaEd.putLong("t_$k", e.optLong("t")); applied++
                 }
             }
@@ -229,15 +262,41 @@ object SyncManager {
         metaEd.putBoolean("initialized", true).commit()
 
         // plik odbiornika: wszystkie jego ustawienia i ścieżki
+        val changeVersion = synchronized(changeLock) { meta.getLong("changeVersion", 0) }
         val all = sp.all
         val myData = JSONObject()
         for ((k, v) in all) if (isDeviceKey(k)) {
             val j = toJson(v) ?: continue
             myData.put(k, JSONObject().put("v", j).put("t", meta.getLong("t_$k", 0)))
         }
+        val backup = JSONObject()
+        for ((k, v) in SettingsBackup.values(prefs)) backup.put(k, toJson(v))
+        val device = JSONObject().put("id", deviceId()).put("name", prefs.displayName)
+            .put("model", "${Build.MANUFACTURER} ${Build.MODEL}").put("app", Tools.appVersion(app))
+            .put("updated", now).put("backup", backup)
+        val oldDevice = dev?.optJSONObject("device")
+        val oldBackup = oldDevice?.optJSONObject("backup")
+        val backupMissing = oldBackup == null || backup.keys().asSequence().any { !oldBackup.has(it) }
+        val preserved = if (freshDecision) {
+            val saved = meta.getString("backupBeforeFirstPush", null)
+            val savedRecord = saved?.let { JSONObject(it) }
+            if (savedRecord?.optString("host") == prefs.host) savedRecord else JSONObject().also { record ->
+                record.put("host", prefs.host)
+                oldDevice?.optJSONObject("backup")?.let { record.put("backup", it) }
+                dData?.let { record.put("data", it) }
+                check(meta.edit().putString("backupBeforeFirstPush", record.toString()).commit()) {
+                    "Nie udało się zabezpieczyć poprzedniej kopii"
+                }
+            }
+        } else null
+        val previousBackup = if (freshDecision) preserved?.optJSONObject("backup")
+            else oldDevice?.optJSONObject("previousBackup")
+        val previousData = if (freshDecision) preserved?.optJSONObject("data")
+            else oldDevice?.optJSONObject("previousData")
+        if (previousBackup != null) device.put("previousBackup", previousBackup)
+        if (previousData != null) device.put("previousData", previousData)
         val myFile = JSONObject()
-            .put("device", JSONObject().put("id", deviceId()).put("name", prefs.displayName)
-                .put("model", "${Build.MANUFACTURER} ${Build.MODEL}").put("app", Tools.appVersion(app)).put("updated", now))
+            .put("device", device)
             .put("data", myData)
 
         // część wspólna: PMT (nowszy wygrywa), pozostałe tylko gdy brak klucza (domyślne dla nowych)
@@ -256,19 +315,36 @@ object SyncManager {
 
         if (plugin != null) {
             // wtyczka scala po swojej stronie: plik odbiornika + PMT do części wspólnej
-            if (first || dirty || dev == null || applied > 0 || commonChanged) {
+            if (first || dirty || dev == null || backupMissing || applied > 0 || commonChanged) {
                 val pmt = JSONObject()
                 for ((k, v) in all) if (isPmt(k)) toJson(v)?.let { pmt.put(k, JSONObject().put("v", it).put("t", meta.getLong("t_$k", 0))) }
                 plugin.syncPush(deviceId(), JSONObject().put("device", myFile).put("common_add", pmt))
+                val saved = plugin.syncState(deviceId()).optJSONObject("device")
+                    ?.optJSONObject("device")?.optJSONObject("backup")
+                    ?: throw java.io.IOException("Nie udało się potwierdzić zapisu kopii na dekoderze")
+                for (k in backup.keys()) {
+                    val expected = backup.get(k)
+                    val actual = saved.opt(k)
+                    val equal = if (expected is JSONArray && actual is JSONArray) {
+                        (0 until expected.length()).map { expected.getString(it) }.toSet() ==
+                            (0 until actual.length()).map { actual.getString(it) }.toSet()
+                    } else expected == actual
+                    if (!equal) throw java.io.IOException("Nie udało się potwierdzić ustawienia $k na dekoderze")
+                }
             }
         } else {
-            if (first || dirty || dev == null || applied > 0) upload(prefs, devName, myFile)
+            if (first || dirty || dev == null || backupMissing || applied > 0) upload(prefs, devName, myFile)
             if (commonChanged) {
                 c.put("updated", now)
                 upload(prefs, COMMON, c)
             }
         }
-        meta.edit().putBoolean("dirty", false).putLong("lastSync", now).apply()
+        synchronized(changeLock) {
+            val edit = meta.edit().putBoolean("freshBackupDecision", false)
+                .remove("backupBeforeFirstPush").putLong("lastSync", now)
+            if (meta.getLong("changeVersion", 0) == changeVersion) edit.putBoolean("dirty", false)
+            edit.apply()
+        }
 
         if (settingsApplied) ui.post { prefs.bump(); onSettingsApplied?.invoke() }
         return "pobrano $applied, wspólnych ${cData.length()}" + (if (first) " (pierwsza synchronizacja)" else "")
@@ -276,17 +352,25 @@ object SyncManager {
 
     // ------------------------------------------------------------ profile innych odbiorników
 
-    data class Profile(val file: String, val name: String, val model: String, val updated: Long, val data: JSONObject)
+    data class Profile(
+        val file: String, val name: String, val model: String, val updated: Long,
+        val data: JSONObject, val backup: JSONObject?,
+    )
 
     fun profiles(prefs: Prefs): List<Profile> {
         val out = ArrayList<Profile>()
         if (prefs.pluginOk) {
             val arr = PluginApi(prefs).devices()
             for (i in 0 until arr.length()) {
-                val js = arr.optJSONObject(i) ?: continue
+                val js = arr.getJSONObject(i)
                 val d = js.optJSONObject("device") ?: JSONObject()
                 out.add(Profile(js.optString("file"), d.optString("name"), d.optString("model"), d.optLong("updated"),
-                    js.optJSONObject("data") ?: JSONObject()))
+                    js.optJSONObject("data") ?: JSONObject(), d.optJSONObject("backup")))
+                if (d.has("previousBackup") || d.has("previousData")) {
+                    out.add(Profile(js.optString("file") + "#previous", d.optString("name") + " (poprzednia kopia)",
+                        d.optString("model"), d.optLong("updated"), d.optJSONObject("previousData") ?: JSONObject(),
+                        d.optJSONObject("previousBackup")))
+                }
             }
             return out.sortedByDescending { it.updated }
         }
@@ -297,7 +381,12 @@ object SyncManager {
                 val js = read(ftp, "$dir/$n") ?: continue
                 val d = js.optJSONObject("device") ?: JSONObject()
                 out.add(Profile(n, d.optString("name"), d.optString("model"), d.optLong("updated"),
-                    js.optJSONObject("data") ?: JSONObject()))
+                    js.optJSONObject("data") ?: JSONObject(), d.optJSONObject("backup")))
+                if (d.has("previousBackup") || d.has("previousData")) {
+                    out.add(Profile(n + "#previous", d.optString("name") + " (poprzednia kopia)",
+                        d.optString("model"), d.optLong("updated"), d.optJSONObject("previousData") ?: JSONObject(),
+                        d.optJSONObject("previousBackup")))
+                }
             }
         }
         return out.sortedByDescending { it.updated }
@@ -307,11 +396,35 @@ object SyncManager {
     fun restore(p: Profile): Int {
         val ed = sp.edit()
         var n = 0
+        val before = Prefs(app)
+        val defaults = SettingsBackup.values(Prefs(app))
+        p.backup?.let { backup ->
+            for (k in backup.keys()) {
+                if (k == "host") continue
+                val expected = defaults[k] ?: continue
+                val value = backup.opt(k)
+                val valid = when (expected) {
+                    is Boolean -> value is Boolean
+                    is Int -> value is Int
+                    is String -> value is String
+                    is Set<*> -> value is JSONArray && (0 until value.length()).all { value.opt(it) is String }
+                    else -> false
+                }
+                require(valid) { "Nieprawidłowa wartość ustawienia $k w kopii" }
+                put(ed, k, value)
+                n++
+            }
+        }
         for (k in p.data.keys()) {
             if (!isDeviceKey(k)) continue
+            if (p.backup?.has(k) == true) continue
             put(ed, k, p.data.optJSONObject(k)?.opt("v")); n++
         }
-        ed.commit() // listener oznaczy zmiany jako nowe — trafią do pliku tego odbiornika
+        if (p.backup?.has("pluginPort") == true && p.backup.opt("pluginPort") != before.pluginPort ||
+            p.backup?.has("pluginToken") == true && p.backup.opt("pluginToken") != before.pluginToken) {
+            ed.putBoolean("pluginOk", false)
+        }
+        check(ed.commit()) { "Nie udało się zapisać ustawień" }
         return n
     }
 }

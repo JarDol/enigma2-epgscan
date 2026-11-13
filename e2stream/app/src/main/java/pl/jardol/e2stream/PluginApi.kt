@@ -124,7 +124,7 @@ class PluginApi(private val p: Prefs) {
 
     fun syncPush(id: String, body: JSONObject): JSONObject = post("/api/sync/push?id=" + enc(id), body)
 
-    fun devices(): JSONArray = get("/api/sync/devices").optJSONArray("devices") ?: JSONArray()
+    fun devices(): JSONArray = get("/api/sync/devices").getJSONArray("devices")
 
     companion object {
         /** Sprawdza wtyczkę i zapamiętuje wynik w ustawieniach. */

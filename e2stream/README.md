@@ -49,9 +49,16 @@ Podczas timeshiftu z VLC aplikacja próbuje zachować bieżącą ścieżkę prze
 Na dekoderze w `<katalog FTP>/sync/` (domyślnie `/media/hdd/e2stream/sync/`):
 
 * `common.json` — wartości domyślne dla nowych odbiorników i wspólne PMT kanałów,
-* `device-<id>.json` — ustawienia i wybrane ścieżki dźwięku każdego odbiornika (z nazwą i modelem).
+* `device-<id>.json` — ustawienia, kopia ustawień i wybrane ścieżki dźwięku każdego odbiornika (z nazwą i modelem).
 
-Nowy odbiornik przy pierwszym uruchomieniu bierze swój profil (reinstalacja) albo wartości domyślne.
+Po nowej instalacji i wybraniu dekodera aplikacja sprawdza wtyczkę EPG Scan i proponuje import znalezionej kopii
+albo pozostanie przy ustawieniach domyślnych. Można wybrać także profil innego odbiornika. Starsze profile
+zawierają tylko ustawienia zapisywane przez wcześniejsze wersje. Przy imporcie pozostaje wybrany adres dekodera.
+Kopia obejmuje wszystkie ustawienia aplikacji, w tym PIN, dane logowania, ustawienia odtwarzania, menu i lokalne
+ścieżki; przed przeniesieniem na inne urządzenie sprawdź ścieżki i zgodność odtwarzacza. Kopia nie obejmuje danych
+użytkowych, np. lokalnego harmonogramu ani plików timeshiftu. Kopie na dekoderze są zapisane bez szyfrowania,
+dlatego zabezpiecz dostęp do sieci i API wtyczki. Aktualizacja kopii wymaga włączonej synchronizacji i dostępu do dekodera;
+przed odinstalowaniem aplikacji upewnij się, że synchronizacja się powiodła.
 Zmiany zapisują się w pliku odbiornika; klucz nieobecny w części wspólnej jest tam dopisywany jako domyślny.
 Synchronizacja działa w tle: przy starcie, kilka sekund po zmianie, co 2 minuty i przy wyjściu.
 Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś ustawienia z innego odbiornika.

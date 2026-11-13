@@ -209,6 +209,9 @@ class PlayerActivity : Activity() {
     private var decoderUnavailable = false
     private var lastProbeAt = 0L
     @Volatile private var startupProbeGeneration = 0
+    private var backupCheckRunning = false
+    private var backupDialogOpen = false
+    private var backupCheckGeneration = 0
 
     // ---------------------------------------------------------------- cykl życia
 
@@ -405,6 +408,10 @@ class PlayerActivity : Activity() {
             openSettings()
             return
         }
+        if (SyncManager.needsBackupDecision) {
+            checkInitialBackup()
+            return
+        }
         AppLog.init(this, Storage.dir(this, prefs))
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
         keyMap = KeyMap.load(prefs)
@@ -449,6 +456,90 @@ class PlayerActivity : Activity() {
         }
     }
 
+    private fun checkInitialBackup() {
+        if (backupCheckRunning || backupDialogOpen) return
+        backupCheckRunning = true
+        val generation = ++backupCheckGeneration
+        val host = prefs.host
+        showMessage("Sprawdzam kopie ustawień na dekoderze…", 10_000)
+        io.execute {
+            val result = runCatching {
+                if (!PluginApi.check(prefs)) null
+                else SyncManager.profiles(prefs).filter { it.backup != null || it.data.length() > 0 }
+            }
+            runOnUiThread {
+                if (generation != backupCheckGeneration) return@runOnUiThread
+                backupCheckRunning = false
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (prefs.host != host) { startUp(); return@runOnUiThread }
+                result.onFailure { error ->
+                    AppLog.i("kopia ustawień: błąd pobierania: $error")
+                    showBackupCheckError("Nie udało się sprawdzić kopii: ${error.message ?: error}")
+                }.onSuccess { profiles ->
+                    if (profiles == null) {
+                        showBackupCheckError("Nie znaleziono wtyczki EPG Scan lub nie odpowiada ona na wybranym dekoderze.")
+                    } else if (profiles.isEmpty()) {
+                        AppLog.i("kopia ustawień: brak profili na dekoderze")
+                        SyncManager.finishBackupDecision()
+                        startUp()
+                    } else {
+                        AppLog.i("kopia ustawień: znaleziono ${profiles.size} profili")
+                        showInitialBackupChoice(profiles)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showBackupCheckError(detail: String) {
+        backupDialogOpen = true
+        TvDialog.confirm(this, "Kopia ustawień", "$detail\n\nMożesz ponowić próbę lub kontynuować bez sprawdzenia kopii.",
+            listOf(
+                TvDialog.Btn("Ponów") { backupDialogOpen = false; checkInitialBackup() },
+                TvDialog.Btn("Kontynuuj") { backupDialogOpen = false; SyncManager.finishBackupDecision(skipCommonAudio = true); startUp() },
+                TvDialog.Btn("Ustawienia") { backupDialogOpen = false; openSettings() },
+                TvDialog.Btn("Wyjdź") { finish() },
+            ), cancelable = false, timeoutSec = 0)
+    }
+
+    private fun showInitialBackupChoice(profiles: List<SyncManager.Profile>) {
+        backupDialogOpen = true
+        TvDialog.confirm(this, "Znaleziono kopie ustawień",
+            "Na dekoderze są zapisane profile. Możesz wybrać kopię do importu lub zacząć z ustawieniami domyślnymi.\n\n" +
+                "Import obejmuje także PIN, hasła, token wtyczki, ustawienia odtwarzania i lokalne ścieżki. Wybrany adres dekodera pozostanie bez zmian.",
+            listOf(
+                TvDialog.Btn("Wybierz kopię") { backupDialogOpen = false; selectInitialBackup(profiles) },
+                TvDialog.Btn("Nie importuj") { backupDialogOpen = false; SyncManager.finishBackupDecision(skipCommonAudio = true); startUp() },
+                TvDialog.Btn("Wyjdź") { finish() },
+            ), cancelable = false, timeoutSec = 0)
+    }
+
+    private fun selectInitialBackup(profiles: List<SyncManager.Profile>) {
+        backupDialogOpen = true
+        val fmt = SimpleDateFormat("dd.MM HH:mm", Locale("pl"))
+        TvDialog.list(this, "Wybierz kopię ustawień",
+            profiles.map { profile ->
+                TvDialog.Item(profile.name.ifBlank { profile.model },
+                    "${profile.model} • ${fmt.format(Date(profile.updated))}" +
+                        if (profile.backup == null) " • starsza, niepełna kopia" else "")
+            }, onCancel = { backupDialogOpen = false; showInitialBackupChoice(profiles) }) { index ->
+            backupDialogOpen = false
+            try {
+                val count = SyncManager.restore(profiles[index])
+                SyncManager.finishBackupDecision()
+                AppLog.i("kopia ustawień: przywrócono $count ustawień")
+                ZapWakeAlarms.sync(this)
+                startUp()
+            } catch (e: Exception) {
+                AppLog.i("kopia ustawień: błąd przywracania: $e")
+                TvDialog.confirm(this, "Nie udało się przywrócić kopii",
+                    e.message ?: e.toString(), listOf(TvDialog.Btn("Wróć") { showInitialBackupChoice(profiles) }),
+                    cancelable = false, timeoutSec = 0)
+                backupDialogOpen = true
+            }
+        }
+    }
+
     /** Co minutę: czy przypada pobranie EPG z harmonogramu. */
     private val epgTick = object : Runnable {
         override fun run() {
@@ -466,6 +557,9 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        backupCheckGeneration++
+        backupCheckRunning = false
+        backupDialogOpen = false
         startupProbeGeneration++
         epgReturnFromSettings = settingsOpen
         if (settingsOpen && !recMode) {
