@@ -31,7 +31,7 @@ object SyncManager {
 
     /** Ustawienia synchronizowane (bez adresu dekodera, ścieżek lokalnych i stanu). */
     private val SETTINGS = setOf(
-        "httpPort", "streamPort", "user", "pass", "blockOnDisconnect",
+        "httpPort", "streamPort", "user", "pass", "blockOnDisconnect", "appLanguage",
         "tunneling", "engine", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps", "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon", "watchdog", "stallSec", "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "dropRestart",
         "audioLang", "preferAc3",
         "logFtp", "ftpUser", "ftpPass", "ftpDir", "saveTs", "tsRingMb", "tsFtp", "cleanTs",
@@ -49,7 +49,7 @@ object SyncManager {
         "engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps",
         "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon",
         "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "stallSec", "dropRestart", "watchdog",
-        "showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3", "blockOnDisconnect",
+        "showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3", "blockOnDisconnect", "appLanguage",
     )
 
     /** Przy pierwszym uruchomieniu nie nadpisujemy tego, co użytkownik właśnie wpisał. */
@@ -129,7 +129,7 @@ object SyncManager {
         running = true
         Thread {
             val result = runCatching { sync(prefs) }
-            val r = result.getOrElse { "błąd: ${it.message ?: it}" }
+            val r = result.getOrElse { AppLanguage.wrap(app).getString(R.string.receiver_sync_error, it.message ?: it.toString()) }
             lastResult = r
             AppLog.i("synchronizacja: $r")
             running = false
@@ -147,6 +147,9 @@ object SyncManager {
     }
 
     private fun put(e: SharedPreferences.Editor, k: String, v: Any?) {
+        if (k == "appLanguage") {
+            require(v is String && AppLanguage.isValid(v)) { "Nieprawidłowy język aplikacji w kopii: $v" }
+        }
         when (v) {
             is Boolean -> e.putBoolean(k, v)
             is Int -> e.putInt(k, v)
@@ -347,7 +350,9 @@ object SyncManager {
         }
 
         if (settingsApplied) ui.post { prefs.bump(); onSettingsApplied?.invoke() }
-        return "pobrano $applied, wspólnych ${cData.length()}" + (if (first) " (pierwsza synchronizacja)" else "")
+        val localized = AppLanguage.wrap(app)
+        return localized.getString(R.string.receiver_sync_counts, applied, cData.length()) +
+            if (first) localized.getString(R.string.receiver_sync_first) else ""
     }
 
     // ------------------------------------------------------------ profile innych odbiorników

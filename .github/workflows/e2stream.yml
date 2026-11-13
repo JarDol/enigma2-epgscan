@@ -51,12 +51,8 @@ jobs:
           if [ "$GITHUB_REF_NAME" = "beta" ]; then IS_BETA=true; fi
           git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md || true
           if gh release view "$T" >/dev/null 2>&1; then
-            gh release upload "$T" out/*.apk --clobber
-            if [ "$IS_BETA" = true ]; then
-              gh release edit "$T" --title "E2Stream $VER" --notes-file notes.md --latest=false --prerelease
-            else
-              gh release edit "$T" --title "E2Stream $VER" --notes-file notes.md --latest=false
-            fi
+            echo "Wydanie $T już istnieje — nie nadpisuję go" >&2
+            exit 1
           else
             if [ "$IS_BETA" = true ]; then
               gh release create "$T" out/*.apk --title "E2Stream $VER" --notes-file notes.md --target "$GITHUB_SHA" --latest=false --prerelease

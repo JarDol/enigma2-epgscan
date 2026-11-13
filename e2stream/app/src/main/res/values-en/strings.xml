@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="channel_list_help">◀ ▶ bouquet   •   OK watch   •   long OK programme details</string>
+    <string name="settings_help">▲▼ select  •  OK change  •  BACK exit (changes are saved immediately)</string>
+    <string name="app_language">Application language</string>
+    <string name="language_system">Automatic (system language)</string>
+    <string name="language_polish">Polish</string>
+    <string name="language_english">English</string>
+    <string name="section_decoder">Enigma2 receiver</string>
+    <string name="section_decoder_desc">address, ports, OpenWebif login, EPG Scan plugin, FTP, synchronisation</string>
+    <string name="section_playback">Playback and video</string>
+    <string name="section_playback_desc">engine (ExoPlayer / VLC), deinterlacing, buffers, watchdog, refresh rate, audio</string>
+    <string name="section_appearance">Appearance</string>
+    <string name="section_appearance_desc">font and picon sizes: channel list, EPG, channel banner</string>
+    <string name="section_epg">EPG and channel picons</string>
+    <string name="section_epg_desc">EPG downloads, picons from receiver</string>
+    <string name="section_general">General</string>
+    <string name="section_general_desc">bouquets, startup channel, remote control, PIN</string>
+    <string name="section_updates">Information and updates</string>
+    <string name="section_updates_desc">app version and updates, application and EPG Scan plugin information</string>
+    <string name="section_logs">Logs and dumps</string>
+    <string name="section_logs_desc">diagnostics: statistics, logs, TS dumps, storage location</string>
+    <string name="menu_event_epg">Programme details</string>
+    <string name="menu_channel_epg">Channel EPG</string>
+    <string name="menu_multi_epg">Multi EPG</string>
+    <string name="menu_epg_search">Search EPG</string>
+    <string name="menu_audio_track">Audio track…</string>
+    <string name="menu_scheduled_switches">Scheduled switches</string>
+    <string name="menu_receiver_timers">Receiver timers</string>
+</resources>

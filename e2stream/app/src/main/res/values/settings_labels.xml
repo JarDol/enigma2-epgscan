@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="setting_receiver" formatted="false">Dekoder</string>
+    <string name="setting_receiver_ip_address" formatted="false">Adres IP dekodera</string>
+    <string name="setting_search_for_receivers_on_the_network" formatted="false">Szukaj dekoderów w sieci</string>
+    <string name="setting_openwebif_port" formatted="false">Port OpenWebif</string>
+    <string name="setting_streaming_port" formatted="false">Port streamingu</string>
+    <string name="setting_block_changes_when_the_receiver_is_unreachable" formatted="false">Blokuj zmiany przy braku komunikacji z dekoderem</string>
+    <string name="setting_openwebif_username" formatted="false">Użytkownik OpenWebif</string>
+    <string name="setting_openwebif_password" formatted="false">Hasło OpenWebif</string>
+    <string name="setting_epg_scan_plugin_on_the_receiver" formatted="false">Wtyczka EPG Scan na dekoderze</string>
+    <string name="setting_plugin_status" formatted="false">Stan wtyczki</string>
+    <string name="setting_plugin_port" formatted="false">Port wtyczki</string>
+    <string name="setting_plugin_token" formatted="false">Token wtyczki</string>
+    <string name="setting_ftp_only_needed_without_the_epg_scan_plugin_on_the_rece" formatted="false">FTP (potrzebne tylko, gdy na dekoderze nie ma wtyczki EPG Scan)</string>
+    <string name="setting_ftp_username" formatted="false">FTP — użytkownik</string>
+    <string name="setting_ftp_password" formatted="false">FTP — hasło</string>
+    <string name="setting_ftp_directory_on_the_receiver" formatted="false">FTP — katalog na dekoderze</string>
+    <string name="setting_receiver_synchronisation" formatted="false">Synchronizacja z dekoderem</string>
+    <string name="setting_synchronise_settings_and_channel_data" formatted="false">Synchronizuj ustawienia i dane kanałów</string>
+    <string name="setting_synchronise_now" formatted="false">Synchronizuj teraz</string>
+    <string name="setting_import_settings_from_another_device" formatted="false">Przenieś ustawienia z innego odbiornika</string>
+    <string name="setting_playback_engine" formatted="false">Silnik odtwarzania</string>
+    <string name="setting_vlc_deinterlacing" formatted="false">VLC: usuwanie przeplotu</string>
+    <string name="setting_vlc_hardware_acceleration" formatted="false">VLC: akceleracja sprzętowa</string>
+    <string name="setting_vlc_video_format_chroma" formatted="false">VLC: format obrazu (chroma)</string>
+    <string name="setting_video_tunnelling" formatted="false">Tunelowanie wideo</string>
+    <string name="setting_exoplayer_decoder_frame_rate_experimental" formatted="false">ExoPlayer: liczba klatek dla dekodera (eksperyment)</string>
+    <string name="setting_restart_on_stuttering_dropped_frames" formatted="false">Wznawiaj przy zacinaniu (utrata klatek)</string>
+    <string name="setting_playback_buffer_ms" formatted="false">Zapas w trakcie oglądania (ms)</string>
+    <string name="setting_build_buffer_by_slowing_playback_slightly_5_without_tun" formatted="false">Dobuduj zapas lekkim zwolnieniem (5%, tylko bez tunelowania)</string>
+    <string name="setting_restart_frozen_video_watchdog" formatted="false">Wznawiaj zawieszony obraz (watchdog)</string>
+    <string name="setting_freeze_after_seconds_without_new_frames" formatted="false">Zawieszenie po (s bez nowych klatek)</string>
+    <string name="setting_startup_buffer_ms_fast_picture" formatted="false">Bufor startowy (ms) — szybki obraz</string>
+    <string name="setting_screen_refresh_rate" formatted="false">Odświeżanie ekranu</string>
+    <string name="setting_timeshift_pause_and_rewind_live_tv" formatted="false">Timeshift (pauza i cofanie na żywo)</string>
+    <string name="setting_timeshift" formatted="false">Timeshift</string>
+    <string name="setting_timeshift_buffer_location" formatted="false">Miejsce bufora timeshiftu</string>
+    <string name="setting_automatic_timeshift" formatted="false">Automatyczny timeshift</string>
+    <string name="setting_seek_seconds" formatted="false">Przewijanie ◀ ▶ (sekundy)</string>
+    <string name="setting_seek_minutes" formatted="false">Przewijanie ▲ ▼ (minuty)</string>
+    <string name="setting_back_on_empty_screen_live_tv" formatted="false">Wstecz na pustym ekranie → na żywo</string>
+    <string name="setting_allow_buffer_in_device_storage" formatted="false">Zezwól na bufor w pamięci urządzenia</string>
+    <string name="setting_audio" formatted="false">Dźwięk</string>
+    <string name="setting_preferred_language" formatted="false">Preferowany język</string>
+    <string name="setting_prefer_ac3_e_ac3" formatted="false">Preferuj AC3 / E-AC3</string>
+    <string name="setting_channel_list" formatted="false">Lista kanałów</string>
+    <string name="setting_channel_list_font" formatted="false">Czcionka listy kanałów</string>
+    <string name="setting_channel_list_picons" formatted="false">Picony na liście kanałów</string>
+    <string name="setting_epg_events_channel_epg_multi_epg_search" formatted="false">EPG (wydarzenia, EPG kanału, Multi EPG, szukanie)</string>
+    <string name="setting_epg_window_font" formatted="false">Czcionka okien EPG</string>
+    <string name="setting_channel_banner" formatted="false">Pasek kanału</string>
+    <string name="setting_channel_banner_font" formatted="false">Czcionka paska kanału</string>
+    <string name="setting_channel_banner_picon" formatted="false">Picon na pasku kanału</string>
+    <string name="setting_epg_scan_update" formatted="false">Aktualizacja z EPG Scan</string>
+    <string name="setting_download_epg_daily_without_epg_scan_plugin" formatted="false">Pobieraj EPG codziennie (bez wtyczki EPG Scan)</string>
+    <string name="setting_epg_download_time" formatted="false">Godzina pobierania EPG</string>
+    <string name="setting_days_of_epg_to_download" formatted="false">EPG na ile dni do przodu</string>
+    <string name="setting_channel_picons_from_receiver" formatted="false">Picony kanałów z dekodera</string>
+    <string name="setting_replace_missing_picons_with_e2stream_logo" formatted="false">Zastępuj brakujące picony logo E2Stream</string>
+    <string name="setting_picon_directory_on_receiver" formatted="false">Katalog picon na dekoderze</string>
+    <string name="setting_download_epg_and_picons_now" formatted="false">Pobierz EPG i picony teraz</string>
+    <string name="setting_delete_and_download_icons_again" formatted="false">Usuń i pobierz ikony od nowa</string>
+    <string name="setting_visible_bouquets" formatted="false">Widoczne bukiety</string>
+    <string name="setting_menu_items_and_order" formatted="false">Pozycje i kolejność menu</string>
+    <string name="setting_remote_control_key_mapping" formatted="false">Mapowanie klawiszy pilota</string>
+    <string name="setting_map_ok_and_arrows_without_banner" formatted="false">Mapowanie OK i strzałek — bez paska</string>
+    <string name="setting_map_ok_and_arrows_with_channel_banner" formatted="false">Mapowanie OK i strzałek — z paskiem kanału</string>
+    <string name="setting_resume_last_channel_on_startup" formatted="false">Po uruchomieniu wróć do ostatniego kanału</string>
+    <string name="setting_switch_to_channel_on_startup" formatted="false">Po uruchomieniu przełącz na kanał</string>
+    <string name="setting_wake_tv_for_scheduled_switches_experimental" formatted="false">Budź TV dla harmonogramu (eksperymentalne)</string>
+    <string name="setting_wake_up_diagnostics" formatted="false">Diagnostyka wybudzania</string>
+    <string name="setting_remove_completed_switches_after" formatted="false">Czyść zrealizowane po</string>
+    <string name="setting_reverse_when_changing_channels" formatted="false">Odwróć ▲ / ▼ przy zmianie kanału</string>
+    <string name="setting_channel_banner_duration_s" formatted="false">Czas paska kanału (s)</string>
+    <string name="setting_timeshift_banner_duration_s" formatted="false">Czas paska timeshiftu (s)</string>
+    <string name="setting_channel_list_duration_s_0_no_timeout" formatted="false">Czas listy kanałów (s, 0 = bez zamykania)</string>
+    <string name="setting_action_dialog_duration_s_0_no_timeout" formatted="false">Czas okien akcji (s, 0 = bez zamykania)</string>
+    <string name="setting_confirmation_dialog_duration_s_0_no_timeout" formatted="false">Czas okien potwierdzenia (s, 0 = bez zamykania)</string>
+    <string name="setting_channel_epg_duration_s_0_no_timeout" formatted="false">Czas EPG kanału (s, 0 = bez zamykania)</string>
+    <string name="setting_multi_epg_duration_s_0_no_timeout" formatted="false">Czas Multi EPG (s, 0 = bez zamykania)</string>
+    <string name="setting_information_dialog_duration_s_0_no_timeout" formatted="false">Czas okien informacyjnych (s, 0 = bez zamykania)</string>
+    <string name="setting_show_information_dialogs" formatted="false">Pokazuj okna informacyjne</string>
+    <string name="setting_settings_pin" formatted="false">PIN do ustawień</string>
+    <string name="setting_ask_for_pin_again_after" formatted="false">Pytaj o PIN ponownie po</string>
+    <string name="setting_e2stream_application" formatted="false">Aplikacja E2Stream</string>
+    <string name="setting_update_channel" formatted="false">Kanał aktualizacji</string>
+    <string name="setting_check_for_updates" formatted="false">Sprawdź aktualizację</string>
+    <string name="setting_automatic_update" formatted="false">Automatyczna aktualizacja</string>
+    <string name="setting_application_information_readme" formatted="false">Opis aplikacji (README)</string>
+    <string name="setting_epg_scan_plugin" formatted="false">Wtyczka EPG Scan</string>
+    <string name="setting_plugin_on_receiver" formatted="false">Wtyczka na dekoderze</string>
+    <string name="setting_plugin_information_readme" formatted="false">Opis wtyczki (README)</string>
+    <string name="setting_on_screen_statistics" formatted="false">Statystyki na ekranie</string>
+    <string name="setting_without_epg_scan_sending_to_the_receiver_requires_ftp" formatted="false">Bez wtyczki EPG Scan wysyłanie na dekoder wymaga FTP</string>
+    <string name="setting_send_log_to_receiver" formatted="false">Wyślij log na dekoder</string>
+    <string name="setting_send_ts_dumps_to_receiver" formatted="false">Wyślij zrzuty TS na dekoder</string>
+    <string name="setting_log_and_dump_storage_location" formatted="false">Miejsce zapisu logów i zrzutów</string>
+    <string name="setting_clean_stream_damaged_packets_invalid_timestamps" formatted="false">Czyść strumień (uszkodzone pakiety, błędne znaczniki czasu)</string>
+    <string name="setting_save_ts_dump_on_freeze" formatted="false">Zapisuj zrzut TS przy zawieszeniu</string>
+    <string name="setting_ts_dump_size_mb" formatted="false">Rozmiar zrzutu TS (MB)</string>
+    <string name="setting_send_log_to_receiver_every_2_minutes" formatted="false">Wysyłaj log na dekoder (co 2 min)</string>
+    <string name="setting_send_ts_dumps_to_receiver_2" formatted="false">Wysyłaj zrzuty TS na dekoder</string>
+</resources>

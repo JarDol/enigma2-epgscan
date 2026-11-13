@@ -201,7 +201,7 @@ object Picons {
                 .firstOrNull { it.startsWith("/") && it.length > 1 }
         }
     } catch (e: Exception) {
-        AppLog.i("ikony: nie udało się odczytać ustawień Enigmy2 przez FTP: $e"); null
+        AppLog.i("picony: nie udało się odczytać ustawień Enigmy2 przez FTP: $e"); null
     }
 
     /** Usuwa zapisane ikony (do pobrania od nowa). */
@@ -223,11 +223,11 @@ object Picons {
                     if (names.any { it.endsWith(".png", true) }) { found = pd to names; break }
                 }
                 if (found == null) {
-                    AppLog.i("ikony: brak plików .png w katalogach: ${dirs.distinct().joinToString()}")
+                    AppLog.i("picony: brak plików .png w katalogach: ${dirs.distinct().joinToString()}")
                     return chans
                 }
                 val (pd, names) = found
-                AppLog.i("ikony: katalog picon na dekoderze: $pd (${names.size} plików)")
+                AppLog.i("picony: katalog picon na dekoderze: $pd (${names.size} plików)")
                 val bySvc = HashMap<String, String>()
                 val byName = HashMap<String, String>()
                 val upper = HashMap<String, String>()
@@ -248,11 +248,11 @@ object Picons {
                         ?: byName[sn] ?: byName[sn.removeSuffix("hd")] ?: byName[sn + "hd"]
                     val data = n?.let { ftp.retr("$pd/$it") }
                     if (data != null && data.isNotEmpty()) File(d, localName(c.ref)).writeBytes(data) else left.add(c)
-                    if (i % 20 == 0) progress("Ikony (FTP): $i/${chans.size}")
+                    if (i % 20 == 0) progress("Picony (FTP): $i/${chans.size}")
                 }
             }
         } catch (e: Exception) {
-            AppLog.i("ikony: FTP nieudane: $e")
+            AppLog.i("picony: FTP nieudane: $e")
             return chans.filter { !File(d, localName(it.ref)).exists() }
         }
         return left
@@ -272,7 +272,7 @@ object Picons {
                 if (got != null) break
             }
             if (got != null) { File(d, localName(c.ref)).writeBytes(got); fails = -1000 } else { left.add(c); fails++ }
-            if (i % 20 == 0) progress("Ikony: $i/${chans.size}")
+            if (i % 20 == 0) progress("Picony: $i/${chans.size}")
         }
         return left
     }
@@ -302,7 +302,7 @@ object Picons {
         if (left.isNotEmpty()) {
             val cfg = detectDir(prefs)
             if (cfg != null) {
-                AppLog.i("ikony: katalog picon z ustawień Enigmy2: $cfg")
+                AppLog.i("picony: katalog picon z ustawień Enigmy2: $cfg")
                 if (prefs.piconDir.isBlank()) prefs.piconDir = cfg
             }
             val preferred = listOfNotNull(prefs.piconDir.trimEnd('/').takeIf { it.isNotBlank() }, cfg)
@@ -313,7 +313,7 @@ object Picons {
         }
         val none = chans.filter { !File(d, localName(it.ref)).exists() }
         if (none.isNotEmpty()) {
-            AppLog.i("ikony: brak dla ${none.size} kanałów: " +
+            AppLog.i("picony: brak dla ${none.size} kanałów: " +
                 none.take(40).joinToString("; ") { "${it.name} (${candidates(it).first()})" })
         }
         synchronized(missing) { missing.clear() }

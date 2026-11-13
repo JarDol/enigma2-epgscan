@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="diag_video">Obraz: %1$s</string>
+    <string name="diag_audio">Dźwięk: %1$s</string>
+    <string name="diag_engine">Silnik: %1$s</string>
+    <string name="diag_tunnel">Tunelowanie: %1$s</string>
+    <string name="diag_enabled">włączone</string>
+    <string name="diag_disabled">wyłączone</string>
+    <string name="diag_buffer">Bufor: %1$d ms / zapas %2$d ms%3$s   start obrazu: %4$s</string>
+    <string name="diag_building_buffer">\u0020(dobudowuję, %1$s×)</string>
+    <string name="diag_no_slowdown">\u0020(bez zwolnienia)</string>
+    <string name="diag_ts_rate">TS: %1$.2f Mb/s  odczyt maks. %2$d ms</string>
+    <string name="diag_ts_bursts">TS paczki: przerwy ~%1$d ms   wyczyszczone: %2$d   poprawione PTS: %3$d</string>
+    <string name="diag_ts_errors">TS błędy: CC %1$d  TEI %2$d  kod. %3$d  sync %4$d  PCR %5$d  PMT %6$d</string>
+    <string name="diag_screen">Ekran: %1$s</string>
+    <string name="diag_refresh">Odświeżanie: %1$s</string>
+    <string name="diag_frames">Klatki: %1$d   utracone: %2$d%3$s</string>
+    <string name="diag_tunnel_hidden">\u0020(w tunelu niewidoczne)</string>
+    <string name="diag_watchdog">Watchdog: %1$s</string>
+    <string name="diag_watchdog_off">Watchdog: wyłączony</string>
+    <string name="diag_restarts">Wznowienia: %1$d</string>
+    <string name="diag_last_reason">Ostatni powód: %1$s</string>
+    <string name="storage_removable">Nośnik wymienny (USB/SD)</string>
+    <string name="storage_device">Pamięć urządzenia</string>
+    <string name="storage_free">%1$s — %2$d MB wolne\n%3$s</string>
+    <string name="storage_private">Pamięć prywatna aplikacji\n%1$s</string>
+    <string name="diag_display_modes">%1$s (dostępne: %2$s)</string>
+</resources>

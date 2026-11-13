@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="epg_pack_building">EPG Scan is preparing the package</string>
+    <string name="epg_pack_no_epg">The EPG Scan package has no EPG file</string>
+    <string name="epg_pack_unchanged">EPG Scan package unchanged (%1$s)</string>
+    <string name="epg_from_receiver">EPG from receiver…</string>
+    <string name="epg_pack_corrupt">The EPG package changed during download or is corrupted</string>
+    <string name="epg_pack_mismatch">The EPG package does not match the receiver information</string>
+    <string name="epg_picons_from_receiver">Picons from receiver…</string>
+    <string name="epg_pack_picons_error">Could not download picons from the EPG Scan package</string>
+    <string name="epg_moved_start">startup channel</string>
+    <string name="epg_moved_last">last channel</string>
+    <string name="epg_pack_refs_error">Could not download references from the EPG Scan package</string>
+    <string name="epg_pack_moved">, updated reference: %1$s</string>
+    <string name="epg_pack_result">EPG Scan package (%1$s): EPG %2$d channels / %3$d events, picons %4$d%5$s (%6$d s)</string>
+    <string name="epg_already_downloading">EPG download already in progress</string>
+    <string name="epg_pack_error">EPG Scan package error: %1$s</string>
+    <string name="epg_channel_progress">EPG: %1$d/%2$d channels</string>
+    <string name="epg_picons_count">, picons: %1$d</string>
+    <string name="epg_download_result">EPG downloaded: %1$d channels, %2$d events%3$s (%4$d s)</string>
+    <string name="epg_download_error">EPG download error: %1$s</string>
+</resources>

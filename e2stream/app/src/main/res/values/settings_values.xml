@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_enabled">✔ włączone</string>
+    <string name="settings_disabled">✘ wyłączone</string>
+    <string name="settings_hint_no_login">puste = bez logowania</string>
+    <string name="settings_hint_no_token">puste = bez (sieć lokalna)</string>
+    <string name="settings_hint_auto_directory">puste = odczytaj z ustawień Enigmy2</string>
+    <string name="settings_plugin_installed">jest — %1$s</string>
+    <string name="settings_plugin_missing">brak (OpenWebif + FTP)</string>
+    <string name="settings_device_name">Nazwa tego odbiornika (znacznik %1$s)</string>
+    <string name="settings_fps">Nie podawaj</string>
+    <string name="settings_every_start">przy każdym uruchomieniu</string>
+    <string name="settings_daily">raz dziennie</string>
+    <string name="settings_all">wszystkie</string>
+    <string name="settings_hidden_count">ukryte: %1$d</string>
+    <string name="settings_first_channel">pierwszy kanał</string>
+    <string name="settings_start_disabled">nieaktywne (włączony powrót do ostatniego)</string>
+    <string name="settings_status_alarm">status i test alarmu</string>
+    <string name="settings_enable_wake_first">najpierw włącz wybudzanie</string>
+    <string name="settings_never_clean">nie czyść</string>
+    <string name="settings_after_days">%1$d dniach</string>
+    <string name="settings_pin_inactive">nieaktywne (brak PIN-u)</string>
+    <string name="settings_pin_suffix">\u0020• wyjście z aplikacji zawsze blokuje</string>
+    <string name="settings_version">wersja %1$s</string>
+    <string name="settings_plugin_absent_details">brak — szczegóły w sekcji Dekoder Enigma2</string>
+    <string name="settings_stable">stabilny</string>
+    <string name="settings_beta">beta (testowy)</string>
+    <string name="settings_set_decoder">ustaw w sekcji Dekoder Enigma2</string>
+    <string name="settings_visible">widoczne</string>
+    <string name="settings_hidden">ukryte</string>
+    <string name="settings_options_hint">OK opcje  •  WSTECZ wróć</string>
+    <string name="settings_hide_item">Ukryj pozycję</string>
+    <string name="settings_show_item">Pokaż pozycję</string>
+    <string name="settings_move_up">Przesuń wyżej</string>
+    <string name="settings_move_down">Przesuń niżej</string>
+    <string name="settings_refresh_unchanged">bez zmian</string>
+    <string name="settings_refresh_50">zawsze 50 Hz</string>
+    <string name="settings_refresh_auto">automatycznie wg treści</string>
+    <string name="settings_never">nigdy</string>
+    <string name="settings_sync_running">trwa…</string>
+    <string name="settings_sync_last">ostatnio: %1$s</string>
+    <string name="settings_sync_dirty">\u0020• są zmiany</string>
+    <string name="settings_add_key">+ Dodaj / zmień klawisz</string>
+    <string name="settings_press_remote">naciśnij go na pilocie</string>
+    <string name="settings_restore_defaults">Przywróć domyślne</string>
+    <string name="settings_key_help">Klawisz, który ma wywoływać wybraną akcję podczas oglądania.</string>
+    <string name="settings_key_fixed">Klawisza %1$s nie można przypisać</string>
+    <string name="settings_key">Klawisz %1$s</string>
+    <string name="settings_map_with_banner">OK i strzałki — pasek kanału</string>
+    <string name="settings_map_without_banner">OK i strzałki — bez paska</string>
+    <string name="settings_epg_status">ostatnio: %1$s • kanałów: %2$d</string>
+    <string name="settings_screen_title">E2Stream %1$s — ustawienia</string>
+    <string name="settings_fps_value">%1$d kl./s</string>
+</resources>

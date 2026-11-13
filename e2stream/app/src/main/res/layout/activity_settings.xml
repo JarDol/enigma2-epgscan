@@ -26,7 +26,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="▲▼ wybór  •  OK zmień  •  WSTECZ wyjście (zmiany zapisują się od razu)"
+            android:text="@string/settings_help"
             android:textColor="#FF90A4AE"
             android:textSize="15sp" />
     </LinearLayout>

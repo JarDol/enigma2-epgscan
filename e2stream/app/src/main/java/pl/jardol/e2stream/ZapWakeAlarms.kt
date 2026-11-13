@@ -102,22 +102,24 @@ object ZapWakeAlarms {
         ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
     fun diagnostics(ctx: Context): String {
+        val text = AppLanguage.wrap(ctx)
         val next = ZapTimers.list(ctx).firstOrNull()
         return buildString {
-            append("Opcja wybudzania: ${if (Prefs(ctx).wakeForZap) "włączona" else "wyłączona"}\n")
-            append("Dokładne alarmy: ${if (canScheduleExact(ctx)) "dozwolone" else "BRAK ZGODY"}\n")
-            append("Powiadomienia: ${if (notificationAllowed(ctx)) "dozwolone" else "BRAK ZGODY"}\n")
-            append("Pełny ekran: ${if (canUseFullScreen(ctx)) "dozwolony" else "zablokowany"}\n")
-            append("Oczekujące wydarzenia: ${ZapTimers.list(ctx).size}\n")
-            if (next != null) append("Najbliższy: ${next.channel} — ${next.title} (${next.begin})")
-            else append("Brak oczekujących wydarzeń")
+            appendLine(text.getString(R.string.wake_option, text.getString(if (Prefs(ctx).wakeForZap) R.string.wake_enabled else R.string.wake_disabled)))
+            appendLine(text.getString(R.string.wake_exact, text.getString(if (canScheduleExact(ctx)) R.string.wake_allowed else R.string.wake_no_permission)))
+            appendLine(text.getString(R.string.wake_notifications, text.getString(if (notificationAllowed(ctx)) R.string.wake_allowed else R.string.wake_no_permission)))
+            appendLine(text.getString(R.string.wake_fullscreen, text.getString(if (canUseFullScreen(ctx)) R.string.wake_fullscreen_allowed else R.string.wake_fullscreen_blocked)))
+            appendLine(text.getString(R.string.wake_pending, ZapTimers.list(ctx).size))
+            if (next != null) append(text.getString(R.string.wake_next, next.channel, next.title, next.begin))
+            else append(text.getString(R.string.wake_no_pending))
         }
     }
 
     fun scheduleTest(ctx: Context): String {
-        if (!Prefs(ctx).wakeForZap) return "Najpierw włącz „Budź TV dla harmonogramu”."
-        if (!canScheduleExact(ctx)) return "Brak zgody na dokładne alarmy. Włącz ją w ustawieniach Androida."
-        if (!notificationAllowed(ctx)) return "Brak zgody na powiadomienia. Włącz ją w ustawieniach Androida."
+        val text = AppLanguage.wrap(ctx)
+        if (!Prefs(ctx).wakeForZap) return text.getString(R.string.wake_enable_first)
+        if (!canScheduleExact(ctx)) return text.getString(R.string.wake_exact_permission)
+        if (!notificationAllowed(ctx)) return text.getString(R.string.wake_notification_permission)
         val testId = System.currentTimeMillis().toString()
         val intent = Intent(ctx, ZapAlarmReceiver::class.java).apply {
             action = ACTION_TEST
@@ -136,11 +138,11 @@ object ZapWakeAlarms {
             }
             Log.i("E2Stream", "Test alarm RTC_WAKEUP ustawiony: $testId na $at")
             AppLog.i("wybudzanie: test RTC_WAKEUP ustawiony id=$testId at=$at")
-            return "Test ustawiony za 60 sekund. Zostaw aplikację i poczekaj bez naciskania pilota."
+            return text.getString(R.string.wake_test_scheduled)
         } catch (e: SecurityException) {
             Log.e("E2Stream", "Nie można ustawić testowego alarmu RTC_WAKEUP", e)
             AppLog.i("wybudzanie: błąd ustawienia testu id=$testId: $e")
-            return "Android odrzucił testowy alarm: ${e.message}"
+            return text.getString(R.string.wake_test_error, e.message ?: e.toString())
         }
     }
 
@@ -149,7 +151,7 @@ object ZapWakeAlarms {
     internal fun showNotification(ctx: Context, intent: Intent, key: String, channel: String, title: String, begin: Long, testId: String? = null) {
         val manager = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
-            manager.createNotificationChannel(NotificationChannel(CHANNEL, "Harmonogram E2Stream", NotificationManager.IMPORTANCE_HIGH))
+            manager.createNotificationChannel(NotificationChannel(CHANNEL, AppLanguage.wrap(ctx).getString(R.string.wake_notification_channel), NotificationManager.IMPORTANCE_HIGH))
         }
         val launch = Intent(ctx, ZapPromptActivity::class.java).apply {
             action = "pl.jardol.e2stream.OPEN_ZAP_ALARM"
@@ -202,8 +204,8 @@ class ZapAlarmReceiver : BroadcastReceiver() {
             val id = intent.getStringExtra("test_id") ?: "?"
             Log.i("E2Stream", "TEST alarm RTC_WAKEUP dotarł: $id; appForeground=${ZapWakeAlarms.isForeground(context)}")
             AppLog.i("wybudzanie: TEST RTC_WAKEUP DOSTARCZONY id=$id appForeground=${ZapWakeAlarms.isForeground(context)}")
-            ZapWakeAlarms.showNotification(context, intent, "test-$id", "Test alarmu E2Stream",
-                "Alarm dotarł. Czekaj na okno testowe.", System.currentTimeMillis() / 1000, id)
+            ZapWakeAlarms.showNotification(context, intent, "test-$id", AppLanguage.wrap(context).getString(R.string.wake_test_title),
+                AppLanguage.wrap(context).getString(R.string.wake_test_arrived), System.currentTimeMillis() / 1000, id)
             return
         }
         if (!prefs.wakeForZap || ZapWakeAlarms.isForeground(context)) {
@@ -221,7 +223,7 @@ class ZapAlarmReceiver : BroadcastReceiver() {
         AppLog.i("wybudzanie: alarm harmonogramu DOSTARCZONY key=$key")
         ZapWakeAlarms.showNotification(context, intent, key,
             intent.getStringExtra("channel") ?: "E2Stream",
-            intent.getStringExtra("title") ?: "Zaplanowana audycja",
+            intent.getStringExtra("title") ?: AppLanguage.wrap(context).getString(R.string.wake_scheduled_event),
             intent.getLongExtra("begin", System.currentTimeMillis() / 1000))
     }
 }

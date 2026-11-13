@@ -42,6 +42,13 @@ class Prefs(ctx: Context) {
         get() = s("pass")
         set(v) = putS("pass", v)
 
+    var appLanguage: String
+        get() = s("appLanguage", AppLanguage.SYSTEM)
+        set(v) {
+            require(AppLanguage.isValid(v)) { "Nieprawidłowy język aplikacji: $v" }
+            putS("appLanguage", v)
+        }
+
     var blockOnDisconnect: Boolean
         get() = sp.getBoolean("blockOnDisconnect", true)
         set(v) = putB("blockOnDisconnect", v)

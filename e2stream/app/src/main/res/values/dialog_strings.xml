@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dialog_select_hint">OK wybierz  •  WSTECZ zamknij</string>
+    <string name="dialog_multi_hint">OK zaznacz / odznacz  •  WSTECZ zapisz i wyjdź</string>
+    <string name="dialog_scroll_hint">▲ ▼ przewijanie  •  WSTECZ zamknij</string>
+    <string name="dialog_input_hint">OK — klawiatura  •  WSTECZ anuluj</string>
+    <string name="dialog_save">Zapisz</string>
+    <string name="dialog_cancel">Anuluj</string>
+    <string name="pin_until_exit">do wyjścia z aplikacji</string>
+    <string name="pin_invalid">Błędny PIN — spróbuj ponownie</string>
+    <string name="pin_locked">Ustawienia zablokowane</string>
+    <string name="pin_instructions">Cyfry z pilota albo ▲▼ zmiana cyfry, ▶ / OK dalej, ◀ wstecz\nprzytrzymaj OK — klawiatura na ekranie</string>
+</resources>

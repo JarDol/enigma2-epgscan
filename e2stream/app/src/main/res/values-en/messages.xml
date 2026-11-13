@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="message_decoder_frame_rate_experimental" formatted="false">Decoder frame rate (experimental)</string>
+    <string name="message_seek" formatted="false">Seek ◀ ▶</string>
+    <string name="message_seek_2" formatted="false">Seek ▲ ▼</string>
+    <string name="message_epg_scan_update" formatted="false">EPG Scan update</string>
+    <string name="message_format_hh_mm" formatted="false">Format HH:MM</string>
+    <string name="message_first_disable_resume_last_channel_on_startup" formatted="false">First disable “Resume last channel on startup”</string>
+    <string name="message_wake_up_diagnostics" formatted="false">Wake-up diagnostics</string>
+    <string name="message_60_s_test" formatted="false">60 s test</string>
+    <string name="message_send_log" formatted="false">Send log</string>
+    <string name="message_close" formatted="false">Close</string>
+    <string name="message_remove_completed_switches_after" formatted="false">Remove completed switches after</string>
+    <string name="message_set_a_pin_first" formatted="false">Set a PIN first</string>
+    <string name="message_update_channel" formatted="false">Update channel</string>
+    <string name="message_loading_information" formatted="false">Loading information…</string>
+    <string name="message_menu_items_and_order" formatted="false">Menu items and order</string>
+    <string name="message_permission_for_exact_alarms_was_not_granted" formatted="false">Permission for exact alarms was not granted</string>
+    <string name="message_scheduled_wake_up_disabled" formatted="false">Scheduled wake-up disabled</string>
+    <string name="message_this_device_does_not_support_exact_alarms" formatted="false">This device does not support exact alarms</string>
+    <string name="message_scheduled_wake_up_enabled" formatted="false">Scheduled wake-up enabled</string>
+    <string name="message_without_notifications_reminders_may_not_appear_on_scree" formatted="false">Without notifications, reminders may not appear on screen</string>
+    <string name="message_automatic_timeshift" formatted="false">Automatic timeshift</string>
+    <string name="message_first_select_a_buffer_location_usb_drive_or_device_stor" formatted="false">First select a buffer location: USB drive or device storage</string>
+    <string name="message_timeshift_buffer_location" formatted="false">Timeshift buffer location</string>
+    <string name="message_buffer_in_device_storage" formatted="false">Buffer in device storage</string>
+    <string name="message_allow" formatted="false">Allow</string>
+    <string name="message_no" formatted="false">No</string>
+    <string name="message_screen_refresh_rate" formatted="false">Screen refresh rate</string>
+    <string name="message_ask_for_pin_again_after" formatted="false">Ask for PIN again after</string>
+    <string name="message_playback_engine_on_this_device" formatted="false">Playback engine on this device</string>
+    <string name="message_vlc_hardware_acceleration" formatted="false">VLC: hardware acceleration</string>
+    <string name="message_vlc_video_format" formatted="false">VLC: video format</string>
+    <string name="message_vlc_deinterlacing" formatted="false">VLC: deinterlacing</string>
+    <string name="message_log_and_ts_dump_storage_location" formatted="false">Log and TS dump storage location</string>
+    <string name="message_searching_for_receivers_on_the_network" formatted="false">Searching for receivers on the network…</string>
+    <string name="message_receivers_found" formatted="false">Receivers found</string>
+    <string name="message_loading_bouquets" formatted="false">Loading bouquets…</string>
+    <string name="message_could_not_load_bouquets_from_the_receiver" formatted="false">Could not load bouquets from the receiver</string>
+    <string name="message_could_not_load_bouquets" formatted="false">Could not load bouquets</string>
+    <string name="message_startup_channel_bouquet" formatted="false">Startup channel — bouquet</string>
+    <string name="message_empty_bouquet" formatted="false">Empty bouquet</string>
+    <string name="message_checking_epg_scan_plugin" formatted="false">Checking EPG Scan plugin…</string>
+    <string name="message_finish_receiver_setup_and_choose_whether_to_restore_a_s" formatted="false">Finish receiver setup and choose whether to restore a settings backup</string>
+    <string name="message_synchronising" formatted="false">Synchronising…</string>
+    <string name="message_loading_device_profiles" formatted="false">Loading device profiles…</string>
+    <string name="message_no_other_device_profiles_on_the_receiver" formatted="false">No other device profiles on the receiver</string>
+    <string name="message_import_settings_from_device" formatted="false">Import settings from device</string>
+    <string name="message_key_mapping_during_playback" formatted="false">Key mapping (during playback)</string>
+    <string name="message_defaults_restored" formatted="false">Defaults restored</string>
+    <string name="message_press_a_key_on_the_remote" formatted="false">Press a key on the remote…</string>
+    <string name="message_use_ok_and_arrow_key_mapping" formatted="false">Use OK and arrow key mapping</string>
+    <string name="message_loading_timers_from_receiver" formatted="false">Loading timers from receiver…</string>
+    <string name="message_no_timers_on_the_receiver" formatted="false">No timers on the receiver</string>
+    <string name="message_receiver_timers" formatted="false">Receiver timers</string>
+    <string name="message_delete_from_receiver" formatted="false">Delete from receiver</string>
+    <string name="message_delete_timer_from_receiver" formatted="false">Delete timer from receiver?</string>
+    <string name="message_delete" formatted="false">Delete</string>
+    <string name="message_starting_in_safe_mode" formatted="false">Starting in safe mode</string>
+    <string name="message_start_anyway" formatted="false">Start anyway</string>
+    <string name="message_go_to_settings" formatted="false">Go to settings</string>
+    <string name="message_wake_up_test_received" formatted="false">Wake-up test received</string>
+    <string name="message_checking_settings_backups_on_receiver" formatted="false">Checking settings backups on receiver…</string>
+    <string name="message_settings_backup" formatted="false">Settings backup</string>
+    <string name="message_retry" formatted="false">Retry</string>
+    <string name="message_continue" formatted="false">Continue</string>
+    <string name="message_settings" formatted="false">Settings</string>
+    <string name="message_exit" formatted="false">Exit</string>
+    <string name="message_settings_backups_found" formatted="false">Settings backups found</string>
+    <string name="message_choose_backup" formatted="false">Choose backup</string>
+    <string name="message_do_not_import" formatted="false">Do not import</string>
+    <string name="message_choose_a_settings_backup" formatted="false">Choose a settings backup</string>
+    <string name="message_could_not_restore_backup" formatted="false">Could not restore backup</string>
+    <string name="message_back" formatted="false">Back</string>
+    <string name="message_encrypted_channel_receiver_is_not_decrypting_it_card_so" formatted="false">Encrypted channel — receiver is not decrypting it (card / softcam)</string>
+    <string name="message_receiver_responds_but_no_stream_is_arriving_reconnectin" formatted="false">Receiver responds but no stream is arriving — reconnecting</string>
+    <string name="message_wait" formatted="false">Wait</string>
+    <string name="message_cannot_communicate_with_receiver" formatted="false">Cannot communicate with receiver</string>
+    <string name="message_no_bouquets_on_receiver" formatted="false">No bouquets on receiver</string>
+    <string name="message_record_on_receiver" formatted="false">Record on receiver</string>
+    <string name="message_no_scheduled_switches_add_one_from_programme_details_lo" formatted="false">No scheduled switches — add one from programme details (long OK on channel list or EPG)</string>
+    <string name="message_scheduled_switches" formatted="false">Scheduled switches</string>
+    <string name="message_remove_from_history" formatted="false">Remove from history</string>
+    <string name="message_confirm_deletion" formatted="false">Confirm deletion</string>
+    <string name="message_timeshift_is_not_configured_settings_playback_and_video" formatted="false">Timeshift is not configured — Settings → Playback and video → Timeshift</string>
+    <string name="message_timeshift_is_unavailable_when_playing_a_recording" formatted="false">Timeshift is unavailable when playing a recording</string>
+    <string name="message_timeshift_no_channel_playing" formatted="false">Timeshift: no channel playing</string>
+    <string name="message_timeshift_unavailable_usb_drive_unavailable_or_device_s" formatted="false">Timeshift unavailable: USB drive unavailable or device storage not permitted</string>
+    <string name="message_timeshift_buffer_is_still_empty_nothing_to_rewind" formatted="false">Timeshift: buffer is still empty — nothing to rewind</string>
+    <string name="message_live" formatted="false">Live</string>
+    <string name="message_already_live" formatted="false">Already live</string>
+    <string name="message_timeshift_buffer_full_resuming_from_the_oldest_recorded" formatted="false">Timeshift buffer full — resuming from the oldest recorded point</string>
+    <string name="message_play" formatted="false">Play</string>
+    <string name="message_delete_recording" formatted="false">Delete recording?</string>
+    <string name="message_end_of_recording" formatted="false">End of recording</string>
+    <string name="message_press_back_again_to_exit" formatted="false">Press BACK again to exit</string>
+    <string name="message_e2stream_safe_mode" formatted="false">E2Stream — safe mode</string>
+    <string name="message_no_audio_tracks" formatted="false">No audio tracks</string>
+    <string name="message_audio_track_remembered_for_this_channel" formatted="false">Audio track (remembered for this channel)</string>
+    <string name="message_could_not_select_audio_track" formatted="false">Could not select audio track</string>
+</resources>
