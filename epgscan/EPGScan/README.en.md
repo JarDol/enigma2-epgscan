@@ -188,7 +188,8 @@ each unique DVB service in the selected bouquets, including multiple services on
 EPG Scan's tuner reserve, parallel limit and tuning gap. IPTV and unknown service types are reported as
 unsupported; tuning and table-read errors are included in the report.
 
-Run it independently of EPG: on the main screen choose **Actions → blue: Channel parameters**, or
+Run it independently of EPG: on the main screen choose **Actions**, select
+**Channel parameters (PAT/PMT)**, then press **OK** or **Green**. Alternatively, choose
 **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**, then press **Menu** and confirm.
 Audio preferences can come from Enigma2's automatic-audio settings or a manually ordered list (for example
 `pol,eng`). A unique preferred-language match is recommended automatically; missing or ambiguous matches need

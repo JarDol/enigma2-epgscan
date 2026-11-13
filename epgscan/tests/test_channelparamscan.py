@@ -63,6 +63,9 @@ common.selected_bouquets = lambda: []
 common.service_name = lambda ref: ref
 common.tp_params = lambda _ref: None
 common.save_cfg = lambda: None
+common.keys_skin = lambda *_args: ""
+common.init_keys = lambda _screen: None
+common.set_keys = lambda *_args, **_kwargs: None
 common.is_due = lambda: False
 common.sched_active = lambda: False
 common.next_run = lambda: 0
@@ -85,10 +88,56 @@ engine_module.get_engine = lambda _session: None
 sys.modules[engine_module.__name__] = engine_module
 schedule_module = importlib.import_module(PACKAGE + ".schedule")
 
+
+screens = types.ModuleType("Screens")
+screens.__path__ = []
+screen_module = types.ModuleType("Screens.Screen")
+screen_module.Screen = type("FakeScreen", (dict,), {})
+messagebox_module = types.ModuleType("Screens.MessageBox")
+messagebox_module.MessageBox = type("FakeMessageBox", (), {"TYPE_INFO": 0, "TYPE_YESNO": 1})
+audio_module = types.ModuleType("Screens.AudioSelection")
+audio_module.AudioSelection = type("FakeAudioSelection", (), {})
+components = types.ModuleType("Components")
+components.__path__ = []
+action_module = types.ModuleType("Components.ActionMap")
+action_module.ActionMap = type("FakeActionMap", (), {})
+label_module = types.ModuleType("Components.Label")
+label_module.Label = type("FakeLabel", (), {})
+menulist_module = types.ModuleType("Components.MenuList")
+menulist_module.MenuList = type("FakeMenuList", (), {})
+selection_module = types.ModuleType("Components.SelectionList")
+selection_module.SelectionList = type("FakeSelectionList", (), {})
+selection_module.SelectionEntryComponent = lambda *args: args
+ui_modules = {
+	"Screens": screens, "Screens.Screen": screen_module, "Screens.MessageBox": messagebox_module,
+	"Screens.AudioSelection": audio_module, "Components": components,
+	"Components.ActionMap": action_module, "Components.Label": label_module,
+	"Components.MenuList": menulist_module, "Components.SelectionList": selection_module,
+}
+with patch.dict(sys.modules, ui_modules):
+	channelparamsui = importlib.import_module(PACKAGE + ".channelparamsui")
+
 PMT_BASE64 = "ArAsQo/DAADhGPAAG+EY8AAE4hjwBgoEcG9sAAbjGPAKegKAAgoEcWFhAEkPdSI="
 
 
 class ChannelParamScanTests(unittest.TestCase):
+	def test_channel_params_screen_does_not_shadow_enigma_screen_keys(self):
+		class FakeList(object):
+			def setList(self, _rows):
+				pass
+
+		class FakeLabel(object):
+			def setText(self, _text):
+				pass
+
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen["list"] = FakeList()
+		screen["summary"] = FakeLabel()
+		screen.engine = None
+		with patch.object(channelparamsui, "load_results", return_value={"results": {}, "last_scan": {}}):
+			screen.refresh()
+		self.assertEqual(set(screen.keys()), {"list", "summary"})
+
 	def test_bouquet_scan_flattens_subbouquets_and_reports_iptv(self):
 		with tempfile.TemporaryDirectory() as directory:
 			with open(os.path.join(directory, "bouquets.tv"), "w") as f:

@@ -62,14 +62,14 @@ class ChannelParamsScreen(Screen):
 			data = load_results()
 		except Exception as e:
 			self.results = {}
-			self.keys = []
+			self.channel_refs = []
 			self["list"].setList(["Nie mozna odczytac wynikow: %s" % e])
 			self["summary"].setText("Plik wynikow skanu jest uszkodzony lub niedostepny.")
 			return
 		self.results = data.get("results", {})
-		self.keys = sorted(self.results, key=lambda ref: self.results[ref].get("name", ref).lower())
+		self.channel_refs = sorted(self.results, key=lambda ref: self.results[ref].get("name", ref).lower())
 		rows = []
-		for ref in self.keys:
+		for ref in self.channel_refs:
 			result = self.results[ref]
 			pid = result.get("selectedAudioPid")
 			stream = _audio(result, pid) if pid is not None else None
@@ -89,13 +89,13 @@ class ChannelParamsScreen(Screen):
 			self["summary"].setText("Skanowanie PAT/PMT: aktywne %d, w kolejce %d" % (n, q))
 		else:
 			self["summary"].setText("Wyniki: %d kanalow | ostatni skan: %d poprawnych, %d bledow, %d nieobslugiwanych" %
-				(len(self.keys), run.get("scanned", 0), len(run.get("errors", [])), len(run.get("unsupported", []))))
+				(len(self.channel_refs), run.get("scanned", 0), len(run.get("errors", [])), len(run.get("unsupported", []))))
 		set_keys(self, red="Zamknij", green="Potwierdz/zapisz", yellow="Podglad", blue="E2Stream")
 
 	def current(self):
 		i = self["list"].getSelectedIndex()
-		if 0 <= i < len(self.keys):
-			return self.results[self.keys[i]]
+		if 0 <= i < len(self.channel_refs):
+			return self.results[self.channel_refs[i]]
 		return None
 
 	def choose_audio(self):

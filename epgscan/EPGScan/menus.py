@@ -12,7 +12,7 @@ from Components.ActionMap import ActionMap
 from Components.Label import Label
 from Components.ConfigList import ConfigListScreen
 from Components.ScrollLabel import ScrollLabel
-from Components.config import getConfigListEntry, ConfigSelection, ConfigYesNo, NoSave
+from Components.config import getConfigListEntry, ConfigSelection, ConfigYesNo, ConfigNothing, NoSave
 
 from .common import cfg, log, save_cfg, VERSION, keys_skin, init_keys, set_keys, CLEAR_CHOICES, profile_default, \
 	profile_text, log_path, backup_dir, SRV_CHOICES, SW_CHOICES
@@ -23,8 +23,8 @@ class EPGScanActions(Screen, ConfigListScreen):
 	(OK na ekranie glownym i harmonogram)."""
 	skin = """
 	<screen position="center,center" size="1500,820" title="EPG Scan - akcje">
-		<widget name="config" position="20,15" size="1460,330" font="Regular;30" secondfont="Regular;30" itemHeight="46" scrollbarMode="showOnDemand" />
-		<widget name="help" position="20,360" size="1460,370" font="Regular;28" />
+		<widget name="config" position="20,15" size="1460,375" font="Regular;30" secondfont="Regular;30" itemHeight="46" scrollbarMode="showOnDemand" />
+		<widget name="help" position="20,400" size="1460,330" font="Regular;28" />
 		%s
 	</screen>""" % keys_skin(20, 745, 1460)
 
@@ -46,6 +46,7 @@ class EPGScanActions(Screen, ConfigListScreen):
 		self.c_fetch = NoSave(ConfigSelection(default="nie" if not p["fetch"] else ("jedno" if p.get("one") else "nowe"), choices=[
 			("nie", "nie"), ("jedno", "tak - w jednym miejscu (gotowa dzisiejsza paczka drugiej strony)"),
 			("nowe", "tak - pobierz na nowo")]))
+		self.c_channelparams = NoSave(ConfigNothing())
 		self["help"] = Label("")
 		init_keys(self)
 		ConfigListScreen.__init__(self, [
@@ -56,11 +57,11 @@ class EPGScanActions(Screen, ConfigListScreen):
 			getConfigListEntry("Serwer epgpl", self.c_srv),
 			getConfigListEntry("Pozostale zrodla XMLTV", self.c_other),
 			getConfigListEntry("Pobierz swieze dane", self.c_fetch),
+			getConfigListEntry("Skan parametrow kanalow (PAT/PMT) - osobna akcja", self.c_channelparams),
 		], session=session, on_change=self.update_help)
 		self["actions"] = ActionMap(["SetupActions", "ColorActions"], {
 			"ok": self.go, "green": self.go, "save": self.go,
 			"yellow": self.save_default,
-			"blue": self.channel_params,
 			"cancel": self.close, "red": self.close,
 		}, -2)
 		try:
@@ -76,7 +77,14 @@ class EPGScanActions(Screen, ConfigListScreen):
 
 	def update_help(self):
 		p = self.profile()
-		set_keys(self, red="Anuluj", green="Start EPG", yellow="Zapisz jako domyslne", blue="Skan parametrow")
+		current = self["config"].getCurrent()
+		channelparams_selected = bool(current and current[1] is self.c_channelparams)
+		set_keys(self, red="Anuluj", green="Uruchom skan parametrow" if channelparams_selected else "Start EPG",
+			yellow="" if channelparams_selected else "Zapisz jako domyslne")
+		if channelparams_selected:
+			self["help"].setText("Niezalezny skan PAT/PMT kanalow z wybranych bukietow. Nie uruchamia skanu EPG; "
+				"wybierz ten wiersz i nacisnij OK lub zielony.")
+			return
 		lines = ["Kolejnosc: %s  (zmiana: Ustawienia -> Program z internetu)" % profile_text(p)]
 		if p["sw"] != "nie":
 			lines.append("SatWatch najpierw (wolne tunery, najwyzej 15 min czekania); po zmianach w kanalach lista "
@@ -107,10 +115,11 @@ class EPGScanActions(Screen, ConfigListScreen):
 		self["help"].setText("\n".join(lines))
 
 	def go(self):
+		current = self["config"].getCurrent()
+		if current and current[1] is self.c_channelparams:
+			self.close("channelparams")
+			return
 		self.close(self.profile())
-
-	def channel_params(self):
-		self.close("channelparams")
 
 	def save_default(self):
 		p = self.profile()

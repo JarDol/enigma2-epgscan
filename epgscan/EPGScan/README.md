@@ -188,7 +188,8 @@ DVB w wybranych bukietach, również wtedy, gdy kilka kanałów jest na tym samy
 limitu równoległości i odstępów strojenia EPG Scan. IPTV i nierozpoznane typy są jawnie wymieniane jako
 nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
 
-Uruchom niezależnie od EPG: na ekranie głównym wybierz **Akcje → niebieski: Skan parametrów** albo
+Uruchom niezależnie od EPG: na ekranie głównym wybierz **Akcje**, zaznacz wiersz
+**Skan parametrów kanałów (PAT/PMT)** i naciśnij **OK** lub **zielony**. Możesz też wybrać
 **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**, następnie **Menu** i potwierdź.
 Preferencje języków można pobierać z ustawień automatycznego audio Enigma2 albo ustawić własną kolejność (np.
 `pol,eng`). Jednoznaczna ścieżka zgodna z preferencją jest proponowana automatycznie; brak języka lub kilka
