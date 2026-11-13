@@ -69,4 +69,5 @@
     <string name="player_recording_error">Nagrania: %1$s</string>
     <string name="player_backup_plugin_missing">Nie znaleziono wtyczki EPG Scan lub nie odpowiada ona na wybranym dekoderze.</string>
     <string name="player_no_epg_description">Brak opisu w EPG</string>
+    <string name="player_recordings">Nagrania</string>
 </resources>

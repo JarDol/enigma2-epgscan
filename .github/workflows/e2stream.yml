@@ -39,7 +39,7 @@ jobs:
 
       - name: Nazwa pliku z wersją
         run: |
-          V="0.18.36-beta.${{ matrix.beta_index }}-vlc.${{ matrix.libvlc_version }}"
+          V="0.18.38-beta.${{ matrix.beta_index }}-vlc.${{ matrix.libvlc_version }}"
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk "out/e2stream-$V.apk"
           echo "VER=$V" >> "$GITHUB_ENV"

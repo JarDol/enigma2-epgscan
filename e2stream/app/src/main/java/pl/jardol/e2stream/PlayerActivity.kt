@@ -2140,7 +2140,7 @@ class PlayerActivity : Activity() {
 
     /** Bukiet „Nagrania” zawsze na końcu listy bukietów. */
     private fun withRec(bq: List<Bouquet>) = bq.filter { it.ref != REC_REF } +
-        (if (REC_REF in prefs.hiddenBouquets) emptyList() else listOf(Bouquet("Nagrania", REC_REF)))
+        (if (REC_REF in prefs.hiddenBouquets) emptyList() else listOf(Bouquet(getString(R.string.player_recordings), REC_REF)))
 
     /** Kanały bukietu albo (dla „Nagrania”) zawartość bieżącego katalogu nagrań. Poza wątkiem UI. */
     private fun channelsOf(bq: Bouquet): List<Channel> {

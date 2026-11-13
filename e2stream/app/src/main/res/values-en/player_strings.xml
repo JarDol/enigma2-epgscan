@@ -69,4 +69,5 @@
     <string name="player_recording_error">Recordings: %1$s</string>
     <string name="player_backup_plugin_missing">The EPG Scan plugin was not found or is not responding on the selected receiver.</string>
     <string name="player_no_epg_description">No EPG description</string>
+    <string name="player_recordings">Recordings</string>
 </resources>
