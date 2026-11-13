@@ -2,6 +2,7 @@ name: Wydania EPG Scan i epgpl
 
 # Nowa wersja na main (VERSION w epgscan/EPGScan/common.py albo epgpl/VERSION) = nowe wydanie.
 # Gdy wydanie o tej wersji juz istnieje - nic sie nie dzieje (zmiany dokumentacji nie nadpisuja paczek).
+# Wersja z sufiksem prerelease (np. -beta.1) nie jest oznaczana jako najnowsza stabilna.
 # Z tych wydan aktualizuja sie wtyczka (Ustawienia -> Aktualizacja) i serwer (update.sh / epgpl-update.timer).
 
 on:
@@ -30,8 +31,13 @@ jobs:
           T="epgscan-$V"
           if gh release view "$T" >/dev/null 2>&1; then echo "$T juz jest"; exit 0; fi
           sh epgscan/build.sh
+          if [[ "$V" == *-* ]]; then
+            FLAGS=(--prerelease --latest=false)
+          else
+            FLAGS=(--latest)
+          fi
           gh release create "$T" "dist/epgscan-$V.zip" "dist/enigma2-plugin-extensions-epgscan_${V}_all.ipk" \
-            --title "EPG Scan $V" --notes-file notes.md --target "$GITHUB_SHA" --latest
+            --title "EPG Scan $V" --notes-file notes.md --target "$GITHUB_SHA" "${FLAGS[@]}"
 
       - name: epgpl (zip)
         run: |
