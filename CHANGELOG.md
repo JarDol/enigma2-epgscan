@@ -2,6 +2,7 @@
 
 ## EPG Scan (wtyczka Enigma2)
 
+- **2.17.1** – naprawiony crash ustawień przy imporcie modułu (`all_items` pozostawało funkcją zamiast listą)
 - **2.17.0** – skan PAT/PMT każdego kanału DVB w wybranych bukietach z ochroną tunerów i nagrań; rozpoznawanie języków audio, wideo, napisów i teletekstu; odsłuch/wybór ścieżki, preferencje Enigma2 lub własne; opcjonalny skan po EPG w wybrane dni; potwierdzany zapis do E2Stream z kopiami i ochroną przed kolizją PMT
 - **2.16.1** – parser PAT/PMT i rozpoznawanie ścieżek audio
 - **2.16.0** – import XMLTV uzupełnia luki w istniejącym EPG, czasowo wyłącza EIT; cykliczna aktualizacja wszystkich transponderów albo tylko krótkiego EPG i nowa paczka E2Stream po skanie; suma SHA-256 paczki oraz ochrona przed częściowym eksportem

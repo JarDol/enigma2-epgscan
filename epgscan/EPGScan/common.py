@@ -18,7 +18,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.17.0"
+VERSION = "2.17.1"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
