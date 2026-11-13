@@ -628,7 +628,8 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Kopia EPG po skanie, katalog, liczba kopii | (tak, `/media/hdd/epgscan/`, 3) |
 | Odtwarzanie EPG po starcie, gdy puste | wyłączone / zapytaj / automatycznie (automatycznie) |
 | Zapisuj log | w katalogu kopii / w `/tmp` (w katalogu kopii) |
-| Aktualizacja automatyczna / kanał | (nie, kanał stabilny); stabilne albo beta i stabilne wydania GitHub; instalacja i restart tylko w bezpiecznym czuwaniu |
+| Aktualizacja automatyczna | (nie); sprawdza raz na dobę, instaluje i restartuje tylko w bezpiecznym czuwaniu |
+| Kanał aktualizacji automatycznych | stabilne (domyślnie) albo beta i stabilne; ręczna lista nadal zawiera wszystkie dostępne wydania |
 | Aktualizuj teraz | OK – lista dostępnych wydań z ZIP-em, także beta i starszych; instalacja wymaga potwierdzenia |
 | Dane dla aplikacji po skanach | (tak) paczka EPG (wszystkie bukiety TV), ikon i zamian referencji po pracy z harmonogramu oraz po cyklicznym skanie satelity; *Przygotuj dane teraz* (OK) – od razu |
 | Serwer dla aplikacji E2Stream | (tak) API dla klientów streamingu w sieci lokalnej: bukiety, kanały z PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników; port (8770), token (puste = bez) |

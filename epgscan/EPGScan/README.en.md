@@ -608,7 +608,8 @@ are in brackets. Every option has a description below the settings list.
 | EPG backup after scan, directory, number of backups | (yes, `/media/hdd/epgscan/`, 3) |
 | Restore EPG at start-up when empty | off / ask / automatically (automatically) |
 | Write log | in the backup directory / in `/tmp` (in the backup directory) |
-| Automatic update / channel | (no, stable channel); choose stable-only or beta and stable GitHub releases; installs/restarts only in safe standby |
+| Automatic update | (no); checks daily and installs/restarts only in safe standby |
+| Automatic update channel | stable-only (default) or beta and stable; the manual list still shows all available releases |
 | Update now | OK – lists releases with a ZIP asset, including beta and older versions; installation requires confirmation |
 | E2Stream data overwrite | no – fill only missing/invalid values; yes – replace existing values too |
 | Replace in client configuration | same behavior, limited to selected receivers |
