@@ -123,8 +123,11 @@ pojawia się powiadomienie.
 ![Akcje i profil](../../docs/img/02-akcje.png)
 
 **Akcje** (zielony) to lista kroków przebiegu. To, co jest tu zaznaczone, robi **OK** na ekranie
-głównym i harmonogram (po zapisaniu żółtym jako domyślne). Zielony/OK w Akcjach uruchamia przebieg
-jednorazowo, bez zmiany profilu.
+głównym i harmonogram (po zapisaniu żółtym jako domyślne). Zielony w Akcjach uruchamia przebieg
+jednorazowo, bez zmiany profilu. **OK** otwiera moduł zaznaczonej pozycji: SatWatch, ustawienia satelity,
+dopasowanie kanałów dekodera lub serwera, źródła XMLTV albo parametry kanałów. Dla czyszczenia EPG i
+pobierania świeżych danych OK otwiera wybór trybu. Strzałki lewo/prawo nadal zmieniają wartości w profilu.
+**Menu** otwiera harmonogram, a **Info/EPG** – przewijany opis akcji.
 
 | Pozycja | Znaczenie |
 |---|---|
@@ -135,6 +138,7 @@ jednorazowo, bez zmiany profilu.
 | **Serwer epgpl** | *zapas* (gotowy plik serwera, gdy dekoder nie ma swojego) / *zawsze* / *nie* |
 | **Pozostałe źródła XMLTV** | listy XMLTV zaznaczone w ustawieniach |
 | **Pobierz świeże dane** | *tak – w jednym miejscu*: gdy druga strona (serwer albo dekoder) ma dzisiejszą pełną paczkę – ona zamiast pobierania; *tak – pobierz na nowo*: zawsze własne pobieranie; *nie*: pliki, które są (pobiera i tak, jeśli pliku brak albo jest starszy niż 30 h) |
+| **Skan parametrów kanałów** | skan PAT/PMT po zakończeniu przebiegu EPG |
 
 Pod listą widać opis wybranej pozycji i pełną kolejność kroków, np.
 `SatWatch (zmiany) -> satelita -> dekoder -> serwer (zapas) -> pozostałe`.

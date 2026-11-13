@@ -124,7 +124,10 @@ appears when they finish.
 ![Actions and profile](../../docs/img/02-akcje.png)
 
 ***Akcje*** (green) is the list of steps of a run. What is ticked here is what **OK** on the main screen and the
-schedule do (after saving it with yellow as default). Green/OK inside *Akcje* runs once without changing the profile.
+schedule do (after saving it with yellow as default). Green inside *Akcje* runs once without changing the profile.
+**OK** opens the selected module: SatWatch, satellite settings, receiver or server channel mapping, XMLTV sources,
+or channel parameters. For clearing EPG and fetching fresh data, OK opens a choice of modes. Left/right still change
+profile values. **Menu** opens the schedule and **Info/EPG** shows a scrollable description of the actions.
 
 | Item | Meaning |
 |---|---|
@@ -135,6 +138,7 @@ schedule do (after saving it with yellow as default). Green/OK inside *Akcje* ru
 | ***Serwer epgpl*** | *fallback* (the server's file when the receiver has none of its own) / *always* / *no* |
 | ***Pozostałe źródła XMLTV*** (other XMLTV sources) | XMLTV lists ticked in the settings |
 | ***Pobierz świeże dane*** (fetch fresh data) | *yes – in one place*: if the other side (server or receiver) already has today's full package, it is used instead of downloading; *yes – download again*: always download; *no*: use existing files (still downloads if a file is missing or older than 30 h) |
+| **Channel parameter scan** | PAT/PMT scan after the EPG run finishes |
 
 Below the list you see a description of the selected item and the full order of steps, e.g.
 `SatWatch (changes) -> satellite -> receiver -> server (fallback) -> others`.

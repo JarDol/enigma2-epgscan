@@ -14,8 +14,11 @@ from Components.ConfigList import ConfigListScreen
 from Components.ScrollLabel import ScrollLabel
 from Components.config import getConfigListEntry, ConfigSelection, ConfigYesNo, NoSave
 
-from .common import cfg, log, save_cfg, VERSION, keys_skin, init_keys, set_keys, CLEAR_CHOICES, profile_default, \
-	profile_text, log_path, backup_dir, SRV_CHOICES, SW_CHOICES
+from .common import cfg, log, save_cfg, VERSION, keys_skin, init_keys, set_keys, hints_skin, init_hints, CLEAR_CHOICES, \
+	profile_default, profile_text, log_path, backup_dir, SRV_CHOICES, SW_CHOICES
+
+
+ACTION_HINTS = (("OK", "Otworz"), ("Menu", "Harmonogram"), ("Info/EPG", "Opis"))
 
 
 class EPGScanActions(Screen, ConfigListScreen):
@@ -26,7 +29,8 @@ class EPGScanActions(Screen, ConfigListScreen):
 		<widget name="config" position="20,15" size="1560,375" font="Regular;30" secondfont="Regular;30" itemHeight="46" scrollbarMode="showOnDemand" />
 		<widget name="help" position="20,400" size="1560,330" font="Regular;28" />
 		%s
-	</screen>""" % keys_skin(20, 850, 1560)
+		%s
+	</screen>""" % (hints_skin(20, 780, 1560, hints=ACTION_HINTS), keys_skin(20, 850, 1560))
 
 	def __init__(self, session):
 		Screen.__init__(self, session)
@@ -49,6 +53,7 @@ class EPGScanActions(Screen, ConfigListScreen):
 		self.c_channelparams = NoSave(ConfigYesNo(default=p.get("channelparams", False)))
 		self["help"] = Label("")
 		init_keys(self)
+		init_hints(self, ACTION_HINTS)
 		ConfigListScreen.__init__(self, [
 			getConfigListEntry("SatWatch: zmiany na satelicie i bukiety", self.c_sw),
 			getConfigListEntry("Czysc EPG przed startem", self.c_clear),
@@ -60,7 +65,7 @@ class EPGScanActions(Screen, ConfigListScreen):
 			getConfigListEntry("Skan parametrow kanalow (PAT/PMT)", self.c_channelparams),
 		], session=session, on_change=self.update_help)
 		self["actions"] = ActionMap(["SetupActions", "ColorActions", "MenuActions", "EPGSelectActions"], {
-			"ok": self.go, "green": self.go, "save": self.go,
+			"ok": self.open_selected, "green": self.go, "save": self.go,
 			"yellow": self.save_default,
 			"cancel": self.close, "red": self.close,
 			"menu": self.open_schedule, "info": self.show_help,
@@ -82,8 +87,8 @@ class EPGScanActions(Screen, ConfigListScreen):
 		set_keys(self, red="Anuluj", green="Uruchom", yellow="Zapisz jako domyslne")
 		cur = self["config"].getCurrent()
 		action = cur[0] if cur else "Profil"
-		self["help"].setText("%s: %s\nOK / Zielony: uruchom profil.  Info/EPG: pelny opis.  Menu: harmonogram.\n"
-			"Zolty: zapisz profil jako domyslny.  Czerwony: wroc." % (action, profile_text(p)))
+		self["help"].setText("%s: %s\nOK: otworz modul lub wybierz tryb.  Zielony: uruchom profil.\n"
+			"Info/EPG: pelny opis.  Menu: harmonogram.  Zolty: zapisz jako domyslne." % (action, profile_text(p)))
 
 	def full_help(self):
 		p = self.profile()
@@ -116,7 +121,7 @@ class EPGScanActions(Screen, ConfigListScreen):
 		lines.append("Satelita zawsze ma pierwszenstwo: XMLTV uzupelnia tylko to, czego nie dal satelita "
 			"(EIT ma w Enigma2 wyzszy priorytet niz import).")
 		lines.append("Profil domyslny (OK na ekranie glownym i harmonogram): %s" % profile_text(profile_default()))
-		lines += ["", "OK lub Zielony: uruchom wybrany profil.",
+		lines += ["", "OK: otworz modul zaznaczonej pozycji lub wybierz tryb. Zielony: uruchom profil.",
 		"Zolty: zapisz ten profil jako domyslny dla OK i harmonogramu.",
 		"Menu: otworz istniejace ustawienia harmonogramu. Czerwony: wroc."]
 		return "\n".join(lines)
@@ -127,6 +132,70 @@ class EPGScanActions(Screen, ConfigListScreen):
 	def open_schedule(self):
 		from .setup import EPGScanSetup
 		self.session.open(EPGScanSetup, "sched")
+
+	def open_selected(self):
+		current = self["config"].getCurrent()
+		if not current:
+			self.session.open(MessageBox, "Wybierz pozycje z listy.", MessageBox.TYPE_INFO, timeout=4)
+			return
+		element = current[1]
+		if element is self.c_sw:
+			satwatch_menu(self.session)
+		elif element is self.c_clear or element is self.c_fetch:
+			self.choose_profile_option(current[0], element)
+		elif element is self.c_sat:
+			from .setup import EPGScanSetup
+			self.session.open(EPGScanSetup, "sat")
+		elif element is self.c_dek:
+			from .mapping import EPGScanMapping
+			self.session.open(EPGScanMapping, None, "dekoder")
+		elif element is self.c_srv:
+			self.open_server_mapping()
+		elif element is self.c_other:
+			from .setup import EPGScanXmltvSources
+			self.session.open(EPGScanXmltvSources)
+		elif element is self.c_channelparams:
+			from .channelparamsui import ChannelParamsScreen
+			self.session.open(ChannelParamsScreen)
+		else:
+			self.session.open(MessageBox, "Brak modulu dla wybranej pozycji.", MessageBox.TYPE_ERROR, timeout=4)
+
+	def choose_profile_option(self, title, element):
+		options = [(label, value) for value, label in element.choices.choices]
+		if not options:
+			self.session.open(MessageBox, "Brak dostepnych ustawien: %s." % title, MessageBox.TYPE_ERROR, timeout=4)
+			return
+		selection = next((i for i, option in enumerate(options) if option[1] == element.value), 0)
+
+		def chosen(choice):
+			if choice:
+				element.value = choice[1]
+				self["config"].invalidateCurrent()
+				self.update_help()
+
+		self.session.openWithCallback(chosen, ChoiceBox, title=title, list=options, selection=selection, keys=[])
+
+	def open_server_mapping(self):
+		try:
+			from .mapping import epgpl_servers, EPGScanMapping
+			servers = epgpl_servers()
+		except Exception as e:
+			log("Nie mozna odczytac serwerow epgpl: %s" % e)
+			self.session.open(MessageBox, "Nie mozna odczytac serwerow epgpl:\n%s" % e, MessageBox.TYPE_ERROR)
+			return
+		if not servers:
+			self.session.open(MessageBox, "Brak skonfigurowanego serwera epgpl w zrodlach XMLTV.",
+				MessageBox.TYPE_INFO, timeout=6)
+		elif len(servers) == 1:
+			self.session.open(EPGScanMapping, *servers[0])
+		else:
+			options = [(desc or base, (base, desc)) for base, desc in servers]
+
+			def chosen(choice):
+				if choice:
+					self.session.open(EPGScanMapping, *choice[1])
+
+			self.session.openWithCallback(chosen, ChoiceBox, title="Wybierz serwer epgpl", list=options, keys=[])
 
 	def go(self):
 		self.close(self.profile())
