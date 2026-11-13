@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="receiver_not_found">Nie znaleziono dekodera (port %1$d)</string>
+    <string name="receiver_recordings">Nagrania (z dysku dekodera)</string>
+    <string name="receiver_visible_bouquets">Widoczne bukiety</string>
+    <string name="receiver_start_channel">Kanał startowy — %1$s</string>
+    <string name="receiver_plugin_found">EPG Scan %1$s — kanały, PID-y i synchronizacja przez wtyczkę</string>
+    <string name="receiver_plugin_missing">Brak wtyczki EPG Scan (port %1$d) — używam OpenWebif i FTP</string>
+    <string name="receiver_sync_result">Synchronizacja: %1$s</string>
+    <string name="receiver_profiles_error">Nie udało się pobrać profili: %1$s</string>
+    <string name="receiver_profile_restored">Przeniesiono %1$d ustawień z „%2$s”</string>
+    <string name="receiver_restore_error">Nie udało się przywrócić kopii: %1$s</string>
+    <string name="receiver_downloading">pobieranie…</string>
+    <string name="receiver_sync_error">błąd: %1$s</string>
+    <string name="receiver_sync_counts">pobrano %1$d, wspólnych %2$d</string>
+    <string name="receiver_sync_first">\u0020(pierwsza synchronizacja)</string>
+</resources>

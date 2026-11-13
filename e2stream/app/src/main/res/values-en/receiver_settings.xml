@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="receiver_not_found">No receiver found (port %1$d)</string>
+    <string name="receiver_recordings">Recordings (receiver drive)</string>
+    <string name="receiver_visible_bouquets">Visible bouquets</string>
+    <string name="receiver_start_channel">Startup channel — %1$s</string>
+    <string name="receiver_plugin_found">EPG Scan %1$s — channels, PIDs and synchronisation via plugin</string>
+    <string name="receiver_plugin_missing">EPG Scan plugin unavailable (port %1$d) — using OpenWebif and FTP</string>
+    <string name="receiver_sync_result">Synchronisation: %1$s</string>
+    <string name="receiver_profiles_error">Could not load profiles: %1$s</string>
+    <string name="receiver_profile_restored">Imported %1$d settings from “%2$s”</string>
+    <string name="receiver_restore_error">Could not restore backup: %1$s</string>
+    <string name="receiver_downloading">downloading…</string>
+    <string name="receiver_sync_error">error: %1$s</string>
+    <string name="receiver_sync_counts">imported %1$d, shared %2$d</string>
+    <string name="receiver_sync_first">\u0020(first synchronisation)</string>
+</resources>

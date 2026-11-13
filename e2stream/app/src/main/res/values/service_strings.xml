@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="service_log_sent">Log wysłany: %1$s</string>
+    <string name="service_log_error">Nie udało się wysłać logu: %1$s</string>
+    <string name="service_no_dumps">Brak zrzutów TS</string>
+    <string name="service_sending_dumps">Wysyłam %1$d zrzut(ów) TS…</string>
+    <string name="service_dumps_sent">Wysłano %1$d zrzut(ów) do %2$s</string>
+    <string name="service_dumps_error">Wysłano %1$d/%2$d. Błąd: %3$s</string>
+    <string name="service_description_error">Nie udało się pobrać opisu: %1$s</string>
+    <string name="service_description">Opis: %1$s</string>
+</resources>

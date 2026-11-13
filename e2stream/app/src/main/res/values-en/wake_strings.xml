@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wake_option">Wake option: %1$s</string>
+    <string name="wake_enabled">enabled</string>
+    <string name="wake_disabled">disabled</string>
+    <string name="wake_exact">Exact alarms: %1$s</string>
+    <string name="wake_notifications">Notifications: %1$s</string>
+    <string name="wake_allowed">allowed</string>
+    <string name="wake_no_permission">NOT ALLOWED</string>
+    <string name="wake_fullscreen">Full screen: %1$s</string>
+    <string name="wake_fullscreen_allowed">allowed</string>
+    <string name="wake_fullscreen_blocked">blocked</string>
+    <string name="wake_fullscreen_unchecked">not checked (Android &lt; 14)</string>
+    <string name="wake_pending">Pending events: %1$d</string>
+    <string name="wake_next">Next: %1$s — %2$s (%3$d)</string>
+    <string name="wake_no_pending">No pending events</string>
+    <string name="wake_enable_first">First enable “Wake TV for schedule”.</string>
+    <string name="wake_exact_permission">Exact alarms are not allowed. Enable them in Android settings.</string>
+    <string name="wake_notification_permission">Notifications are not allowed. Enable them in Android settings.</string>
+    <string name="wake_test_scheduled">Test scheduled in 60 seconds. Leave the app and wait without pressing the remote.</string>
+    <string name="wake_test_error">Android rejected the test alarm: %1$s</string>
+    <string name="wake_notification_channel">E2Stream schedule</string>
+    <string name="wake_test_title">E2Stream alarm test</string>
+    <string name="wake_test_arrived">Alarm received. Wait for the test window.</string>
+    <string name="wake_scheduled_event">Scheduled programme</string>
+</resources>

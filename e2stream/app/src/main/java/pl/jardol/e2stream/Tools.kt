@@ -20,7 +20,7 @@ object PinLock {
 
     fun isUnlocked(prefs: Prefs) = prefs.pin.isEmpty() || SystemClock.elapsedRealtime() < unlockedUntil
 
-    fun label(min: Int) = if (min <= 0) "do wyjścia z aplikacji" else "$min min"
+    fun label(ctx: Context, min: Int) = if (min <= 0) ctx.getString(R.string.pin_until_exit) else "$min min"
 
     /** Odblokowuje na czas z ustawień, licząc od teraz. */
     fun unlock(prefs: Prefs) {
@@ -101,7 +101,7 @@ object PinLock {
             if (digits.all { it >= 0 } && digits.joinToString("") == pin) {
                 done = true; unlock(prefs); dlg.dismiss(); onOk()
             } else {
-                info.text = "Błędny PIN — spróbuj ponownie"
+                info.text = a.getString(R.string.pin_invalid)
                 info.setTextColor(0xFFEF9A9A.toInt())
                 for (i in 0 until n) digits[i] = -1
                 pos = 0
@@ -124,7 +124,7 @@ object PinLock {
         val requiredWidthPx = dp(70 * n + 72)
         val widthFrac = (requiredWidthPx.toFloat() / a.resources.displayMetrics.widthPixels)
             .coerceIn(0.42f, 0.9f)
-        dlg = TvDialog.panel(a, "Ustawienia zablokowane", null, widthFrac = widthFrac, maxH = 0.9f,
+        dlg = TvDialog.panel(a, a.getString(R.string.pin_locked), null, widthFrac = widthFrac, maxH = 0.9f,
             onBack = { if (!done) { done = true; onCancel() } }) { ctx, _ ->      // WSTECZ zawsze anuluje
             val col = android.widget.LinearLayout(ctx).apply {
                 orientation = android.widget.LinearLayout.VERTICAL
@@ -144,7 +144,7 @@ object PinLock {
             }
             col.addView(row)
             info = android.widget.TextView(ctx).apply {
-                text = "Cyfry z pilota albo ▲▼ zmiana cyfry, ▶ / OK dalej, ◀ wstecz\nprzytrzymaj OK — klawiatura na ekranie"
+                text = a.getString(R.string.pin_instructions)
                 textSize = 14f; setTextColor(TvDialog.GREY); gravity = android.view.Gravity.CENTER
                 setPadding(0, dp(14), 0, dp(6))
             }
@@ -221,7 +221,7 @@ object Tools {
 
     fun logName(prefs: Prefs) = "e2stream-${prefs.fileTag}.log"
 
-    fun uploadLog(prefs: Prefs, manual: Boolean, msg: (String) -> Unit) {
+    fun uploadLog(ctx: Context, prefs: Prefs, manual: Boolean, msg: (String) -> Unit) {
         if (!prefs.logFtp && !manual) return
         val host = prefs.host
         if (host.isBlank()) return
@@ -233,10 +233,10 @@ object Tools {
         Thread {
             try {
                 val where = Upload.send(prefs, name, data)
-                if (manual) ui.post { msg("Log wysłany: $where") }
+                if (manual) ui.post { msg(ctx.getString(R.string.service_log_sent, where)) }
             } catch (e: Exception) {
                 AppLog.markDirty()
-                if (manual) ui.post { msg("Nie udało się wysłać logu: ${e.message}") }
+                if (manual) ui.post { msg(ctx.getString(R.string.service_log_error, e.message ?: e.toString())) }
             }
         }.start()
     }
@@ -247,12 +247,12 @@ object Tools {
         val files = dirs.flatMap { d ->
             d.listFiles { f -> f.name.startsWith("stall-") && f.name.endsWith(".ts") }?.toList() ?: emptyList()
         }.distinctBy { it.name }.sortedBy { it.name }
-        if (files.isEmpty()) { msg("Brak zrzutów TS"); return }
+        if (files.isEmpty()) { msg(ctx.getString(R.string.service_no_dumps)); return }
         val host = prefs.host
         val user = prefs.ftpUser
         val pass = prefs.ftpPass
         val dir = prefs.ftpDir
-        msg("Wysyłam ${files.size} zrzut(ów) TS…")
+        msg(ctx.getString(R.string.service_sending_dumps, files.size))
         Thread {
             var ok = 0
             var err = ""
@@ -268,7 +268,7 @@ object Tools {
                 }
             }
             ui.post {
-                msg(if (err.isEmpty()) "Wysłano $ok zrzut(ów) do $dir" else "Wysłano $ok/${files.size}. Błąd: $err")
+                msg(if (err.isEmpty()) ctx.getString(R.string.service_dumps_sent, ok, dir) else ctx.getString(R.string.service_dumps_error, ok, files.size, err))
             }
         }.start()
     }
@@ -278,7 +278,7 @@ object Tools {
     } catch (e: Exception) { "" }
 
     fun checkUpdate(a: Activity, manual: Boolean, msg: (String) -> Unit) {
-        if (manual) msg("Sprawdzam aktualizację…")
+        if (manual) msg(a.getString(R.string.update_checking))
         Thread {
             val releases = try { Updater.releases(Prefs(a).updateChannel) } catch (e: Exception) {
                 AppLog.i("aktualizacja: błąd $e"); null
@@ -287,17 +287,17 @@ object Tools {
                 if (a.isFinishing) return@post
                 val cur = appVersion(a)
                 when {
-                    releases == null -> if (manual) msg("Nie udało się sprawdzić aktualizacji")
+                    releases == null -> if (manual) msg(a.getString(R.string.update_check_failed))
                     manual -> chooseRelease(a, releases, cur, msg)
                     releases.firstOrNull()?.let { Updater.newer(it.version, cur) } == true -> {
                         val info = releases.first()
                         when {
                             Prefs(a).autoUpdate -> {
                                 AppLog.i("aktualizacja automatyczna: ${info.version}")
-                                msg("Aktualizacja do wersji ${info.version}…")
+                                msg(a.getString(R.string.update_updating, info.version))
                                 downloadAndInstall(a, info, msg)
                             }
-                            else -> msg("Dostępna wersja ${info.version} — Ustawienia → Sprawdź aktualizację")
+                            else -> msg(a.getString(R.string.update_available, info.version))
                         }
                     }
                 }
@@ -308,18 +308,18 @@ object Tools {
     private fun chooseRelease(a: Activity, releases: List<Updater.Info>, current: String, msg: (String) -> Unit) {
         val choices = releases.filter { it.version != current }
         if (choices.isEmpty()) {
-            msg(if (releases.isEmpty()) "Nie znaleziono wydań E2Stream" else "Masz najnowszą wersję ($current)")
+            msg(if (releases.isEmpty()) a.getString(R.string.update_no_releases) else a.getString(R.string.update_latest_installed, current))
             return
         }
         val latest = releases.firstOrNull()?.version
         TvDialog.list(
             a,
-            "Wybierz wersję E2Stream",
+            a.getString(R.string.update_choose),
             choices.map { info ->
                 val age = when {
-                    info.version == latest -> "najnowsza"
-                    Updater.newer(info.version, current) -> "nowsza"
-                    else -> "starsza"
+                    info.version == latest -> a.getString(R.string.update_latest)
+                    Updater.newer(info.version, current) -> a.getString(R.string.update_newer)
+                    else -> a.getString(R.string.update_older)
                 }
                 TvDialog.Item(info.version, listOf(age, if (info.prerelease) "beta" else "stable").joinToString(" • "))
             },
@@ -334,22 +334,22 @@ object Tools {
             try {
                 var last = -1
                 val apk = Updater.download(a, info) { pct ->
-                    if (pct / 10 != last) { last = pct / 10; ui.post { msg("Pobieranie $pct%") } }
+                    if (pct / 10 != last) { last = pct / 10; ui.post { msg(a.getString(R.string.update_downloading, pct)) } }
                 }
                 ui.post {
                     Thread {
                         try {
                             val started = Updater.install(a, apk)
-                            if (!started) ui.post { if (!a.isFinishing) msg("Zezwól E2Stream na instalowanie aplikacji i spróbuj ponownie") }
+                            if (!started) ui.post { if (!a.isFinishing) msg(a.getString(R.string.update_allow_install)) }
                         } catch (e: Exception) {
                             AppLog.i("aktualizacja: błąd instalacji $e")
-                            ui.post { if (!a.isFinishing) msg("Błąd instalacji: ${e.message}") }
+                            ui.post { if (!a.isFinishing) msg(a.getString(R.string.update_install_error, e.message)) }
                         }
                     }.start()
                 }
             } catch (e: Exception) {
                 AppLog.i("aktualizacja: błąd pobierania $e")
-                ui.post { msg("Błąd pobierania: ${e.message}") }
+                ui.post { msg(a.getString(R.string.update_download_error, e.message)) }
             }
         }.start()
     }
@@ -357,10 +357,10 @@ object Tools {
     private fun askUpdate(a: Activity, info: Updater.Info, current: String, msg: (String) -> Unit) {
         val downgrade = Updater.newer(current, info.version)
         val note = if (downgrade) {
-            "\n\nAndroid może odmówić instalacji starszej wersji; ta możliwość zależy od systemu urządzenia."
+            a.getString(R.string.update_downgrade_warning)
         } else ""
-        TvDialog.confirm(a, "Aktualizacja E2Stream",
-            "Wybrana wersja ${info.version} (masz $current). Pobrać i zainstalować?$note",
-            listOf(TvDialog.Btn("Zainstaluj") { downloadAndInstall(a, info, msg) }, TvDialog.Btn("Nie teraz")))
+        TvDialog.confirm(a, a.getString(R.string.update_title),
+            a.getString(R.string.update_confirm, info.version, current, note),
+            listOf(TvDialog.Btn(a.getString(R.string.update_install)) { downloadAndInstall(a, info, msg) }, TvDialog.Btn(a.getString(R.string.update_not_now))))
     }
 }

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="diag_video">Video: %1$s</string>
+    <string name="diag_audio">Audio: %1$s</string>
+    <string name="diag_engine">Engine: %1$s</string>
+    <string name="diag_tunnel">Tunnelling: %1$s</string>
+    <string name="diag_enabled">enabled</string>
+    <string name="diag_disabled">disabled</string>
+    <string name="diag_buffer">Buffer: %1$d ms / reserve %2$d ms%3$s   video start: %4$s</string>
+    <string name="diag_building_buffer">\u0020(building, %1$s×)</string>
+    <string name="diag_no_slowdown">\u0020(no slowdown)</string>
+    <string name="diag_ts_rate">TS: %1$.2f Mb/s  max read gap %2$d ms</string>
+    <string name="diag_ts_bursts">TS bursts: gaps ~%1$d ms   cleaned: %2$d   corrected PTS: %3$d</string>
+    <string name="diag_ts_errors">TS errors: CC %1$d  TEI %2$d  scrambled %3$d  sync %4$d  PCR %5$d  PMT %6$d</string>
+    <string name="diag_screen">Screen: %1$s</string>
+    <string name="diag_refresh">Refresh rate: %1$s</string>
+    <string name="diag_frames">Frames: %1$d   dropped: %2$d%3$s</string>
+    <string name="diag_tunnel_hidden">\u0020(not visible in tunnel mode)</string>
+    <string name="diag_watchdog">Watchdog: %1$s</string>
+    <string name="diag_watchdog_off">Watchdog: disabled</string>
+    <string name="diag_restarts">Restarts: %1$d</string>
+    <string name="diag_last_reason">Last reason: %1$s</string>
+    <string name="storage_removable">Removable storage (USB/SD)</string>
+    <string name="storage_device">Device storage</string>
+    <string name="storage_free">%1$s — %2$d MB free\n%3$s</string>
+    <string name="storage_private">Private app storage\n%1$s</string>
+    <string name="diag_display_modes">%1$s (available: %2$s)</string>
+</resources>

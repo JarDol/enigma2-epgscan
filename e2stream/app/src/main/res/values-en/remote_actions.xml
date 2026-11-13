@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="action_none">— none —</string>
+    <string name="action_default_ok">Default OK action</string>
+    <string name="action_banner">Show channel banner</string>
+    <string name="action_channel_list">Channel list</string>
+    <string name="action_event_epg">Programme details</string>
+    <string name="action_channel_epg">Channel EPG</string>
+    <string name="action_multi_epg">Bouquet Multi EPG</string>
+    <string name="action_search">Search EPG</string>
+    <string name="action_audio">Audio track</string>
+    <string name="action_stats">Statistics</string>
+    <string name="action_menu">Menu</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_recall">Previous channel</string>
+    <string name="action_channel_up">Channel +</string>
+    <string name="action_channel_down">Channel −</string>
+    <string name="action_timeshift">Timeshift: pause / resume (play)</string>
+    <string name="action_rewind">Timeshift: rewind</string>
+    <string name="action_forward">Timeshift: fast forward</string>
+    <string name="action_live">Timeshift: live (stop)</string>
+    <string name="key_ok">OK</string>
+    <string name="key_left">Left</string>
+    <string name="key_right">Right</string>
+    <string name="key_up">Up</string>
+    <string name="key_down">Down</string>
+</resources>

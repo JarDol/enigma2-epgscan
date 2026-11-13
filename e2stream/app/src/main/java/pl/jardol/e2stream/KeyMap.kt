@@ -3,26 +3,26 @@ package pl.jardol.e2stream
 import android.view.KeyEvent
 
 /** Akcje, które można przypisać klawiszom pilota. */
-enum class Act(val label: String) {
-    NONE("— brak —"),
-    DEFAULT_OK("Domyślne działanie OK"),
-    CHANNEL_BANNER("Pokaż pasek kanału"),
-    CHANNEL_LIST("Lista kanałów"),
-    EPG_EVENT("EPG wydarzenia (opis bieżącej audycji)"),
-    EPG_CHANNEL("EPG kanału"),
-    MULTI_EPG("Multi-EPG bukietu"),
-    EPG_SEARCH("Szukaj w EPG"),
-    AUDIO("Ścieżka dźwięku"),
-    STATS("Statystyki"),
-    MENU("Menu"),
-    SETTINGS("Ustawienia"),
-    RECALL("Poprzedni kanał"),
-    CH_UP("Kanał +"),
-    CH_DOWN("Kanał −"),
-    TIMESHIFT("Timeshift: pauza / wznowienie (play)"),
-    TS_REWIND("Timeshift: przewiń wstecz"),
-    TS_FORWARD("Timeshift: przewiń do przodu"),
-    TS_LIVE("Timeshift: na żywo (stop)"),
+enum class Act(val labelRes: Int) {
+    NONE(R.string.action_none),
+    DEFAULT_OK(R.string.action_default_ok),
+    CHANNEL_BANNER(R.string.action_banner),
+    CHANNEL_LIST(R.string.action_channel_list),
+    EPG_EVENT(R.string.action_event_epg),
+    EPG_CHANNEL(R.string.action_channel_epg),
+    MULTI_EPG(R.string.action_multi_epg),
+    EPG_SEARCH(R.string.action_search),
+    AUDIO(R.string.action_audio),
+    STATS(R.string.action_stats),
+    MENU(R.string.action_menu),
+    SETTINGS(R.string.action_settings),
+    RECALL(R.string.action_recall),
+    CH_UP(R.string.action_channel_up),
+    CH_DOWN(R.string.action_channel_down),
+    TIMESHIFT(R.string.action_timeshift),
+    TS_REWIND(R.string.action_rewind),
+    TS_FORWARD(R.string.action_forward),
+    TS_LIVE(R.string.action_live),
 }
 
 /** Mapowanie klawiszy w trybie oglądania (bez otwartej listy kanałów). */
@@ -58,11 +58,11 @@ object KeyMap {
     )
 
     val navigation = linkedMapOf(
-        KeyEvent.KEYCODE_DPAD_CENTER to "OK",
-        KeyEvent.KEYCODE_DPAD_LEFT to "Lewo",
-        KeyEvent.KEYCODE_DPAD_RIGHT to "Prawo",
-        KeyEvent.KEYCODE_DPAD_UP to "Góra",
-        KeyEvent.KEYCODE_DPAD_DOWN to "Dół",
+        KeyEvent.KEYCODE_DPAD_CENTER to R.string.key_ok,
+        KeyEvent.KEYCODE_DPAD_LEFT to R.string.key_left,
+        KeyEvent.KEYCODE_DPAD_RIGHT to R.string.key_right,
+        KeyEvent.KEYCODE_DPAD_UP to R.string.key_up,
+        KeyEvent.KEYCODE_DPAD_DOWN to R.string.key_down,
     )
 
     val navigationNoBannerDefaults = mapOf(

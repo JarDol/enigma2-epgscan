@@ -5,6 +5,7 @@ internal object SettingsBackup {
     fun values(p: Prefs): Map<String, Any> = mapOf(
         "host" to p.host, "httpPort" to p.httpPort, "streamPort" to p.streamPort,
         "user" to p.user, "pass" to p.pass, "blockOnDisconnect" to p.blockOnDisconnect,
+        "appLanguage" to p.appLanguage,
         "pluginPort" to p.pluginPort, "pluginToken" to p.pluginToken,
         "ftpUser" to p.ftpUser, "ftpPass" to p.ftpPass, "ftpDir" to p.ftpDir,
         "channelSync" to p.channelSync, "deviceName" to p.deviceName,

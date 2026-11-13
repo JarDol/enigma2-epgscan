@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dialog_select_hint">OK select  •  BACK close</string>
+    <string name="dialog_multi_hint">OK select / deselect  •  BACK save and exit</string>
+    <string name="dialog_scroll_hint">▲ ▼ scroll  •  BACK close</string>
+    <string name="dialog_input_hint">OK — keyboard  •  BACK cancel</string>
+    <string name="dialog_save">Save</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="pin_until_exit">until exiting the application</string>
+    <string name="pin_invalid">Incorrect PIN — try again</string>
+    <string name="pin_locked">Settings locked</string>
+    <string name="pin_instructions">Remote digits or ▲▼ change digit, ▶ / OK next, ◀ back\nhold OK for on-screen keyboard</string>
+</resources>

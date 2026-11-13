@@ -21,7 +21,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   zmiany PMT, przerwy w napływie danych — w statystykach i w logu.
 * Przy zawieszeniu zapis ostatnich sekund strumienia (`stall-*.ts`, bufor 16 MB) do analizy np. TSDuck; na urządzeniu najwyżej 3 zrzuty, po wysłaniu na dekoder kopia lokalna jest usuwana (na dekoderze sprząta je EPG Scan: Sprzątanie dysku → zrzuty starsze niż N dni).
 * Miejsce zapisu: pamięć urządzenia lub pendrive/karta (katalog `Android/data/pl.jardol.e2stream/files/`).
-* EPG pobierane codziennie wg harmonogramu (i na żądanie) z zapisem na urządzeniu; ikony kanałów z dekodera (OpenWebif /picon/ lub FTP). Brakujące picony można zastąpić logo E2Stream; wyłączenie zastępowania zostawia puste miejsce, zachowując układ.
+* EPG pobierane codziennie wg harmonogramu (i na żądanie) z zapisem na urządzeniu; picony kanałów z dekodera (OpenWebif /picon/ lub FTP). Brakujące picony można zastąpić logo E2Stream; wyłączenie zastępowania zostawia puste miejsce, zachowując układ.
 * EPG kanału, multi-EPG bukietu i wyszukiwanie w EPG; z audycji: przełącz na kanał, zaplanuj przełączenie lub nagraj na dekoderze.
 * Długie OK w EPG kanału i Multi-EPG otwiera wybór kanału/bukietu, a wyszukiwanie jest na końcu menu.
 * W opisie EPG „Oglądaj” dla aktualnie oglądanego kanału zamyka opis bez ponownego strojenia. Wybór innego kanału („Przełącz na kanał”), także dla bieżącej audycji, wymaga potwierdzenia.
@@ -32,6 +32,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 * Przegląd timerów nagrań dekodera z usuwaniem oraz usuwanie plików nagrań z menu długiego OK.
 * Historia przełączeń z konfigurowalnym czasem przechowywania; długie OK na zrealizowanej pozycji otwiera szczegóły z potwierdzanym usuwaniem. Jeśli nagranie z historii zostało już skasowane, szczegóły pozwalają usunąć nieaktualny wpis.
 * Wybór widocznych bukietów, PIN do ustawień (odblokowanie na wybrany czas, wyjście z aplikacji zawsze blokuje), aktualizacja aplikacji z GitHub (menu → Aktualizacja).
+* Język interfejsu: polski, angielski lub automatycznie według języka systemu; wybór jest zapisywany w kopii ustawień urządzenia.
 * Po utracie komunikacji z dekoderem aplikacja wstrzymuje ponawianie strumienia, co 3 s sprawdza dostępność i — zależnie od ustawienia „Blokuj zmiany przy braku komunikacji z dekoderem” — blokuje sterowanie do czasu powrotu połączenia. Przy pierwszym uruchomieniu popup oferuje też Ustawienia, aby skorygować adres dekodera.
 * Log diagnostyczny: lokalnie w `Android/data/pl.jardol.e2stream/files/e2stream.log`
   i co 2 minuty przez FTP na dekoder (domyślnie `/media/hdd/e2stream/e2stream-<nazwa odbiornika>-<znacznik>.log`, np. `e2stream-Salon-3F2A.log`; znacznik to 4 znaki z identyfikatora urządzenia, więc dwa takie same modele w sieci nie nadpisują sobie plików; nazwa ze znacznikiem jest też w liście odbiorników i w nazwach zrzutów TS).
@@ -162,8 +163,11 @@ automatyczny import tylko po zmianie pliku EPG.
 
 Gdy na dekoderze jest EPG Scan (2.14.0+), aplikacja sprawdza paczkę raz dziennie (domyślnie, także po północy
 podczas działania) albo przy każdym uruchomieniu i powrocie z ekranu głównego. Tryb wybiera się w **Ustawienia →
-EPG i ikony kanałów → Aktualizacja z EPG Scan**. Automatycznie pobiera i importuje paczkę tylko po zmianie jej
-pliku EPG; ręczne **Pobierz EPG i ikony teraz** wymusza ponowny import, np. po zmianie liczby dni EPG.
+EPG i picony kanałów → Aktualizacja z EPG Scan**. Automatycznie pobiera i importuje paczkę tylko po zmianie jej
+pliku EPG; ręczne **Pobierz EPG i picony teraz** wymusza ponowny import, np. po zmianie liczby dni EPG.
+Bez paczki ta opcja pobiera brakujące picony, pozostawiając już zapisane. **Usuń i pobierz ikony od nowa** najpierw
+usuwa lokalne picony i włącza ich pobieranie, a następnie pobiera również EPG; przy błędzie pobierania picony
+mogą pozostać niedostępne do kolejnej udanej próby.
 Nowe wersje wtyczki identyfikują plik przez SHA-256, starsze przez czas i rozmiar paczki.
-Paczka zawiera EPG wszystkich kanałów, ikony i zamiany referencji
+Paczka zawiera EPG wszystkich kanałów, picony i zamiany referencji
 (kanał startowy i ostatni przechodzą na nową referencję, gdy kanał zmienił transponder). Bez paczki – jak dotąd, kanał po kanale.

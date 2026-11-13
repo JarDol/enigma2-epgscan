@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ts_usb_unavailable">dysk USB niedostępny</string>
+    <string name="ts_choose_location">wybierz miejsce bufora (dysk USB albo zgoda na pamięć urządzenia)</string>
+    <string name="ts_off">wyłączony</string>
+    <string name="ts_capacity">%1$s  •  miejsce na ~%2$s</string>
+    <string name="ts_recommended_suffix">, zalecane %1$s</string>
+    <string name="ts_no_space_suffix">\u0020— za mało miejsca</string>
+    <string name="ts_immediately">od razu</string>
+    <string name="ts_after_pause">wyłączony (bufor rusza dopiero po pauzie)</string>
+    <string name="ts_after_seconds">po %1$d s</string>
+    <string name="ts_device_free">pamięć urządzenia  •  wolne %1$s</string>
+    <string name="ts_not_selected">nie wybrano</string>
+    <string name="ts_unavailable">%1$s — niedostępny</string>
+    <string name="ts_free">%1$s  •  wolne %2$s</string>
+    <string name="ts_insufficient">za mało miejsca</string>
+    <string name="ts_recommended">zalecane (najdłuższy, który się mieści)</string>
+    <string name="ts_capacity_title">Timeshift — miejsce na ~%1$s</string>
+    <string name="ts_choose_shorter">Za mało miejsca na %1$s — wybierz krótszy czas albo inny nośnik</string>
+    <string name="ts_permission_needed">wymaga zgody (zapis ciągły zużywa pamięć flash)</string>
+    <string name="ts_space_choice">wolne %1$s → ~%2$s</string>
+    <string name="ts_recommended_choice">\u0020(zalecane %1$s)</string>
+    <string name="ts_flash_warning">Timeshift zapisuje strumień bez przerwy (kanał HD to kilka GB na godzinę). Pamięć flash telewizora ma ograniczoną liczbę zapisów — przy codziennym, wielogodzinnym użyciu może się szybciej zużyć.\n\nBezpieczniej użyć dysku USB. Zezwolić na pamięć urządzenia?</string>
+    <string name="ts_capacity_set">Zmieści się ~%1$s — ustawiono %2$s</string>
+    <string name="ts_disabled_space">Za mało miejsca — timeshift wyłączony</string>
+    <string name="ts_capacity_recommended">Zmieści się ~%1$s — zalecane %2$s (włącz w pozycji „Timeshift”)</string>
+    <string name="engine_exo">ExoPlayer (tunelowanie, najszybszy start)</string>
+    <string name="engine_vlc">VLC (inne usuwanie przeplotu i odmierzanie klatek)</string>
+    <string name="hw_off">wyłączona</string>
+    <string name="hw_decode">dekodowanie (obraz przez VLC)</string>
+    <string name="hw_full">pełna</string>
+    <string name="hw_auto">automatyczna (zalecane)</string>
+    <string name="chroma_recommended">RGB 32-bit (zalecane)</string>
+    <string name="deint_default">domyślne VLC (zalecane)</string>
+    <string name="deint_auto">automatycznie</string>
+    <string name="deint_off">wyłączone</string>
+    <string name="deint_yadif">yadif 2x (50 kl./s)</string>
+    <string name="deint_bob">bob (50 kl./s)</string>
+</resources>

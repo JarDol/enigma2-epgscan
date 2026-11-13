@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wake_option">Opcja wybudzania: %1$s</string>
+    <string name="wake_enabled">włączona</string>
+    <string name="wake_disabled">wyłączona</string>
+    <string name="wake_exact">Dokładne alarmy: %1$s</string>
+    <string name="wake_notifications">Powiadomienia: %1$s</string>
+    <string name="wake_allowed">dozwolone</string>
+    <string name="wake_no_permission">BRAK ZGODY</string>
+    <string name="wake_fullscreen">Pełny ekran: %1$s</string>
+    <string name="wake_fullscreen_allowed">dozwolony</string>
+    <string name="wake_fullscreen_blocked">zablokowany</string>
+    <string name="wake_fullscreen_unchecked">nie sprawdzono (Android &lt; 14)</string>
+    <string name="wake_pending">Oczekujące wydarzenia: %1$d</string>
+    <string name="wake_next">Najbliższy: %1$s — %2$s (%3$d)</string>
+    <string name="wake_no_pending">Brak oczekujących wydarzeń</string>
+    <string name="wake_enable_first">Najpierw włącz „Budź TV dla harmonogramu”.</string>
+    <string name="wake_exact_permission">Brak zgody na dokładne alarmy. Włącz ją w ustawieniach Androida.</string>
+    <string name="wake_notification_permission">Brak zgody na powiadomienia. Włącz ją w ustawieniach Androida.</string>
+    <string name="wake_test_scheduled">Test ustawiony za 60 sekund. Zostaw aplikację i poczekaj bez naciskania pilota.</string>
+    <string name="wake_test_error">Android odrzucił testowy alarm: %1$s</string>
+    <string name="wake_notification_channel">Harmonogram E2Stream</string>
+    <string name="wake_test_title">Test alarmu E2Stream</string>
+    <string name="wake_test_arrived">Alarm dotarł. Czekaj na okno testowe.</string>
+    <string name="wake_scheduled_event">Zaplanowana audycja</string>
+</resources>

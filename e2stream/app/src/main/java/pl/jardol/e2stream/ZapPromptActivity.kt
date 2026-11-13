@@ -10,6 +10,10 @@ import android.widget.Toast
 
 /** Lekkie okno alarmu: nie tworzy odtwarzacza, dopóki użytkownik nie wybierze „Oglądaj”. */
 class ZapPromptActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     private var timer: ZapTimers.Timer? = null
     private var actionTaken = false
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -57,12 +61,11 @@ class ZapPromptActivity : Activity() {
             val id = intent.getStringExtra("test_id") ?: "?"
             AppLog.i("wybudzanie: ZapPromptActivity pokazuje wynik testu id=$id")
             ZapWakeAlarms.logDeviceState(this, "otwarcie okna testowego", id)
-            val dlg = TvDialog.panel(this, "Test wybudzania dotarł", null,
-                listOf(TvDialog.Btn("Zamknij") { finish() }), widthFrac = 0.6f,
+            val dlg = TvDialog.panel(this, getString(R.string.message_wake_up_test_received), null,
+                listOf(TvDialog.Btn(getString(R.string.epg_close)) { finish() }), widthFrac = 0.6f,
                 onBack = { finish() }, focusChip = true, timeoutSec = Prefs(this).confirmDialogSec,
                 onTimeout = { finish() }) { ctx, _ ->
-                TvDialog.scrollText(ctx,
-                    "Android dostarczył RTC_WAKEUP i otworzył okno E2Stream bez uruchamiania playera.\n\nJeśli nie naciskałeś pilota, alarm może pokazać popup.\nId testu: $id", 18f)
+                TvDialog.scrollText(ctx, getString(R.string.prompt_test_body, id), 18f)
             }
             if (BuildConfig.WAKE_DIAGNOSTICS) {
                 dlg.window?.decorView?.let { view ->
@@ -79,8 +82,8 @@ class ZapPromptActivity : Activity() {
         val ref = intent.getStringExtra("ref") ?: run { finish(); return }
         val event = ZapTimers.Timer(
             ref,
-            intent.getStringExtra("channel") ?: "Kanał",
-            intent.getStringExtra("title") ?: "Zaplanowana audycja",
+            intent.getStringExtra("channel") ?: getString(R.string.prompt_channel),
+            intent.getStringExtra("title") ?: getString(R.string.prompt_programme),
             intent.getLongExtra("begin", 0),
             intent.getLongExtra("end", 0),
             intent.getIntExtra("eventId", 0),
@@ -95,8 +98,8 @@ class ZapPromptActivity : Activity() {
         val card = EventCard.eventOf(event, this)
         val body = EventCard.cachedBody(this, event)
         val chips = listOf(
-            TvDialog.Btn("Przełącz (${countdownLabel(COUNTDOWN_S)})") { watch(event) },
-            TvDialog.Btn("Nagraj na dekoderze") { record(event) },
+            TvDialog.Btn(getString(R.string.prompt_switch_countdown, countdownLabel(COUNTDOWN_S))) { watch(event) },
+            TvDialog.Btn(getString(R.string.epg_record_receiver)) { record(event) },
         )
         stopCountdown()
         val dlg = TvDialog.panel(this, null, null, chips, widthFrac = 0.8f,
@@ -128,7 +131,7 @@ class ZapPromptActivity : Activity() {
                 if (!watching) {
                     if (left != COUNTDOWN_S) {
                         left = COUNTDOWN_S
-                        TvDialog.setButtonLabel(dlg, 0, "Przełącz (${countdownLabel(left)})")
+                        TvDialog.setButtonLabel(dlg, 0, getString(R.string.prompt_switch_countdown, countdownLabel(left)))
                     }
                     handler.postDelayed(this, 1000)
                     return
@@ -140,7 +143,7 @@ class ZapPromptActivity : Activity() {
                     watch(event)
                     return
                 }
-                TvDialog.setButtonLabel(dlg, 0, "Przełącz (${countdownLabel(left)})")
+                TvDialog.setButtonLabel(dlg, 0, getString(R.string.prompt_switch_countdown, countdownLabel(left)))
                 handler.postDelayed(this, 1000)
             }
         }
@@ -177,7 +180,7 @@ class ZapPromptActivity : Activity() {
         actionTaken = true
         stopCountdown()
         setContentView(TextView(this).apply {
-            text = "Wysyłam nagranie na dekoder…"
+            text = getString(R.string.prompt_sending_recording)
             textSize = 20f; setTextColor(TvDialog.WHITE)
             setBackgroundColor(0xE6161B20.toInt())
             gravity = android.view.Gravity.CENTER
@@ -192,8 +195,8 @@ class ZapPromptActivity : Activity() {
             ZapTimers.complete(applicationContext, event, outcome)
             AppLog.i("wybudzanie: wynik nagrania ${event.channel} — ${event.title}: ${result.first} ${result.second}")
             runOnUiThread {
-                Toast.makeText(applicationContext,
-                    if (result.first) "Nagranie ustawione na dekoderze" else "Nie udało się ustawić nagrania: ${result.second}",
+                Toast.makeText(this,
+                    if (result.first) getString(R.string.prompt_recording_set) else getString(R.string.prompt_recording_failed, result.second),
                     Toast.LENGTH_LONG).show()
                 finish()
             }

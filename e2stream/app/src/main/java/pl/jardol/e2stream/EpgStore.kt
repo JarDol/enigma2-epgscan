@@ -102,23 +102,23 @@ object EpgSync {
         val api = PluginApi(prefs)
         val info = api.packInfo() ?: return null
         val at = info.optLong("at")
-        if (info.optBoolean("building")) throw java.io.IOException("EPG Scan przygotowuje paczkę")
+        if (info.optBoolean("building")) throw java.io.IOException(ctx.getString(R.string.epg_pack_building))
         if (at <= 0) return null
-        if (info.optLong("epg_size") <= 0) throw java.io.IOException("Brak pliku EPG w paczce EPG Scan")
+        if (info.optLong("epg_size") <= 0) throw java.io.IOException(ctx.getString(R.string.epg_pack_no_epg))
         val sha = info.optString("epg_sha256")
         val identity = EpgUpdatePolicy.packIdentity(prefs.host, prefs.pluginPort, at, info.optLong("epg_size"), sha)
         if (!EpgUpdatePolicy.needsImport(identity, prefs.packIdentity, manual)) {
             prefs.packCheckAt = System.currentTimeMillis()
-            return "paczka EPG Scan bez zmian (${fmt(at)})"
+            return ctx.getString(R.string.epg_pack_unchanged, fmt(at))
         }
         val t0 = SystemClock.elapsedRealtime()
         val tmp = File(ctx.cacheDir, "pack").also { it.mkdirs() }
         // EPG
-        progress("EPG z dekodera…")
+        progress(ctx.getString(R.string.epg_from_receiver))
         var chans = 0
         var events = 0
         val epgF = File(tmp, "epg.json.gz")
-        if (!api.packFile("epg.json.gz", epgF)) throw java.io.IOException("Brak pliku EPG w paczce EPG Scan")
+        if (!api.packFile("epg.json.gz", epgF)) throw java.io.IOException(ctx.getString(R.string.epg_pack_no_epg))
         run {
             try {
                 if (sha.isNotBlank()) {
@@ -133,7 +133,7 @@ object EpgSync {
                     }
                     val actual = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
                     if (!actual.equals(sha, ignoreCase = true)) {
-                        throw java.io.IOException("Paczka EPG zmieniła się podczas pobierania lub jest uszkodzona")
+                        throw java.io.IOException(ctx.getString(R.string.epg_pack_corrupt))
                     }
                 }
                 val nowS = System.currentTimeMillis() / 1000
@@ -184,7 +184,7 @@ object EpgSync {
                     r.endObject()
                 }
                 if (!hasChannels || fileAt != at) {
-                    throw java.io.IOException("Paczka EPG nie odpowiada informacjom z dekodera")
+                    throw java.io.IOException(ctx.getString(R.string.epg_pack_mismatch))
                 }
             } finally {
                 epgF.delete()
@@ -193,28 +193,28 @@ object EpgSync {
         // ikony
         var icons = 0
         if (prefs.picons) {
-            progress("Ikony z dekodera…")
+            progress(ctx.getString(R.string.epg_picons_from_receiver))
             val zf = File(tmp, "picons.zip")
             try {
                 if (api.packFile("picons.zip", zf)) icons = Picons.importZip(ctx, zf)
-                else if (info.optLong("picons_size") > 0) throw java.io.IOException("Nie można pobrać ikon z paczki EPG Scan")
-                else AppLog.i("paczka EPG Scan: brak pliku ikon")
+                else if (info.optLong("picons_size") > 0) throw java.io.IOException(ctx.getString(R.string.epg_pack_picons_error))
+                else AppLog.i("paczka EPG Scan: brak pliku piconów")
             } finally {
                 zf.delete()
             }
         }
         // zamiany referencji (np. kanał przeniesiony na inny transponder)
-        var moved = ""
+        val moved = mutableListOf<String>()
         val rf = File(tmp, "refs.json")
         try {
             if (api.packFile("refs.json", rf)) {
                 val remap = JSONObject(rf.readText()).optJSONObject("remap") ?: JSONObject()
                 fun mapped(ref: String): String? =
                     remap.optJSONObject(OpenWebif.key(ref))?.optString("to")?.takeIf { it.isNotBlank() }?.let { "$it:" }
-                mapped(prefs.startChannel)?.let { prefs.startChannel = it; moved += " kanał startowy," }
-                mapped(prefs.lastChannel)?.let { prefs.lastChannel = it; moved += " ostatni kanał," }
+                mapped(prefs.startChannel)?.let { prefs.startChannel = it; moved.add(ctx.getString(R.string.epg_moved_start)) }
+                mapped(prefs.lastChannel)?.let { prefs.lastChannel = it; moved.add(ctx.getString(R.string.epg_moved_last)) }
             } else if (info.optLong("refs_size") > 0) {
-                throw java.io.IOException("Nie można pobrać referencji z paczki EPG Scan")
+                throw java.io.IOException(ctx.getString(R.string.epg_pack_refs_error))
             } else {
                 AppLog.i("paczka EPG Scan: brak pliku referencji")
             }
@@ -225,9 +225,9 @@ object EpgSync {
         prefs.packIdentity = identity
         prefs.packCheckAt = System.currentTimeMillis()
         prefs.lastEpgFetch = System.currentTimeMillis()
-        return "paczka EPG Scan (${fmt(at)}): EPG $chans kanałów / $events audycji, ikon $icons" +
-            (if (moved.isNotEmpty()) ", nowa referencja:" + moved.trimEnd(',') else "") +
-            " (${(SystemClock.elapsedRealtime() - t0) / 1000} s)"
+        return ctx.getString(R.string.epg_pack_result, fmt(at), chans, events, icons,
+            if (moved.isNotEmpty()) ctx.getString(R.string.epg_pack_moved, moved.joinToString(", ")) else "",
+            (SystemClock.elapsedRealtime() - t0) / 1000)
     }
 
     private fun fmt(sec: Long) = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(java.util.Date(sec * 1000))
@@ -240,15 +240,16 @@ object EpgSync {
 
     @Synchronized
     fun run(ctx: Context, prefs: Prefs, store: EpgStore, manual: Boolean, progress: (String) -> Unit, done: (String) -> Unit, failed: () -> Unit) {
-        if (running) { done("Pobieranie EPG już trwa"); return }
+        val localized = AppLanguage.wrap(ctx)
+        if (running) { done(localized.getString(R.string.epg_already_downloading)); return }
         running = true
         Thread {
             val t0 = SystemClock.elapsedRealtime()
             var result: String
             // 1) paczka z wtyczki EPG Scan (EPG, ikony, zamiany referencji — przygotowane po nocnym skanie)
             if (prefs.pluginOk) {
-                val r = try { fromPack(ctx, prefs, store, manual, progress) } catch (e: Exception) {
-                    val message = "Błąd paczki EPG Scan: ${e.message ?: e}"
+                val r = try { fromPack(localized, prefs, store, manual, progress) } catch (e: Exception) {
+                    val message = localized.getString(R.string.epg_pack_error, e.message ?: e.toString())
                     AppLog.i(message)
                     running = false
                     failed()
@@ -285,20 +286,20 @@ object EpgSync {
                         events.addAndGet(ev.size)
                     } catch (_: Exception) { }
                     val n = done1.incrementAndGet()
-                    if (n % 10 == 0) progress("EPG: $n/${chans.size} kanałów")
+                    if (n % 10 == 0) progress(localized.getString(R.string.epg_channel_progress, n, chans.size))
                 }
                 pool.shutdown()
                 pool.awaitTermination(10, TimeUnit.MINUTES)
                 var icons = ""
                 if (prefs.picons) {
                     val got = Picons.fetch(ctx, prefs, chans) { progress(it) }
-                    icons = ", ikony: $got"
+                    icons = localized.getString(R.string.epg_picons_count, got)
                 }
                 prefs.lastEpgFetch = System.currentTimeMillis()
                 if (prefs.pluginOk) prefs.packCheckAt = System.currentTimeMillis()
-                result = "EPG pobrane: ${chans.size} kanałów, ${events.get()} audycji$icons (${(SystemClock.elapsedRealtime() - t0) / 1000} s)"
+                result = localized.getString(R.string.epg_download_result, chans.size, events.get(), icons, (SystemClock.elapsedRealtime() - t0) / 1000)
             } catch (e: Exception) {
-                result = "Błąd pobierania EPG: ${e.message}"
+                result = localized.getString(R.string.epg_download_error, e.message ?: e.toString())
                 failed()
             }
             AppLog.i(result)

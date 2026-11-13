@@ -275,7 +275,7 @@ object TvDialog {
     /** Lista: OK wybiera i zamyka okno. */
     fun list(
         a: Activity, title: String, items: List<Item>, selected: Int = -1,
-        hint: String = "OK wybierz  •  WSTECZ zamknij", widthFrac: Float = 0.55f,
+        hint: String = a.getString(R.string.dialog_select_hint), widthFrac: Float = 0.55f,
         onCancel: () -> Unit = {}, wrap: Boolean = false,
         onLongPick: ((Int) -> Boolean)? = null, onPick: (Int) -> Unit,
     ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel) { ctx, dlg ->
@@ -306,7 +306,7 @@ object TvDialog {
     fun multi(a: Activity, title: String, labels: List<String>, checked: BooleanArray, subs: List<String>? = null,
               onSave: (BooleanArray) -> Unit) {
         val items = labels.mapIndexed { i, l -> Item(l, subs?.getOrNull(i) ?: "", if (checked[i]) 1 else 2) }
-        panel(a, title, "OK zaznacz / odznacz  •  WSTECZ zapisz i wyjdź", widthFrac = 0.55f,
+        panel(a, title, a.getString(R.string.dialog_multi_hint), widthFrac = 0.55f,
             onBack = { onSave(BooleanArray(items.size) { items[it].mark == 1 }) }) { ctx, _ ->
             listView(ctx, items, 0).apply {
                 setOnItemClickListener { _, _, w, _ ->
@@ -321,7 +321,7 @@ object TvDialog {
 
     /** Długi tekst (README, opisy): przewijanie ▲▼, pasek położenia, WSTECZ zamyka. */
     fun text(a: Activity, title: String, text: CharSequence, sizeSp: Float = 17f) {
-        panel(a, title, "▲ ▼ przewijanie  •  WSTECZ zamknij", widthFrac = 0.75f) { ctx, _ ->
+        panel(a, title, a.getString(R.string.dialog_scroll_hint), widthFrac = 0.75f) { ctx, _ ->
             val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             val pos = ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
                 max = 1000; progressDrawable = ctx.getDrawable(R.drawable.progress_epg)
@@ -399,11 +399,11 @@ object TvDialog {
     }
 
     /** Pole tekstowe u góry ekranu (nad klawiaturą ekranową) z przyciskami Zapisz / Anuluj. */
-    fun input(a: Activity, title: String, hint: String, et: android.widget.EditText, saveLabel: String = "Zapisz", onSave: () -> Unit) {
+    fun input(a: Activity, title: String, hint: String, et: android.widget.EditText, saveLabel: String = a.getString(R.string.dialog_save), onSave: () -> Unit) {
         var saved = false
         lateinit var dlg: Dialog
         fun save() { if (!saved) { saved = true; dlg.dismiss(); onSave() } }
-        dlg = panel(a, title, "OK — klawiatura  •  WSTECZ anuluj", listOf(Btn(saveLabel) { save() }, Btn("Anuluj")),
+        dlg = panel(a, title, a.getString(R.string.dialog_input_hint), listOf(Btn(saveLabel) { save() }, Btn(a.getString(R.string.dialog_cancel))),
             widthFrac = 0.6f, top = true) { ctx, _ ->
             val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             if (hint.isNotBlank()) col.addView(TextView(ctx).apply {
