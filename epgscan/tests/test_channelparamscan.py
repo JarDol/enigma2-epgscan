@@ -51,6 +51,9 @@ common.TUNE_GAP = 2
 common.TUNE_TIMEOUT = 30
 common.bouquet_channels = lambda _files: []
 common.cfg = types.SimpleNamespace(cp_language_source=setting("manual"), cp_languages=setting("pol"), cp_sched=setting(False),
+	cp_sched_time=setting((3, 30)), cp_sched_when=setting("standby"), cp_sched_skip_rec=setting(False),
+	cp_sched_wakeup=setting(False), cp_last_run=setting(0), cp_auto_in_progress=setting(False),
+	sched_when=setting("standby"), sched_skip_rec=setting(False),
 	max_parallel=setting(2), reserve=setting(1))
 common.configured_tuners = lambda: 4
 common.frontend_of = lambda _service: (-1, None)
@@ -59,6 +62,16 @@ common.same_tp = lambda a, b: bool(a and b and a == b)
 common.selected_bouquets = lambda: []
 common.service_name = lambda ref: ref
 common.tp_params = lambda _ref: None
+common.save_cfg = lambda: None
+common.is_due = lambda: False
+common.sched_active = lambda: False
+common.next_run = lambda: 0
+common.last_slot = lambda: 0
+common.fmt_ts = lambda _timestamp: ""
+common.WAKEUP_FILE = os.path.join(tempfile.gettempdir(), "epgscan-wakeup-test")
+common.topup_candidates = lambda: []
+common.topup_label = lambda _candidate: ""
+common.TOPUP_INFO = {}
 sys.modules[common.__name__] = common
 
 channelparams = importlib.import_module(PACKAGE + ".channelparams")
@@ -67,6 +80,10 @@ bouquetchannels = importlib.import_module(PACKAGE + ".bouquetchannels")
 clients = types.ModuleType(PACKAGE + ".clients")
 sys.modules[clients.__name__] = clients
 store_module = importlib.import_module(PACKAGE + ".channelparamsstore")
+engine_module = types.ModuleType(PACKAGE + ".engine")
+engine_module.get_engine = lambda _session: None
+sys.modules[engine_module.__name__] = engine_module
+schedule_module = importlib.import_module(PACKAGE + ".schedule")
 
 PMT_BASE64 = "ArAsQo/DAADhGPAAG+EY8AAE4hjwBgoEcG9sAAbjGPAKegKAAgoEcWFhAEkPdSI="
 
@@ -137,6 +154,70 @@ class ChannelParamScanTests(unittest.TestCase):
 		common.CP_SCHED_DAYS[3].value = True
 		with patch.object(scanner_module.time, "localtime", return_value=types.SimpleNamespace(tm_wday=3)):
 			self.assertTrue(scanner_module.scheduled_day_enabled(1))
+
+	def test_standalone_schedule_is_due_without_an_epg_schedule(self):
+		common.cfg.cp_sched.value = True
+		common.cfg.cp_sched_time.value = (3, 30)
+		common.cfg.cp_last_run.value = 0
+		local = types.SimpleNamespace(tm_year=2026, tm_mon=1, tm_mday=7, tm_wday=2)
+		slot = int(scanner_module.time.mktime((2026, 1, 7, 3, 30, 0, 0, 0, -1)))
+		with patch.object(scanner_module.time, "localtime", return_value=local):
+			self.assertEqual(scanner_module.scheduled_slot(slot + 3600), slot)
+			common.cfg.cp_last_run.value = slot
+			self.assertEqual(scanner_module.scheduled_slot(slot + 3600), 0)
+
+	def test_scheduler_starts_channel_scan_when_epg_schedule_is_off(self):
+		common.cfg.cp_sched.value = True
+		common.cfg.cp_sched_when.value = "always"
+		engine = types.SimpleNamespace(running=False, auto=False, woke=False)
+		scheduler = object.__new__(schedule_module.Scheduler)
+		scheduler.first = False
+		scheduler.resume = False
+		scheduler.cp_resume = False
+		scheduler.woke = False
+		scheduler.waiting = ""
+		scheduler.session = object()
+		with patch.object(scanner_module, "scheduled_slot", return_value=123), \
+				patch.object(scanner_module, "start_scheduled", return_value=True) as start_scan, \
+				patch.object(schedule_module, "get_engine", return_value=engine):
+			scheduler.check()
+		start_scan.assert_called_once_with(engine, 123, woke=False)
+
+	def test_channel_scan_can_run_while_due_epg_scan_waits_for_standby(self):
+		common.cfg.cp_sched.value = True
+		common.cfg.sched_when.value = "standby"
+		common.cfg.cp_sched_when.value = "always"
+		engine = types.SimpleNamespace(running=False, auto=False, woke=False)
+		scheduler = object.__new__(schedule_module.Scheduler)
+		scheduler.first = False
+		scheduler.resume = False
+		scheduler.cp_resume = False
+		scheduler.woke = False
+		scheduler.waiting = ""
+		scheduler.session = object()
+		with patch.object(common, "sched_active", return_value=True), \
+				patch.object(common, "is_due", return_value=True), \
+				patch.object(scanner_module, "scheduled_slot", return_value=123), \
+				patch.object(scanner_module, "start_scheduled", return_value=True) as start_scan, \
+				patch.object(schedule_module, "get_engine", return_value=engine), \
+				patch.object(schedule_module, "in_standby", return_value=False):
+			scheduler.check()
+		start_scan.assert_called_once_with(engine, 123, woke=False)
+
+	def test_standalone_scheduled_scan_finishes_and_clears_resume_flag(self):
+		with tempfile.TemporaryDirectory() as directory:
+			engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None, running=False,
+				timer_hold=0, max_parallel=1, scan_usage=lambda: None, upcoming_recordings=lambda: 0,
+				eff_reserve=lambda: 0, free_tuners=lambda: 1, notify=lambda: None, maybe_deep_standby=lambda: None)
+			row = {"ref": "4097:0:1:0:0:0:0:0:0:0:http%3a//example/stream",
+				"name": "IPTV channel", "supported": False, "error": "Nieobslugiwany typ kanalu"}
+			with patch.object(scanner_module, "CHANNEL_PARAMS_FILE", os.path.join(directory, "results.json")), \
+					patch.object(scanner_module, "bouquet_channels", return_value=[row]):
+				self.assertTrue(scanner_module.start_scheduled(engine, 123))
+				self.assertTrue(common.cfg.cp_auto_in_progress.value)
+				engine.channel_params_scan.tick()
+			self.assertFalse(common.cfg.cp_auto_in_progress.value)
+			self.assertEqual(common.cfg.cp_last_run.value, 123)
 
 	def test_common_defaults_only_fill_missing_entries_and_backup_file(self):
 		with tempfile.TemporaryDirectory() as directory:

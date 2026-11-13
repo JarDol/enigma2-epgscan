@@ -60,6 +60,7 @@ class EPGScanActions(Screen, ConfigListScreen):
 		self["actions"] = ActionMap(["SetupActions", "ColorActions"], {
 			"ok": self.go, "green": self.go, "save": self.go,
 			"yellow": self.save_default,
+			"blue": self.channel_params,
 			"cancel": self.close, "red": self.close,
 		}, -2)
 		try:
@@ -75,7 +76,7 @@ class EPGScanActions(Screen, ConfigListScreen):
 
 	def update_help(self):
 		p = self.profile()
-		set_keys(self, red="Anuluj", green="Start", yellow="Zapisz jako domyslne")
+		set_keys(self, red="Anuluj", green="Start EPG", yellow="Zapisz jako domyslne", blue="Skan parametrow")
 		lines = ["Kolejnosc: %s  (zmiana: Ustawienia -> Program z internetu)" % profile_text(p)]
 		if p["sw"] != "nie":
 			lines.append("SatWatch najpierw (wolne tunery, najwyzej 15 min czekania); po zmianach w kanalach lista "
@@ -107,6 +108,9 @@ class EPGScanActions(Screen, ConfigListScreen):
 
 	def go(self):
 		self.close(self.profile())
+
+	def channel_params(self):
+		self.close("channelparams")
 
 	def save_default(self):
 		p = self.profile()
@@ -212,8 +216,9 @@ def readme_text(base=None):
 SETTINGS = (
 	("satwatch", "SatWatch - transpondery: zmiany na satelicie, skan, tunery, bukiety"),
 	("sat", "Satelita - EPG: skan transponderow, EIT, bukiety"),
+	("params", "Skan parametrow kanalow (PAT/PMT)"),
 	("net", "Program z internetu - dekoder, serwer, zrodla XMLTV, kolejnosc"),
-	("sched", "Harmonogram i doczytywanie"),
+	("sched", "Harmonogram EPG i doczytywanie"),
 	("misc", "Kopie EPG, log, powiadomienia, restart, sprzatanie dysku (timeshift, crash logi)"),
 )
 

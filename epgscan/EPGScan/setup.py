@@ -26,7 +26,8 @@ def all_items():
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
 		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto,
-		cfg.cp_language_source, cfg.cp_languages, cfg.cp_sched,
+		cfg.cp_language_source, cfg.cp_languages, cfg.cp_sched, cfg.cp_sched_time, cfg.cp_sched_when,
+		cfg.cp_sched_skip_rec, cfg.cp_sched_wakeup, cfg.cp_sched_deep_after, cfg.cp_last_run, cfg.cp_auto_in_progress,
 		cfg.topup, cfg.topup_mode, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS + CP_SCHED_DAYS
 
 
@@ -116,7 +117,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		if cur and cur[1] in (cfg.backup, cfg.scope, cfg.sched_mode, cfg.sched_wakeup, cfg.skip_empty, cfg.xmltv, cfg.topup,
 				cfg.topup_mode, cfg.topup_fixed, cfg.sat_import, cfg.rs_mode, cfg.cl_on, cfg.cli_api) or (cur and is_sw_full(cur[1])):
 			self.build()
-		if cur and cur[1] in (cfg.cp_sched, cfg.cp_language_source):
+		if cur and cur[1] in (cfg.cp_sched, cfg.cp_language_source, cfg.cp_sched_wakeup):
 			self.build()
 		if cur and cur[1] is cfg.xmltv and cfg.xmltv.value:
 			self.check_sources()
@@ -154,9 +155,6 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		lst = []
 		if sec == "sat":
 			lst.append(e("Import EPG z satelity (skan transponderow)", cfg.sat_import))
-			lst.append(e("Preferencje jezykow skanu kanalow", cfg.cp_language_source))
-			if cfg.cp_language_source.value == "manual":
-				lst.append(e("  Jezyki, kolejnosc (np. pol,eng)", cfg.cp_languages))
 			if not cfg.sat_import.value:
 				lst.append(e("  Wymuszaj wylaczenie EIT", cfg.eit_force_off))
 			else:
@@ -167,6 +165,19 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				e("Pomijaj transpondery bez EPG", cfg.skip_empty)]
 			if cfg.skip_empty.value:
 				lst.append(e("  Sprawdzaj je ponownie co [dni]", cfg.skip_recheck))
+		elif sec == "params":
+			lst.append(e("Preferencje jezykow skanu kanalow", cfg.cp_language_source))
+			if cfg.cp_language_source.value == "manual":
+				lst.append(e("  Jezyki, kolejnosc (np. pol,eng)", cfg.cp_languages))
+			lst.append(e("Niezalezny harmonogram skanu kanalow (bez EPG)", cfg.cp_sched))
+			if cfg.cp_sched.value:
+				lst.append(e("  Godzina", cfg.cp_sched_time))
+				lst += [e("  " + DAYS[i], day) for i, day in enumerate(CP_SCHED_DAYS)]
+				lst += [e("  Kiedy uruchamiac", cfg.cp_sched_when),
+					e("  Czekaj, gdy trwa nagrywanie", cfg.cp_sched_skip_rec),
+					e("  Wybudzaj z glebokiego czuwania", cfg.cp_sched_wakeup)]
+				if cfg.cp_sched_wakeup.value:
+					lst.append(e("  Po skanie wroc do glebokiego czuwania", cfg.cp_sched_deep_after))
 		elif sec == "net":
 			lst.append(e("Program z internetu (XMLTV)", cfg.xmltv))
 			if cfg.xmltv.value:
@@ -200,11 +211,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			if cfg.sched_mode.value != "off":
 				lst += [e("  Kiedy uruchamiac", cfg.sched_when), e("  Czekaj, gdy trwa nagrywanie", cfg.sched_skip_rec),
 					e("  Wybudzaj z glebokiego czuwania", cfg.sched_wakeup)]
-				lst.append(e("  Po EPG skanuj parametry kanałów (PAT/PMT)", cfg.cp_sched))
 				if cfg.sched_wakeup.value:
 					lst.append(e("  Po skanie wroc do glebokiego czuwania", cfg.sched_deep_after))
-				if cfg.cp_sched.value:
-					lst += [e("  " + DAYS[i], day) for i, day in enumerate(CP_SCHED_DAYS)]
 			try:
 				from .satwatch.sw import cfg as swcfg
 				lst.append(e("SatWatch: pelny skan raz w tygodniu", swcfg.full_enable))
@@ -294,6 +302,13 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		elif item in (cfg.sched_wakeup, cfg.sched_deep_after):
 			txt = "Odbiornik wstanie z glebokiego czuwania ok. 2 min przed skanem. Po skanie wroci do glebokiego " \
 				"czuwania, jesli nikt go nie uzywa i nie ma nagrania w ciagu 15 min."
+		elif item in (cfg.cp_sched, cfg.cp_sched_time, cfg.cp_sched_when, cfg.cp_sched_skip_rec) or item in CP_SCHED_DAYS:
+			from .channelparamscan import next_scheduled_slot
+			txt = "Samodzielny skan PAT/PMT, niezalezny od harmonogramu i uruchamiania skanu EPG. Nastepny termin: %s." % (
+				fmt_ts(next_scheduled_slot()))
+		elif item in (cfg.cp_sched_wakeup, cfg.cp_sched_deep_after):
+			txt = "Niezalezny harmonogram moze wybudzic odbiornik ok. 2 min przed skanem i po jego zakonczeniu " \
+				"wrocic do glebokiego czuwania, jesli nie trwa ogladanie ani nagranie."
 		elif item in (cfg.skip_empty, cfg.skip_recheck):
 			txt = "Transponder, ktory w 2 kolejnych skanach nie dal zadnego EPG, jest pomijany i sprawdzany " \
 				"ponownie po podanej liczbie dni."

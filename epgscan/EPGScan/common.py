@@ -18,7 +18,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.17.1"
+VERSION = "2.17.2"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
@@ -106,6 +106,15 @@ cfg.cp_language_source = ConfigSelection(default="enigma", choices=[
 	("manual", "wlasna kolejnosc jezykow")])
 cfg.cp_languages = ConfigText(default="pol,eng", fixed_size=False)
 cfg.cp_sched = ConfigYesNo(default=False)
+cfg.cp_sched_time = ConfigClock(default=int(time.mktime((2000, 1, 1, 3, 30, 0, 0, 1, -1))))
+cfg.cp_sched_when = ConfigSelection(default="standby", choices=[
+	("standby", "tylko w czuwaniu (poczekaj na czuwanie)"),
+	("always", "zawsze")])
+cfg.cp_sched_skip_rec = ConfigYesNo(default=False)
+cfg.cp_sched_wakeup = ConfigYesNo(default=False)
+cfg.cp_sched_deep_after = ConfigYesNo(default=True)
+cfg.cp_last_run = ConfigInteger(default=0)
+cfg.cp_auto_in_progress = ConfigYesNo(default=False)
 CP_SCHED_DAYS = []
 for _i in range(7):
 	setattr(cfg, "cp_sched_day%d" % _i, ConfigYesNo(default=True))

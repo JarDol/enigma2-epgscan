@@ -188,16 +188,18 @@ DVB w wybranych bukietach, również wtedy, gdy kilka kanałów jest na tym samy
 limitu równoległości i odstępów strojenia EPG Scan. IPTV i nierozpoznane typy są jawnie wymieniane jako
 nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
 
-Uruchom ręcznie: **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**, następnie **Menu** i potwierdź.
+Uruchom niezależnie od EPG: na ekranie głównym wybierz **Akcje → niebieski: Skan parametrów** albo
+**Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**, następnie **Menu** i potwierdź.
 Preferencje języków można pobierać z ustawień automatycznego audio Enigma2 albo ustawić własną kolejność (np.
 `pol,eng`). Jednoznaczna ścieżka zgodna z preferencją jest proponowana automatycznie; brak języka lub kilka
 pasujących PID-ów wymaga decyzji. **OK** wybiera PID, a **Żółty** przełącza na kanał i otwiera standardowy wybór
 audio Enigma2 do odsłuchu. Podgląd nie jest uruchamiany podczas nagrywania; po wyjściu z ekranu przywracany jest
 poprzedni kanał. **Zielony** zapisuje potwierdzone wybory.
 
-W harmonogramie można włączyć etap po skanie EPG i wybrać jego dni tygodnia. Używa on godziny i zaplanowanego
-startu harmonogramu EPG; przy pracy przechodzącej przez północ dzień jest liczony od planowanego startu.
-Etap kończy się przed kopią i powrotem do głębokiego czuwania.
+Ustawienia harmonogramu skanera są osobną pozycją **Skan parametrów kanałów (PAT/PMT)**. Ma własną godzinę,
+wybór dni, warunek pracy w czuwaniu, opcję oczekiwania na koniec nagrania oraz opcjonalne wybudzanie i powrót
+do głębokiego czuwania. Działa niezależnie od tego, czy harmonogram EPG jest włączony i czy skan EPG został
+uruchomiony.
 
 **Niebieski** w ekranie wyników udostępnia dwa osobne, potwierdzane działania:
 
@@ -407,8 +409,7 @@ albo decyzja z kandydatami „ta sama nazwa”; kanał ze zmienioną nazwą i SI
   tylko w czuwaniu, opcjonalnie także o stałej godzinie. Po zakończonym skanie powstaje nowa paczka
   dla E2Stream, gdy włączono serwer i dane dla aplikacji.
 - **SatWatch: pełny skan raz w tygodniu** w wybrany dzień (w pozostałe dni – sprawdzenie zmian).
-- **Skan parametrów kanałów**: opcjonalny etap po EPG, tylko w zaznaczone dni tygodnia, przed kopią i powrotem
-  odbiornika do głębokiego czuwania.
+- **Skan parametrów kanałów**: osobny harmonogram z własną godziną i dniami, niezależny od skanu EPG.
 - **Restart po nocnym przebiegu** (*nigdy* / *gdy potrzebny* / *zawsze*). „Gdy potrzebny” oznacza:
   tunery nie stroją, mało wolnej pamięci, Enigma2 zajmuje dużo więcej pamięci niż po starcie,
   SatWatch zaktualizował `satellites.xml`, opcjonalnie profilaktycznie co N dni. Restart tylko w czuwaniu,

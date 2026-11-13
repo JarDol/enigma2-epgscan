@@ -122,6 +122,10 @@ class EPGScanScreen(Screen):
 		self.session.openWithCallback(self.actions_cb, EPGScanActions)
 
 	def actions_cb(self, profile=None):
+		if profile == "channelparams":
+			from .channelparamsui import ChannelParamsScreen
+			self.session.open(ChannelParamsScreen)
+			return
 		if profile:
 			self.start(profile)
 

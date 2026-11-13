@@ -12,7 +12,7 @@ import NavigationInstance
 
 from . import channelparams
 from .common import CHANNEL_PARAMS_FILE, CP_SCHED_DAYS, MAX_RETRIES, NO_TUNER_WAIT, TUNE_GAP, TUNE_TIMEOUT, \
-	bouquet_channels, cfg, configured_tuners, frontend_of, log, same_tp, selected_bouquets, service_name, tp_params
+	bouquet_channels, cfg, configured_tuners, frontend_of, log, same_tp, selected_bouquets, service_name, tp_params, save_cfg
 
 
 def load_results():
@@ -365,12 +365,41 @@ class ChannelParamsScan(object):
 def scheduled_day_enabled(timestamp):
 	try:
 		import time as _time
-		return bool(cfg.cp_sched.value and CP_SCHED_DAYS[_time.localtime(timestamp).tm_wday].value)
+		return bool(CP_SCHED_DAYS[_time.localtime(timestamp).tm_wday].value)
 	except Exception:
 		return False
 
 
-def start_manual(engine, done=None):
+def scheduled_slot(now=None):
+	if not cfg.cp_sched.value:
+		return 0
+	if cfg.cp_auto_in_progress.value and cfg.cp_last_run.value:
+		return int(cfg.cp_last_run.value)
+	now = int(now or time.time())
+	hour, minute = cfg.cp_sched_time.value
+	local = time.localtime(now)
+	slot = int(time.mktime((local.tm_year, local.tm_mon, local.tm_mday, hour, minute, 0, 0, 0, -1)))
+	if slot > now or now - slot >= 12 * 3600 or not scheduled_day_enabled(slot):
+		return 0
+	if cfg.cp_last_run.value >= slot:
+		return 0
+	return slot
+
+
+def next_scheduled_slot(now=None):
+	if not cfg.cp_sched.value:
+		return 0
+	now = int(now or time.time())
+	hour, minute = cfg.cp_sched_time.value
+	for days_ahead in range(0, 8):
+		local = time.localtime(now + days_ahead * 86400)
+		slot = int(time.mktime((local.tm_year, local.tm_mon, local.tm_mday, hour, minute, 0, 0, 0, -1)))
+		if slot > now and scheduled_day_enabled(slot):
+			return slot
+	return 0
+
+
+def _start_scan(engine, done, auto=False, woke=False):
 	if engine.running or engine.phase == "channelparams":
 		return False
 
@@ -382,14 +411,20 @@ def start_manual(engine, done=None):
 		engine.summary = "Skan parametrow: %d kanalow, %d bledow" % (report["scanned"], len(report["errors"]))
 		engine.note = engine.summary
 		engine.notify()
-		if done:
-			done(report)
+		try:
+			if done:
+				done(report)
+		finally:
+			engine.channelparams_only = False
 
 	scan = ChannelParamsScan(engine, finished)
 	engine.running = True
 	engine.finished = False
-	engine.auto = False
+	engine.auto = auto
 	engine.topup = False
+	engine.woke = woke
+	engine.channelparams_only = True
+	engine.channelparams_auto = auto
 	engine.max_parallel = int(cfg.max_parallel.value)
 	engine.reserve = int(cfg.reserve.value)
 	engine.total_tuners = configured_tuners()
@@ -402,12 +437,50 @@ def start_manual(engine, done=None):
 		engine.phase = ""
 		engine.running = False
 		engine.finished = True
+		engine.channelparams_only = False
+		engine.channelparams_auto = False
 		engine.t_end = time.time()
 		engine.notify()
 		raise
 	if not started:
 		engine.running = False
 		engine.finished = True
+		engine.channelparams_only = False
+		engine.channelparams_auto = False
 		return False
 	engine.notify()
 	return True
+
+
+def start_manual(engine, done=None):
+	return _start_scan(engine, done)
+
+
+def start_scheduled(engine, slot, woke=False):
+	if engine.running or engine.phase == "channelparams":
+		return False
+	slot = int(slot)
+	cfg.cp_last_run.value = slot
+	cfg.cp_auto_in_progress.value = True
+	save_cfg()
+
+	def finished(report):
+		cfg.cp_auto_in_progress.value = False
+		save_cfg()
+		engine.auto = True
+		engine.maybe_deep_standby()
+		engine.auto = False
+		engine.woke = False
+		engine.channelparams_auto = False
+		engine.channelparams_only = False
+
+	try:
+		started = _start_scan(engine, finished, auto=True, woke=woke)
+	except Exception:
+		cfg.cp_auto_in_progress.value = False
+		save_cfg()
+		raise
+	if not started:
+		cfg.cp_auto_in_progress.value = False
+		save_cfg()
+	return started

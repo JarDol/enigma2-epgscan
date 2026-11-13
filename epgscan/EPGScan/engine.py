@@ -128,7 +128,6 @@ class ScanEngine(object):
 		self.force_xmltv = force_xmltv
 		if auto:
 			self.auto_start_time = cfg.last_auto_run.value or int(time.time())
-			self._cp_done_cycle = False
 		if topup_jobs is not None:
 			self.jobs = topup_jobs
 			self.jobs_partial = True         # lista tylko z transponderami do doczytania
@@ -199,7 +198,11 @@ class ScanEngine(object):
 			scan = getattr(self, "channel_params_scan", None)
 			if scan:
 				scan.cancel()
-			self.clear_auto_flag()
+			if getattr(self, "channelparams_auto", False):
+				cfg.cp_auto_in_progress.value = False
+				save_cfg()
+			self.channelparams_auto = False
+			self.channelparams_only = False
 			self.phase = ""
 			self.running = False
 			self.finished = True
@@ -1005,18 +1008,6 @@ class ScanEngine(object):
 
 	def complete(self):
 		"""Koniec calego odswiezania: zapis EPG, powiadomienie, kopia i ew. gleboki sen."""
-		if self.auto and not self.topup and not getattr(self, "_cp_done_cycle", False):
-			from .channelparamscan import ChannelParamsScan, scheduled_day_enabled
-			if scheduled_day_enabled(getattr(self, "auto_start_time", self.t_start)):
-				self._cp_done_cycle = True
-				try:
-					scan = ChannelParamsScan(self, done=self.channel_params_scheduled_done)
-					if scan.start():
-						self.note = "Skan parametrow kanalow"
-						self.notify()
-						return
-				except Exception as e:
-					log("Skan parametrow po EPG nieudany: %s" % e)
 		if self.xmltv_resume_eit:
 			self.xmltv_resume_eit = False
 			try:
@@ -1060,12 +1051,6 @@ class ScanEngine(object):
 		self.popup("EPG Scan: " + self.summary)
 		self.notify()
 		self.bk_timer.start(5000, True)   # chwila na zapis pliku EPG, potem kopia i ew. gleboki sen
-
-	def channel_params_scheduled_done(self, report):
-		self.phase = "scan"
-		log("Skan parametrow po EPG: %d kanalow, %d bledow, %d nieobslugiwanych" %
-			(report["scanned"], len(report["errors"]), len(report["unsupported"])))
-		self.complete()
 
 	def popup(self, text):
 		"""Powiadomienie tylko wtedy, gdy nikt nie oglada ekranu wtyczki i opcja jest wlaczona."""
@@ -1124,7 +1109,18 @@ class ScanEngine(object):
 
 	def maybe_deep_standby(self):
 		"""Po skanie z harmonogramu, ktory wybudzil odbiornik, wroc do glebokiego czuwania."""
-		if not (self.auto and self.woke and cfg.sched_deep_after.value) or self.session is None:
+		if not (self.auto and self.woke):
+			return
+		if getattr(self, "channelparams_auto", False):
+			deep_after = cfg.cp_sched_deep_after.value
+		else:
+			if cfg.cp_sched.value:
+				from .channelparamscan import scheduled_slot
+				if scheduled_slot():
+					log("Powrot do glebokiego czuwania odlozony do osobnego skanu parametrow")
+					return
+			deep_after = cfg.sched_deep_after.value
+		if not deep_after or self.session is None:
 			return
 		try:
 			import Screens.Standby

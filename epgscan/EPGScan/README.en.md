@@ -188,15 +188,17 @@ each unique DVB service in the selected bouquets, including multiple services on
 EPG Scan's tuner reserve, parallel limit and tuning gap. IPTV and unknown service types are reported as
 unsupported; tuning and table-read errors are included in the report.
 
-Run it manually from **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**, then press **Menu** and confirm.
+Run it independently of EPG: on the main screen choose **Actions → blue: Channel parameters**, or
+**Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**, then press **Menu** and confirm.
 Audio preferences can come from Enigma2's automatic-audio settings or a manually ordered list (for example
 `pol,eng`). A unique preferred-language match is recommended automatically; missing or ambiguous matches need
 review. **OK** selects an audio PID. **Yellow** tunes the channel and opens Enigma2's standard audio selector so
 you can listen to tracks. Preview is refused while recording, and the original channel is restored when leaving
 the screen. **Green** confirms and saves the choices.
 
-The schedule can add this stage after EPG and select its weekdays. It uses the existing EPG schedule time and
-planned start date, even if the run continues past midnight. It finishes before backup and return to deep standby.
+Channel parameters have a separate settings group and an independent schedule with its own time and weekdays,
+standby/recording conditions, and optional wake-up/return from deep standby. This schedule runs even when EPG
+scheduling is off or no EPG scan was started.
 
 **Blue** in the results screen provides two separate, confirmed operations:
 
@@ -395,7 +397,7 @@ streaming to clients.**
   considers all EPG, including XMLTV, and does not detect internal gaps. It can run always or only in standby,
   optionally at a fixed time. A new E2Stream pack is built after the scan if the client server and packs are enabled.
 - **SatWatch: full scan once a week** on a chosen day (on other days – checking for changes only).
-- **Channel parameters**: optional stage after EPG, on selected weekdays, before backup and return to deep standby.
+- **Channel parameters**: a separate schedule with its own time and weekdays, independent of EPG scanning.
 - **Restart after the night run** (*never* / *when needed* / *always*). "When needed" means: tuners do not tune, low
   free memory, Enigma2 uses much more memory than after start-up, SatWatch updated `satellites.xml`, optionally
   preventively every N days. Restart only in standby, with no recording now or within 15 min, at most once per 20 h.
