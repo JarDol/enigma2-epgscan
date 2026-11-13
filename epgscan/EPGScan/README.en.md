@@ -184,9 +184,12 @@ the importer skips the conflicting entry and logs a warning rather than risk rep
 ### Channel parameters (PAT/PMT)
 
 This is a separate task: it does not replace the EPG scan and does not clear or modify the EPG database. It scans
-each unique DVB service in the selected bouquets, including multiple services on one transponder. It uses
-EPG Scan's tuner reserve, parallel limit and tuning gap. IPTV and unknown service types are reported as
-unsupported; tuning and table-read errors are included in the report.
+each unique DVB service in the selected bouquets, grouped by transponder. The scan keeps a tuner reserved for each
+group and tunes its channels in sequence before releasing the tuner for another group. EPG Scan's parallel limit
+and free-tuner reserve are respected; at least two tuners are kept free (one on receivers with fewer than three
+tuners). With six tuners and a reserve of two, up to four groups can run at once. If watching, streaming or a
+recording needs a tuner, the scan releases a group and resumes it later. IPTV and unknown service types are reported
+as unsupported; tuning and table-read errors are included in the report.
 
 Run it independently of EPG: on the main screen choose **Actions**, select
 **Channel parameters (PAT/PMT)**, then press **OK** or **Green**. The scan runs in the background and the main

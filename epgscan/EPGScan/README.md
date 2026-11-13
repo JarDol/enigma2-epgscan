@@ -184,9 +184,12 @@ zamiast ryzykować zastąpienie istniejącej audycji.
 ### Skan parametrów kanałów (PAT/PMT)
 
 To osobne zadanie; nie zastępuje skanu EPG i nie czyści ani nie zmienia bazy EPG. Obejmuje każdy unikalny kanał
-DVB w wybranych bukietach, również wtedy, gdy kilka kanałów jest na tym samym transponderze. Korzysta z rezerwacji,
-limitu równoległości i odstępów strojenia EPG Scan. IPTV i nierozpoznane typy są jawnie wymieniane jako
-nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
+DVB w wybranych bukietach, grupując je po transponderach. Skan trzyma tuner dla grupy i przełącza kolejno kanały
+z tego samego transpondera, zanim zwolni tuner dla następnej grupy. Limit równoległości i rezerwa wolnych tunerów
+EPG Scan są respektowane; skaner zostawia co najmniej dwa wolne tunery (na dekoderach z mniej niż trzema tunerami
+zostawia jeden). Przy sześciu tunerach i rezerwie dwóch może pracować do czterech grup naraz. Gdy oglądanie,
+streaming lub nagranie potrzebuje tunera, skaner zwalnia grupę i wznawia ją później. IPTV i nierozpoznane typy są
+jawnie wymieniane jako nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
 
 Uruchom niezależnie od EPG: na ekranie głównym wybierz **Akcje**, zaznacz wiersz
 **Skan parametrów kanałów (PAT/PMT)** i naciśnij **OK** lub **zielony**. Skan ruszy w tle, a ekran główny pokaże

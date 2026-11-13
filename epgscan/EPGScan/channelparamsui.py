@@ -85,8 +85,9 @@ class ChannelParamsScreen(Screen):
 		if self.engine and self.engine.phase == "channelparams":
 			scan = getattr(self.engine, "channel_params_scan", None)
 			n = len(scan.active) if scan else 0
+			r = len(scan.reservations) if scan else 0
 			q = len(scan.queue) if scan else 0
-			self["summary"].setText("Skanowanie PAT/PMT: aktywne %d, w kolejce %d" % (n, q))
+			self["summary"].setText("Skanowanie PAT/PMT: aktywne %d, rezerwacje TP %d, w kolejce %d" % (n, r, q))
 		else:
 			self["summary"].setText("Wyniki: %d kanalow | ostatni skan: %d poprawnych, %d bledow, %d nieobslugiwanych" %
 				(len(self.channel_refs), run.get("scanned", 0), len(run.get("errors", [])), len(run.get("unsupported", []))))

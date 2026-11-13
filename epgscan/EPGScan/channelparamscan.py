@@ -12,7 +12,7 @@ import NavigationInstance
 
 from . import channelparams
 from .common import CHANNEL_PARAMS_FILE, CP_SCHED_DAYS, MAX_RETRIES, NO_TUNER_WAIT, TUNE_GAP, TUNE_TIMEOUT, \
-	bouquet_channels, cfg, configured_tuners, frontend_of, log, same_tp, selected_bouquets, service_name, tp_params, save_cfg
+	channel_params_bouquet_channels, cfg, configured_tuners, frontend_of, log, same_tp, selected_bouquets, service_name, tp_key, tp_params, save_cfg
 
 
 def load_results():
@@ -66,6 +66,8 @@ class ChannelJob(object):
 		self.refs = [self.ref]
 		self.all_refs = [self.ref]
 		self.tp = tp_params(self.ref)
+		self.tp_key = tp_key(self.ref)
+		self.group = None
 		self.rec = None
 		self.tuner_no = -1
 		self.tuner = "-"
@@ -89,6 +91,43 @@ class ChannelJob(object):
 		self.pmt_section = None
 
 
+class TransponderGroup(object):
+	def __init__(self, tp):
+		self.tp = tp
+		self.tp_key = None
+		self.pending = []
+		self.current = None
+		self.reservation = None
+		self.not_before = 0
+		self.started_at = 0
+		self.done = False
+
+
+def group_channel_jobs(jobs):
+	groups = []
+	for job in jobs:
+		group = next((item for item in groups if same_transponder(job, item)), None)
+		if group is None:
+			group = TransponderGroup(job.tp)
+			group.tp_key = job.tp_key
+			groups.append(group)
+		elif group.tp is None and job.tp is not None:
+			group.tp = job.tp
+		group.pending.append(job)
+		job.group = group
+	return groups
+
+
+def same_transponder(job, group):
+	if job.tp is not None and group.tp is not None:
+		return same_tp(job.tp, group.tp)
+	return job.tp_key is not None and job.tp_key == group.tp_key
+
+
+def group_owns_tuner(group):
+	return any(job is not None and not job.shared for job in (group.current, group.reservation))
+
+
 class ChannelParamsScan(object):
 	"""Uses ScanEngine's tuner accounting; it never clears or reads/writes EPG data."""
 
@@ -97,6 +136,8 @@ class ChannelParamsScan(object):
 		self.done = done
 		self.queue = []
 		self.active = []
+		self.groups = []
+		self.reservations = []
 		self.results = load_results().get("results", {})
 		self.errors = []
 		self.unsupported = []
@@ -110,16 +151,17 @@ class ChannelParamsScan(object):
 	def start(self):
 		if self.engine.phase == "channelparams":
 			return False
-		rows = bouquet_channels(selected_bouquets())
+		rows = channel_params_bouquet_channels(selected_bouquets())
 		self.unsupported = [row for row in rows if not row["supported"]]
 		self.queue = [ChannelJob(row) for row in rows if row["supported"]]
+		self.groups = group_channel_jobs(self.queue)
 		if not self.queue and not self.unsupported:
 			return False
 		self.started = int(time.time())
 		self.engine.phase = "channelparams"
 		self.engine.channel_params_scan = self
-		log("Skan parametrow: %d kanalow DVB, %d nieobslugiwanych z bukietow; bez zmian w EPG" %
-			(len(self.queue), len(self.unsupported)))
+		log("Skan parametrow: %d kanalow DVB w %d transponderach, %d nieobslugiwanych; tunery %d, rezerwa %d" %
+			(len(self.queue), len(self.groups), len(self.unsupported), self.engine.total_tuners, self.engine.reserve))
 		if self.unsupported:
 			log("Skan parametrow: IPTV/inne pominięte jawnie: %s" %
 				", ".join(row["name"] for row in self.unsupported[:20]))
@@ -138,12 +180,14 @@ class ChannelParamsScan(object):
 			NavigationInstance.instance.record_event.remove(self.rec_event)
 		except Exception:
 			pass
-		for job in list(self.active):
+		for job in list(self.active) + list(self.reservations):
 			self._close_readers(job)
 			self.engine.release(job)
 			job.state = "przerwany"
 		self.active = []
+		self.reservations = []
 		self.queue = []
+		self.groups = []
 		self.engine.channel_params_scan = None
 
 	def rec_event(self, rec, event):
@@ -161,6 +205,10 @@ class ChannelParamsScan(object):
 				job.tuner_no, _params = frontend_of(job.rec)
 				job.tuner = chr(ord("A") + job.tuner_no) if job.tuner_no >= 0 else "?"
 				job.state = "odczyt strumienia"
+				group = job.group
+				anchor = group.reservation if group else None
+				if anchor and anchor.tuner_no >= 0 and anchor.tuner_no == job.tuner_no:
+					self._release(anchor)
 			elif event in (iRecordableService.evTuneFailed, iRecordableService.evRecordFailed):
 				job.state = "BLAD: brak dostrojenia"
 			break
@@ -180,19 +228,63 @@ class ChannelParamsScan(object):
 		self.engine.release(job)
 		if job in self.active:
 			self.active.remove(job)
+		if job in self.reservations:
+			self.reservations.remove(job)
+		group = job.group
+		if group:
+			if group.current is job:
+				group.current = None
+			if group.reservation is job:
+				group.reservation = None
+
+	def _reserve_transponder(self, job):
+		self._close_readers(job)
+		if job in self.active:
+			self.active.remove(job)
+		group = job.group
+		group.current = None
+		group.reservation = job
+		if job not in self.reservations:
+			self.reservations.append(job)
+		job.state = "rezerwa transpondera"
+
+	def _finish_group_if_idle(self, group):
+		if group and not group.pending and not group.current:
+			if group.reservation:
+				self._release(group.reservation)
+			group.done = True
+
+	def _complete_channel(self, job):
+		group = job.group
+		self._close_readers(job)
+		if job in self.active:
+			self.active.remove(job)
+		if group.current is job:
+			group.current = None
+		if group.reservation and group.reservation is not job:
+			self._release(group.reservation)
+		if group.pending:
+			self._reserve_transponder(job)
+		else:
+			self._release(job)
+			group.done = True
 
 	def _retry_or_fail(self, job, reason):
+		group = job.group
 		self._release(job)
 		job.retries += 1
 		if job.retries < MAX_RETRIES:
 			job.state = "czeka (ponownie)"
 			job.not_before = time.time() + 10 * job.retries
+			if group:
+				group.pending.append(job)
 			self.queue.append(job)
 			log("Skan parametrow: %s - %s; ponowna proba" % (job.name, reason))
 		else:
 			job.state = "BLAD: " + reason
 			self.errors.append({"ref": job.ref, "name": job.name, "error": reason})
 			log("Skan parametrow: BLAD %s: %s" % (job.name, reason))
+			self._finish_group_if_idle(group)
 
 	def _start(self, job, shared):
 		try:
@@ -209,6 +301,10 @@ class ChannelParamsScan(object):
 		job.tuner_no = -1
 		self.active.append(job)
 		self.engine.active.append(job)
+		if job.group:
+			if job.group.current is None and job.group.reservation is None:
+				job.group.started_at = job.t0
+			job.group.current = job
 		self.last_tune = time.time()
 		self.engine.last_tune = self.last_tune
 		try:
@@ -259,7 +355,7 @@ class ChannelParamsScan(object):
 					sid = int(job.ref.split(":")[3], 16)
 					pmt = channelparams.parse_pmt(section, sid)
 					self._save_channel(job, pmt)
-					self._release(job)
+					self._complete_channel(job)
 		except (ValueError, KeyError, TypeError, OSError) as e:
 			self._retry_or_fail(job, "odczyt PAT/PMT: %s" % e)
 
@@ -305,6 +401,20 @@ class ChannelParamsScan(object):
 		if self.done:
 			self.done(report)
 
+	def _yield_group(self, group, now):
+		current = group.current
+		if current:
+			self._release(current)
+			current.state = "czeka na tuner"
+			current.tuner_no = -1
+			current.tuner = "-"
+			current.not_before = now + NO_TUNER_WAIT
+			group.pending.insert(0, current)
+			self.queue.insert(0, current)
+		if group.reservation:
+			self._release(group.reservation)
+		group.not_before = now + NO_TUNER_WAIT
+
 	def tick(self):
 		if self.cancelled:
 			return
@@ -324,37 +434,48 @@ class ChannelParamsScan(object):
 		engine.timer_hold = engine.upcoming_recordings()
 		deficit = engine.eff_reserve() - engine.free_tuners()
 		if deficit > 0:
-			own = sorted((j for j in self.active if not j.shared), key=lambda x: x.t0, reverse=True)
-			for job in own[:deficit]:
+			own_groups = []
+			for group in self.groups:
+				job = group.current or group.reservation
+				if job and group_owns_tuner(group):
+					own_groups.append(group)
+			own_groups.sort(key=lambda group: group.started_at, reverse=True)
+			for group in own_groups[:deficit]:
+				job = group.current or group.reservation
 				log("Skan parametrow: zwalniam tuner dla nagrania: %s" % job.name)
-				self._release(job)
-				job.state = "czeka na tuner"
-				job.tuner_no = -1
-				job.tuner = "-"
-				job.not_before = now + NO_TUNER_WAIT
-				self.queue.insert(0, job)
+				self._yield_group(group, now)
 
-		ready = [job for job in self.queue if job.not_before <= now]
-		own_active = len([job for job in self.active if not job.shared])
+		own_groups = len([group for group in self.groups if group_owns_tuner(group)])
 		tuning = any(job.state == "strojenie" for job in self.active)
-		if ready and not tuning and now - self.last_tune >= TUNE_GAP:
+		if not tuning and now - self.last_tune >= TUNE_GAP:
 			job = None
+			group = None
 			shared = False
-			for candidate in ready:
-				if any(same_tp(candidate.tp, active.tp) for active in self.active):
-					job, shared = candidate, True
+			ready_groups = [item for item in self.groups if not item.done and not item.current and item.pending
+				and item.not_before <= now and item.pending[0].not_before <= now]
+			new_groups = [item for item in ready_groups if item.reservation is None]
+			continuing_groups = [item for item in ready_groups if item.reservation is not None]
+			for candidate_group in new_groups + continuing_groups:
+				candidate = candidate_group.pending[0]
+				if candidate_group.reservation:
+					group, job, shared = candidate_group, candidate, True
 					break
 				if engine.on_busy_tp(candidate):
-					job, shared = candidate, True
+					group, job, shared = candidate_group, candidate, True
 					break
-			if job is None and not engine.timer_hold and own_active < engine.max_parallel \
-					and engine.free_tuners() - engine.eff_reserve() > 0:
-				job = ready[0]
+				if not engine.timer_hold and own_groups < engine.max_parallel \
+						and engine.free_tuners() - engine.eff_reserve() > 0:
+					group, job = candidate_group, candidate
+					break
 			if job is not None:
+				group.pending.remove(job)
 				self.queue.remove(job)
 				if not self._start(job, shared):
 					self._retry_or_fail(job, "nie mozna zarezerwowac serwisu")
 		if not self.queue and not self.active:
+			for group in self.groups:
+				self._finish_group_if_idle(group)
+		if not self.queue and not self.active and not self.reservations:
 			return self._finish()
 		if now - self.last_notify >= 1:
 			self.last_notify = now
@@ -426,8 +547,8 @@ def _start_scan(engine, done, auto=False, woke=False):
 	engine.channelparams_only = True
 	engine.channelparams_auto = auto
 	engine.max_parallel = int(cfg.max_parallel.value)
-	engine.reserve = int(cfg.reserve.value)
 	engine.total_tuners = configured_tuners()
+	engine.reserve = max(int(cfg.reserve.value), min(2, max(0, engine.total_tuners - 1)))
 	engine.t_start = time.time()
 	engine.note = ""
 	try:

@@ -313,9 +313,10 @@ class EPGScanScreen(Screen):
 		elif e.running and e.phase == "channelparams":
 			scan = getattr(e, "channel_params_scan", None)
 			active = len(scan.active) if scan else 0
+			reserved = len(scan.reservations) if scan else 0
 			queued = len(scan.queue) if scan else 0
-			head = "Skan PAT/PMT kanalow: aktywne %d, w kolejce %d, czas %d:%02d   %s" % (
-				active, queued, el // 60, el % 60, tun)
+			head = "Skan PAT/PMT kanalow: aktywne %d, rezerwacje TP %d, w kolejce %d, czas %d:%02d   %s" % (
+				active, reserved, queued, el // 60, el % 60, tun)
 		elif not e.jobs:
 			head = "Brak kanalow - sprawdz zakres skanowania i bukiety w ustawieniach"
 		elif e.running and e.phase == "xmltv_wait":
@@ -392,6 +393,7 @@ class EPGScanScreen(Screen):
 			scan = getattr(e, "channel_params_scan", None)
 			if scan:
 				lines += ["AKTYWNE: %s - %s" % (j.name, j.state) for j in scan.active]
+				lines += ["REZERWACJA TP: [%s] %s" % (j.tuner, j.name) for j in scan.reservations]
 				lines += ["OCZEKUJE: %s - %s" % (j.name, j.state) for j in scan.queue]
 		else:
 			for j in e.active + [x for x in e.jobs if x not in e.active]:

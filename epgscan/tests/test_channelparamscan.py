@@ -3,6 +3,7 @@ import base64
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -49,7 +50,7 @@ common.MAX_RETRIES = 3
 common.NO_TUNER_WAIT = 15
 common.TUNE_GAP = 2
 common.TUNE_TIMEOUT = 30
-common.bouquet_channels = lambda _files: []
+common.channel_params_bouquet_channels = lambda _files: []
 common.cfg = types.SimpleNamespace(cp_language_source=setting("manual"), cp_languages=setting("pol"), cp_sched=setting(False),
 	cp_sched_time=setting((3, 30)), cp_sched_when=setting("standby"), cp_sched_skip_rec=setting(False),
 	cp_sched_wakeup=setting(False), cp_last_run=setting(0), cp_auto_in_progress=setting(False),
@@ -61,6 +62,7 @@ common.log = lambda _message: None
 common.same_tp = lambda a, b: bool(a and b and a == b)
 common.selected_bouquets = lambda: []
 common.service_name = lambda ref: ref
+common.tp_key = lambda _ref: None
 common.tp_params = lambda _ref: None
 common.save_cfg = lambda: None
 common.keys_skin = lambda *_args: ""
@@ -182,6 +184,14 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertEqual(redrawn, [True])
 		self.assertEqual(opened, [])
 
+	def test_channel_scan_keeps_two_tuners_free_on_six_tuner_receiver(self):
+		engine = types.SimpleNamespace(running=False, phase="")
+		with patch.object(scanner_module, "configured_tuners", return_value=6), \
+				patch.object(scanner_module, "channel_params_bouquet_channels", return_value=[]), \
+				patch.object(common.cfg.reserve, "value", 1):
+			self.assertFalse(scanner_module.start_manual(engine))
+		self.assertEqual(engine.reserve, 2)
+
 	def test_bouquet_scan_flattens_subbouquets_and_reports_iptv(self):
 		with tempfile.TemporaryDirectory() as directory:
 			with open(os.path.join(directory, "bouquets.tv"), "w") as f:
@@ -196,6 +206,157 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertTrue(rows[0]["supported"])
 		self.assertEqual(rows[1]["name"], "IPTV channel")
 		self.assertFalse(rows[1]["supported"])
+
+	def test_channel_jobs_group_interleaved_bouquet_channels_by_transponder(self):
+		rows = [
+			{"ref": "service-one", "name": "One"},
+			{"ref": "service-two", "name": "Two"},
+			{"ref": "service-three", "name": "Three"},
+		]
+		with patch.object(scanner_module, "tp_params",
+				side_effect=[(11000, 0, 192), (12000, 1, 192), (11000, 0, 192)]):
+			jobs = [scanner_module.ChannelJob(row) for row in rows]
+
+		groups = scanner_module.group_channel_jobs(jobs)
+
+		self.assertEqual([[job.ref for job in group.pending] for group in groups],
+			[["service-one", "service-three"], ["service-two"]])
+
+	def test_channel_jobs_use_service_reference_when_transponder_data_is_missing(self):
+		rows = [{"ref": "service-one", "name": "One"}, {"ref": "service-two", "name": "Two"}]
+		with patch.object(scanner_module, "tp_params", return_value=None), \
+				patch.object(scanner_module, "tp_key", side_effect=[(1, 2, 3), (1, 2, 3)]):
+			jobs = [scanner_module.ChannelJob(row) for row in rows]
+
+		groups = scanner_module.group_channel_jobs(jobs)
+
+		self.assertEqual(len(groups), 1)
+
+	def test_completed_channel_holds_tuner_for_next_channel_on_transponder(self):
+		engine = types.SimpleNamespace(active=[])
+		engine.release = lambda job: engine.active.remove(job) if job in engine.active else None
+		scan = scanner_module.ChannelParamsScan(engine)
+		group = scanner_module.TransponderGroup((11000, 0, 192))
+		first = scanner_module.ChannelJob({"ref": "service-one", "name": "One"})
+		second = scanner_module.ChannelJob({"ref": "service-two", "name": "Two"})
+		first.group = second.group = group
+		first.rec = object()
+		group.current = first
+		group.pending.append(second)
+		scan.active.append(first)
+		engine.active.append(first)
+
+		scan._complete_channel(first)
+
+		self.assertIs(group.reservation, first)
+		self.assertIn(first, engine.active)
+		self.assertNotIn(first, scan.active)
+
+		group.pending.clear()
+		second.rec = object()
+		group.current = second
+		scan.active.append(second)
+		engine.active.append(second)
+		scan._complete_channel(second)
+
+		self.assertTrue(group.done)
+		self.assertEqual(engine.active, [])
+		self.assertEqual(scan.reservations, [])
+
+	def test_scheduler_starts_other_transponders_before_revisiting_reserved_group(self):
+		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=2,
+			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 1,
+			free_tuners=lambda: 4, on_busy_tp=lambda _job: False, notify=lambda: None)
+		engine.release = lambda job: engine.active.remove(job) if job in engine.active else None
+		scan = scanner_module.ChannelParamsScan(engine)
+		jobs = [scanner_module.ChannelJob({"ref": ref, "name": ref}) for ref in
+			("tp-one-a", "tp-two-a", "tp-one-b", "tp-two-b", "tp-three-a", "tp-one-c")]
+		jobs[0].tp = jobs[2].tp = jobs[5].tp = (11000, 0, 192)
+		jobs[1].tp = jobs[3].tp = (12000, 1, 192)
+		jobs[4].tp = (13000, 0, 192)
+		scan.groups = scanner_module.group_channel_jobs(jobs)
+		scan.queue = list(jobs)
+		started = []
+
+		def start(job, shared):
+			started.append((job.ref, shared))
+			job.state = "scanning"
+			job.group.current = job
+			scan.active.append(job)
+			engine.active.append(job)
+			return True
+
+		scan._start = start
+		scan.last_tune = 0
+		scan.tick()
+		self.assertEqual(started, [("tp-one-a", False)])
+
+		scan.last_tune = 0
+		scan._complete_channel(jobs[0])
+		scan.tick()
+		self.assertEqual(started[-1], ("tp-two-a", False))
+
+		scan.last_tune = 0
+		scan._complete_channel(jobs[1])
+		scan.tick()
+		self.assertEqual(started[-1], ("tp-one-b", True))
+
+		scan._complete_channel(jobs[2])
+		scan.last_tune = 0
+		scan.tick()
+		self.assertNotEqual(started[-1][0], "tp-three-a")
+
+	def test_tuner_reserve_shortage_releases_transponder_and_delays_resume(self):
+		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=4,
+			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 2,
+			free_tuners=lambda: 1, on_busy_tp=lambda _job: False, notify=lambda: None)
+		engine.release = lambda job: engine.active.remove(job) if job in engine.active else None
+		scan = scanner_module.ChannelParamsScan(engine)
+		group = scanner_module.TransponderGroup((11000, 0, 192))
+		anchor = scanner_module.ChannelJob({"ref": "tp-one-a", "name": "One"})
+		next_job = scanner_module.ChannelJob({"ref": "tp-one-b", "name": "Two"})
+		anchor.group = next_job.group = group
+		anchor.rec = object()
+		group.reservation = anchor
+		group.pending.append(next_job)
+		scan.groups = [group]
+		scan.queue = [next_job]
+		scan.reservations = [anchor]
+		engine.active.append(anchor)
+
+		scan.tick()
+
+		self.assertIsNone(group.reservation)
+		self.assertNotIn(anchor, engine.active)
+		self.assertEqual(group.pending, [next_job])
+		self.assertGreater(group.not_before, time.time())
+
+	def test_six_tuners_and_two_reserved_allow_four_transponder_groups(self):
+		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=4,
+			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 2,
+			free_tuners=lambda: 6, on_busy_tp=lambda _job: False, notify=lambda: None)
+		scan = scanner_module.ChannelParamsScan(engine)
+		jobs = [scanner_module.ChannelJob({"ref": "tp-%d" % i, "name": "TP %d" % i}) for i in range(6)]
+		for i, job in enumerate(jobs):
+			job.tp = (11000 + i * 1000, 0, 192)
+		scan.groups = scanner_module.group_channel_jobs(jobs)
+		scan.queue = list(jobs)
+		started = []
+
+		def start(job, shared):
+			started.append(job)
+			job.state = "scanning"
+			job.group.current = job
+			scan.active.append(job)
+			return True
+
+		scan._start = start
+		for _ in jobs:
+			scan.last_tune = 0
+			scan.tick()
+
+		self.assertEqual(len(started), 4)
+		self.assertEqual(len(scan.active), 4)
 
 	def test_successful_channel_recommends_only_unique_preferred_audio_and_keeps_raw_pmt(self):
 		section = base64.b64decode(PMT_BASE64)
@@ -305,7 +466,7 @@ class ChannelParamScanTests(unittest.TestCase):
 			row = {"ref": "4097:0:1:0:0:0:0:0:0:0:http%3a//example/stream",
 				"name": "IPTV channel", "supported": False, "error": "Nieobslugiwany typ kanalu"}
 			with patch.object(scanner_module, "CHANNEL_PARAMS_FILE", os.path.join(directory, "results.json")), \
-					patch.object(scanner_module, "bouquet_channels", return_value=[row]):
+					patch.object(scanner_module, "channel_params_bouquet_channels", return_value=[row]):
 				self.assertTrue(scanner_module.start_scheduled(engine, 123))
 				self.assertTrue(common.cfg.cp_auto_in_progress.value)
 				engine.channel_params_scan.tick()
@@ -390,12 +551,15 @@ class ChannelParamScanTests(unittest.TestCase):
 			result_path = os.path.join(directory, "channelparams.json")
 			engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None, timer_hold=0, max_parallel=1,
 				scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 0, free_tuners=lambda: 1)
+			engine.total_tuners = 1
+			engine.reserve = 0
 			row = {"ref": "4097:0:1:0:0:0:0:0:0:0:http%3a//example/stream",
 				"name": "IPTV channel", "supported": False, "error": "Nieobslugiwany typ kanalu"}
 			with patch.object(scanner_module, "CHANNEL_PARAMS_FILE", result_path), \
-					patch.object(scanner_module, "bouquet_channels", return_value=[row]):
+					patch.object(scanner_module, "channel_params_bouquet_channels", return_value=[row]) as bouquet_reader:
 				scan = scanner_module.ChannelParamsScan(engine)
 				self.assertTrue(scan.start())
+				bouquet_reader.assert_called_once_with([])
 				scan.tick()
 			with open(result_path, encoding="utf-8") as f:
 				data = __import__("json").load(f)
@@ -407,7 +571,7 @@ class ChannelParamScanTests(unittest.TestCase):
 		engine.release = lambda job: engine.active.remove(job) if job in engine.active else None
 		scan = scanner_module.ChannelParamsScan(engine)
 		job = types.SimpleNamespace(
-			pat_reader=None, pmt_reader=None, rec=None, state="", retries=0, not_before=0, name="test")
+			pat_reader=None, pmt_reader=None, rec=None, state="", retries=0, not_before=0, name="test", group=None)
 		scan.active.append(job)
 		engine.active.append(job)
 

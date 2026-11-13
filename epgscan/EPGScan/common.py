@@ -18,7 +18,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.17.4"
+VERSION = "2.17.5"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
@@ -538,7 +538,7 @@ def bouquet_refs(files):
 	return groups
 
 
-def bouquet_channels(files):
+def channel_params_bouquet_channels(files):
 	"""Wszystkie pozycje kanalow bukietu, lacznie z IPTV i nieobslugiwanymi ref."""
 	return read_bouquet_channels(files, E2, service_name)
 
