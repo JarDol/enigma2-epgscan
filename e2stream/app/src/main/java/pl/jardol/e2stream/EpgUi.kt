@@ -287,7 +287,7 @@ class EpgUi(
         onBack: (() -> Unit)? = null, action: () -> Unit,
     ) {
         TvDialog.confirm(a, title, message, listOf(
-            TvDialog.Btn(confirmLabel, action),
+            TvDialog.Btn(confirmLabel, onClick = action),
         ), onBack = onBack, onTimeout = onBack)
     }
 

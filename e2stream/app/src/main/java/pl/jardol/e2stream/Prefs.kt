@@ -42,6 +42,10 @@ class Prefs(ctx: Context) {
         get() = s("pass")
         set(v) = putS("pass", v)
 
+    var blockOnDisconnect: Boolean
+        get() = sp.getBoolean("blockOnDisconnect", true)
+        set(v) = putB("blockOnDisconnect", v)
+
     /** Tunelowanie wideo (ExoPlayer). */
     var tunneling: Boolean
         get() = sp.getBoolean("tunneling", true)
@@ -291,6 +295,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("picons", true)
         set(v) = putB("picons", v)
 
+    /** Logo aplikacji zamiast pustego miejsca, gdy kanał nie ma pobranego piconu. */
+    var missingPiconLogo: Boolean
+        get() = sp.getBoolean("missingPiconLogo", false)
+        set(v) = putB("missingPiconLogo", v)
+
     /** Katalog picon na dekoderze dla FTP (pusty = szukaj w typowych). */
     var piconDir: String
         get() = s("piconDir")
@@ -300,6 +309,11 @@ class Prefs(ctx: Context) {
     var lastCrash: String
         get() = s("lastCrash")
         set(v) = sp.edit().putString("lastCrash", v).commit().let { }
+
+    /** Silnik i wersja, których uruchamianie nie dotarło jeszcze do pierwszego obrazu. */
+    var playbackAttempt: String
+        get() = s("playbackAttempt")
+        set(v) = sp.edit().putString("playbackAttempt", v).commit().let { }
 
     /**
      * Zapas w trakcie oglądania (ms): do tylu odtwarzacz dobudowuje bufor po szybkim starcie

@@ -329,41 +329,39 @@ class TimeshiftDataSource(
  */
 class TimeshiftRecorder(
     private val url: String, private val auth: String?, private val analyzer: () -> TsAnalyzer?, private val onConnect: () -> Unit = {},
+    private val onFailure: () -> Unit,
 ) {
     @Volatile private var running = true
     private var conn: HttpURLConnection? = null
 
     fun start() {
         Thread({
-            var fails = 0
-            while (running) {
-                try {
-                    val c = (URL(url).openConnection() as HttpURLConnection).apply {
-                        connectTimeout = 8000; readTimeout = 8000
-                        setRequestProperty("User-Agent", "E2Stream")
-                        auth?.let { setRequestProperty("Authorization", it) }
-                    }
-                    conn = c
-                    val inp = c.inputStream
-                    onConnect()
-                    val b = ByteArray(188 * 700)
-                    while (running) {
-                        val t0 = SystemClock.elapsedRealtime()
-                        val n = inp.read(b)
-                        if (n < 0) break
-                        analyzer()?.let { a ->
-                            a.readTime(SystemClock.elapsedRealtime() - t0)
-                            if (n > 0) a.feed(b, 0, n)
-                        }
-                        fails = 0
-                    }
-                } catch (e: Exception) {
-                    if (running) AppLog.i("timeshift: zapis na żywo przerwany ($e)")
-                } finally {
-                    try { conn?.disconnect() } catch (_: Exception) {}
+            try {
+                val c = (URL(url).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 8000; readTimeout = 8000
+                    setRequestProperty("User-Agent", "E2Stream")
+                    auth?.let { setRequestProperty("Authorization", it) }
                 }
-                if (running) { fails++; Thread.sleep(minOf(5000L, 500L * fails)) }
+                conn = c
+                val inp = c.inputStream
+                onConnect()
+                val b = ByteArray(188 * 700)
+                while (running) {
+                    val t0 = SystemClock.elapsedRealtime()
+                    val n = inp.read(b)
+                    if (n < 0) break
+                    analyzer()?.let { a ->
+                        a.readTime(SystemClock.elapsedRealtime() - t0)
+                        if (n > 0) a.feed(b, 0, n)
+                    }
+                }
+                if (running) AppLog.i("timeshift: strumień na żywo zakończył się")
+            } catch (e: java.io.IOException) {
+                if (running) AppLog.i("timeshift: zapis na żywo przerwany ($e)")
+            } finally {
+                try { conn?.disconnect() } catch (_: Exception) {}
             }
+            if (running) onFailure()
         }, "timeshift-zapis").start()
     }
 

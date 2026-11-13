@@ -3,16 +3,19 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val betaVlcIndex = providers.gradleProperty("betaVlcIndex").getOrElse("3").toInt()
+val libvlcVersion = providers.gradleProperty("libvlcVersion").getOrElse("3.7.7")
+
 android {
     namespace = "pl.jardol.e2stream"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "pl.jardol.e2stream"
-        minSdk = 21
+        minSdk = 23
         targetSdk = 35
-        versionCode = 137
-        versionName = "0.18.21-beta.2"
+        versionCode = 148 + betaVlcIndex
+        versionName = "0.18.32-beta.$betaVlcIndex-vlc.$libvlcVersion"
         buildConfigField("boolean", "WAKE_DIAGNOSTICS", versionName!!.contains("-beta.").toString())
         // biblioteki natywne VLC tylko dla ARM (telewizory i przystawki) - mniejszy plik APK
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
@@ -58,12 +61,12 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
-    val media3 = "1.5.1"
+    val media3 = "1.11.1"
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-ui:$media3")
     implementation("androidx.core:core:1.13.1")
     // programowy dekoder MP2 (dźwięk MPEG Layer II) dla urządzeń bez sprzętowego, np. Mi Box 4
     implementation("com.googlecode.soundlibs:jlayer:1.0.1.4")
     // drugi silnik odtwarzania (wybór w ustawieniach odbiornika), LGPL 2.1+
-    implementation("org.videolan.android:libvlc-all:3.6.0")
+    implementation("org.videolan.android:libvlc-all:$libvlcVersion")
 }

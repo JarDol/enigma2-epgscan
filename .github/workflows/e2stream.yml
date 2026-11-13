@@ -16,6 +16,16 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - beta_index: 1
+            libvlc_version: 3.6.5
+          - beta_index: 2
+            libvlc_version: 3.7.0
+          - beta_index: 3
+            libvlc_version: 3.7.7
     steps:
       - uses: actions/checkout@v4
 
@@ -27,11 +37,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Budowa
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease -PbetaVlcIndex=${{ matrix.beta_index }} -PlibvlcVersion=${{ matrix.libvlc_version }}
 
       - name: Nazwa pliku z wersją
         run: |
-          V=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          V="0.18.32-beta.${{ matrix.beta_index }}-vlc.${{ matrix.libvlc_version }}"
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk "out/e2stream-$V.apk"
           echo "VER=$V" >> "$GITHUB_ENV"
@@ -41,7 +51,7 @@ jobs:
           name: e2stream-${{ env.VER }}
           path: e2stream/out/*.apk
 
-      # Wydanie e2stream-X.Y.Z (nie oznaczane jako „latest” — to miejsce wydań wtyczki EPG Scan)
+      # Wydania E2Stream są oddzielne od wydań wtyczki EPG Scan.
       - name: Wydanie e2stream-X.Y.Z
         env:
           GH_TOKEN: ${{ github.token }}
@@ -50,6 +60,7 @@ jobs:
           IS_BETA=false
           if [ "$GITHUB_REF_NAME" = "beta" ]; then IS_BETA=true; fi
           git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md || true
+          printf '\n\nlibVLC: %s\n' '${{ matrix.libvlc_version }}' >> notes.md
           if gh release view "$T" >/dev/null 2>&1; then
             gh release upload "$T" out/*.apk --clobber
             if [ "$IS_BETA" = true ]; then

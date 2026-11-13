@@ -35,7 +35,9 @@ object TvDialog {
     const val GREY = 0xFFB0BEC5.toInt()
     const val WHITE = 0xFFFFFFFF.toInt()
 
-    class Btn(val label: String, val onClick: () -> Unit = {})
+    class Btn(val label: String, val closeOnClick: Boolean, val onClick: () -> Unit) {
+        constructor(label: String, onClick: () -> Unit = {}) : this(label, true, onClick)
+    }
 
     private class TimedDialog(
         a: Activity,
@@ -149,7 +151,10 @@ object TvDialog {
                 btn.text = b.label
                 btn.tag = "chip_$index"
                 btn.isFocusable = true
-                btn.setOnClickListener { dlg.dismiss(); b.onClick() }
+                btn.setOnClickListener {
+                    if (b.closeOnClick) dlg.dismiss()
+                    b.onClick()
+                }
                 val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 lp.marginStart = dp(ctx, 10)
                 bar.addView(btn, lp)
@@ -180,6 +185,11 @@ object TvDialog {
 
     fun setTitle(dlg: Dialog, title: String) {
         dlg.window?.decorView?.findViewWithTag<TextView>("title")?.text = title
+    }
+
+    fun setMessage(dlg: Dialog?, message: CharSequence) {
+        if (dlg?.isShowing != true) return
+        dlg.window?.decorView?.findViewWithTag<TextView>("dialog-message")?.text = message
     }
 
     fun setButtonLabel(dlg: Dialog?, index: Int, label: String) {
@@ -346,6 +356,7 @@ object TvDialog {
             this.text = text; textSize = sizeSp; setTextColor(color)
             setLineSpacing(dp(ctx, 4).toFloat(), 1f)
             setPadding(dp(ctx, 4), 0, dp(ctx, 4), 0)
+            tag = "dialog-message"
         })
         sv.setOnKeyListener { _, code, e ->
             if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
@@ -370,8 +381,8 @@ object TvDialog {
         a: Activity, title: String, message: CharSequence, chips: List<Btn>,
         cancelable: Boolean = true, onBack: (() -> Unit)? = null, timeoutSec: Int? = null,
         onTimeout: (() -> Unit)? = null,
-    ) {
-        panel(a, title, null, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack,
+    ): Dialog {
+        return panel(a, title, null, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack,
             focusChip = true, timeoutSec = timeoutSec ?: Prefs(a).confirmDialogSec, onTimeout = onTimeout) { ctx, _ ->
             scrollText(ctx, message, 18f)
         }
@@ -383,7 +394,7 @@ object TvDialog {
             onClose()
             return
         }
-        confirm(a, title, message, listOf(Btn("OK", onClose)),
+        confirm(a, title, message, listOf(Btn("OK", onClick = onClose)),
             onBack = onClose, timeoutSec = prefs.infoDialogSec, onTimeout = onClose)
     }
 

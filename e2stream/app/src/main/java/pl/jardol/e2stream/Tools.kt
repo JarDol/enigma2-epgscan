@@ -3,7 +3,6 @@ package pl.jardol.e2stream
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -281,27 +280,52 @@ object Tools {
     fun checkUpdate(a: Activity, manual: Boolean, msg: (String) -> Unit) {
         if (manual) msg("Sprawdzam aktualizację…")
         Thread {
-            val info = try { Updater.latest(Prefs(a).updateChannel) } catch (e: Exception) {
+            val releases = try { Updater.releases(Prefs(a).updateChannel) } catch (e: Exception) {
                 AppLog.i("aktualizacja: błąd $e"); null
             }
             ui.post {
                 if (a.isFinishing) return@post
                 val cur = appVersion(a)
                 when {
-                    info == null -> if (manual) msg("Nie udało się sprawdzić aktualizacji")
-                    Updater.newer(info.version, cur) -> when {
-                        manual -> askUpdate(a, info, msg)
-                        Prefs(a).autoUpdate -> {
-                            AppLog.i("aktualizacja automatyczna: ${info.version}")
-                            msg("Aktualizacja do wersji ${info.version}…")
-                            downloadAndInstall(a, info, msg)
+                    releases == null -> if (manual) msg("Nie udało się sprawdzić aktualizacji")
+                    manual -> chooseRelease(a, releases, cur, msg)
+                    releases.firstOrNull()?.let { Updater.newer(it.version, cur) } == true -> {
+                        val info = releases.first()
+                        when {
+                            Prefs(a).autoUpdate -> {
+                                AppLog.i("aktualizacja automatyczna: ${info.version}")
+                                msg("Aktualizacja do wersji ${info.version}…")
+                                downloadAndInstall(a, info, msg)
+                            }
+                            else -> msg("Dostępna wersja ${info.version} — Ustawienia → Sprawdź aktualizację")
                         }
-                        else -> msg("Dostępna wersja ${info.version} — Ustawienia → Sprawdź aktualizację")
                     }
-                    else -> if (manual) msg("Masz najnowszą wersję ($cur)")
                 }
             }
         }.start()
+    }
+
+    private fun chooseRelease(a: Activity, releases: List<Updater.Info>, current: String, msg: (String) -> Unit) {
+        val choices = releases.filter { it.version != current }
+        if (choices.isEmpty()) {
+            msg(if (releases.isEmpty()) "Nie znaleziono wydań E2Stream" else "Masz najnowszą wersję ($current)")
+            return
+        }
+        val latest = releases.firstOrNull()?.version
+        TvDialog.list(
+            a,
+            "Wybierz wersję E2Stream",
+            choices.map { info ->
+                val age = when {
+                    info.version == latest -> "najnowsza"
+                    Updater.newer(info.version, current) -> "nowsza"
+                    else -> "starsza"
+                }
+                TvDialog.Item(info.version, listOf(age, if (info.prerelease) "beta" else "stable").joinToString(" • "))
+            },
+            selected = 0,
+            widthFrac = 0.55f,
+        ) { selected -> askUpdate(a, choices[selected], current, msg) }
     }
 
     private fun downloadAndInstall(a: Activity, info: Updater.Info, msg: (String) -> Unit) {
@@ -313,9 +337,15 @@ object Tools {
                     if (pct / 10 != last) { last = pct / 10; ui.post { msg("Pobieranie $pct%") } }
                 }
                 ui.post {
-                    if (!Updater.install(a, apk)) {
-                        msg("Zezwól E2Stream na instalowanie aplikacji i spróbuj ponownie")
-                    }
+                    Thread {
+                        try {
+                            val started = Updater.install(a, apk)
+                            if (!started) ui.post { if (!a.isFinishing) msg("Zezwól E2Stream na instalowanie aplikacji i spróbuj ponownie") }
+                        } catch (e: Exception) {
+                            AppLog.i("aktualizacja: błąd instalacji $e")
+                            ui.post { if (!a.isFinishing) msg("Błąd instalacji: ${e.message}") }
+                        }
+                    }.start()
                 }
             } catch (e: Exception) {
                 AppLog.i("aktualizacja: błąd pobierania $e")
@@ -324,9 +354,13 @@ object Tools {
         }.start()
     }
 
-    private fun askUpdate(a: Activity, info: Updater.Info, msg: (String) -> Unit) {
+    private fun askUpdate(a: Activity, info: Updater.Info, current: String, msg: (String) -> Unit) {
+        val downgrade = Updater.newer(current, info.version)
+        val note = if (downgrade) {
+            "\n\nAndroid może odmówić instalacji starszej wersji; ta możliwość zależy od systemu urządzenia."
+        } else ""
         TvDialog.confirm(a, "Aktualizacja E2Stream",
-            "Dostępna wersja ${info.version} (masz ${appVersion(a)}). Pobrać i zainstalować?",
+            "Wybrana wersja ${info.version} (masz $current). Pobrać i zainstalować?$note",
             listOf(TvDialog.Btn("Zainstaluj") { downloadAndInstall(a, info, msg) }, TvDialog.Btn("Nie teraz")))
     }
 }

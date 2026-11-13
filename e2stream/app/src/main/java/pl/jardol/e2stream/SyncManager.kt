@@ -31,14 +31,14 @@ object SyncManager {
 
     /** Ustawienia synchronizowane (bez adresu dekodera, ścieżek lokalnych i stanu). */
     private val SETTINGS = setOf(
-        "httpPort", "streamPort", "user", "pass",
+        "httpPort", "streamPort", "user", "pass", "blockOnDisconnect",
         "tunneling", "engine", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps", "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon", "watchdog", "stallSec", "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "dropRestart",
         "audioLang", "preferAc3",
         "logFtp", "ftpUser", "ftpPass", "ftpDir", "saveTs", "tsRingMb", "tsFtp", "cleanTs",
         "hiddenBouquets", "pin", "pinMin", "invertUpDown", "bannerSec", "tsBannerSec",
         "channelListSec", "epgEventSec", "confirmDialogSec", "epgChannelSec", "epgMultiSec", "infoDialogSec", "hideInfoDialogs", "resumeLast",
         "startBouquet", "startChannel", "startChannelName", "autoUpdate", "keyMap", "keyMapNoBanner", "keyMapBanner",
-        "epgDaily", "epgHour", "epgDays", "epgUpdateMode", "picons", "piconDir", "showStats",
+        "epgDaily", "epgHour", "epgDays", "epgUpdateMode", "picons", "missingPiconLogo", "piconDir", "showStats",
     )
 
     /**
@@ -49,7 +49,7 @@ object SyncManager {
         "engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps",
         "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon",
         "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "stallSec", "dropRestart", "watchdog",
-        "showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3",
+        "showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3", "blockOnDisconnect",
     )
 
     /** Przy pierwszym uruchomieniu nie nadpisujemy tego, co użytkownik właśnie wpisał. */
