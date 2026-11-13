@@ -18,7 +18,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.18.0-beta.1"
+VERSION = "2.18.0-beta.2"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
@@ -188,6 +188,7 @@ cfg.p_srv = ConfigSelection(default="zapas", choices=SRV_CHOICES)
 cfg.p_other = ConfigYesNo(default=True)       # pozostale zaznaczone zrodla XMLTV
 cfg.p_fetch = ConfigYesNo(default=True)       # pobierz swieze dane (dekoder / serwer) przed importem
 cfg.p_one = ConfigYesNo(default=True)         # ... w jednym miejscu: gdy druga strona ma dzisiejsza pelna paczke - ona zamiast pobierania
+cfg.p_channelparams = ConfigYesNo(default=False)  # skan PAT/PMT jako etap recznego profilu
 cfg.src_order = ConfigSelection(default="dso", choices=[
 	("dso", "dekoder, serwer, pozostale"), ("dos", "dekoder, pozostale, serwer"),
 	("sdo", "serwer, dekoder, pozostale"), ("sod", "serwer, pozostale, dekoder"),
@@ -261,7 +262,7 @@ def profile_default():
 	"""Profil startu: OK na ekranie glownym i harmonogram (Akcje -> Zapisz jako domyslne)."""
 	return {"sw": cfg.p_sw.value, "clear": cfg.clear_mode.value, "sat": bool(cfg.sat_import.value), "dek": bool(cfg.p_dek.value),
 		"srv": cfg.p_srv.value, "other": bool(cfg.p_other.value), "fetch": bool(cfg.p_fetch.value),
-		"one": bool(cfg.p_one.value and cfg.one_place.value)}
+		"one": bool(cfg.p_one.value and cfg.one_place.value), "channelparams": bool(cfg.p_channelparams.value)}
 
 
 def profile_text(p):
@@ -269,6 +270,8 @@ def profile_text(p):
 	on = {"d": p["dek"], "s": p["srv"] != "nie", "o": p["other"]}
 	parts = (["SatWatch (%s)" % p["sw"]] if p.get("sw", "nie") != "nie" else []) + (["satelita"] if p["sat"] else []) + ["%s%s" % (order[c], " (zapas)" if c == "s" and p["srv"] == "zapas" else "")
 		for c in cfg.src_order.value if on[c]]
+	if p.get("channelparams"):
+		parts.append("skan parametrow kanalow")
 	return " -> ".join(parts) or "nic"
 
 

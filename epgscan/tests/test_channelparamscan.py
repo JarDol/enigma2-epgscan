@@ -54,6 +54,8 @@ common.channel_params_bouquet_channels = lambda _files: []
 common.cfg = types.SimpleNamespace(cp_language_source=setting("manual"), cp_languages=setting("pol"),
 	cp_group_tp=setting(True), cp_interval=setting("7"), cp_last_run=setting(0), cp_auto_in_progress=setting(False),
 	cp_common_overwrite=setting(False), cp_devices_overwrite=setting(False),
+	map_sort=setting("bq"), scope=types.SimpleNamespace(value="all",
+		choices=types.SimpleNamespace(choices=[("all", "wszystkie"), ("selected", "wybrane"), ("tps", "transpondery")])),
 	sched_when=setting("standby"), sched_skip_rec=setting(False),
 	max_parallel=setting(2), reserve=setting(1))
 common.configured_tuners = lambda: 4
@@ -61,6 +63,7 @@ common.frontend_of = lambda _service: (-1, None)
 common.log = lambda _message: None
 common.same_tp = lambda a, b: bool(a and b and a == b)
 common.selected_bouquets = lambda: []
+common.XB_CHOICES = [("all", "wszystkie bukiety"), ("selected", "wybrane bukiety")]
 common.service_name = lambda ref: ref
 common.tp_key = lambda _ref: None
 common.tp_params = lambda _ref: None
@@ -111,6 +114,7 @@ engine_module.get_engine = lambda _session: None
 sys.modules[engine_module.__name__] = engine_module
 schedule_module = importlib.import_module(PACKAGE + ".schedule")
 updater_module = importlib.import_module(PACKAGE + ".updater")
+windowguard_module = importlib.import_module(PACKAGE + ".windowguard")
 
 
 screens = types.ModuleType("Screens")
@@ -118,7 +122,7 @@ screens.__path__ = []
 screen_module = types.ModuleType("Screens.Screen")
 screen_module.Screen = type("FakeScreen", (dict,), {})
 messagebox_module = types.ModuleType("Screens.MessageBox")
-messagebox_module.MessageBox = type("FakeMessageBox", (), {"TYPE_INFO": 0, "TYPE_YESNO": 1})
+messagebox_module.MessageBox = type("FakeMessageBox", (), {"TYPE_INFO": 0, "TYPE_ERROR": 2, "TYPE_YESNO": 1})
 audio_module = types.ModuleType("Screens.AudioSelection")
 audio_module.AudioSelection = type("FakeAudioSelection", (), {})
 components = types.ModuleType("Components")
@@ -149,9 +153,96 @@ PMT_BASE64 = "ArAsQo/DAADhGPAAG+EY8AAE4hjwBgoEcG9sAAbjGPAKegKAAgoEcWFhAEkPdSI="
 
 
 class ChannelParamScanTests(unittest.TestCase):
+	def test_standby_closes_plugin_and_overlays_but_not_older_dialogs(self):
+		closed = []
+		other = type("OtherDialog", (), {"close": lambda self: closed.append("other")})()
+		plugin_type = type("ChannelParamsScreen", (), {
+			"close": lambda self: closed.append("plugin")})
+		plugin_type.__module__ = "Plugins.Extensions.EPGScan.channelparamsui"
+		plugin = plugin_type()
+		overlay_type = type("MessageBox", (), {"close": lambda self: closed.append("overlay")})
+		overlay_type.__module__ = "Screens.MessageBox"
+		overlay = overlay_type()
+		session = types.SimpleNamespace(dialog_stack=[other, plugin, overlay])
+
+		count = windowguard_module.close_plugin_dialogs(session)
+
+		self.assertEqual(count, 2)
+		self.assertEqual(closed, ["overlay", "plugin"])
+
+	def test_standby_cancels_setup_instead_of_saving_it(self):
+		calls = []
+		setup_type = type("EPGScanSetup", (), {
+			"cancel": lambda self: calls.append("cancel"),
+			"close": lambda self: calls.append("close")})
+		setup_type.__module__ = "Plugins.Extensions.EPGScan.setup"
+		session = types.SimpleNamespace(dialog_stack=[setup_type()])
+
+		self.assertEqual(windowguard_module.close_plugin_dialogs(session), 1)
+		self.assertEqual(calls, ["cancel"])
+
+	def test_single_channel_scan_limits_pat_pmt_read_to_selected_reference(self):
+		rows = [
+			{"ref": "service-one", "name": "One", "supported": True},
+			{"ref": "service-two", "name": "Two", "supported": True},
+		]
+		engine = types.SimpleNamespace(running=False, phase="", notify=lambda: None)
+		with patch.object(scanner_module, "channel_params_bouquet_channels", return_value=rows), \
+				patch.object(scanner_module.ChannelParamsScan, "tick", lambda _scan: None):
+			self.assertTrue(scanner_module.start_manual(engine, refs=["service-two"]))
+		self.assertEqual([job.ref for job in engine.channel_params_scan.queue], ["service-two"])
+
+	def test_channel_tune_does_not_treat_false_playservice_return_as_failure(self):
+		class ServiceReference(object):
+			def __init__(self, value):
+				self.value = value
+
+			def toString(self):
+				return self.value
+
+		class FakeNavigation(object):
+			RecordTimer = types.SimpleNamespace(isRecording=lambda: False)
+
+			def __init__(self):
+				self.current = ServiceReference("original")
+
+			def getCurrentlyPlayingServiceReference(self):
+				return self.current
+
+			def playService(self, reference):
+				self.current = ServiceReference(reference)
+				return False
+
+		navigation_module = sys.modules["NavigationInstance"]
+		navigation = FakeNavigation()
+		result = {"ref": "service:chosen", "name": "Chosen",
+			"streams": [{"kind": "audio", "pid": 123, "languages": ["pol"]}]}
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.engine = types.SimpleNamespace(running=False, phase="")
+		screen.orig = None
+		screen.session = types.SimpleNamespace(open=lambda *_args, **_kwargs: None)
+		screen.current = lambda: result
+		screen["preview"] = types.SimpleNamespace(setText=lambda _text: None)
+		screen.preview_timer = FakeTimer()
+		with patch.object(navigation_module, "instance", navigation), \
+				patch.object(screen, "_live_audio_tracks", return_value=([], None)), \
+				patch.object(screen, "open_audio_picker") as open_picker:
+			screen.choose_audio()
+			screen.channel_ready()
+		self.assertEqual(screen.pending_ref, "service:chosen")
+		open_picker.assert_called_once_with(result, result["streams"], None)
+
 	def test_channel_params_screen_does_not_shadow_enigma_screen_keys(self):
 		class FakeList(object):
+			onSelectionChanged = []
+
 			def setList(self, _rows):
+				pass
+
+			def getSelectedIndex(self):
+				return -1
+
+			def moveToIndex(self, _index):
 				pass
 
 		class FakeLabel(object):
@@ -160,30 +251,26 @@ class ChannelParamScanTests(unittest.TestCase):
 
 		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
 		screen["list"] = FakeList()
-		screen["summary"] = FakeLabel()
-		screen["help"] = FakeLabel()
+		screen["head"] = FakeLabel()
+		screen["preview"] = FakeLabel()
+		screen["info"] = FakeLabel()
 		screen.engine = None
+		screen.filter = "all"
+		screen.view_refs = []
 		with patch.object(channelparamsui, "load_results", return_value={"results": {}, "last_scan": {}}), \
 				patch.object(channelparamsui, "set_keys") as set_keys:
 			screen.refresh()
-		self.assertEqual(set(screen.keys()), {"list", "summary", "help"})
-		self.assertEqual(set_keys.call_args.kwargs["green"], "")
-		self.assertEqual(set_keys.call_args.kwargs["yellow"], "")
+		self.assertEqual(set(screen.keys()), {"list", "head", "preview", "info"})
+		self.assertEqual(set_keys.call_args.kwargs["green"], "Odswiez")
+		self.assertEqual(set_keys.call_args.kwargs["yellow"], "Pokaz: wszystkie")
 
-	def test_actions_channel_params_choice_starts_background_scan(self):
-		engine = types.SimpleNamespace(running=False)
+	def test_actions_returns_run_profile_with_parameter_scan_toggle(self):
 		screen = scan_module.EPGScanScreen.__new__(scan_module.EPGScanScreen)
-		screen.engine = engine
-		screen.grab = None
-		opened = []
-		redrawn = []
-		screen.session = types.SimpleNamespace(open=lambda *args, **kwargs: opened.append((args, kwargs)))
-		screen.redraw = lambda: redrawn.append(True)
-		with patch.object(scanner_module, "start_manual", return_value=True) as start_scan:
-			screen.actions_cb("channelparams")
-		start_scan.assert_called_once_with(engine)
-		self.assertEqual(redrawn, [True])
-		self.assertEqual(opened, [])
+		profile = {"sat": True, "channelparams": True}
+		started = []
+		screen.start = lambda value: started.append(value)
+		screen.actions_cb(profile)
+		self.assertEqual(started, [profile])
 
 	def test_channel_scan_keeps_two_tuners_free_on_six_tuner_receiver(self):
 		engine = types.SimpleNamespace(running=False, phase="")

@@ -499,6 +499,14 @@ class EPGScanStation(Screen):
 				"albo brak sygnalu.\nWybor stacji dziala normalnie." % self.chan["name"])
 
 	def restore(self):
+		try:
+			import Screens.Standby
+			if Screens.Standby.inStandby:
+				self.zapped = False
+				self.orig = None
+				return
+		except Exception:
+			pass
 		if self.zapped and self.orig is not None:
 			try:
 				self.session.nav.playService(self.orig)

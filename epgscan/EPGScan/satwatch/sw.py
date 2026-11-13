@@ -1056,6 +1056,14 @@ class SatWatchDecision(Screen):
 
     def restore(self):
         """Po wyjsciu z decyzji wraca kanal ogladany wczesniej (gdy byl podglad)."""
+        try:
+            import Screens.Standby
+            if Screens.Standby.inStandby:
+                self.played = False
+                self.orig = None
+                return
+        except Exception:
+            pass
         if self.played and self.orig is not None:
             try:
                 self.session.nav.playService(self.orig)

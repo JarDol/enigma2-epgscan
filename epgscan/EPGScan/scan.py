@@ -122,9 +122,6 @@ class EPGScanScreen(Screen):
 		self.session.openWithCallback(self.actions_cb, EPGScanActions)
 
 	def actions_cb(self, profile=None):
-		if profile == "channelparams":
-			self.start_channel_params()
-			return
 		if profile:
 			self.start(profile)
 
@@ -171,7 +168,17 @@ class EPGScanScreen(Screen):
 			return
 		if e.finished:
 			e.prepare()       # nowa lista - wykryje zmiany w bukietach
-		if not e.start(profile=profile):
+		started = e.start(profile=profile)
+		if not started and profile and profile.get("channelparams"):
+			from .channelparamscan import start_manual
+			try:
+				started = start_manual(e, done=e.after_channelparams)
+			except Exception as ex:
+				log("Nie mozna uruchomic skanu parametrow: %s" % ex)
+				self.session.open(MessageBox, "Nie mozna uruchomic skanu parametrow: %s" % ex,
+					MessageBox.TYPE_ERROR, timeout=8)
+				return
+		if not started:
 			self.session.open(MessageBox, "Nic do zrobienia - sprawdz profil (zielony) i ustawienia.", MessageBox.TYPE_INFO, timeout=5)
 		self.redraw()
 
@@ -337,8 +344,9 @@ class EPGScanScreen(Screen):
 		elif e.finished and getattr(e, "channelparams_report", None):
 			report = e.channelparams_report
 			duration = int(report.get("duration", 0))
-			head = "Zakonczono skan parametrow: %d kanalow, %d bledow, %d nieobslugiwanych, czas %d:%02d" % (
-				report.get("scanned", 0), len(report.get("errors", [])), len(report.get("unsupported", [])),
+			head = "PAT/PMT: %d kanalow, audio %d/%d sciezek, wybranych %d; bledow %d, pominietych %d, czas %d:%02d" % (
+				report.get("scanned", 0), report.get("audio_channels", 0), report.get("audio_tracks", 0),
+				report.get("selected_audio", 0), len(report.get("errors", [])), len(report.get("unsupported", [])),
 				duration // 60, duration % 60)
 		elif e.finished and getattr(e, "xmltv_only", False):
 			head = "Zakonczono %s, czas %d:%02d" % (e.summary, el // 60, el % 60)
@@ -378,6 +386,11 @@ class EPGScanScreen(Screen):
 			if epgrefresh_active():
 				info.append("UWAGA: wlaczony harmonogram EPG Refresh - obie wtyczki beda zajmowac tunery")
 
+		if not e.running:
+			if getattr(getattr(cfg, "auto_in_progress", None), "value", False):
+				head = "Wykryto przerwany skan harmonogramu; po starcie zostanie powtorzony.\n" + head
+			elif getattr(getattr(cfg, "cp_auto_in_progress", None), "value", False):
+				head = "Wykryto przerwany skan PAT/PMT; zostanie ponowiony po nastepnym EPG.\n" + head
 		self["status"].setText(head + "\n" + "\n".join(info[:3]))
 		if self.grab_active():
 			set_key_color(self, "blue", KEY_COLORS[3][1])

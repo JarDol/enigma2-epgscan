@@ -192,30 +192,37 @@ grouping can be disabled, at the cost of more retunes. If watching, streaming or
 releases a group and resumes it later. IPTV and unknown service types are reported as unsupported; tuning and
 table-read errors are included in the report.
 
-Run it independently of EPG: on the main screen choose **Actions**, select
-**Channel parameters (PAT/PMT)**, then press **OK** or **Green**. The scan runs in the background and the main
-screen shows progress; **Blue** closes the screen without stopping the scan, so you can resume watching.
-Review results and choose audio tracks from **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. You can also
-start the scan from that screen with **Menu**.
-Audio preferences can come from Enigma2's automatic-audio settings or a manually ordered list (for example
-`pol,eng`). A unique preferred-language match is recommended automatically; missing or ambiguous matches need
-review. **OK** opens the audio tracks found in PMT, **Green** previews the selected channel, and **Yellow** filters
-results. During preview, **OK** assigns an available audio track. Preview is refused while recording, and the
-original channel is restored when leaving the screen. **Menu** offers confirmation of proposals, saving changes,
-and restarting the scan.
+Enable the scan as a profile step: on the main screen choose **Actions** and select
+**Channel parameters (PAT/PMT)**. Green **Run** starts the selected profile actions; yellow
+**Save as default** stores the profile. A profile scan runs after its other steps, and its progress and
+PAT/PMT/audio summary appear on the main screen. You can also start a standalone scan from **Menu** in the
+results screen.
+
+Review results from **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. **OK** tunes to a channel and opens
+its available audio tracks; if scan data is missing, the plugin attempts a PAT/PMT read for that channel.
+**Green** refreshes, **Yellow** filters, **Blue** selects bouquets, **Menu** offers sorting and channel scanning,
+and **Info/EPG** opens data synchronization.
+
+In the audio-track screen, **Red** returns, **Green** selects the track active according to Enigma2,
+**Yellow/Blue** choose the first/second user language preference, **OK** selects a listed track, and
+**Info/EPG** shows full PAT/PMT and stream data. Audio preferences can come from Enigma2's automatic-audio
+settings or a manually ordered list (for example `pol,eng`). Track selection is saved immediately.
 
 The **Channel parameters (PAT/PMT)** settings group selects language preferences, bouquets, parallel limit,
 tuner reserve, transponder grouping and an interval of 1/2/4/7 days. An automatic scan runs only after a completed
 main EPG schedule run, when the selected interval has elapsed; it follows the **Schedule** conditions (standby,
 recordings and wake-up). EPG top-ups do not trigger it.
 
-**Blue** in the results screen provides two separate, confirmed operations:
+**Info/EPG** in the results screen provides four confirmed operations:
 
-- fill missing or invalid audio/PMT values in `common.json`, or replace existing values when overwrite is enabled;
-- select specific E2Stream receivers and update their profiles; backups are made before writing.
+- replace default audio/PMT values in `common.json` or add missing values;
+- replace values on selected E2Stream receivers or add missing values; backups are made before writing.
 
 PMT data is sent only when its SID is not ambiguous across scanned services. Results are stored in
 `/etc/enigma2/epgscan/channelparams.json`.
+
+When the receiver enters standby, open EPG Scan windows close without saving pending settings. An active scan
+continues in the background, and the preview window does not restore the previous channel.
 
 ---
 

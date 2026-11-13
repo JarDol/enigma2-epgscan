@@ -1089,14 +1089,19 @@ class ScanEngine(object):
 	def after_backup(self):
 		if self.auto:
 			self.night_notes()
-			if not getattr(self, "topup", False):
-				try:
-					from .channelparamscan import scan_due, start_scheduled
+		if not getattr(self, "topup", False):
+			try:
+				from .channelparamscan import scan_due, start_manual, start_scheduled
+				if self.auto:
 					if scan_due() and start_scheduled(self, self.auto_start_time, woke=self.woke,
 							done=self.after_channelparams):
 						return
-				except Exception as e:
-					log("Skan parametrow po harmonogramie nieudany: %s" % e)
+				elif getattr(self, "profile", {}).get("channelparams") and \
+						start_manual(self, done=self.after_channelparams):
+					return
+			except Exception as e:
+				log("Skan parametrow po EPG nieudany: %s" % e)
+		if self.auto:
 			from .health import maybe_restart
 			if maybe_restart(self):
 				return

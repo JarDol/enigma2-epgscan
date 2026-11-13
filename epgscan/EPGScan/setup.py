@@ -23,6 +23,7 @@ def all_items():
 		cfg.skip_empty, cfg.skip_recheck, cfg.eit_mode, cfg.sat_import, cfg.eit_force_off, cfg.sched_mode, cfg.sched_time, cfg.sched_interval, cfg.sched_when,
 		cfg.sched_skip_rec, cfg.sched_wakeup, cfg.sched_deep_after, cfg.notify, cfg.backup, cfg.backup_dir,
 		cfg.backup_keep, cfg.restore, cfg.log_place, cfg.xmltv, cfg.xmltv_mode, cfg.xmltv_copies, cfg.epgpl_grab, cfg.xmltv_bouquets, cfg.xmltv_gaps,
+		cfg.p_channelparams,
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
 		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto,

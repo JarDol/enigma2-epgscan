@@ -12,12 +12,13 @@ from .common import EPGChoiceBox as ChoiceBox
 from Components.ActionMap import ActionMap
 from Components.Label import Label
 from Components.MenuList import MenuList
+from Components.ScrollLabel import ScrollLabel
 from Components.SelectionList import SelectionList, SelectionEntryComponent
 from enigma import eServiceReference, eTimer
 
 from .channelparamscan import load_results, save_results, start_manual
 from .channelparamsstore import add_common_defaults, apply_to_devices
-from .common import cfg, keys_skin, init_keys, log, set_keys
+from .common import cfg, keys_skin, init_keys, log, set_keys, selected_bouquets, channel_params_bouquet_channels, save_cfg
 
 
 def _audio(result, pid):
@@ -27,71 +28,101 @@ def _audio(result, pid):
 
 class ChannelParamsScreen(Screen):
 	skin = """
-	<screen position="center,center" size="1660,940" title="EPG Scan - parametry kanałów">
-		<widget name="summary" position="25,15" size="1610,65" font="Regular;30" />
-		<widget name="list" position="25,95" size="1610,730" font="Regular;27" itemHeight="42" scrollbarMode="showOnDemand" />
-		<widget name="help" position="25,835" size="1610,42" font="Regular;22" />
+	<screen position="center,center" size="1600,920" title="EPG Scan - parametry kanałów">
+		<widget name="head" position="20,15" size="740,145" font="Regular;25" foregroundColor="#00ffcc66" />
+		<widget name="list" position="20,170" size="740,455" font="Regular;25" itemHeight="44" scrollbarMode="showOnDemand" />
+		<eLabel position="778,13" size="804,454" backgroundColor="#00505050" />
+		<widget source="session.VideoPicture" render="Pig" position="780,15" size="800,450" zPosition="1" backgroundColor="#ff000000" />
+		<widget name="preview" position="780,475" size="800,145" font="Regular;24" foregroundColor="#c0c0c0" />
+		<eLabel position="20,635" size="1560,2" backgroundColor="#00505050" />
+		<widget name="info" position="20,645" size="1560,130" font="Regular;25" />
 		%s
-	</screen>""" % keys_skin(25, 880, 1610)
+	</screen>""" % keys_skin(20, 850, 1560)
 
 	def __init__(self, session):
 		Screen.__init__(self, session)
 		self.setTitle("EPG Scan - parametry kanałów")
-		self["summary"] = Label("")
+		self["head"] = Label("")
 		self["list"] = MenuList([])
-		self["help"] = Label("")
+		self["preview"] = Label("Podglad aktualnego kanalu. Wybierz kanal klawiszem OK.")
+		self["info"] = Label("")
 		init_keys(self)
-		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions", "MenuActions"], {
-			"ok": self.choose_audio, "green": self.preview, "yellow": self.filter_menu,
-			"blue": self.sync_menu, "menu": self.more_actions, "cancel": self.request_close, "red": self.request_close,
+		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions", "MenuActions", "EPGSelectActions"], {
+			"ok": self.choose_audio, "green": self.refresh, "yellow": self.filter_menu,
+			"blue": self.bouquet_menu, "menu": self.more_actions, "info": self.sync_menu,
+			"cancel": self.request_close, "red": self.request_close,
 			"up": self["list"].up, "down": self["list"].down,
 			"left": self["list"].pageUp, "right": self["list"].pageDown,
 		}, -1)
 		self.orig = None
 		self.preview_ref = None
-		self.preview_result = None
-		self.preview_active = False
 		self.pending_result = None
+		self.pending_ref = None
+		self.zap_attempts = 0
 		self.filter = "all"
+		self.sort = cfg.map_sort.value
 		self.dirty = False
 		self.original_results = {}
 		self.view_refs = []
 		self.preview_timer = eTimer()
-		self.preview_timer.callback.append(self.preview_ready)
+		self.preview_timer.callback.append(self.channel_ready)
 		self.engine = None
 		from .engine import get_engine
 		self.engine = get_engine(session)
 		self.engine.listeners.append(self.refresh)
 		self.refresh()
+		self.onLayoutFinish.append(self.layout_done)
 		self.onClose.append(self.cleanup)
 
+	def layout_done(self):
+		try:
+			self["list"].onSelectionChanged.append(self.show_info)
+		except Exception:
+			pass
+		self.show_info()
+
 	def refresh(self):
+		selected_ref = None
+		try:
+			selected_ref = self.current() and self.current().get("ref")
+		except Exception:
+			pass
 		try:
 			data = load_results()
 		except Exception as e:
 			self.results = {}
 			self.channel_refs = []
 			self["list"].setList(["Nie mozna odczytac wynikow: %s" % e])
-			self["summary"].setText("Plik wynikow skanu jest uszkodzony lub niedostepny.")
+			self["head"].setText("Plik wynikow skanu jest uszkodzony lub niedostepny: %s" % e)
 			return
-		if not getattr(self, "dirty", False) or not hasattr(self, "results"):
-			self.results = data.get("results", {})
-			self.original_results = copy.deepcopy(self.results)
-		self.filter = getattr(self, "filter", "all")
+		self.results = data.get("results", {})
+		self.original_results = copy.deepcopy(self.results)
 		self.last_scan = data.get("last_scan", {})
-		self.channel_refs = sorted(self.results, key=lambda ref: self.results[ref].get("name", ref).lower())
+		self.sort = cfg.map_sort.value
+		channel_order = []
+		try:
+			channel_order = [row["ref"] for row in channel_params_bouquet_channels(selected_bouquets()) if row.get("ref")]
+		except Exception as e:
+			log("Nie mozna odczytac kolejnosci bukietow dla wynikow: %s" % e)
+		if self.sort == "abc":
+			self.channel_refs = sorted(self.results, key=lambda ref: self.results[ref].get("name", ref).lower())
+		else:
+			order = {ref: i for i, ref in enumerate(channel_order)}
+			self.channel_refs = sorted(self.results, key=lambda ref: (
+				order.get(ref, len(order)), self.results[ref].get("name", ref).lower()))
 		self.view_refs = []
 		rows = []
 		for ref in self.channel_refs:
 			result = self.results[ref]
+			if cfg.scope.value == "selected" and ref not in channel_order:
+				continue
 			if not self._matches_filter(result):
 				continue
 			pid = result.get("selectedAudioPid")
 			stream = _audio(result, pid) if pid is not None else None
 			language = "/".join(stream.get("languages", [])) if stream else ""
-			mark = "OK" if result.get("selectedConfirmed") and stream else (
-				"PROPOZYCJA" if stream else "DO DECYZJI")
-			rows.append("%s   %s   PID %s   %s" % (mark, result.get("name", ref), pid or "-", language))
+			mark = "[OK]" if result.get("selectedConfirmed") and stream else ("[?]" if stream else "[--]")
+			rows.append("%s %s   PID %s   %s" % (mark, result.get("name", ref), pid or "-", language))
 			self.view_refs.append(ref)
 		if self.filter in ("all", "errors"):
 			rows.extend("BLAD   %s: %s" % (row.get("name", row.get("ref", "")), row.get("error", "blad"))
@@ -106,19 +137,27 @@ class ChannelParamsScreen(Screen):
 			n = len(scan.active) if scan else 0
 			r = len(scan.reservations) if scan else 0
 			q = len(scan.queue) if scan else 0
-			self["summary"].setText("Skanowanie PAT/PMT: aktywne %d, rezerwacje TP %d, w kolejce %d" % (n, r, q))
+			self["head"].setText("Skanowanie PAT/PMT: aktywne %d, rezerwacje TP %d, w kolejce %d\n"
+				"Wyniki czesciowe: %d kanalow" % (n, r, q, len(self.results)))
 		else:
 			duration = int(run.get("duration", max(0, run.get("finished", 0) - run.get("started", 0))))
-			self["summary"].setText("Wyniki: %d kanalow | skan: %d poprawnych, %d bledow, %d nieobslugiwanych | czas %d:%02d" %
-				(len(self.channel_refs), run.get("scanned", 0), len(run.get("errors", [])),
-					len(run.get("unsupported", [])), duration // 60, duration % 60))
-		has_results = bool(self.results)
-		set_keys(self, red="Zamknij", green="Podglad" if has_results else "",
-			yellow="Filtr" if has_results or run.get("errors") else "", blue="E2Stream" if has_results else "")
-		if has_results:
-			self["help"].setText("OK: sciezka audio   Zielony: podglad kanalu   Zolty: filtr   Menu: potwierdz propozycje / skan")
-		else:
-			self["help"].setText("Brak wynikow. Uruchom skan z ekranu Akcje albo nacisnij Menu.")
+			self["head"].setText("Wyniki: %d kanalow | skan: %d odczytanych, %d z audio (%d sciezek), %d wybranych\n"
+				"Bledy: %d | nieobslugiwane: %d | czas %d:%02d" %
+				(len(self.channel_refs), run.get("scanned", 0), run.get("audio_channels", 0), run.get("audio_tracks", 0),
+					run.get("selected_audio", 0), len(run.get("errors", [])), len(run.get("unsupported", [])),
+					duration // 60, duration % 60))
+		from .common import XB_CHOICES
+		scope_name = dict(XB_CHOICES).get(cfg.scope.value, cfg.scope.value)
+		filter_names = {"all": "wszystkie", "pending": "do decyzji", "confirmed": "potwierdzone",
+			"noaudio": "bez audio", "errors": "bledy"}
+		set_keys(self, red="Zamknij", green="Odswiez", yellow="Pokaz: %s" % filter_names.get(self.filter, self.filter),
+			blue="Bukiety: %s" % scope_name)
+		self.show_info()
+		if selected_ref and selected_ref in self.view_refs:
+			try:
+				self["list"].moveToIndex(self.view_refs.index(selected_ref))
+			except Exception:
+				pass
 
 	def _matches_filter(self, result):
 		pid = result.get("selectedAudioPid")
@@ -137,33 +176,142 @@ class ChannelParamsScreen(Screen):
 			return self.results[self.view_refs[i]]
 		return None
 
+	def show_info(self):
+		result = self.current()
+		if not result:
+			self["info"].setText("OK: przelacz kanal i wybierz sciezke audio. Menu: sortowanie lub skan kanalow. "
+				"Info/EPG: synchronizacja.")
+			return
+		pid = result.get("selectedAudioPid")
+		stream = _audio(result, pid) if pid is not None else None
+		selected = ("%s, PID %s" % ("/".join(stream.get("languages", [])) or "jezyk nieznany", pid)
+			if stream else "brak potwierdzonej sciezki")
+		streams = result.get("streams", [])
+		audio_count = sum(1 for item in streams if item.get("kind") == "audio")
+		video = next((item for item in streams if item.get("kind") == "video"), None)
+		video_text = ("%s PID %s" % (video.get("codec", "video"), video.get("pid"))
+			if video else "brak danych video")
+		self["info"].setText("%s | Obecnie: %s | Audio: %d sciezek | Video: %s" %
+			(result.get("name", ""), selected, audio_count, video_text))
+
 	def choose_audio(self):
 		result = self.current()
 		if not result:
 			return
-		streams = [s for s in result.get("streams", []) if s.get("kind") == "audio"]
-		if not streams:
-			self.session.open(MessageBox, "Brak sciezek audio w PMT tego kanalu.", MessageBox.TYPE_INFO, timeout=5)
+		if self.engine.running and self.engine.phase != "channelparams":
+			self.session.open(MessageBox, "Nie mozna przelaczyc kanalu podczas innego skanu EPG.", MessageBox.TYPE_INFO, timeout=5)
 			return
-		options = []
-		for stream in streams:
-			options.append(("%s  PID %d  %s  %s" % ("/".join(stream.get("languages", [])) or "jezyk nieznany",
-				stream["pid"], stream.get("codec", ""), " (preferowana)" if stream["pid"] == result.get("preferredAudioPid") else ""),
-				stream["pid"]))
-		self.pending_result = result
-		self.session.openWithCallback(self.audio_chosen, ChoiceBox, title="Wybor stacji: %s" % result.get("name", ""),
-			list=options)
+		try:
+			import NavigationInstance
+			nav = NavigationInstance.instance
+			if nav.RecordTimer.isRecording():
+				self.session.open(MessageBox, "Wybor sciezki anulowany: trwa nagrywanie.", MessageBox.TYPE_INFO, timeout=5)
+				return
+			if self.orig is None:
+				self.orig = nav.getCurrentlyPlayingServiceReference()
+			self.pending_result = result
+			self.pending_ref = result["ref"]
+			self.zap_attempts = 0
+			if not self._currently_on(self.pending_ref):
+				nav.playService(eServiceReference(self.pending_ref))
+			self.preview_ref = self.pending_ref
+			self["preview"].setText("Przelaczanie na %s..." % result.get("name", "kanal"))
+			self.preview_timer.start(700, True)
+		except Exception as e:
+			log("Wybor sciezki: nie mozna przelaczyc na kanal: %s" % e)
+			self.session.open(MessageBox, "Nie mozna przelaczyc kanalu: %s" % e, MessageBox.TYPE_ERROR, timeout=8)
+
+	def _currently_on(self, ref):
+		try:
+			import NavigationInstance
+			current = NavigationInstance.instance.getCurrentlyPlayingServiceReference()
+			return bool(current and current.toString().startswith(ref.rstrip(":")))
+		except Exception:
+			return False
+
+	def channel_ready(self):
+		result = self.pending_result
+		if not result:
+			return
+		if not self._currently_on(self.pending_ref):
+			self.zap_attempts += 1
+			if self.zap_attempts < 8:
+				self.preview_timer.start(500, True)
+				return
+			self["preview"].setText("Enigma2 nie przelaczyla kanalu. Sprobuj ponownie lub wybierz inny kanal.")
+			return
+		_live_streams, current_pid = self._live_audio_tracks()
+		scanned = [s for s in result.get("streams", []) if s.get("kind") == "audio"]
+		if scanned:
+			self.open_audio_picker(result, scanned, current_pid)
+			return
+		if self.engine.running:
+			self.session.open(MessageBox, "Skan jest zajety. Nie odczytano jeszcze sciezek dla tego kanalu.",
+				MessageBox.TYPE_INFO, timeout=6)
+			return
+		from .channelparamscan import start_manual
+		self["preview"].setText("Brak danych audio. Odczyt PAT/PMT dla %s..." % result.get("name", "kanalu"))
+		try:
+			if not start_manual(self.engine, done=lambda report: self.single_scan_done(report, result), refs=[result["ref"]]):
+				self.session.open(MessageBox, "Nie udalo sie rozpoczac odczytu PAT/PMT dla tego kanalu.",
+					MessageBox.TYPE_ERROR, timeout=7)
+		except Exception as e:
+			log("Odczyt audio/PAT/PMT dla %s nieudany: %s" % (result.get("name", ""), e))
+			self.session.open(MessageBox, "Nie udalo sie odczytac sciezek audio: %s" % e, MessageBox.TYPE_ERROR, timeout=8)
+
+	def _live_audio_tracks(self):
+		try:
+			import NavigationInstance
+			service = NavigationInstance.instance.getCurrentService()
+			tracks = service and service.audioTracks()
+			if not tracks:
+				return [], None
+			out = []
+			current = tracks.getCurrentTrack()
+			for index in range(tracks.getNumberOfTracks()):
+				info = tracks.getTrackInfo(index)
+				pid = int(info.getPID())
+				language = info.getLanguage()
+				out.append({"kind": "audio", "pid": pid, "languages": [language] if language else [],
+					"codec": info.getDescription() or "", "trackIndex": index})
+			current_pid = int(tracks.getTrackInfo(current).getPID()) if 0 <= current < len(out) else None
+			return out, current_pid
+		except Exception as e:
+			log("Nie mozna odczytac sciezek z aktualnej uslugi Enigma2: %s" % e)
+			return [], None
+
+	def single_scan_done(self, _report, result):
+		if self.pending_result is not result:
+			return
+		self.refresh()
+		result = self.results.get(result["ref"], result)
+		streams = [s for s in result.get("streams", []) if s.get("kind") == "audio"]
+		if streams:
+			self.pending_result = result
+			self.open_audio_picker(result, streams, None)
+		else:
+			self["preview"].setText("Odczyt PAT/PMT nie zwrocil sciezek audio dla %s." % result.get("name", "kanalu"))
+			self.session.open(MessageBox, "Nie znaleziono sciezek audio w PAT/PMT tego kanalu.",
+				MessageBox.TYPE_INFO, timeout=7)
+
+	def open_audio_picker(self, result, streams, current_pid):
+		self["preview"].setText("Wybor sciezki audio: %s. Po zamknieciu wroci poprzedni kanal." %
+			result.get("name", "kanal"))
+		self.session.openWithCallback(self.audio_chosen, ChannelAudioScreen, result, streams, current_pid)
 
 	def audio_chosen(self, choice):
-		if not choice:
+		if not choice or not self.pending_result:
 			return
-		pid = choice[1]
+		pid, source = choice
+		self._select_preview_track(pid)
 		self.pending_result["selectedAudioPid"] = pid
 		self.pending_result["selectedConfirmed"] = True
+		self.pending_result["selectionSource"] = source
 		self.pending_result["selectedAt"] = int(time.time())
-		if self.preview_active and self.preview_result is self.pending_result:
-			self._select_preview_track(pid)
 		self.store_results()
+		self.pending_result = None
+		self.pending_ref = None
+		self.refresh()
 
 	def confirm_all(self):
 		if not self.results:
@@ -186,7 +334,10 @@ class ChannelParamsScreen(Screen):
 
 	def store_results(self):
 		self.dirty = self.results != self.original_results
-		self.refresh()
+		if self.dirty:
+			self._save_changes()
+		else:
+			self.refresh()
 
 	def _save_changes(self):
 		if not self.dirty:
@@ -206,18 +357,7 @@ class ChannelParamsScreen(Screen):
 			return False
 
 	def request_close(self):
-		if not self.dirty:
-			self.close()
-			return
-		self.session.openWithCallback(self.close_save_answer, MessageBox,
-			"Zapisac zmiany wyboru sciezek audio przed zamknieciem?", MessageBox.TYPE_YESNO, default=True)
-
-	def close_save_answer(self, yes):
-		if yes:
-			if self._save_changes():
-				self.close()
-		else:
-			self.close()
+		self.close()
 
 	def filter_menu(self):
 		options = [("Wszystkie", "all"), ("Do decyzji", "pending"), ("Potwierdzone", "confirmed"),
@@ -229,18 +369,38 @@ class ChannelParamsScreen(Screen):
 			self.filter = choice[1]
 			self.refresh()
 
+	def bouquet_menu(self):
+		options = [(("* " if key == cfg.scope.value else "   ") + label, key) for key, label in cfg.scope.choices.choices]
+		options.append(("Wybierz bukiety...", "pick"))
+		self.session.openWithCallback(self.bouquet_chosen, ChoiceBox, title="Zakres bukietow dla skanu kanalow", list=options)
+
+	def bouquet_chosen(self, choice):
+		if not choice:
+			return
+		if choice[1] == "pick":
+			from .setup import EPGScanBouquets
+			self.session.openWithCallback(lambda *_: self.refresh(), EPGScanBouquets, "scan")
+			return
+		cfg.scope.value = choice[1]
+		cfg.scope.save()
+		save_cfg()
+		self.refresh()
+
 	def more_actions(self):
-		options = [("Potwierdz jednoznaczne propozycje audio", "confirm"),
-			("Zapisz zmiany", "save"), ("Uruchom ponownie skan PAT/PMT", "scan")]
-		self.session.openWithCallback(self.more_action_chosen, ChoiceBox, title="Akcje - parametry kanalow", list=options)
+		options = [(("* " if key == cfg.map_sort.value else "   ") + "Sortowanie: " + label, ("sort", key))
+			for key, label in (("bq", "zgodnie z bukietami"), ("abc", "alfabetycznie"))]
+		options.append(("Skan kanalow (PAT/PMT)", ("scan", None)))
+		self.session.openWithCallback(self.more_action_chosen, ChoiceBox, title="Parametry kanalow", list=options)
 
 	def more_action_chosen(self, choice):
 		if not choice:
 			return
-		if choice[1] == "confirm":
-			self.confirm_all()
-		elif choice[1] == "save":
-			self._save_changes()
+		action, value = choice[1]
+		if action == "sort":
+			cfg.map_sort.value = value
+			cfg.map_sort.save()
+			save_cfg()
+			self.refresh()
 		else:
 			self.scan_action()
 
@@ -276,40 +436,6 @@ class ChannelParamsScreen(Screen):
 			return
 		self.close()
 
-	def preview(self):
-		result = self.current()
-		if not result:
-			return
-		self.preview_result = result
-		self.session.openWithCallback(self.preview_answer, MessageBox,
-			"Podglad przelaczy kanal na %s. Po zamknieciu okna wroci poprzedni kanal.\n"
-			"Sciezke audio wybierzesz klawiszem OK. Nie kontynuuj podczas nagrywania." %
-			result.get("name", ""), MessageBox.TYPE_YESNO, default=False)
-
-	def preview_answer(self, yes):
-		if not yes:
-			return
-		try:
-			import NavigationInstance
-			nav = NavigationInstance.instance
-			if nav.RecordTimer.isRecording():
-				self.session.open(MessageBox, "Podglad anulowany: trwa nagrywanie.", MessageBox.TYPE_INFO, timeout=5)
-				return
-			if self.orig is None:
-				self.orig = nav.getCurrentlyPlayingServiceReference()
-			self.preview_ref = self.preview_result["ref"]
-			if not nav.playService(eServiceReference(self.preview_ref)):
-				raise RuntimeError("Enigma2 nie przelaczyla kanalu")
-			self.preview_active = False
-			self.preview_timer.start(2500, True)
-		except Exception as e:
-			self.session.open(MessageBox, "Nie mozna uruchomic podgladu: %s" % e, MessageBox.TYPE_ERROR, timeout=8)
-
-	def preview_ready(self):
-		self.preview_active = True
-		self["help"].setText("Podglad: %s. OK: wybor i zmiana sciezki audio; zamknij okno, aby wrocic do poprzedniego kanalu." %
-			self.preview_result.get("name", ""))
-
 	def _select_preview_track(self, pid):
 		try:
 			import NavigationInstance
@@ -328,78 +454,61 @@ class ChannelParamsScreen(Screen):
 				MessageBox.TYPE_ERROR, timeout=8)
 
 	def sync_menu(self):
-		if self.dirty:
-			self.session.openWithCallback(self.sync_save_answer, MessageBox,
-				"Zapisac zmiany wyboru sciezek audio przed synchronizacja z E2Stream?",
-				MessageBox.TYPE_YESNO, default=True)
-			return
 		self.open_sync_menu()
 
-	def sync_save_answer(self, yes):
-		if yes and self._save_changes():
-			self.open_sync_menu()
-
 	def open_sync_menu(self):
-		confirmed = [result for result in self.results.values()
-			if result.get("selectedConfirmed") and _audio(result, result.get("selectedAudioPid"))]
-		if not confirmed:
-			proposals = [result for result in self.results.values()
-				if result.get("selectedAudioPid") is not None and _audio(result, result.get("selectedAudioPid"))]
-			if not proposals:
-				self.session.open(MessageBox, "Brak propozycji sciezek audio. Uruchom skan lub wybierz sciezke klawiszem OK.",
-					MessageBox.TYPE_INFO, timeout=7)
-				return
-			self.session.openWithCallback(self.confirm_for_sync, MessageBox,
-				"Nie ma potwierdzonych sciezek. Potwierdzic %d jednoznacznych propozycji audio przed synchronizacja?" %
-				len(proposals), MessageBox.TYPE_YESNO, default=False)
-			return
 		self.session.openWithCallback(self.sync_choice, ChoiceBox, title="E2Stream",
-			list=[("Dodaj brakujace wartosci do common.json (nowe urzadzenia)", "common"),
-				("Zapisz w wybranych konfiguracjach klientow", "devices")])
-
-	def confirm_for_sync(self, yes):
-		if not yes:
-			return
-		self.confirm_all_done(True)
-		if self._save_changes():
-			self.open_sync_menu()
+			list=[("1. Zastap domyslne", ("common", True)),
+				("2. Dopisz braki", ("common", False)),
+				("3. Zastap na klientach", ("devices", True)),
+				("4. Dopisz braki na klientach", ("devices", False))])
 
 	def sync_choice(self, choice):
 		if not choice:
 			return
-		if choice[1] == "common":
+		target, self.sync_overwrite = choice[1]
+		if not self._syncable_results():
+			self.session.open(MessageBox, "Brak prawidlowych sciezek audio do synchronizacji. Najpierw wykonaj skan lub wybierz sciezki.",
+				MessageBox.TYPE_INFO, timeout=7)
+			return
+		if target == "common":
 			self.session.openWithCallback(self.sync_common_confirm, MessageBox,
-				"%s wpisy audio i PMT w common.json?\nPrzed zapisem powstanie kopia." %
-				("Nadpisac" if cfg.cp_common_overwrite.value else "Uzupelnic brakujace lub nieprawidlowe"),
+				"%s dane domyslne audio i PMT w common.json?\nPrzed zapisem powstanie kopia." %
+				("Zastapic" if self.sync_overwrite else "Dopisac braki"),
 				MessageBox.TYPE_YESNO, default=False)
 		else:
-			self.session.openWithCallback(self.devices_selected, ChannelParamsDevicesScreen, self.results)
+			self.session.openWithCallback(lambda files: self.devices_selected(files, self.sync_overwrite),
+				ChannelParamsDevicesScreen, self.results)
+
+	def _syncable_results(self):
+		return any(result.get("selectedAudioPid") is not None
+			and _audio(result, result.get("selectedAudioPid")) for result in self.results.values())
 
 	def sync_common_confirm(self, yes):
 		if not yes:
 			return
 		try:
-			message, collisions = add_common_defaults(self.results, overwrite=cfg.cp_common_overwrite.value)
+			message, collisions = add_common_defaults(self.results, overwrite=self.sync_overwrite)
 			if collisions:
 				message += "\nPominieto istniejace wartosci z konfliktem: %s" % ", ".join(collisions)
 			self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)
 		except Exception as e:
 			self.session.open(MessageBox, "Blad zapisu common.json: %s" % e, MessageBox.TYPE_ERROR, timeout=8)
 
-	def devices_selected(self, files):
+	def devices_selected(self, files, overwrite=None):
 		if not files:
 			return
-		self.session.openWithCallback(lambda yes: self.apply_devices(yes, files), MessageBox,
+		self.session.openWithCallback(lambda yes: self.apply_devices(yes, files, overwrite), MessageBox,
 			"%s dane audio i PMT w %d wybranych odbiornikach?\n"
 			"PMT z kolizja SID zostana pominiete. Przed zapisem powstana kopie." %
-			("Nadpisac" if cfg.cp_devices_overwrite.value else "Uzupelnic brakujace lub nieprawidlowe", len(files)),
+			("Zastapic" if overwrite else "Dopisac braki", len(files)),
 			MessageBox.TYPE_YESNO, default=False)
 
-	def apply_devices(self, yes, files):
+	def apply_devices(self, yes, files, overwrite=None):
 		if not yes:
 			return
 		try:
-			message, collisions = apply_to_devices(self.results, files, overwrite=cfg.cp_devices_overwrite.value)
+			message, collisions = apply_to_devices(self.results, files, overwrite=bool(overwrite))
 			if collisions:
 				message += "\nPominieto istniejace wartosci z konfliktem: %s" % ", ".join(collisions)
 			self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)
@@ -415,11 +524,161 @@ class ChannelParamsScreen(Screen):
 	def restore(self):
 		if self.orig is not None:
 			try:
+				import Screens.Standby
+				if Screens.Standby.inStandby:
+					self.orig = None
+					return
 				import NavigationInstance
 				NavigationInstance.instance.playService(self.orig)
 			except Exception as e:
 				log("Podglad audio: nie udalo sie przywrocic kanalu: %s" % e)
 			self.orig = None
+
+
+class ChannelAudioScreen(Screen):
+	skin = """
+	<screen position="center,center" size="1600,920" title="EPG Scan - sciezki audio">
+		<widget name="head" position="20,15" size="740,130" font="Regular;26" foregroundColor="#00ffcc66" />
+		<widget name="list" position="20,155" size="740,470" font="Regular;26" itemHeight="46" scrollbarMode="showOnDemand" />
+		<eLabel position="778,13" size="804,454" backgroundColor="#00505050" />
+		<widget source="session.VideoPicture" render="Pig" position="780,15" size="800,450" zPosition="1" backgroundColor="#ff000000" />
+		<widget name="preview" position="780,475" size="800,145" font="Regular;24" foregroundColor="#c0c0c0" />
+		<eLabel position="20,635" size="1560,2" backgroundColor="#00505050" />
+		<widget name="details" position="20,645" size="1560,130" font="Regular;25" />
+		%s
+	</screen>""" % keys_skin(20, 850, 1560)
+
+	def __init__(self, session, result, streams, current_pid=None):
+		Screen.__init__(self, session)
+		self.result = result
+		self.streams = [stream for stream in streams if stream.get("kind") == "audio"]
+		self.current_pid = current_pid
+		self.setTitle("Sciezki audio: %s" % result.get("name", "kanal"))
+		self["head"] = Label("")
+		self["list"] = MenuList([])
+		self["preview"] = Label("Obraz kanalu na zywo.")
+		self["details"] = Label("")
+		init_keys(self)
+		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions", "EPGSelectActions"], {
+			"ok": self.choose, "red": self.close, "cancel": self.close,
+			"green": self.choose_automatic, "yellow": lambda: self.choose_user(0),
+			"blue": lambda: self.choose_user(1), "info": self.show_full_info,
+			"up": self["list"].up, "down": self["list"].down,
+			"left": self["list"].pageUp, "right": self["list"].pageDown,
+		}, -1)
+		set_keys(self, red="Wroc", green="Automat", yellow="1. jezyk", blue="2. jezyk")
+		self.user_languages = [value.strip().lower() for value in cfg.cp_languages.value.split(",") if value.strip()]
+		self.decoder_languages = self._decoder_languages()
+		self.view_streams = list(self.streams)
+		self["head"].setText("Kanal: %s\nAutomat Enigma2: %s\nPreferencje uzytkownika: %s" %
+			(result.get("name", ""), ", ".join(self.decoder_languages) or "brak", ", ".join(self.user_languages) or "brak"))
+		rows = []
+		for stream in self.streams:
+			pid = stream.get("pid")
+			language = "/".join(stream.get("languages", [])) or "jezyk nieznany"
+			marks = []
+			if pid == result.get("preferredAudioPid"):
+				marks.append("proponowana")
+			if pid == result.get("selectedAudioPid"):
+				marks.append("zapisana")
+			if pid == current_pid:
+				marks.append("aktywna")
+			rows.append("%s   PID %s   %s%s" % (language, pid, stream.get("codec", ""),
+				("   [" + ", ".join(marks) + "]") if marks else ""))
+		self["list"].setList(rows or ["Brak odczytanych sciezek audio"])
+		self["list"].onSelectionChanged.append(self.show_details)
+		self.show_details()
+
+	def _decoder_languages(self):
+		try:
+			from Components.config import config
+			return [str(getattr(config.autolanguage, "audio_autoselect%d" % index).value).lower()
+				for index in range(1, 5)
+				if getattr(config.autolanguage, "audio_autoselect%d" % index).value]
+		except Exception as e:
+			log("Nie mozna odczytac preferencji audio Enigma2: %s" % e)
+			return []
+
+	def show_details(self):
+		index = self["list"].getSelectedIndex()
+		if not 0 <= index < len(self.view_streams):
+			self["details"].setText("OK: wybierz sciezke z listy. Info/EPG: dane PAT/PMT i wszystkie strumienie.")
+			return
+		stream = self.view_streams[index]
+		self["details"].setText("Wybrana pozycja: %s | PID %s | %s\n"
+			"OK: reczny wybor   Zielony: automat Enigma2   Zolty/Niebieski: pierwsza/druga preferencja uzytkownika" %
+			("/".join(stream.get("languages", [])) or "jezyk nieznany", stream.get("pid"), stream.get("codec", "")))
+
+	def choose(self):
+		index = self["list"].getSelectedIndex()
+		if 0 <= index < len(self.view_streams):
+			self.close((self.view_streams[index]["pid"], "manual"))
+
+	def _choose_language(self, language):
+		for stream in self.streams:
+			stream_languages = [str(value).lower() for value in stream.get("languages", [])]
+			if any(code == language or (len(language) >= 3 and code.startswith(language[:3]))
+					for code in stream_languages):
+				return stream
+		return None
+
+	def choose_automatic(self):
+		if self.current_pid is not None and any(stream.get("pid") == self.current_pid for stream in self.streams):
+			self.close((self.current_pid, "enigma"))
+			return
+		for language in self.decoder_languages:
+			stream = self._choose_language(language)
+			if stream:
+				self.close((stream["pid"], "enigma"))
+				return
+		self.session.open(MessageBox, "Brak pasujacej sciezki dla automatycznych preferencji Enigma2.",
+			MessageBox.TYPE_INFO, timeout=6)
+
+	def choose_user(self, index):
+		if len(self.user_languages) <= index:
+			self.session.open(MessageBox, "Nie ustawiono %d. jezyka preferencji uzytkownika." % (index + 1),
+				MessageBox.TYPE_INFO, timeout=5)
+			return
+		language = self.user_languages[index]
+		stream = self._choose_language(language)
+		if not stream:
+			self.session.open(MessageBox, "Brak sciezki audio w jezyku %s." % language, MessageBox.TYPE_INFO, timeout=5)
+			return
+		self.close((stream["pid"], "user:%s" % language))
+
+	def show_full_info(self):
+		self.session.open(ChannelParamsInfoScreen, self.result)
+
+
+class ChannelParamsInfoScreen(Screen):
+	skin = """
+	<screen position="center,center" size="1500,850" title="Dane kanalu - PAT/PMT">
+		<widget name="text" position="20,20" size="1460,740" font="Regular;24" />
+		%s
+	</screen>""" % keys_skin(20, 780, 1460)
+
+	def __init__(self, session, result):
+		Screen.__init__(self, session)
+		self.setTitle("Dane kanalu: %s" % result.get("name", ""))
+		self["text"] = ScrollLabel(self._format(result))
+		init_keys(self)
+		self["actions"] = ActionMap(["OkCancelActions", "DirectionActions", "ColorActions"], {
+			"ok": self["text"].pageDown, "down": self["text"].pageDown, "up": self["text"].pageUp,
+			"red": self.close, "cancel": self.close,
+		}, -1)
+		set_keys(self, red="Wroc")
+
+	def _format(self, result):
+		lines = ["Kanal: %s" % result.get("name", ""),
+			"Service reference: %s" % result.get("ref", ""),
+			"Ostatni skan: %s" % result.get("scannedAt", "brak"),
+			"PAT PID: 0 | PMT PID: %s" % result.get("pmtPid", "brak")]
+		for stream in result.get("streams", []):
+			lines.append("%s PID %s | %s | jezyki: %s" % (
+				stream.get("kind", "stream"), stream.get("pid", "?"), stream.get("codec", "?"),
+				", ".join(stream.get("languages", [])) or "brak"))
+		lines += ["", "PAT:", result.get("pat", "brak"), "", "PMT:", result.get("section", "brak")]
+		return "\n".join(lines)
 
 
 class ChannelParamsDevicesScreen(Screen):

@@ -192,31 +192,38 @@ sześciu. Grupowanie po transponderze można wyłączyć, kosztem dodatkowych st
 nagranie potrzebuje tunera, skaner zwalnia grupę i wznawia ją później. IPTV i nierozpoznane typy są jawnie wymieniane
 jako nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
 
-Uruchom niezależnie od EPG: na ekranie głównym wybierz **Akcje**, zaznacz wiersz
-**Skan parametrów kanałów (PAT/PMT)** i naciśnij **OK** lub **zielony**. Skan ruszy w tle, a ekran główny pokaże
-postęp; **niebieski** zamyka ekran bez przerywania pracy, więc możesz wrócić do oglądania. Wyniki i wybór audio
-otworzysz przez **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. Można go też uruchomić z tego ekranu
-przyciskiem **Menu**.
-Preferencje języków można pobierać z ustawień automatycznego audio Enigma2 albo ustawić własną kolejność (np.
-`pol,eng`). Jednoznaczna ścieżka zgodna z preferencją jest proponowana automatycznie; brak języka lub kilka
-pasujących PID-ów wymaga decyzji. **OK** otwiera listę ścieżek z PMT, **Zielony** uruchamia podgląd kanału,
-a **Żółty** filtruje wyniki. Podczas podglądu **OK** pozwala przypisać dostępną ścieżkę audio. Podgląd nie jest
-uruchamiany podczas nagrywania; po wyjściu z ekranu przywracany jest poprzedni kanał. **Menu** udostępnia
-potwierdzenie propozycji, zapis zmian i ponowne uruchomienie skanu.
+Skan można włączyć jako etap profilu: na ekranie głównym wybierz **Akcje** i zaznacz
+**Skan parametrów kanałów (PAT/PMT)**. Zielony **Uruchom** uruchamia wybrane akcje profilu, a żółty
+**Zapisz jako domyślne** zapamiętuje profil. Skan uruchomiony z profilu wykonuje się po jego pozostałych
+etapach; jego postęp i podsumowanie PAT/PMT oraz ścieżek audio są widoczne na ekranie głównym. Można też
+uruchomić sam skan z ekranu wyników przez **Menu**.
+
+Wyniki otworzysz przez **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. **OK** przełącza na wybrany
+kanał i otwiera dostępne ścieżki audio; jeśli skan nie ma danych, wtyczka próbuje odczytać PAT/PMT dla tego
+kanału. **Zielony** odświeża, **Żółty** filtruje, **Niebieski** wybiera bukiety, **Menu** udostępnia sortowanie
+i skan kanałów, a **Info/EPG** otwiera synchronizację danych.
+
+W oknie ścieżek audio: **Czerwony** wraca, **Zielony** wybiera ścieżkę aktywną według Enigma2, **Żółty** i
+**Niebieski** wybierają pierwszą lub drugą preferencję użytkownika, a **OK** wybiera ścieżkę z listy.
+**Info/EPG** pokazuje pełne dane PAT/PMT i strumieni. Preferencje języków można pobierać z ustawień
+automatycznego audio Enigma2 albo ustawić własną kolejność (np. `pol,eng`). Wybór ścieżki jest zapisywany
+od razu; zamknięcie okna nie pyta o zapis.
 
 W ustawieniach **Skan parametrów kanałów (PAT/PMT)** wybiera się języki, bukiety, limit równoległości,
 rezerwę tunerów, grupowanie po transponderze i odstęp 1/2/4/7 dni. Automatyczny skan uruchamia się dopiero po
 głównym przebiegu EPG z harmonogramu, jeśli minął ustawiony odstęp; nadrzędne są warunki z **Harmonogramu**
 (czuwanie, nagrania i wybudzanie). Doczytywanie EPG nie uruchamia skanu parametrów.
 
-**Niebieski** w ekranie wyników udostępnia dwa osobne, potwierdzane działania:
+**Info/EPG** w ekranie wyników udostępnia cztery potwierdzane działania:
 
-- uzupełnienie brakujących lub nieprawidłowych wpisów audio/PMT w `common.json` albo – po włączeniu opcji nadpisywania –
-  zastąpienie istniejących,
-- wybranie konkretnych odbiorników E2Stream i aktualizację ich profili; przed zapisem tworzona jest kopia.
+- zastąpienie domyślnych wpisów audio/PMT w `common.json` albo dopisanie brakujących,
+- zastąpienie wpisów na wybranych odbiornikach E2Stream albo dopisanie brakujących; przed zapisem tworzona jest kopia.
 
 PMT jest przekazywana tylko wtedy, gdy SID nie koliduje z inną zeskanowaną treścią. Plik wyników skanu:
 `/etc/enigma2/epgscan/channelparams.json`.
+
+Przy wejściu dekodera w czuwanie otwarte okna EPG Scan są zamykane bez zapisywania niezapisanych ustawień.
+Trwający skan działa dalej w tle, a okno podglądu nie przywraca poprzedniego kanału.
 
 ---
 

@@ -12,7 +12,7 @@ from Components.ActionMap import ActionMap
 from Components.Label import Label
 from Components.ConfigList import ConfigListScreen
 from Components.ScrollLabel import ScrollLabel
-from Components.config import getConfigListEntry, ConfigSelection, ConfigYesNo, ConfigNothing, NoSave
+from Components.config import getConfigListEntry, ConfigSelection, ConfigYesNo, NoSave
 
 from .common import cfg, log, save_cfg, VERSION, keys_skin, init_keys, set_keys, CLEAR_CHOICES, profile_default, \
 	profile_text, log_path, backup_dir, SRV_CHOICES, SW_CHOICES
@@ -46,7 +46,7 @@ class EPGScanActions(Screen, ConfigListScreen):
 		self.c_fetch = NoSave(ConfigSelection(default="nie" if not p["fetch"] else ("jedno" if p.get("one") else "nowe"), choices=[
 			("nie", "nie"), ("jedno", "tak - w jednym miejscu (gotowa dzisiejsza paczka drugiej strony)"),
 			("nowe", "tak - pobierz na nowo")]))
-		self.c_channelparams = NoSave(ConfigNothing())
+		self.c_channelparams = NoSave(ConfigYesNo(default=p.get("channelparams", False)))
 		self["help"] = Label("")
 		init_keys(self)
 		ConfigListScreen.__init__(self, [
@@ -57,7 +57,7 @@ class EPGScanActions(Screen, ConfigListScreen):
 			getConfigListEntry("Serwer epgpl", self.c_srv),
 			getConfigListEntry("Pozostale zrodla XMLTV", self.c_other),
 			getConfigListEntry("Pobierz swieze dane", self.c_fetch),
-			getConfigListEntry("Skan parametrow kanalow (PAT/PMT) - osobna akcja", self.c_channelparams),
+			getConfigListEntry("Skan parametrow kanalow (PAT/PMT)", self.c_channelparams),
 		], session=session, on_change=self.update_help)
 		self["actions"] = ActionMap(["SetupActions", "ColorActions"], {
 			"ok": self.go, "green": self.go, "save": self.go,
@@ -73,19 +73,14 @@ class EPGScanActions(Screen, ConfigListScreen):
 	def profile(self):
 		return {"sw": self.c_sw.value, "clear": self.c_clear.value, "sat": bool(self.c_sat.value), "dek": bool(self.c_dek.value),
 			"srv": self.c_srv.value, "other": bool(self.c_other.value), "fetch": self.c_fetch.value != "nie",
-			"one": self.c_fetch.value == "jedno"}
+			"one": self.c_fetch.value == "jedno", "channelparams": bool(self.c_channelparams.value)}
 
 	def update_help(self):
 		p = self.profile()
-		current = self["config"].getCurrent()
-		channelparams_selected = bool(current and current[1] is self.c_channelparams)
-		set_keys(self, red="Anuluj", green="Uruchom skan parametrow" if channelparams_selected else "Start EPG",
-			yellow="" if channelparams_selected else "Zapisz jako domyslne")
-		if channelparams_selected:
-			self["help"].setText("Niezalezny skan PAT/PMT kanalow z wybranych bukietow. Nacisnij OK lub zielony, "
-				"aby uruchomic skan w tle i wrocic do ekranu postepu EPG Scan.")
-			return
+		set_keys(self, red="Anuluj", green="Uruchom", yellow="Zapisz jako domyslne")
 		lines = ["Kolejnosc: %s  (zmiana: Ustawienia -> Program z internetu)" % profile_text(p)]
+		if p.get("channelparams"):
+			lines.append("Po zakonczonym EPG uruchom skan parametrow PAT/PMT kanalow z wybranych bukietow.")
 		if p["sw"] != "nie":
 			lines.append("SatWatch najpierw (wolne tunery, najwyzej 15 min czekania); po zmianach w kanalach lista "
 				"transponderow i mapa kanalow budowane od nowa.")
@@ -115,10 +110,6 @@ class EPGScanActions(Screen, ConfigListScreen):
 		self["help"].setText("\n".join(lines))
 
 	def go(self):
-		current = self["config"].getCurrent()
-		if current and current[1] is self.c_channelparams:
-			self.close("channelparams")
-			return
 		self.close(self.profile())
 
 	def save_default(self):
@@ -130,9 +121,11 @@ class EPGScanActions(Screen, ConfigListScreen):
 		cfg.p_srv.value = p["srv"]
 		cfg.p_other.value = p["other"]
 		cfg.p_fetch.value = p["fetch"]
+		cfg.p_channelparams.value = p["channelparams"]
 		if p["fetch"]:
 			cfg.p_one.value = p["one"]
-		for x in (cfg.p_sw, cfg.clear_mode, cfg.sat_import, cfg.p_dek, cfg.p_srv, cfg.p_other, cfg.p_fetch, cfg.p_one):
+		for x in (cfg.p_sw, cfg.clear_mode, cfg.sat_import, cfg.p_dek, cfg.p_srv, cfg.p_other, cfg.p_fetch, cfg.p_one,
+				cfg.p_channelparams):
 			x.save()
 		save_cfg()
 		try:

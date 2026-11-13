@@ -132,9 +132,10 @@ def group_owns_tuner(group):
 class ChannelParamsScan(object):
 	"""Uses ScanEngine's tuner accounting; it never clears or reads/writes EPG data."""
 
-	def __init__(self, engine, done=None):
+	def __init__(self, engine, done=None, refs=None):
 		self.engine = engine
 		self.done = done
+		self.refs = set(refs) if refs is not None else None
 		self.queue = []
 		self.active = []
 		self.groups = []
@@ -154,6 +155,8 @@ class ChannelParamsScan(object):
 		if self.engine.phase == "channelparams":
 			return False
 		rows = channel_params_bouquet_channels(selected_bouquets())
+		if self.refs is not None:
+			rows = [row for row in rows if row["ref"] in self.refs]
 		self.unsupported = [row for row in rows if not row["supported"]]
 		self.queue = [ChannelJob(row) for row in rows if row["supported"]]
 		self.groups = group_channel_jobs(self.queue, bool(cfg.cp_group_tp.value))
@@ -391,8 +394,16 @@ class ChannelParamsScan(object):
 		finished = int(time.time())
 		scanned_results = [self.results[ref] for ref in self.scanned_refs if ref in self.results]
 		read_times = [result.get("readDuration", 0) for result in scanned_results if result.get("readDuration", 0) > 0]
+		audio_channels = [result for result in scanned_results if any(
+			stream.get("kind") == "audio" for stream in result.get("streams", []))]
+		audio_tracks = sum(1 for result in scanned_results for stream in result.get("streams", [])
+			if stream.get("kind") == "audio")
+		selected_audio = sum(1 for result in scanned_results if any(
+			stream.get("kind") == "audio" and stream.get("pid") == result.get("selectedAudioPid")
+			for stream in result.get("streams", [])))
 		report = {"started": self.started, "finished": finished, "duration": max(0, finished - self.started),
 			"scanned": len(scanned_results),
+			"audio_channels": len(audio_channels), "audio_tracks": audio_tracks, "selected_audio": selected_audio,
 			"read_average": round(sum(read_times) / len(read_times), 2) if read_times else 0,
 			"read_max": round(max(read_times), 2) if read_times else 0,
 			"errors": self.errors, "unsupported": self.unsupported}
@@ -405,8 +416,9 @@ class ChannelParamsScan(object):
 		except Exception as e:
 			log("Skan parametrow: zapis wynikow nieudany: %s" % e)
 			report["errors"] = list(self.errors) + [{"name": "wyniki", "error": "Zapis wynikow nieudany: %s" % e}]
-		log("Skan parametrow zakonczony: %d kanalow, %d bledow, %d nieobslugiwanych" %
-			(report["scanned"], len(report["errors"]), len(self.unsupported)))
+		log("Skan parametrow zakonczony: %d kanalow, %d z audio, %d sciezek audio, %d wyborow, %d bledow, %d nieobslugiwanych" %
+			(report["scanned"], report["audio_channels"], report["audio_tracks"], report["selected_audio"],
+				len(report["errors"]), len(self.unsupported)))
 		engine = self.engine
 		engine.channel_params_scan = None
 		if self.done:
@@ -501,7 +513,7 @@ def scan_due(now=None):
 	return last <= 0 or now - last >= int(cfg.cp_interval.value) * 86400
 
 
-def _start_scan(engine, done, auto=False, woke=False):
+def _start_scan(engine, done, auto=False, woke=False, refs=None):
 	if engine.running or engine.phase == "channelparams":
 		return False
 
@@ -513,6 +525,9 @@ def _start_scan(engine, done, auto=False, woke=False):
 		engine.channelparams_report = report
 		engine.summary = "Skan parametrow: %d kanalow, %d bledow" % (report["scanned"], len(report["errors"]))
 		engine.note = engine.summary
+		if not auto and refs is None:
+			cfg.cp_last_run.value = int(report["finished"])
+			save_cfg()
 		engine.notify()
 		try:
 			if done:
@@ -520,7 +535,7 @@ def _start_scan(engine, done, auto=False, woke=False):
 		finally:
 			engine.channelparams_only = False
 
-	scan = ChannelParamsScan(engine, finished)
+	scan = ChannelParamsScan(engine, finished, refs=refs)
 	engine.running = True
 	engine.finished = False
 	engine.channelparams_report = None
@@ -556,8 +571,8 @@ def _start_scan(engine, done, auto=False, woke=False):
 	return True
 
 
-def start_manual(engine, done=None):
-	return _start_scan(engine, done)
+def start_manual(engine, done=None, refs=None):
+	return _start_scan(engine, done, refs=refs)
 
 
 def start_scheduled(engine, slot=None, woke=False, done=None):

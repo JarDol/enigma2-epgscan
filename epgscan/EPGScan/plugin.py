@@ -166,6 +166,7 @@ from .common import cfg, log, list_backups, restore_backup, count_events, all_re
 
 _auto = None
 _stats = None
+_window_watchdog = None
 
 
 class StartupStats(object):
@@ -238,10 +239,16 @@ class AutoRestore(object):
 
 
 def sessionstart(reason, session=None, **kwargs):
-	global _auto, _stats
+	global _auto, _stats, _window_watchdog
 	if reason == 0 and session is not None and _auto is None:
 		_auto = AutoRestore(session)
 		_stats = StartupStats()
+		try:
+			from .windowguard import start as start_window_watchdog
+			_window_watchdog = start_window_watchdog(session)
+		except Exception as e:
+			from .common import log
+			log("Watchdog czuwania: start nieudany: %s" % e)
 		try:
 			from .common import apply_clear_choices, apply_eit_policy, migrate_v2
 			apply_clear_choices()

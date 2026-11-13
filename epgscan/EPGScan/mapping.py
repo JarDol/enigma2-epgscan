@@ -106,6 +106,11 @@ class Zapper(object):
 	def restore(self):
 		if self.zapped and self.orig is not None:
 			try:
+				import Screens.Standby
+				if Screens.Standby.inStandby:
+					self.zapped = False
+					self.orig = None
+					return
 				self.session.nav.playService(self.orig)
 			except Exception:
 				pass
