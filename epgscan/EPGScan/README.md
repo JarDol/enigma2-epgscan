@@ -59,7 +59,8 @@ rm -rf /usr/lib/enigma2/python/Plugins/Extensions/EPGScan;cd /tmp && unzip -o ep
 
 **Aktualizacja**: *Ustawienia → Aktualizacje → Aktualizuj teraz* (OK) pokazuje dostępne wydania GitHub
 (także beta i starsze) i pyta o instalację oraz restart Enigma2 – działa zawsze. Opcja *Aktualizacja automatyczna* (domyślnie nie) sprawdza raz na dobę,
-instaluje nową wersję, a Enigma2 restartuje dopiero w czuwaniu, gdy nic nie nagrywa i nie trwa praca wtyczki.
+instaluje nową wersję z wybranego kanału (*stabilne* albo *beta i stabilne*), a Enigma2 restartuje dopiero w czuwaniu,
+gdy nic nie nagrywa i nie trwa praca wtyczki.
 Poprzednia wersja zostaje w `/tmp/EPGScan.poprzednia` (do restartu dekodera).
 
 Wtyczka pojawia się w **Menu → Rozszerzenia** i na liście wtyczek jako **EPG Scan**.
@@ -627,7 +628,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Kopia EPG po skanie, katalog, liczba kopii | (tak, `/media/hdd/epgscan/`, 3) |
 | Odtwarzanie EPG po starcie, gdy puste | wyłączone / zapytaj / automatycznie (automatycznie) |
 | Zapisuj log | w katalogu kopii / w `/tmp` (w katalogu kopii) |
-| Aktualizacja automatyczna | (nie) sprawdza stabilne wydania GitHub; instaluje i restartuje tylko w bezpiecznym czuwaniu |
+| Aktualizacja automatyczna / kanał | (nie, kanał stabilny); stabilne albo beta i stabilne wydania GitHub; instalacja i restart tylko w bezpiecznym czuwaniu |
 | Aktualizuj teraz | OK – lista dostępnych wydań z ZIP-em, także beta i starszych; instalacja wymaga potwierdzenia |
 | Dane dla aplikacji po skanach | (tak) paczka EPG (wszystkie bukiety TV), ikon i zamian referencji po pracy z harmonogramu oraz po cyklicznym skanie satelity; *Przygotuj dane teraz* (OK) – od razu |
 | Serwer dla aplikacji E2Stream | (tak) API dla klientów streamingu w sieci lokalnej: bukiety, kanały z PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników; port (8770), token (puste = bez) |

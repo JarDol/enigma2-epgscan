@@ -50,6 +50,7 @@ class ChannelParamsScreen(Screen):
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions", "MenuActions", "EPGSelectActions"], {
 			"ok": self.choose_audio, "green": self.refresh, "yellow": self.filter_menu,
 			"blue": self.bouquet_menu, "menu": self.more_actions, "info": self.sync_menu,
+			"showEventInfo": self.sync_menu, "showEPGList": self.sync_menu,
 			"cancel": self.request_close, "red": self.request_close,
 			"up": self["list"].up, "down": self["list"].down,
 			"left": self["list"].pageUp, "right": self["list"].pageDown,
@@ -590,6 +591,7 @@ class ChannelAudioScreen(Screen):
 			"ok": self.choose, "red": self.cancel, "cancel": self.cancel,
 			"green": self.choose_automatic, "yellow": lambda: self.choose_user(0),
 			"blue": lambda: self.choose_user(1), "info": self.show_full_info,
+			"showEventInfo": self.show_full_info, "showEPGList": self.show_full_info,
 			"up": self["list"].up, "down": self["list"].down,
 			"left": self["list"].pageUp, "right": self["list"].pageDown,
 		}, -1)
@@ -642,11 +644,11 @@ class ChannelAudioScreen(Screen):
 	def show_details(self):
 		index = self["list"].getSelectedIndex()
 		if not 0 <= index < len(self.view_streams):
-			self["details"].setText("OK: wybierz sciezke z listy. Info/EPG: dane PAT/PMT i wszystkie strumienie.")
+			self["details"].setText("OK: wybierz sciezke. Info/EPG: pelne dane PAT/PMT i strumieni.")
 			return
 		stream = self.view_streams[index]
 		self["details"].setText("Wybrana pozycja: %s | PID %s | %s\n"
-			"OK: reczny wybor   Zielony: automat Enigma2   Zolty/Niebieski: pierwsza/druga preferencja uzytkownika" %
+			"OK: reczny wybor   Zielony: automat   Zolty/Niebieski: preferencje   Info/EPG: szczegoly PAT/PMT" %
 			("/".join(stream.get("languages", [])) or "jezyk nieznany", stream.get("pid"), stream.get("codec", "")))
 
 	def choose(self):
@@ -692,10 +694,10 @@ class ChannelAudioScreen(Screen):
 
 class ChannelParamsInfoScreen(Screen):
 	skin = """
-	<screen position="center,center" size="1500,850" title="Dane kanalu - PAT/PMT">
-		<widget name="text" position="20,20" size="1460,740" font="Regular;24" />
+	<screen position="center,center" size="1600,920" title="Dane kanalu - PAT/PMT">
+		<widget name="text" position="20,20" size="1560,800" font="Regular;24" />
 		%s
-	</screen>""" % keys_skin(20, 780, 1460)
+	</screen>""" % keys_skin(20, 850, 1560)
 
 	def __init__(self, session, result):
 		Screen.__init__(self, session)
@@ -753,3 +755,7 @@ class ChannelParamsDevicesScreen(Screen):
 
 	def confirm(self):
 		self.close([row[1] for row in self["list"].getSelectionsList()])
+
+
+from .common import scale_skins as _scale_skins  # noqa: E402
+_scale_skins(globals())

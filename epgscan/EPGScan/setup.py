@@ -26,7 +26,7 @@ def all_items():
 		cfg.p_channelparams,
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
-		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto,
+		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto, cfg.upd_channel,
 		cfg.cp_language_source, cfg.cp_languages, cfg.cp_group_tp, cfg.cp_interval, cfg.cp_last_run, cfg.cp_auto_in_progress,
 		cfg.cp_common_overwrite, cfg.cp_devices_overwrite,
 		cfg.topup, cfg.topup_mode, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
@@ -74,12 +74,12 @@ def is_sw_full(item):
 
 class EPGScanSetup(Screen, ConfigListScreen):
 	skin = """
-	<screen position="center,center" size="1500,920" title="EPG Scan - ustawienia">
-		<widget name="config" position="20,15" size="1460,552" font="Regular;30" secondfont="Regular;30" itemHeight="46" scrollbarMode="showOnDemand" />
-		<eLabel position="20,579" size="1460,2" backgroundColor="#00606060" />
-		<widget name="help" position="20,591" size="1460,240" font="Regular;28" foregroundColor="#00b0b0b0" />
+	<screen position="center,center" size="1600,920" title="EPG Scan - ustawienia">
+		<widget name="config" position="20,15" size="1560,552" font="Regular;30" secondfont="Regular;30" itemHeight="46" scrollbarMode="showOnDemand" />
+		<eLabel position="20,579" size="1560,2" backgroundColor="#00606060" />
+		<widget name="help" position="20,591" size="1560,240" font="Regular;28" foregroundColor="#00b0b0b0" />
 		%s
-	</screen>""" % keys_skin(20, 845, 1460)
+	</screen>""" % keys_skin(20, 845, 1560)
 
 	TITLES = {"sat": "satelita - EPG", "params": "skan parametrow kanalow", "net": "program z internetu",
 		"sched": "harmonogram", "misc": "powiadomienia, restart, sprzatanie",
@@ -225,7 +225,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			if cfg.backup.value:
 				lst += [e("Katalog kopii (OK = wybierz)", cfg.backup_dir), e("Liczba zachowanych kopii", cfg.backup_keep)]
 			lst += [e("Odtwarzanie EPG po starcie, gdy puste", cfg.restore), e("Zapisuj log", cfg.log_place),
-				e("Aktualizacja automatyczna", cfg.upd_auto), e("Aktualizuj teraz (wybierz wydanie GitHub)", self.p_upd),
+				e("Aktualizacja automatyczna", cfg.upd_auto), e("Kanał aktualizacji automatycznych", cfg.upd_channel),
+				e("Aktualizuj teraz (wybierz wydanie GitHub)", self.p_upd),
 				e("Serwer dla aplikacji E2Stream", cfg.cli_api)]
 			if cfg.cli_api.value:
 				lst += [e("  Port", cfg.cli_port), e("  Token (puste = bez, siec lokalna)", cfg.cli_token),
@@ -263,9 +264,11 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		nb = len(selected_bouquets())
 		allb = len(list_bouquets())
 		txt = "Bukiety: %s.  Plik EPG: %s" % ("wszystkie (%d)" % allb if cfg.scope.value == "all" else "%d z %d" % (nb, allb), epg_path())
-		if item in (cfg.upd_auto, self.p_upd):
-			txt = "Automatycznie instalowane sa tylko stabilne wydania. 'Aktualizuj teraz' (OK) pokazuje wszystkie dostepne " \
+		if item in (cfg.upd_auto, cfg.upd_channel, self.p_upd):
+			txt = "Kanal automatyczny: %s. Wybierz beta, aby automatycznie instalowac nowsze bety i wydania stabilne; " \
+				"stabilne sprawdza tylko wydania stabilne. 'Aktualizuj teraz' (OK) pokazuje wszystkie dostepne " \
 				"wydania GitHub z paczka ZIP, takze beta i starsze. Przy starszej wersji pojawi sie ostrzezenie przed instalacja."
+			txt = txt % ("beta i stabilne" if cfg.upd_channel.value == "beta" else "stabilne")
 			if cfg.upd_pending.value and cfg.upd_pending.value != VERSION:
 				txt += " Zainstalowana %s czeka na restart Enigma2." % cfg.upd_pending.value
 		elif item in (cfg.cli_pack, self.p_pack):
@@ -724,12 +727,12 @@ class EPGScanSetup(Screen, ConfigListScreen):
 
 class EPGScanBouquets(Screen):
 	skin = """
-	<screen position="center,center" size="1100,880" title="EPG Scan - bukiety">
-<widget name="list" position="20,15" size="1060,700" scrollbarMode="showOnDemand" />
-		<eLabel position="20,725" size="1060,2" backgroundColor="#00606060" />
-		<widget name="keys" position="20,735" size="1060,60" font="Regular;28" foregroundColor="#00b0b0b0" />
+	<screen position="center,center" size="1600,920" title="EPG Scan - bukiety">
+		<widget name="list" position="20,15" size="1560,750" scrollbarMode="showOnDemand" />
+		<eLabel position="20,785" size="1560,2" backgroundColor="#00606060" />
+		<widget name="keys" position="20,795" size="1560,50" font="Regular;28" foregroundColor="#00b0b0b0" />
 		%s
-	</screen>""" % keys_skin(20, 805, 1060)
+	</screen>""" % keys_skin(20, 855, 1560)
 
 	def __init__(self, session, target="scan"):
 		"""target: "scan" - bukiety do skanowania satelity, "xmltv" - bukiety dla programu z internetu i mapy kanalow."""
@@ -834,11 +837,11 @@ def cl_candidates():
 class EPGScanDirs(Screen):
 	"""Katalogi sprzatania dysku: OK - zaznacz / odznacz, zolty - dodaj wlasny, niebieski - usun wlasny, zielony - zapisz."""
 	skin = """
-	<screen position="center,center" size="1300,880" title="EPG Scan - katalogi sprzatania dysku">
-		<widget name="list" position="20,15" size="1260,690" scrollbarMode="showOnDemand" />
-		<widget name="keys" position="20,725" size="1260,70" font="Regular;26" />
+	<screen position="center,center" size="1600,920" title="EPG Scan - katalogi sprzatania dysku">
+		<widget name="list" position="20,15" size="1560,720" scrollbarMode="showOnDemand" />
+		<widget name="keys" position="20,745" size="1560,70" font="Regular;26" />
 		%s
-	</screen>""" % keys_skin(20, 805, 1260)
+	</screen>""" % keys_skin(20, 855, 1560)
 
 	def __init__(self, session):
 		Screen.__init__(self, session)
@@ -924,12 +927,12 @@ class EPGScanXmltvSources(Screen):
 	HELP = ("OK: zaznacz / odznacz. Kanal dostaje dane z pierwszego zrodla, ktore je ma.\n"
 		"[wlasne] - Twoje listy (zostaja zawsze), [kopia pakietu] - z odinstalowanego pakietu zrodel.")
 	skin = """
-	<screen position="center,center" size="1500,940" title="EPG Scan - zrodla XMLTV">
-		<widget name="list" position="20,15" size="1460,560" scrollbarMode="showOnDemand" />
-		<widget name="info" position="20,585" size="1460,160" font="Regular;28" foregroundColor="#c0c0c0" />
-		<widget name="keys" position="20,755" size="1460,80" font="Regular;28" />
+	<screen position="center,center" size="1600,920" title="EPG Scan - zrodla XMLTV">
+		<widget name="list" position="20,15" size="1560,560" scrollbarMode="showOnDemand" />
+		<widget name="info" position="20,585" size="1560,160" font="Regular;28" foregroundColor="#c0c0c0" />
+		<widget name="keys" position="20,755" size="1560,80" font="Regular;28" />
 		%s
-	</screen>""" % keys_skin(20, 855, 1460)
+	</screen>""" % keys_skin(20, 855, 1560)
 
 	def __init__(self, session):
 		Screen.__init__(self, session)

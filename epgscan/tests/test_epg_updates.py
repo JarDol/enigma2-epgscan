@@ -22,6 +22,7 @@ common.cfg = types.SimpleNamespace()
 common.log = lambda message: None
 common.E2 = "/etc/enigma2"
 common.save_cfg = lambda: None
+common.VERSION = "2.18.0-beta.4"
 sys.modules[common.__name__] = common
 
 intervals = importlib.import_module(package.__name__ + ".epgintervals")
@@ -38,6 +39,7 @@ engine_module = types.ModuleType(package.__name__ + ".engine")
 engine_module.get_engine = lambda session: None
 sys.modules[engine_module.__name__] = engine_module
 schedule = importlib.import_module(package.__name__ + ".schedule")
+updater = importlib.import_module(package.__name__ + ".updater")
 
 
 class CoverageTests(unittest.TestCase):
@@ -176,6 +178,28 @@ class DaytimeScheduleTests(unittest.TestCase):
 			scheduler.check_topup()
 		self.assertEqual(started, [{"topup_jobs": jobs}])
 		self.assertEqual(cfg.last_topup.value, 20000)
+
+
+class UpdaterChannelTests(unittest.TestCase):
+	def test_beta_channel_selects_newest_beta_while_stable_channel_ignores_it(self):
+		releases = [("2.18.0-beta.4", "beta.zip", True), ("2.17.5", "stable.zip", False)]
+		with patch.object(updater, "available_releases", return_value=releases):
+			self.assertEqual(updater.latest(), ("2.17.5", "stable.zip"))
+			self.assertEqual(updater.latest(include_beta=True), ("2.18.0-beta.4", "beta.zip"))
+
+	def test_automatic_update_passes_selected_channel_to_release_check(self):
+		config = types.SimpleNamespace(
+			upd_pending=types.SimpleNamespace(value=""),
+			upd_auto=types.SimpleNamespace(value=True),
+			upd_last=types.SimpleNamespace(value=0),
+			upd_channel=types.SimpleNamespace(value="beta"))
+		auto = updater.AutoUpdate.__new__(updater.AutoUpdate)
+		auto.busy = False
+		auto.session = None
+		with patch.object(updater, "cfg", config), patch.object(updater.time, "time", return_value=100000), \
+				patch.object(updater, "check_async") as check:
+			auto.run()
+		check.assert_called_once_with(auto.checked, True)
 
 
 if __name__ == "__main__":

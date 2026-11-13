@@ -18,7 +18,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.18.0-beta.3"
+VERSION = "2.18.0-beta.4"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
@@ -154,6 +154,8 @@ cfg.cli_pack = ConfigYesNo(default=True)                         # paczka EPG/ik
 cfg.cli_pack_last = ConfigText(default="", fixed_size=False)     # "czas|wynik" ostatniej paczki
 # aktualizacja wtyczki z wydan GitHub (reczna dziala zawsze)
 cfg.upd_auto = ConfigYesNo(default=False)
+cfg.upd_channel = ConfigSelection(default="stable", choices=[
+	("stable", "stabilne"), ("beta", "beta i stabilne")])
 cfg.upd_last = ConfigInteger(default=0, limits=(0, 4000000000))      # ostatnie sprawdzenie automatyczne
 cfg.upd_pending = ConfigText(default="", fixed_size=False)           # zainstalowana wersja czekajaca na restart
 

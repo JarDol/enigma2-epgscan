@@ -65,12 +65,12 @@ def available_releases():
 	return sorted(releases, key=lambda release: _version_key(release[0]), reverse=True)
 
 
-def latest():
-	"""(wersja, adres ZIP) najnowszego stabilnego wydania albo None."""
+def latest(include_beta=False):
+	"""(wersja, adres ZIP) najnowszego wydania z wybranego kanalu albo None."""
 	releases = available_releases()
 	if releases is None:
 		return None
-	return next(((version, url) for version, url, prerelease in releases if not prerelease), None)
+	return next(((version, url) for version, url, prerelease in releases if include_beta or not prerelease), None)
 
 
 def install(url, ver):
@@ -111,10 +111,10 @@ def install(url, ver):
 		return str(e)
 
 
-def check_async(callback):
+def check_async(callback, include_beta=False):
 	"""callback(info) na watku glownym; info = (wersja, url) albo None."""
 	from twisted.internet import threads
-	d = threads.deferToThread(latest)
+	d = threads.deferToThread(latest, include_beta)
 	d.addCallback(callback)
 	d.addErrback(lambda f: callback(None))
 
@@ -197,7 +197,7 @@ class AutoUpdate(object):
 		if time.time() - cfg.upd_last.value < 20 * 3600:
 			return
 		self.busy = True
-		check_async(self.checked)
+		check_async(self.checked, cfg.upd_channel.value == "beta")
 
 	def checked(self, info):
 		cfg.upd_last.value = int(time.time())

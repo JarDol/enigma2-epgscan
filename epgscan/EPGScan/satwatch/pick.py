@@ -12,9 +12,9 @@ from ..common import keys_skin, init_keys, set_keys
 from . import core
 
 # ten sam uklad co lista bukietow EPG Scan (setup.EPGScanBouquets)
-SK = """<widget name="list" position="20,15" size="1060,700" scrollbarMode="showOnDemand" />
-\t\t<eLabel position="20,725" size="1060,2" backgroundColor="#00606060" />
-\t\t<widget name="%s" position="20,735" size="1060,60" font="Regular;28" foregroundColor="#00b0b0b0" />"""
+SK = """<widget name="list" position="20,15" size="1560,720" scrollbarMode="showOnDemand" />
+\t\t<eLabel position="20,745" size="1560,2" backgroundColor="#00606060" />
+\t\t<widget name="%s" position="20,755" size="1560,80" font="Regular;28" foregroundColor="#00b0b0b0" />"""
 
 BUILTIN_URLS = (("OpenPLi (GitHub, tuxbox-xml)", core.DEFAULT_URL),)
 
@@ -139,10 +139,10 @@ def url_text(url):
 class SatWatchPick(Screen):
     """Lista z polami wyboru: OK - zaznacz / odznacz, zielony - zapisz. Zwraca liste wartosci albo None."""
     skin = """
-    <screen position="center,center" size="1100,880" title="SatWatch">
+    <screen position="center,center" size="1600,920" title="SatWatch">
         %s
         %s
-    </screen>""" % ((SK % "info").replace("\t\t", "        "), keys_skin(20, 805, 1060))
+    </screen>""" % ((SK % "info").replace("\t\t", "        "), keys_skin(20, 855, 1560))
 
     def __init__(self, session, title, items, info=""):
         Screen.__init__(self, session)
@@ -177,12 +177,12 @@ class SatWatchUrls(Screen):
     """Adresy satellites.xml: OK - ustaw jako domyslny, zolty - dodaj, zielony - popraw, niebieski - usun (dopisane).
     Zwraca (domyslny, dopisane 'a|b') albo None."""
     skin = """
-    <screen position="center,center" size="1500,760" title="SatWatch - adres satellites.xml">
-        <widget name="list" position="20,15" size="1460,460" font="Regular;28" itemHeight="46" scrollbarMode="showOnDemand" />
-        <eLabel position="20,485" size="1460,2" backgroundColor="#00606060" />
-        <widget name="info" position="20,495" size="1460,170" font="Regular;26" foregroundColor="#00b0b0b0" />
+    <screen position="center,center" size="1600,920" title="SatWatch - adres satellites.xml">
+        <widget name="list" position="20,15" size="1560,500" font="Regular;28" itemHeight="46" scrollbarMode="showOnDemand" />
+        <eLabel position="20,535" size="1560,2" backgroundColor="#00606060" />
+        <widget name="info" position="20,545" size="1560,200" font="Regular;26" foregroundColor="#00b0b0b0" />
         %s
-    </screen>""" % keys_skin(20, 685, 1460)
+    </screen>""" % keys_skin(20, 855, 1560)
 
     def __init__(self, session, current, custom):
         Screen.__init__(self, session)

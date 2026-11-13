@@ -22,11 +22,11 @@ class EPGScanActions(Screen, ConfigListScreen):
 	"""Zielony na ekranie glownym: co zrobic teraz. Wstepnie profil domyslny; zolty zapisuje go jako domyslny
 	(OK na ekranie glownym i harmonogram)."""
 	skin = """
-	<screen position="center,center" size="1500,820" title="EPG Scan - akcje">
-		<widget name="config" position="20,15" size="1460,375" font="Regular;30" secondfont="Regular;30" itemHeight="46" scrollbarMode="showOnDemand" />
-		<widget name="help" position="20,400" size="1460,330" font="Regular;28" />
+	<screen position="center,center" size="1600,920" title="EPG Scan - akcje">
+		<widget name="config" position="20,15" size="1560,375" font="Regular;30" secondfont="Regular;30" itemHeight="46" scrollbarMode="showOnDemand" />
+		<widget name="help" position="20,400" size="1560,330" font="Regular;28" />
 		%s
-	</screen>""" % keys_skin(20, 745, 1460)
+	</screen>""" % keys_skin(20, 850, 1560)
 
 	def __init__(self, session):
 		Screen.__init__(self, session)
@@ -59,10 +59,12 @@ class EPGScanActions(Screen, ConfigListScreen):
 			getConfigListEntry("Pobierz swieze dane", self.c_fetch),
 			getConfigListEntry("Skan parametrow kanalow (PAT/PMT)", self.c_channelparams),
 		], session=session, on_change=self.update_help)
-		self["actions"] = ActionMap(["SetupActions", "ColorActions"], {
+		self["actions"] = ActionMap(["SetupActions", "ColorActions", "MenuActions", "EPGSelectActions"], {
 			"ok": self.go, "green": self.go, "save": self.go,
 			"yellow": self.save_default,
 			"cancel": self.close, "red": self.close,
+			"menu": self.open_schedule, "info": self.show_help,
+			"showEventInfo": self.show_help, "showEPGList": self.show_help,
 		}, -2)
 		try:
 			self["config"].onSelectionChanged.append(self.update_help)
@@ -78,6 +80,13 @@ class EPGScanActions(Screen, ConfigListScreen):
 	def update_help(self):
 		p = self.profile()
 		set_keys(self, red="Anuluj", green="Uruchom", yellow="Zapisz jako domyslne")
+		cur = self["config"].getCurrent()
+		action = cur[0] if cur else "Profil"
+		self["help"].setText("%s: %s\nOK / Zielony: uruchom profil.  Info/EPG: pelny opis.  Menu: harmonogram.\n"
+			"Zolty: zapisz profil jako domyslny.  Czerwony: wroc." % (action, profile_text(p)))
+
+	def full_help(self):
+		p = self.profile()
 		lines = ["Kolejnosc: %s  (zmiana: Ustawienia -> Program z internetu)" % profile_text(p)]
 		if p.get("channelparams"):
 			lines.append("Po zakonczonym EPG uruchom skan parametrow PAT/PMT kanalow z wybranych bukietow.")
@@ -107,7 +116,17 @@ class EPGScanActions(Screen, ConfigListScreen):
 		lines.append("Satelita zawsze ma pierwszenstwo: XMLTV uzupelnia tylko to, czego nie dal satelita "
 			"(EIT ma w Enigma2 wyzszy priorytet niz import).")
 		lines.append("Profil domyslny (OK na ekranie glownym i harmonogram): %s" % profile_text(profile_default()))
-		self["help"].setText("\n".join(lines))
+		lines += ["", "OK lub Zielony: uruchom wybrany profil.",
+		"Zolty: zapisz ten profil jako domyslny dla OK i harmonogramu.",
+		"Menu: otworz istniejace ustawienia harmonogramu. Czerwony: wroc."]
+		return "\n".join(lines)
+
+	def show_help(self):
+		self.session.open(EPGScanText, "pelny opis akcji", text=self.full_help())
+
+	def open_schedule(self):
+		from .setup import EPGScanSetup
+		self.session.open(EPGScanSetup, "sched")
 
 	def go(self):
 		self.close(self.profile())

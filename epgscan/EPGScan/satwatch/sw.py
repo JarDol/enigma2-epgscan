@@ -459,7 +459,7 @@ def _f(v):
 
 
 try:
-    _f.scale = getDesktop(0).size().width() / 1280.0
+    _f.scale = getDesktop(0).size().width() / 1440.0
 except Exception:
     _f.scale = 1.0
 
@@ -486,7 +486,7 @@ class SatWatchMain(Screen):
         <widget name="report" position="%d,%d" size="%d,%d" font="Console;%d" />
         <eLabel position="%d,%d" size="%d,%d" backgroundColor="#00606060" />
         <widget name="menu_hint" position="%d,%d" size="%d,%d" font="Regular;%d" foregroundColor="#00b0b0b0" />
-    </screen>""" % (_f(1200), _f(660),
+    </screen>""" % (_f(1200), _f(690),
                     _f(20), _f(10), _f(1160), _f(30), _f(20),
                     _f(20), _f(50), _f(1160), _f(560), _f(17),
                     _f(20), _f(616), _f(1160), _f(1),
@@ -668,7 +668,7 @@ class SatWatchSetup(ConfigListScreen, Screen):
         <eLabel position="%d,%d" size="%d,%d" backgroundColor="#00606060" />
         <widget name="help" position="%d,%d" size="%d,%d" font="Regular;%d" foregroundColor="#00b0b0b0" />
         %s
-    </screen>""" % (_f(1060), _f(640),
+    </screen>""" % (_f(1200), _f(690),
                     _f(20), _f(15), _f(1020), _f(416), _f(20), _f(32),
                     _f(20), _f(438), _f(1020), _f(1),
                     _f(20), _f(446), _f(1020), _f(140), _f(17),
@@ -1000,7 +1000,7 @@ class SatWatchDecision(Screen):
         <eLabel position="%d,%d" size="%d,%d" backgroundColor="#00505050" />
         <widget name="info" position="%d,%d" size="%d,%d" font="Regular;%d" />
         %s
-    </screen>""" % (_f(1200), _f(660),
+    </screen>""" % (_f(1200), _f(690),
                     _f(20), _f(8), _f(578), _f(150), _f(18),
                     _f(20), _f(166), _f(578), _f(160), _f(19), _f(32),
                     _f(618), _f(8), _f(564), _f(319),
