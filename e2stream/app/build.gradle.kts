@@ -11,8 +11,8 @@ android {
         applicationId = "pl.jardol.e2stream"
         minSdk = 23
         targetSdk = 35
-        versionCode = 147
-        versionName = "0.18.30"
+        versionCode = 148
+        versionName = "0.18.31"
         buildConfigField("boolean", "WAKE_DIAGNOSTICS", versionName!!.contains("-beta.").toString())
         // biblioteki natywne VLC tylko dla ARM (telewizory i przystawki) - mniejszy plik APK
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
@@ -65,5 +65,5 @@ dependencies {
     // programowy dekoder MP2 (dźwięk MPEG Layer II) dla urządzeń bez sprzętowego, np. Mi Box 4
     implementation("com.googlecode.soundlibs:jlayer:1.0.1.4")
     // drugi silnik odtwarzania (wybór w ustawieniach odbiornika), LGPL 2.1+
-    implementation("org.videolan.android:libvlc-all:3.7.7")
+    implementation("org.videolan.android:libvlc-all:3.6.0")
 }

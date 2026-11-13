@@ -183,6 +183,7 @@ class PlayerActivity : Activity() {
     private var settingsVersion = -1
     private var settingsShown = false
     private var safeMode = false
+    private var vlcRestartAttempts = 0
     private var numberBuffer = ""
     private var suppressOkUp = false
     private var okAction = Act.DEFAULT_OK
@@ -296,19 +297,15 @@ class PlayerActivity : Activity() {
         }
 
         val crash = prefs.lastCrash
-        if (crash.isNotEmpty()) {
+        val attempt = prefs.playbackAttempt
+        if (crash.isNotEmpty() || attempt.isNotEmpty()) {
             prefs.lastCrash = ""
-            safeMode = true
-            AppLog.i("start w trybie bezpiecznym po awarii")
-            Tools.uploadLog(prefs, true) { }
-            TvDialog.confirm(this, "Poprzednie uruchomienie zakończyło się błędem",
-                crash.lines().take(14).joinToString("\n") +
-                    "\n\nLog z pełnym opisem wysłano na dekoder (${prefs.ftpDir}/${Tools.logName(prefs)}).",
-                listOf(
-                    TvDialog.Btn("Kontynuuj") { safeMode = false; settingsVersion = -1; startUp() },
-                    TvDialog.Btn("Ustawienia") { openSettings() },
-                    TvDialog.Btn("Zamknij") { finish() },
-                ), cancelable = false)
+            val details = buildList {
+                if (crash.isNotEmpty()) add("Ostatni błąd aplikacji:\n${crash.lines().take(14).joinToString("\n")}")
+                if (attempt.isNotEmpty()) add("Nieukończona próba odtwarzania: $attempt")
+            }.joinToString("\n\n")
+            AppLog.i("start w trybie bezpiecznym; poprzednia awaria lub nieukończony start")
+            showRecoveryDialog(details)
         }
     }
 
@@ -323,6 +320,49 @@ class PlayerActivity : Activity() {
         showWakeTestResult()
     }
 
+    private fun showRecoveryDialog(detail: String, stopPlayback: Boolean = false) {
+        safeMode = true
+        startupProbeGeneration++
+        if (stopPlayback) {
+            ui.removeCallbacks(restartRunnable)
+            ui.removeCallbacks(connectionGuardTick)
+            ui.removeCallbacks(epgTick)
+            ui.removeCallbacks(zapTick)
+            connectionProbePending = false
+            dismissConnectionDialog()
+            releasePlayer()
+        }
+        TvDialog.confirm(
+            this,
+            "Uruchomienie w trybie bezpiecznym",
+            "$detail\n\nW trybie bezpiecznym aplikacja nie łączy się z dekoderem i nie uruchamia strumienia. Z menu możesz wejść w ustawienia albo jawnie ponowić start.",
+            listOf(
+                TvDialog.Btn("Uruchom mimo problemów") { AppLog.i("tryb bezpieczny: kontynuuję bez dekodera") },
+                TvDialog.Btn("Przejdź do ustawień") { openSettings() },
+                TvDialog.Btn("Zamknij") { finish() },
+            ),
+            cancelable = false,
+        )
+    }
+
+    private fun markPlaybackHealthy() {
+        if (prefs.playbackAttempt.isNotEmpty()) {
+            prefs.playbackAttempt = ""
+            AppLog.i("start: odtwarzanie osiągnęło pierwszy obraz")
+        }
+        failStreak = 0
+        vlcRestartAttempts = 0
+    }
+
+    private fun retryNormalStartup() {
+        if (!safeMode || isFinishing) return
+        safeMode = false
+        settingsVersion = -1
+        vlcRestartAttempts = 0
+        AppLog.i("tryb bezpieczny: użytkownik jawnie ponawia normalny start")
+        startUp()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -334,6 +374,7 @@ class PlayerActivity : Activity() {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
+        if (safeMode) return
         zapPrompted = null
         ui.removeCallbacks(zapTick)
         ui.post(zapTick)
@@ -353,6 +394,10 @@ class PlayerActivity : Activity() {
     }
 
     private fun startUp() {
+        if (safeMode) {
+            AppLog.i("tryb bezpieczny: pomijam połączenie z dekoderem i odtwarzanie")
+            return
+        }
         AppLog.i("start: host=${prefs.host} ${Build.MANUFACTURER} ${Build.MODEL} API ${Build.VERSION.SDK_INT}")
         if (prefs.host.isBlank()) {
             if (settingsShown) { finish(); return }
@@ -407,6 +452,7 @@ class PlayerActivity : Activity() {
     /** Co minutę: czy przypada pobranie EPG z harmonogramu. */
     private val epgTick = object : Runnable {
         override fun run() {
+            if (safeMode) return
             if (EpgSync.due(prefs, epgStartupPending)) {
                 epgStartupPending = false
                 if (!prefs.pluginOk) AppLog.i("EPG: pobieranie wg harmonogramu (${prefs.epgHour})")
@@ -440,8 +486,10 @@ class PlayerActivity : Activity() {
         dismissConnectionDialog()
         releasePlayer()
         ui.removeCallbacks(logTick)
-        if (AppLog.dirty) uploadLog(false)
-        syncChannels()
+        if (!safeMode) {
+            if (AppLog.dirty) uploadLog(false)
+            syncChannels()
+        }
     }
 
     override fun onDestroy() {
@@ -519,6 +567,7 @@ class PlayerActivity : Activity() {
             override fun onRenderedFirstFrame() {
                 lastStartMs = SystemClock.elapsedRealtime() - streamStartAt
                 AppLog.i("start: pierwszy obraz po $lastStartMs ms")
+                markPlaybackHealthy()
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -855,6 +904,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun startStream(url: String, startMs: Long = 0) {
+        if (safeMode) return
         val p = player ?: return
         currentUrl = url
         streamGen++
@@ -874,6 +924,7 @@ class PlayerActivity : Activity() {
             vlc?.stop()
             return
         }
+        prefs.playbackAttempt = "${appVersion()} / ${prefs.engine.uppercase()}"
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
             return
@@ -911,6 +962,7 @@ class PlayerActivity : Activity() {
         val v = vlc ?: VlcEngine(this, prefs, vlcLayout,
             onEvent = { m ->
                 if (m == "VLC: odtwarzanie") ui.post { applySavedVlcAudio() }
+                if (m == "VLC: obraz") ui.post { markPlaybackHealthy() }
                 if (!readyLogged) { readyLogged = true; AppLog.i("start: $m po ${SystemClock.elapsedRealtime() - streamStartAt} ms") }
             },
             onFailure = { r -> scheduleRestart(r) }).also { vlc = it }
@@ -1040,7 +1092,12 @@ class PlayerActivity : Activity() {
     }
 
     private fun scheduleRestart(reason: String) {
-        if (currentUrl == null || restartPending || encrypted) return
+        if (safeMode || currentUrl == null || restartPending || encrypted) return
+        if (prefs.engine == "vlc" && vlcRestartAttempts >= 2) {
+            AppLog.i("VLC: przerwano automatyczne restarty po $vlcRestartAttempts próbach")
+            showRecoveryDialog("VLC nie uruchomił strumienia po $vlcRestartAttempts ponowieniach.\nOstatni problem: $reason", stopPlayback = true)
+            return
+        }
         restartPending = true
         pendingReason = reason
         val delays = longArrayOf(0, 1000, 2000, 5000, 10_000)
@@ -1054,6 +1111,7 @@ class PlayerActivity : Activity() {
     private fun doRestart() {
         restartPending = false
         val url = currentUrl ?: return
+        if (safeMode) return
         if (decoderUnavailable || connectionProbePending) return
         val lastFeed = analyzer?.lastFeedAt ?: 0L
         val lastData = lastFeed.takeIf { it > 0 } ?: streamStartAt
@@ -1066,6 +1124,7 @@ class PlayerActivity : Activity() {
         restarts++
         lastRestartReason = pendingReason
         if (tsMode) { tsGoLive(pendingReason); return }
+        if (prefs.engine == "vlc") vlcRestartAttempts++
         showMessage("Wznawiam strumień ($pendingReason)")
         // nagranie: od miejsca, w którym przerwało, nie od początku
         startStream(url, if (recMode) (player?.currentPosition ?: 0) else 0)
@@ -1081,6 +1140,7 @@ class PlayerActivity : Activity() {
     } catch (_: Exception) { true }
 
     private fun loadBouquets() {
+        if (safeMode) return
         val generation = ++startupProbeGeneration
         showMessage("Łączenie z ${prefs.host}…", 10_000)
         io.execute {
@@ -1151,6 +1211,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun applyScheduledChannel() {
+        if (safeMode) return
         val ref = scheduledChannelRef ?: return
         if (bouquets.isEmpty()) return
         scheduledChannelRef = null
@@ -1181,7 +1242,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun playIn(bIdx: Int, chList: List<Channel>, index: Int) {
-        if (chList.isEmpty()) return
+        if (safeMode || chList.isEmpty()) return
         if (recMode) leaveRec()
         panelOnRec = false
         tsCtl = false; tsChBar = false
@@ -1430,6 +1491,7 @@ class PlayerActivity : Activity() {
     /** 30 s przed audycją pokazuje okno; odliczanie aktualizuje się co sekundę. */
     private val zapTick = object : Runnable {
         override fun run() {
+            if (safeMode) return
             val timers = ZapTimers.list(this@PlayerActivity)
             if (zapPrompted != null && timers.none { it.key() == zapPrompted }) {
                 try { zapDialog?.dismiss() } catch (_: Exception) {}
@@ -2443,6 +2505,22 @@ class PlayerActivity : Activity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && event.repeatCount > 0) return true
         if (keyCode != KeyEvent.KEYCODE_BACK) backExit.reset()
+        if (safeMode) {
+            when {
+                keyCode == KeyEvent.KEYCODE_BACK -> {
+                    if (backExit.press(SystemClock.elapsedRealtime())) finish()
+                    else showMessage("Naciśnij ponownie WSTECZ, aby wyjść", 2500)
+                    return true
+                }
+                keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_INFO || isOk(keyCode) -> {
+                    showQuickMenu()
+                    return true
+                }
+                keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
+                    keyCode == KeyEvent.KEYCODE_VOLUME_MUTE -> return super.onKeyDown(keyCode, event)
+                else -> return true
+            }
+        }
         if (panel.visibility == View.VISIBLE) {
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> { panelBouquetStep(-1); return true }
@@ -2721,6 +2799,17 @@ class PlayerActivity : Activity() {
     // ---------------------------------------------------------------- menu podręczne
 
     private fun showQuickMenu() {
+        if (safeMode) {
+            val items = listOf(
+                "Spróbuj uruchomić normalnie" to { retryNormalStartup() },
+                "Ustawienia" to { openSettings() },
+                "Zamknij" to { finish() },
+            )
+            TvDialog.list(this, "E2Stream — tryb bezpieczny", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f) { which ->
+                items[which].second()
+            }
+            return
+        }
         val actions = mapOf<String, () -> Unit>(
             "event" to { epg.showCurrentEvent() },
             "channel_epg" to { epg.showChannelEpg() },
@@ -2743,6 +2832,7 @@ class PlayerActivity : Activity() {
         forceTune: Boolean = false,
         onResult: ((Boolean, String) -> Unit)? = null,
     ) {
+        if (safeMode) return
         val k = OpenWebif.key(ref)
         val i = playList.indexOfFirst { OpenWebif.key(it.ref) == k }
         if (!forceTune && i >= 0 && i == playIndex && currentUrl != null && !recMode) {

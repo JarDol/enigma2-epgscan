@@ -310,6 +310,11 @@ class Prefs(ctx: Context) {
         get() = s("lastCrash")
         set(v) = sp.edit().putString("lastCrash", v).commit().let { }
 
+    /** Silnik i wersja, których uruchamianie nie dotarło jeszcze do pierwszego obrazu. */
+    var playbackAttempt: String
+        get() = s("playbackAttempt")
+        set(v) = sp.edit().putString("playbackAttempt", v).commit().let { }
+
     /**
      * Zapas w trakcie oglądania (ms): do tylu odtwarzacz dobudowuje bufor po szybkim starcie
      * (lekkie zwolnienie) i tyle czeka po niedoborze. Klucz „rebufferMs” zostaje dla synchronizacji.
