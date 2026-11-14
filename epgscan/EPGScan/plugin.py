@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-2.0-or-later
-# EPG Scan 2.16.0 - rownolegle odswiezanie EPG dla Enigma2 (OpenPLi)
+# EPG Scan 2.17.5 - rownolegle odswiezanie EPG dla Enigma2 (OpenPLi)
+#
+# 2.17.5: poprawiona lista bukietow; skan PAT/PMT grupuje kanaly po transponderze i rezerwuje tuner na grupe
+# 2.17.4: start skanu parametrow z Akcji w tle; zielony/zolty ukryte bez wynikow
+# 2.17.3: poprawiony crash otwierania skanu parametrow; osobna akcja w ekranie Akcje, bez zmiany niebieskiego klawisza
+# 2.17.2: osobne ustawienia, harmonogram i uruchomienie skanu parametrow kanalow; skan nie wymaga EPG
 #
 # 1.1.0: postep liczony dla wszystkich kanalow z bukietow na danym transponderze
 # 1.2.0: dynamiczny przydzial tunerow (rezerwa wolnych), wspoldzielenie tunerow
@@ -161,6 +166,7 @@ from .common import cfg, log, list_backups, restore_backup, count_events, all_re
 
 _auto = None
 _stats = None
+_window_watchdog = None
 
 
 class StartupStats(object):
@@ -233,14 +239,21 @@ class AutoRestore(object):
 
 
 def sessionstart(reason, session=None, **kwargs):
-	global _auto, _stats
+	global _auto, _stats, _window_watchdog
 	if reason == 0 and session is not None and _auto is None:
 		_auto = AutoRestore(session)
 		_stats = StartupStats()
 		try:
-			from .common import apply_clear_choices, apply_eit_policy, migrate_v2
+			from .windowguard import start as start_window_watchdog
+			_window_watchdog = start_window_watchdog(session)
+		except Exception as e:
+			from .common import log
+			log("Watchdog czuwania: start nieudany: %s" % e)
+		try:
+			from .common import apply_clear_choices, apply_eit_policy, migrate_v2, prune_logs
 			apply_clear_choices()
 			migrate_v2()
+			prune_logs()
 			from .localmap import migrate_files
 			migrate_files()
 			apply_eit_policy()

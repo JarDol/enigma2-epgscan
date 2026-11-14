@@ -12,6 +12,7 @@ from .common import ensure_eit, restore_eit, pause_eit_for_xmltv, resume_eit_aft
 	frontend_of, same_tp, flush_all, flush_refs, clears_now, copy_backup, changes_since_last, remember_scan, \
 	update_tp_stats, update_topup_stats, horizons, apply_skip, epg_stats, stats_text, all_refs, xmltv_targets, log_dups, \
 	profile_default, profile_text, xmltv_in_profile, TUNE_TIMEOUT, MAX_RETRIES, COUNT_EVERY, TUNE_GAP, NO_TUNER_WAIT, USAGE_EVERY, TIMER_AHEAD
+from .tunerreport import TunerTrace, close_trace
 
 try:
 	from enigma import eDVBResourceManager
@@ -58,7 +59,11 @@ class ScanEngine(object):
 		self.xmltv = None
 		self.xmltv_resume_eit = False
 		self.summary = ""
-		self.timer_hold = 0          # tunery trzymane wolne dla nagran, ktore zaraz rusza
+		self.timer_hold = 0          # tunery dla zblizajacych sie nagran i przelaczen
+		self.timer_check_error = None
+		self.epg_tuner_trace = None
+		self.epg_tuner_report = None
+		self.params_tuner_report = None
 		self.auto = False            # start z harmonogramu
 		self.topup = False           # doczytywanie brakow (wybrane transpondery, bez czyszczenia)
 		self.woke = False            # odbiornik wybudzony przez wtyczke z glebokiego czuwania
@@ -86,7 +91,7 @@ class ScanEngine(object):
 
 	def prepare(self):
 		"""Odswieza liste transponderow (gdy skan nie trwa)."""
-		if self.running:
+		if self.running or getattr(self, "epg_params_scan", None) is not None:
 			return
 		self.jobs = build_jobs()
 		self.jobs_partial = False
@@ -111,8 +116,11 @@ class ScanEngine(object):
 	def start(self, auto=False, woke=False, topup_jobs=None, clear=None, force_xmltv=False, local=True, profile=None):
 		"""profile: {clear, sat, dek, srv, other, fetch} - z Akcji; None = profil domyslny (OK, harmonogram).
 		clear: None = wg profilu, True/False = wymuszenie."""
-		if self.running:
+		if self.running or getattr(self, "epg_params_scan", None) is not None:
 			return False
+		self.channelparams_report = None
+		self.epg_params_scan = None
+		self._channelparams_cancelled = False
 		if topup_jobs is None:
 			self.profile = dict(profile or profile_default())
 			if not local:
@@ -126,6 +134,8 @@ class ScanEngine(object):
 				# bez satelity - sam XMLTV (pobranie wg profilu)
 				return self.start_xmltv_only(clear=clear, auto=auto, local=local, profile=self.profile)
 		self.force_xmltv = force_xmltv
+		if auto:
+			self.auto_start_time = cfg.last_auto_run.value or int(time.time())
 		if topup_jobs is not None:
 			self.jobs = topup_jobs
 			self.jobs_partial = True         # lista tylko z transponderami do doczytania
@@ -157,6 +167,8 @@ class ScanEngine(object):
 		self.running = True
 		self.finished = False
 		self.t_start = time.time()
+		self.epg_tuner_trace = TunerTrace(self.total_tuners, self.reserve, self.max_parallel, TUNE_GAP, self.t_start)
+		self.prepare_epg_params()
 		if self.topup:
 			log("Doczytywanie brakow: %d transponderow: %s" % (len(self.jobs),
 				", ".join("%s (%s)" % (j.name, getattr(j, "topup_reason", "")) for j in self.jobs)))
@@ -183,6 +195,22 @@ class ScanEngine(object):
 		self.tick()
 		return True
 
+	def prepare_epg_params(self):
+		if self.topup:
+			return
+		try:
+			from .channelparamscan import ChannelParamsScan, scan_due
+			if (self.auto and scan_due()) or (not self.auto and self.profile.get("channelparams")):
+				scan = ChannelParamsScan(self)
+				scan.prepare()
+				self.epg_params_scan = scan
+				if self.auto:
+					cfg.cp_auto_in_progress.value = True
+					save_cfg()
+		except Exception as e:
+			log("Skan parametrow podczas EPG nieudany: %s" % e)
+			self.note = "Skan parametrow podczas EPG nieudany: %s" % e
+
 	def stop(self):
 		# czerwony "Zatrzymaj": razem ze skanem przerywane jest pobieranie programu na dekoderze
 		try:
@@ -191,6 +219,42 @@ class ScanEngine(object):
 		except Exception:
 			pass
 		if not self.running:
+			return
+		self._channelparams_cancelled = True
+		partial_error = ""
+		scan = getattr(self, "epg_params_scan", None)
+		if scan:
+			scan.cancel()
+			try:
+				scan.save_partial()
+			except Exception as e:
+				partial_error = "Zapis czesciowych wynikow PAT/PMT nieudany: %s" % e
+				log(partial_error)
+			self.epg_params_scan = None
+			if self.auto and cfg.cp_auto_in_progress.value:
+				cfg.cp_auto_in_progress.value = False
+				save_cfg()
+		if self.phase == "channelparams":
+			scan = getattr(self, "channel_params_scan", None)
+			if scan:
+				scan.cancel()
+				try:
+					scan.save_partial()
+				except Exception as e:
+					partial_error = "Zapis czesciowych wynikow PAT/PMT nieudany: %s" % e
+					log(partial_error)
+			if getattr(self, "channelparams_auto", False):
+				cfg.cp_auto_in_progress.value = False
+				save_cfg()
+			self.channelparams_auto = False
+			self.channelparams_only = False
+			self.phase = ""
+			self.running = False
+			self.finished = True
+			self.t_end = time.time()
+			self.note = partial_error or "Skan parametrow przerwany"
+			self.detach()
+			self.notify()
 			return
 		if self.phase == "satwatch":
 			self._sw_cancel = True
@@ -206,15 +270,22 @@ class ScanEngine(object):
 				self.sw_finish_cancel()
 			return
 		if self.phase == "xmltv_wait":
+			if partial_error:
+				self.note = partial_error
 			self.wait_timer.stop()
 			log("Czekanie na serwer epgpl przerwane przez uzytkownika - bez importu XMLTV")
 			self.complete()
 			return
 		if self.phase == "xmltv" and self.xmltv:
+			if partial_error:
+				self.note = partial_error
 			log("Import XMLTV przerwany przez uzytkownika")
 			self.xmltv.cancel()          # konczy sie przez complete()
 			return
 		log("Przerwane przez uzytkownika")
+		if getattr(self, "epg_tuner_trace", None) is not None:
+			self.epg_tuner_report = close_trace(self.epg_tuner_trace, "epg", time.time(), cancelled=True)
+			self.epg_tuner_trace = None
 		self.clear_auto_flag()
 		self.topup = False
 		self.phase = ""
@@ -225,7 +296,7 @@ class ScanEngine(object):
 		self.running = False
 		self.finished = True
 		self.t_end = time.time()
-		self.note = "Skan przerwany"
+		self.note = partial_error or "Skan przerwany"
 		self.detach()
 		self.notify()
 
@@ -245,20 +316,27 @@ class ScanEngine(object):
 		return self.reserve + self.timer_hold
 
 	def upcoming_recordings(self):
-		"""Ile nagran z timera ruszy w ciagu TIMER_AHEAD sekund (jeszcze nie nagrywaja)."""
+		"""Ile timerow nagrywania lub przelaczania zaraz ruszy."""
 		try:
 			now = time.time()
 			n = 0
 			for t in NavigationInstance.instance.RecordTimer.timer_list:
-				if getattr(t, "disabled", False) or getattr(t, "justplay", False):
+				if getattr(t, "disabled", False):
 					continue
-				if getattr(t, "state", 0) >= 2:          # juz nagrywa - liczy sie w zajetych tunerach
+				if getattr(t, "state", 0) >= 2:          # juz uruchomiony - liczy sie w zajetych tunerach
 					continue
 				if t.begin - now <= TIMER_AHEAD and t.end > now:
 					n += 1
+			if getattr(self, "timer_check_error", None) is not None:
+				log("Odczyt timerow przywrocony - wracam do zwyklej rezerwy")
+				self.timer_check_error = None
 			return n
-		except Exception:
-			return 0
+		except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+			error = "%s: %s" % (type(e).__name__, e)
+			if getattr(self, "timer_check_error", None) != error:
+				log("Nie mozna odczytac timerow (%s) - wstrzymuje nowe strojenia" % error)
+				self.timer_check_error = error
+			return max(1, self.total_tuners)
 
 	def scan_usage(self):
 		used = set()
@@ -372,6 +450,9 @@ class ScanEngine(object):
 		return True
 
 	def release(self, job):
+		scan = getattr(self, "epg_params_scan", None)
+		if scan:
+			scan.release_epg(job)
 		if job.rec is not None:
 			try:
 				NavigationInstance.instance.stopRecordService(job.rec)
@@ -430,9 +511,17 @@ class ScanEngine(object):
 				j.tuned_at = j.last_change = time.time()
 				j.tuner_no, _ = frontend_of(j.rec)
 				j.tuner = chr(ord("A") + j.tuner_no) if j.tuner_no >= 0 else "?"
+				if getattr(self, "epg_tuner_trace", None) is not None:
+					self.epg_tuner_trace.note_tuner(j.tuner_no)
 				j.shared = j.tuner_no in self.other_used
 				log("Dostrojony: %s (tuner %s%s)" % (j.name, j.tuner, ", wspoldzielony" if j.shared else ""))
 				getattr(self, "fail_streak", {}).pop(j.tuner_no, None)
+				scan = getattr(self, "epg_params_scan", None)
+				if scan:
+					try:
+						scan.attach_epg(j)
+					except Exception as e:
+						log("Skan parametrow podczas EPG: %s" % e)
 			elif event in (iRecordableService.evTuneFailed, iRecordableService.evRecordFailed):
 				j.state = "blad_strojenia"
 			break
@@ -510,11 +599,11 @@ class ScanEngine(object):
 			self.last_usage = now
 			hold = self.upcoming_recordings()
 			if hold != self.timer_hold:
-				if hold:
-					log("Za mniej niz %d min rusza nagranie (%d) - trzymam wolne tunery, nowe skany wstrzymane" % (
+				if not self.timer_check_error and hold:
+					log("Za mniej niz %d min rusza nagranie lub przelaczenie (%d) - trzymam wolne tunery, nowe skany wstrzymane" % (
 						TIMER_AHEAD // 60, hold))
-				else:
-					log("Brak nagran w najblizszych %d min - skan wraca do zwyklej rezerwy" % (TIMER_AHEAD // 60))
+				elif not self.timer_check_error:
+					log("Brak nagran i przelaczen w najblizszych %d min - skan wraca do zwyklej rezerwy" % (TIMER_AHEAD // 60))
 				self.timer_hold = hold
 
 		min_t = cfg.min_time.value
@@ -530,6 +619,9 @@ class ScanEngine(object):
 				if now - j.t0 > TUNE_TIMEOUT:
 					self.requeue_or_fail(j, "timeout strojenia")
 				continue
+			scan = getattr(self, "epg_params_scan", None)
+			if scan:
+				scan.poll_epg(j)
 			if now - j.last_count >= COUNT_EVERY:
 				j.last_count = now
 				before = j.all_events
@@ -570,7 +662,10 @@ class ScanEngine(object):
 				job = ready[0]
 			if job is not None:
 				self.queue.remove(job)
-				if not self.start_job(job, shared):
+				started = self.start_job(job, shared)
+				if getattr(self, "epg_tuner_trace", None) is not None:
+					self.epg_tuner_trace.note_start(shared, started)
+				if not started:
 					job.state = "czeka na tuner"
 					job.not_before = now + NO_TUNER_WAIT
 					self.queue.append(job)
@@ -578,6 +673,12 @@ class ScanEngine(object):
 		for j in self.queue:
 			if j.state == "czeka" and self.active and self.free_tuners() - self.eff_reserve() <= 0:
 				j.state = "czeka na tuner"
+
+		if getattr(self, "epg_tuner_trace", None) is not None:
+			self.epg_tuner_trace.sample(self, now, len(self.queue),
+				len([j for j in self.queue if j.not_before <= now]),
+				len([j for j in self.active if not j.shared]),
+				any(j.state == "strojenie" for j in self.active), now - self.last_tune < TUNE_GAP)
 
 		if self.running and not self.queue and not self.active:
 			self.finish()
@@ -593,6 +694,9 @@ class ScanEngine(object):
 		self.timer.stop()
 		self.end_eit()
 		self.t_end = time.time()
+		if getattr(self, "epg_tuner_trace", None) is not None:
+			self.epg_tuner_report = close_trace(self.epg_tuner_trace, "epg", self.t_end)
+			self.epg_tuner_trace = None
 		self.detach()
 		done, err, el = self.stats()
 		if self.topup:
@@ -959,8 +1063,10 @@ class ScanEngine(object):
 	def start_xmltv_only(self, clear=False, auto=False, local=True, profile=None):
 		"""Sam import XMLTV (po pobraniu programu na serwerze, z gotowego pliku albo gdy import z satelity
 		jest wylaczony), bez skanu satelity."""
-		if self.running:
+		if self.running or getattr(self, "epg_params_scan", None) is not None:
 			return False
+		self.epg_params_scan = None
+		self._channelparams_cancelled = False
 		self.profile = dict(profile or getattr(self, "profile", None) or profile_default())
 		if not local:
 			self.profile["fetch"] = False
@@ -1029,7 +1135,8 @@ class ScanEngine(object):
 			log("Zapis EPG nieudany: %s" % e)
 		el = int(self.t_end - self.t_start) if self.t_start else 0
 		log("Koniec, czas calkowity %d:%02d" % (el // 60, el % 60))
-		self.popup("EPG Scan: " + self.summary)
+		from .i18n import display_scan_summary
+		self.popup("EPG Scan: " + display_scan_summary(self.summary))
 		self.notify()
 		self.bk_timer.start(5000, True)   # chwila na zapis pliku EPG, potem kopia i ew. gleboki sen
 
@@ -1067,12 +1174,50 @@ class ScanEngine(object):
 		self.after_backup()
 
 	def after_backup(self):
+		if getattr(self, "running", False):
+			return
 		if self.auto:
 			self.night_notes()
+		if not getattr(self, "topup", False) and not getattr(self, "_channelparams_cancelled", False):
+			scan = getattr(self, "epg_params_scan", None)
+			try:
+				from .channelparamscan import scan_due, start_manual, start_scheduled
+				if self.auto:
+					if (scan is not None or scan_due()) and start_scheduled(self, self.auto_start_time, woke=self.woke,
+							done=self.after_channelparams, scan=scan):
+						self.epg_params_scan = None
+						return
+				elif getattr(self, "profile", {}).get("channelparams") and \
+						start_manual(self, done=self.after_channelparams, scan=scan):
+					self.epg_params_scan = None
+					return
+				if scan:
+					scan.save_partial()
+				self.epg_params_scan = None
+			except Exception as e:
+				if scan:
+					try:
+						scan.save_partial()
+					except Exception as save_error:
+						e = "%s; zapis czesciowych wynikow nieudany: %s" % (e, save_error)
+				self.epg_params_scan = None
+				log("Skan parametrow po EPG nieudany: %s" % e)
+				self.note = "Skan parametrow nieudany: %s" % e
+				self.channelparams_report = {"scanned": 0, "errors": [{"name": "skan", "error": str(e)}],
+					"unsupported": []}
+				self.notify()
+		if self.auto:
 			from .health import maybe_restart
 			if maybe_restart(self):
 				return
 			self.need_restart_gui = ""
+		self.maybe_deep_standby()
+
+	def after_channelparams(self, _report):
+		from .health import maybe_restart
+		if maybe_restart(self):
+			return
+		self.need_restart_gui = ""
 		self.maybe_deep_standby()
 
 	def night_notes(self):
@@ -1090,7 +1235,10 @@ class ScanEngine(object):
 
 	def maybe_deep_standby(self):
 		"""Po skanie z harmonogramu, ktory wybudzil odbiornik, wroc do glebokiego czuwania."""
-		if not (self.auto and self.woke and cfg.sched_deep_after.value) or self.session is None:
+		if not (self.auto and self.woke):
+			return
+		deep_after = cfg.sched_deep_after.value
+		if not deep_after or self.session is None:
 			return
 		try:
 			import Screens.Standby

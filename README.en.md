@@ -24,7 +24,8 @@ cover Polish channels.
 
 More screenshots in the [plugin description](epgscan/EPGScan/README.en.md).
 
-The on-screen texts are in Polish; the English descriptions map every menu item.
+The plugin language can be selected in **Settings → Updates and plugin information**: Enigma2 language,
+Polish or English. Logs, some technical details and data from external sources may remain in their original language.
 
 ## Repository contents
 

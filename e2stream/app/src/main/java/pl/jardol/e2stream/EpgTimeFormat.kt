@@ -5,8 +5,11 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-internal class EpgTimeFormat(timeZone: TimeZone = TimeZone.getDefault()) {
-    private val locale = Locale("pl", "PL")
+internal class EpgTimeFormat(
+    timeZone: TimeZone = TimeZone.getDefault(),
+    locale: Locale = Locale("pl", "PL"),
+    private val until: String = "do",
+) {
     private val day = SimpleDateFormat("EEE dd.MM", locale).apply { this.timeZone = timeZone }
     private val dateKey = SimpleDateFormat("yyyy-MM-dd", locale).apply { this.timeZone = timeZone }
     private val time = SimpleDateFormat("HH:mm", locale).apply { this.timeZone = timeZone }
@@ -14,7 +17,7 @@ internal class EpgTimeFormat(timeZone: TimeZone = TimeZone.getDefault()) {
     fun dayAndRange(begin: Long, end: Long): String {
         val start = Date(begin * 1000)
         val finish = Date(end * 1000)
-        val endSuffix = if (dateKey.format(start) == dateKey.format(finish)) "" else "\ndo ${day.format(finish)}"
+        val endSuffix = if (dateKey.format(start) == dateKey.format(finish)) "" else "\n$until ${day.format(finish)}"
         return "${day.format(start)}\n${time.format(start)}–${time.format(finish)}$endSuffix"
     }
 

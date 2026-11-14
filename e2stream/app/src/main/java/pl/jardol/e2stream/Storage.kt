@@ -24,11 +24,11 @@ object Storage {
                 try { sm.getStorageVolume(d)?.getDescription(ctx) } catch (_: Exception) { null }
             } else null
             val removable = try { Environment.isExternalStorageRemovable(d) } catch (_: Exception) { false }
-            val name = desc ?: if (removable) "Nośnik wymienny (USB/SD)" else "Pamięć urządzenia"
+            val name = desc ?: ctx.getString(if (removable) R.string.storage_removable else R.string.storage_device)
             val free = d.usableSpace / 1_000_000
-            out.add(StorageOption(d.absolutePath, "$name — $free MB wolne\n${d.absolutePath}"))
+            out.add(StorageOption(d.absolutePath, ctx.getString(R.string.storage_free, name, free, d.absolutePath)))
         }
-        out.add(StorageOption(ctx.filesDir.absolutePath, "Pamięć prywatna aplikacji\n${ctx.filesDir.absolutePath}"))
+        out.add(StorageOption(ctx.filesDir.absolutePath, ctx.getString(R.string.storage_private, ctx.filesDir.absolutePath)))
         return out
     }
 

@@ -14,21 +14,20 @@ import java.util.Locale
 
 /** Wspólny wygląd okna audycji: ikona, kanał, tytuł, czas, opis. Używany przez EPG i okna harmonogramu. */
 object EventCard {
-    private val pl = Locale("pl", "PL")
-    private val hm = SimpleDateFormat("HH:mm", pl)
-    private val day = SimpleDateFormat("EEE dd.MM", pl)
-
     /** [body] — opis; null = bez miejsca na opis (np. brak EPG w pamięci). */
     fun content(ctx: Context, ev: EpgEvent, ref: String, name: String, body: String?): View {
         val dp = ctx.resources.displayMetrics.density
         fun px(v: Int) = (v * dp).toInt()
         val prefs = Prefs(ctx)
+        val locale = Locale.forLanguageTag(AppLanguage.selected(ctx))
+        val hm = SimpleDateFormat("HH:mm", locale)
+        val day = SimpleDateFormat("EEE dd.MM", locale)
         val scale = UiScale.pct(prefs.uiEpgFont)
         val n = System.currentTimeMillis() / 1000
         val running = ev.begin <= n && ev.end > n
         val pct = if (running && ev.duration > 0) ((n - ev.begin) * 1000 / ev.duration).toInt() else -1
         val whenText = "${day.format(Date(ev.begin * 1000))}  ${hm.format(Date(ev.begin * 1000))} – ${hm.format(Date(ev.end * 1000))}" +
-            "  (${ev.duration / 60} min)" + if (running) "  •  zostało ${(ev.end - n) / 60} min" else ""
+            "  (${ev.duration / 60} min)" + if (running) ctx.getString(R.string.epg_remaining, (ev.end - n) / 60) else ""
 
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val head = LinearLayout(ctx).apply {

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="service_log_sent">Log sent: %1$s</string>
+    <string name="service_log_error">Could not send log: %1$s</string>
+    <string name="service_no_dumps">No TS dumps</string>
+    <string name="service_sending_dumps">Sending %1$d TS dump(s)…</string>
+    <string name="service_dumps_sent">Sent %1$d dump(s) to %2$s</string>
+    <string name="service_dumps_error">Sent %1$d/%2$d. Error: %3$s</string>
+    <string name="service_description_error">Could not download description: %1$s</string>
+    <string name="service_description">Description: %1$s</string>
+</resources>

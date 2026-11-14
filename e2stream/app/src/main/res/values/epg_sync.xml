@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="epg_pack_building">EPG Scan przygotowuje paczkę</string>
+    <string name="epg_pack_no_epg">Brak pliku EPG w paczce EPG Scan</string>
+    <string name="epg_pack_unchanged">paczka EPG Scan bez zmian (%1$s)</string>
+    <string name="epg_from_receiver">EPG z dekodera…</string>
+    <string name="epg_pack_corrupt">Paczka EPG zmieniła się podczas pobierania lub jest uszkodzona</string>
+    <string name="epg_pack_mismatch">Paczka EPG nie odpowiada informacjom z dekodera</string>
+    <string name="epg_picons_from_receiver">Picony z dekodera…</string>
+    <string name="epg_pack_picons_error">Nie można pobrać piconów z paczki EPG Scan</string>
+    <string name="epg_moved_start">kanał startowy</string>
+    <string name="epg_moved_last">ostatni kanał</string>
+    <string name="epg_pack_refs_error">Nie można pobrać referencji z paczki EPG Scan</string>
+    <string name="epg_pack_moved">, nowa referencja: %1$s</string>
+    <string name="epg_pack_result">paczka EPG Scan (%1$s): EPG %2$d kanałów / %3$d audycji, piconów %4$d%5$s (%6$d s)</string>
+    <string name="epg_already_downloading">Pobieranie EPG już trwa</string>
+    <string name="epg_pack_error">Błąd paczki EPG Scan: %1$s</string>
+    <string name="epg_channel_progress">EPG: %1$d/%2$d kanałów</string>
+    <string name="epg_picons_count">, picony: %1$d</string>
+    <string name="epg_download_result">EPG pobrane: %1$d kanałów, %2$d audycji%3$s (%4$d s)</string>
+    <string name="epg_download_error">Błąd pobierania EPG: %1$s</string>
+</resources>

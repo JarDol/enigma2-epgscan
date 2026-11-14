@@ -18,12 +18,10 @@ object Updater {
     private const val API = "https://api.github.com/repos/JarDol/enigma2-epgscan/releases?per_page=50"
 
     data class Info(val version: String, val url: String, val name: String, val prerelease: Boolean)
+    internal data class Asset(val name: String, val url: String)
+    internal data class Release(val tag: String, val prerelease: Boolean, val draft: Boolean, val assets: List<Asset>)
 
-    /**
-     * Najwyższa wersja, której Release ma plik e2stream-<wersja>.apk.
-     * Puste / zapasowe Release'y (bez pasującego pliku) są pomijane.
-     */
-    fun latest(channel: String = "stable"): Info? {
+    fun releases(channel: String = "stable"): List<Info> {
         val c = URL(API).openConnection() as HttpURLConnection
         c.connectTimeout = 6000
         c.readTimeout = 10000
@@ -31,29 +29,48 @@ object Updater {
         c.setRequestProperty("User-Agent", "E2Stream")
         try {
             if (c.responseCode != 200) throw IOException("GitHub HTTP ${c.responseCode}")
-            val arr = JSONArray(c.inputStream.bufferedReader().use { it.readText() })
-            var best: Info? = null
-            for (r in 0 until arr.length()) {
-                val js = arr.optJSONObject(r) ?: continue
-                val prerelease = js.optBoolean("prerelease")
-                if (js.optBoolean("draft") || (prerelease && channel != "beta")) continue
-                val rawTag = js.optString("tag_name")
-                if (!rawTag.startsWith("e2stream-")) continue   // w repo są też wydania wtyczki i serwera
-                val tag = rawTag.removePrefix("e2stream-").removePrefix("v")
-                val assets = js.optJSONArray("assets") ?: continue
-                for (i in 0 until assets.length()) {
-                    val a = assets.optJSONObject(i) ?: continue
-                    val name = a.optString("name")
-                    if (name == "e2stream-$tag.apk") {
-                        val cand = Info(tag, a.optString("browser_download_url"), name, prerelease)
-                        if (best == null || compareVersions(tag, best.version) > 0) best = cand
-                    }
-                }
-            }
-            return best
+            return parseReleases(c.inputStream.bufferedReader().use { it.readText() }, channel)
         } finally {
             c.disconnect()
         }
+    }
+
+    /**
+     * Najwyższa wersja, której Release ma plik e2stream-<wersja>.apk.
+     * Puste / zapasowe Release'y (bez pasującego pliku) są pomijane.
+     */
+    fun latest(channel: String = "stable"): Info? = releases(channel).firstOrNull()
+
+    internal fun parseReleases(json: String, channel: String): List<Info> {
+        val arr = JSONArray(json)
+        val releases = ArrayList<Release>()
+        for (r in 0 until arr.length()) {
+            val js = arr.optJSONObject(r) ?: continue
+            val assets = js.optJSONArray("assets") ?: continue
+            val parsedAssets = ArrayList<Asset>()
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: continue
+                parsedAssets += Asset(asset.optString("name"), asset.optString("browser_download_url"))
+            }
+            releases += Release(
+                js.optString("tag_name"),
+                js.optBoolean("prerelease"),
+                js.optBoolean("draft"),
+                parsedAssets,
+            )
+        }
+        return selectReleases(releases, channel)
+    }
+
+    internal fun selectReleases(releases: List<Release>, channel: String): List<Info> {
+        return releases.mapNotNull { release ->
+            if (release.draft || (release.prerelease && channel != "beta") || !release.tag.startsWith("e2stream-")) return@mapNotNull null
+            val version = release.tag.removePrefix("e2stream-").removePrefix("v")
+            val apk = release.assets.firstOrNull {
+                it.name == "e2stream-$version.apk" && it.url.isNotBlank()
+            } ?: return@mapNotNull null
+            Info(version, apk.url, apk.name, release.prerelease)
+        }.distinctBy { it.version }.sortedWith { a, b -> compareVersions(b.version, a.version) }
     }
 
     /** Porównanie wersji semver, także prerelease w formacie X.Y.Z-beta.N. */

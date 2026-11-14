@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_enabled">✔ enabled</string>
+    <string name="settings_disabled">✘ disabled</string>
+    <string name="settings_hint_no_login">empty = no login</string>
+    <string name="settings_hint_no_token">empty = none (local network)</string>
+    <string name="settings_hint_auto_directory">empty = read from Enigma2 settings</string>
+    <string name="settings_plugin_installed">installed — %1$s</string>
+    <string name="settings_plugin_missing">not installed (OpenWebif + FTP)</string>
+    <string name="settings_device_name">Name of this device (tag %1$s)</string>
+    <string name="settings_fps">Do not specify</string>
+    <string name="settings_every_start">at every startup</string>
+    <string name="settings_daily">once daily</string>
+    <string name="settings_all">all</string>
+    <string name="settings_hidden_count">hidden: %1$d</string>
+    <string name="settings_first_channel">first channel</string>
+    <string name="settings_start_disabled">inactive (resume last channel is enabled)</string>
+    <string name="settings_status_alarm">status and alarm test</string>
+    <string name="settings_enable_wake_first">enable wake-up first</string>
+    <string name="settings_never_clean">never remove</string>
+    <string name="settings_after_days">%1$d days</string>
+    <string name="settings_pin_inactive">inactive (no PIN)</string>
+    <string name="settings_pin_suffix">\u0020• exiting the app always locks settings</string>
+    <string name="settings_version">version %1$s</string>
+    <string name="settings_plugin_absent_details">not installed — see Enigma2 receiver section</string>
+    <string name="settings_stable">stable</string>
+    <string name="settings_beta">beta (testing)</string>
+    <string name="settings_set_decoder">set in the Enigma2 receiver section</string>
+    <string name="settings_visible">visible</string>
+    <string name="settings_hidden">hidden</string>
+    <string name="settings_options_hint">OK options  •  BACK return</string>
+    <string name="settings_hide_item">Hide item</string>
+    <string name="settings_show_item">Show item</string>
+    <string name="settings_move_up">Move up</string>
+    <string name="settings_move_down">Move down</string>
+    <string name="settings_refresh_unchanged">unchanged</string>
+    <string name="settings_refresh_50">always 50 Hz</string>
+    <string name="settings_refresh_auto">automatic based on content</string>
+    <string name="settings_never">never</string>
+    <string name="settings_sync_running">in progress…</string>
+    <string name="settings_sync_last">last: %1$s</string>
+    <string name="settings_sync_dirty">\u0020• pending changes</string>
+    <string name="settings_add_key">+ Add / change key</string>
+    <string name="settings_press_remote">press it on the remote</string>
+    <string name="settings_restore_defaults">Restore defaults</string>
+    <string name="settings_key_help">The key that triggers the selected action during playback.</string>
+    <string name="settings_key_fixed">Key %1$s cannot be assigned</string>
+    <string name="settings_key">Key %1$s</string>
+    <string name="settings_map_with_banner">OK and arrows — channel banner</string>
+    <string name="settings_map_without_banner">OK and arrows — no banner</string>
+    <string name="settings_epg_status">last: %1$s • channels: %2$d</string>
+    <string name="settings_screen_title">E2Stream %1$s — settings</string>
+    <string name="settings_fps_value">%1$d fps</string>
+</resources>

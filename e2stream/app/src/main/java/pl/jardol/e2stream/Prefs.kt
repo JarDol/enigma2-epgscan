@@ -24,6 +24,10 @@ class Prefs(ctx: Context) {
         get() = s("host")
         set(v) = putS("host", v)
 
+    var discoverySubnet: String
+        get() = s("discoverySubnet")
+        set(v) = putS("discoverySubnet", v)
+
     /** Port OpenWebif (HTTP). */
     var httpPort: Int
         get() = sp.getInt("httpPort", 80)
@@ -41,6 +45,17 @@ class Prefs(ctx: Context) {
     var pass: String
         get() = s("pass")
         set(v) = putS("pass", v)
+
+    var appLanguage: String
+        get() = s("appLanguage", AppLanguage.SYSTEM)
+        set(v) {
+            require(AppLanguage.isValid(v)) { "Nieprawidłowy język aplikacji: $v" }
+            putS("appLanguage", v)
+        }
+
+    var blockOnDisconnect: Boolean
+        get() = sp.getBoolean("blockOnDisconnect", true)
+        set(v) = putB("blockOnDisconnect", v)
 
     /** Tunelowanie wideo (ExoPlayer). */
     var tunneling: Boolean
@@ -255,6 +270,24 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("epgDaily", true)
         set(v) = putB("epgDaily", v)
 
+    /** EIT „teraz/następne” ze strumienia dekodera (Enigma2: Include EIT in http streams). */
+    var eitStream: Boolean
+        get() = sp.getBoolean("eitStream", false)
+        set(v) = putB("eitStream", v)
+
+    /** Podmiana EPG danymi z EIT — zapis w EPG aplikacji do następnej aktualizacji z dekodera. */
+    var eitReplace: Boolean
+        get() = sp.getBoolean("eitReplace", true)
+        set(v) = putB("eitReplace", v)
+
+    /** Test EIT: EPG aplikacji tylko z EIT strumienia — bez paczki EPG Scan i bez OpenWebif. */
+    var eitOnly: Boolean
+        get() = sp.getBoolean("eitOnly", false)
+        set(v) = putB("eitOnly", v)
+
+    /** Tryb testowy EIT aktywny (wymaga włączonego EIT ze strumienia). */
+    val eitOnlyActive: Boolean get() = BuildConfig.BETA && eitStream && eitOnly
+
     /** Godzina codziennego pobierania EPG "HH:MM". */
     var epgHour: String
         get() = s("epgHour", "05:00")
@@ -305,6 +338,11 @@ class Prefs(ctx: Context) {
     var lastCrash: String
         get() = s("lastCrash")
         set(v) = sp.edit().putString("lastCrash", v).commit().let { }
+
+    /** Silnik i wersja, których uruchamianie nie dotarło jeszcze do pierwszego obrazu. */
+    var playbackAttempt: String
+        get() = s("playbackAttempt")
+        set(v) = sp.edit().putString("playbackAttempt", v).commit().let { }
 
     /**
      * Zapas w trakcie oglądania (ms): do tylu odtwarzacz dobudowuje bufor po szybkim starcie
@@ -411,6 +449,14 @@ class Prefs(ctx: Context) {
     var bannerSec: Int
         get() = sp.getInt("bannerSec", 4)
         set(v) = putI("bannerSec", v)
+
+    var messageBar: Boolean
+        get() = sp.getBoolean("messageBar", true)
+        set(v) = putB("messageBar", v)
+
+    var messageBarSec: Int
+        get() = sp.getInt("messageBarSec", 3).coerceIn(1, 10)
+        set(v) = putI("messageBarSec", v.coerceIn(1, 10))
 
     var tsBannerSec: Int
         get() = sp.getInt("tsBannerSec", bannerSec)

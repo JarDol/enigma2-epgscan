@@ -34,6 +34,29 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     var pmtCachePut: ((Int, ByteArray) -> Unit)? = null
 
     private var expectedSid = -1
+
+    // --- EIT „teraz/następne” (PID 0x12, tabela 0x4E) oglądanego programu
+    /** Zbieraj EIT (ustawienie aplikacji; nie przy nagraniach z dysku). */
+    @Volatile var eitEnabled = false
+    /** (sesja, SID, teraz, następne) — wołane z wątku odczytu przy zmianie wersji sekcji. */
+    @Volatile var onEit: ((Long, Int, EitEvent?, EitEvent?) -> Unit)? = null
+    /** Ile pakietów PID 0x12 przyszło w tej sesji (0 = dekoder nie wysyła EIT). */
+    @Volatile var eitPackets = 0L
+        private set
+    private val eitVersion = intArrayOf(-1, -1)
+    @Volatile var eitPresent: EitEvent? = null
+        private set
+    @Volatile var eitFollowing: EitEvent? = null
+        private set
+    private val eitAsm = SectionAssembler { b, len -> eitSection(b, len) }
+
+    private fun eitSection(b: ByteArray, len: Int) {
+        val sec = Eit.parsePf(b, len, expectedSid) ?: return
+        if (sec.number > 1 || eitVersion[sec.number] == sec.version) return
+        eitVersion[sec.number] = sec.version
+        if (sec.number == 0) eitPresent = sec.event else eitFollowing = sec.event
+        try { onEit?.invoke(sessionId, expectedSid, eitPresent, eitFollowing) } catch (_: Exception) { }
+    }
     @Volatile var patSeenAt = 0L
         private set
     @Volatile var pmtSeen = false
@@ -93,7 +116,13 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     private var ivBurstSum = 0L
 
     // --- liczniki sesji (od startu strumienia)
+    @Volatile var sessionId = 0L
+        private set
     @Volatile var bytes = 0L
+        private set
+    @Volatile var firstFeedAt = 0L
+        private set
+    @Volatile var lastFeedAt = 0L
         private set
     @Volatile var packets = 0L
         private set
@@ -150,7 +179,13 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     /** Nowa sesja strumienia; [sid] = identyfikator serwisu z referencji (lub -1). */
     @Synchronized
     fun reset(sid: Int = -1) {
+        sessionId++
         expectedSid = sid
+        eitAsm.reset()
+        eitVersion.fill(-1)
+        eitPresent = null
+        eitFollowing = null
+        eitPackets = 0
         patSeenAt = 0
         pmtSeen = false
         pmtInjected = 0
@@ -178,7 +213,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         burstAvgMs = 0
         ivBurstN = 0
         ivBurstSum = 0
-        bytes = 0; packets = 0; ccErrors = 0; teiErrors = 0; scrambled = 0
+        bytes = 0; firstFeedAt = 0; lastFeedAt = 0; packets = 0; ccErrors = 0; teiErrors = 0; scrambled = 0
         syncLoss = 0; pcrJumps = 0; pmtChanges = 0; maxGapMs = 0; bitrateKbps = 0
         lastErrorAt = 0
         pidCc.fill(-1); pidCcErr.fill(0); lastPcrMs.fill(-1)
@@ -213,7 +248,8 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
 
     /** Czas trwania jednego odczytu z sieci (ms). */
     @Synchronized
-    fun readTime(ms: Long) {
+    fun readTime(ms: Long, expectedSession: Long? = null) {
+        if (expectedSession != null && expectedSession != sessionId) return
         if (ms > ivGap) ivGap = ms
         if (ms > maxGapMs) maxGapMs = ms
         if (ms >= 300) { ivBurstN++; ivBurstSum += ms }
@@ -225,8 +261,10 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     fun dropCarry() { carryLen = 0 }
 
     @Synchronized
-    fun feed(buf: ByteArray, off: Int, len: Int) {
-        if (len <= 0) return
+    fun feed(buf: ByteArray, off: Int, len: Int, expectedSession: Long? = null) {
+        if (len <= 0 || (expectedSession != null && expectedSession != sessionId)) return
+        lastFeedAt = SystemClock.elapsedRealtime()
+        if (firstFeedAt == 0L) firstFeedAt = lastFeedAt
         feedInner(buf, off, len)
         // kopia po czyszczeniu (pakiety zmieniane w miejscu); niepełny pakiet z końca dochodzi w całości
         tee?.let { t -> try { t(buf, off, len) } catch (_: Exception) {} }
@@ -348,6 +386,10 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
                 }
             }
             pidCc[pid] = cc
+            if (pid == Eit.PID) {
+                eitPackets++
+                if (eitEnabled && expectedSid >= 0 && payload < o + 188) eitAsm.packet(p, o, payload)
+            }
             if ((b1 and 0x40) != 0 && (pid in videoPids || pid in audioPids)) pes(p, payload, o + 188, pid, mutable)
             if (pid == pmtPid && pmtPid >= 0 && payload < o + 188) {
                 assemblePmt(p, o, payload, (b1 and 0x40) != 0)

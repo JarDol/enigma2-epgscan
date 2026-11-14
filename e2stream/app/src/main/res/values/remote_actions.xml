@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="action_none">— brak —</string>
+    <string name="action_default_ok">Domyślne działanie OK</string>
+    <string name="action_banner">Pokaż pasek kanału</string>
+    <string name="action_channel_list">Lista kanałów</string>
+    <string name="action_event_epg">EPG wydarzenia (opis bieżącej audycji)</string>
+    <string name="action_channel_epg">EPG kanału</string>
+    <string name="action_multi_epg">Multi-EPG bukietu</string>
+    <string name="action_search">Szukaj w EPG</string>
+    <string name="action_audio">Ścieżka dźwięku</string>
+    <string name="action_stats">Statystyki</string>
+    <string name="action_menu">Menu</string>
+    <string name="action_settings">Ustawienia</string>
+    <string name="action_recall">Poprzedni kanał</string>
+    <string name="action_channel_up">Kanał +</string>
+    <string name="action_channel_down">Kanał −</string>
+    <string name="action_timeshift">Timeshift: pauza / wznowienie (play)</string>
+    <string name="action_rewind">Timeshift: przewiń wstecz</string>
+    <string name="action_forward">Timeshift: przewiń do przodu</string>
+    <string name="action_live">Timeshift: na żywo (stop)</string>
+    <string name="key_ok">OK</string>
+    <string name="key_left">Lewo</string>
+    <string name="key_right">Prawo</string>
+    <string name="key_up">Góra</string>
+    <string name="key_down">Dół</string>
+</resources>

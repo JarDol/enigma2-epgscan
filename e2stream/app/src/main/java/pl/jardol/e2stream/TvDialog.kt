@@ -35,7 +35,9 @@ object TvDialog {
     const val GREY = 0xFFB0BEC5.toInt()
     const val WHITE = 0xFFFFFFFF.toInt()
 
-    class Btn(val label: String, val onClick: () -> Unit = {})
+    class Btn(val label: String, val closeOnClick: Boolean, val onClick: () -> Unit) {
+        constructor(label: String, onClick: () -> Unit = {}) : this(label, true, onClick)
+    }
 
     private class TimedDialog(
         a: Activity,
@@ -149,7 +151,10 @@ object TvDialog {
                 btn.text = b.label
                 btn.tag = "chip_$index"
                 btn.isFocusable = true
-                btn.setOnClickListener { dlg.dismiss(); b.onClick() }
+                btn.setOnClickListener {
+                    if (b.closeOnClick) dlg.dismiss()
+                    b.onClick()
+                }
                 val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 lp.marginStart = dp(ctx, 10)
                 bar.addView(btn, lp)
@@ -182,6 +187,11 @@ object TvDialog {
         dlg.window?.decorView?.findViewWithTag<TextView>("title")?.text = title
     }
 
+    fun setMessage(dlg: Dialog?, message: CharSequence) {
+        if (dlg?.isShowing != true) return
+        dlg.window?.decorView?.findViewWithTag<TextView>("dialog-message")?.text = message
+    }
+
     fun setButtonLabel(dlg: Dialog?, index: Int, label: String) {
         if (dlg?.isShowing != true) return
         dlg.window?.decorView?.findViewWithTag<Button>("chip_$index")?.text = label
@@ -189,7 +199,7 @@ object TvDialog {
 
     // ------------------------------------------------------------ listy
 
-    private class RowAdapter(val ctx: Context, val items: List<Item>) : BaseAdapter() {
+    private class RowAdapter(val ctx: Context, val items: List<Item>, val stacked: Boolean) : BaseAdapter() {
         override fun getCount() = items.size
         override fun getItem(position: Int): Any = items[position]
         override fun getItemId(position: Int) = position.toLong()
@@ -201,9 +211,21 @@ object TvDialog {
                 setPadding(dp(ctx, 14), dp(ctx, 6), dp(ctx, 16), dp(ctx, 6))
                 addView(TextView(ctx).apply { textSize = 20f; tag = "mark" },
                     LinearLayout.LayoutParams(dp(ctx, 36), ViewGroup.LayoutParams.WRAP_CONTENT))
-                addView(TextView(ctx).apply { textSize = 19f; setTextColor(WHITE); tag = "t" },
-                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(TextView(ctx).apply { textSize = 14f; setTextColor(GREY); tag = "s"; setPadding(dp(ctx, 12), 0, 0, 0) })
+                val title = TextView(ctx).apply { textSize = 19f; setTextColor(WHITE); tag = "t" }
+                val sub = TextView(ctx).apply {
+                    textSize = 14f; setTextColor(GREY); tag = "s"
+                    setPadding(if (stacked) 0 else dp(ctx, 12), if (stacked) dp(ctx, 2) else 0, 0, 0)
+                }
+                if (stacked) {
+                    addView(LinearLayout(ctx).apply {
+                        orientation = LinearLayout.VERTICAL
+                        addView(title, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                        addView(sub, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                    }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                } else {
+                    addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    addView(sub)
+                }
             }
             val it = items[position]
             row.minimumHeight = dp(ctx, if (it.header) 40 else 52)
@@ -223,9 +245,9 @@ object TvDialog {
         }
     }
 
-    private fun listView(ctx: Context, items: List<Item>, selected: Int): ListView {
+    private fun listView(ctx: Context, items: List<Item>, selected: Int, stacked: Boolean = false): ListView {
         val lv = ListView(ctx)
-        lv.adapter = RowAdapter(ctx, items)
+        lv.adapter = RowAdapter(ctx, items, stacked)
         lv.selector = ctx.getDrawable(R.drawable.list_selector)
         lv.divider = null
         lv.isVerticalScrollBarEnabled = true
@@ -265,11 +287,11 @@ object TvDialog {
     /** Lista: OK wybiera i zamyka okno. */
     fun list(
         a: Activity, title: String, items: List<Item>, selected: Int = -1,
-        hint: String = "OK wybierz  •  WSTECZ zamknij", widthFrac: Float = 0.55f,
+        hint: String = a.getString(R.string.dialog_select_hint), widthFrac: Float = 0.55f,
         onCancel: () -> Unit = {}, wrap: Boolean = false,
-        onLongPick: ((Int) -> Boolean)? = null, onPick: (Int) -> Unit,
+        onLongPick: ((Int) -> Boolean)? = null, stacked: Boolean = false, onPick: (Int) -> Unit,
     ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel) { ctx, dlg ->
-        listView(ctx, items, selected).apply {
+        listView(ctx, items, selected, stacked).apply {
             if (wrap) enableCarousel(this) { items.indexOfFirst { !it.header } to items.indexOfLast { !it.header } }
             setOnItemClickListener { _, _, w, _ ->
                 if (!items[w].header) { dlg.dismiss(); onPick(w) }
@@ -296,7 +318,7 @@ object TvDialog {
     fun multi(a: Activity, title: String, labels: List<String>, checked: BooleanArray, subs: List<String>? = null,
               onSave: (BooleanArray) -> Unit) {
         val items = labels.mapIndexed { i, l -> Item(l, subs?.getOrNull(i) ?: "", if (checked[i]) 1 else 2) }
-        panel(a, title, "OK zaznacz / odznacz  •  WSTECZ zapisz i wyjdź", widthFrac = 0.55f,
+        panel(a, title, a.getString(R.string.dialog_multi_hint), widthFrac = 0.55f,
             onBack = { onSave(BooleanArray(items.size) { items[it].mark == 1 }) }) { ctx, _ ->
             listView(ctx, items, 0).apply {
                 setOnItemClickListener { _, _, w, _ ->
@@ -311,7 +333,7 @@ object TvDialog {
 
     /** Długi tekst (README, opisy): przewijanie ▲▼, pasek położenia, WSTECZ zamyka. */
     fun text(a: Activity, title: String, text: CharSequence, sizeSp: Float = 17f) {
-        panel(a, title, "▲ ▼ przewijanie  •  WSTECZ zamknij", widthFrac = 0.75f) { ctx, _ ->
+        panel(a, title, a.getString(R.string.dialog_scroll_hint), widthFrac = 0.75f) { ctx, _ ->
             val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             val pos = ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
                 max = 1000; progressDrawable = ctx.getDrawable(R.drawable.progress_epg)
@@ -346,6 +368,7 @@ object TvDialog {
             this.text = text; textSize = sizeSp; setTextColor(color)
             setLineSpacing(dp(ctx, 4).toFloat(), 1f)
             setPadding(dp(ctx, 4), 0, dp(ctx, 4), 0)
+            tag = "dialog-message"
         })
         sv.setOnKeyListener { _, code, e ->
             if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
@@ -370,8 +393,8 @@ object TvDialog {
         a: Activity, title: String, message: CharSequence, chips: List<Btn>,
         cancelable: Boolean = true, onBack: (() -> Unit)? = null, timeoutSec: Int? = null,
         onTimeout: (() -> Unit)? = null,
-    ) {
-        panel(a, title, null, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack,
+    ): Dialog {
+        return panel(a, title, null, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack,
             focusChip = true, timeoutSec = timeoutSec ?: Prefs(a).confirmDialogSec, onTimeout = onTimeout) { ctx, _ ->
             scrollText(ctx, message, 18f)
         }
@@ -383,16 +406,16 @@ object TvDialog {
             onClose()
             return
         }
-        confirm(a, title, message, listOf(Btn("OK", onClose)),
+        confirm(a, title, message, listOf(Btn("OK", onClick = onClose)),
             onBack = onClose, timeoutSec = prefs.infoDialogSec, onTimeout = onClose)
     }
 
     /** Pole tekstowe u góry ekranu (nad klawiaturą ekranową) z przyciskami Zapisz / Anuluj. */
-    fun input(a: Activity, title: String, hint: String, et: android.widget.EditText, saveLabel: String = "Zapisz", onSave: () -> Unit) {
+    fun input(a: Activity, title: String, hint: String, et: android.widget.EditText, saveLabel: String = a.getString(R.string.dialog_save), onSave: () -> Unit) {
         var saved = false
         lateinit var dlg: Dialog
         fun save() { if (!saved) { saved = true; dlg.dismiss(); onSave() } }
-        dlg = panel(a, title, "OK — klawiatura  •  WSTECZ anuluj", listOf(Btn(saveLabel) { save() }, Btn("Anuluj")),
+        dlg = panel(a, title, a.getString(R.string.dialog_input_hint), listOf(Btn(saveLabel) { save() }, Btn(a.getString(R.string.dialog_cancel))),
             widthFrac = 0.6f, top = true) { ctx, _ ->
             val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             if (hint.isNotBlank()) col.addView(TextView(ctx).apply {

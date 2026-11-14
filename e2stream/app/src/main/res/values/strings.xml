@@ -1,4 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">E2Stream</string>
+    <string name="channel_list_help">◀ ▶ bukiet   •   OK oglądaj   •   długie OK opis audycji</string>
+    <string name="settings_help">▲▼ wybór  •  OK zmień  •  WSTECZ wyjście (zmiany zapisują się od razu)</string>
+    <string name="app_language">Język aplikacji</string>
+    <string name="language_system">Automatycznie (język systemu)</string>
+    <string name="language_polish">Polski</string>
+    <string name="language_english">Angielski</string>
+    <string name="section_decoder">Dekoder Enigma2</string>
+    <string name="section_decoder_desc">adres, porty, logowanie OpenWebif, wtyczka EPG Scan, FTP, synchronizacja</string>
+    <string name="section_playback">Odtwarzanie i obraz</string>
+    <string name="section_playback_desc">silnik (ExoPlayer / VLC), przeplot, bufory, watchdog, odświeżanie ekranu, dźwięk</string>
+    <string name="section_appearance">Wygląd</string>
+    <string name="section_appearance_desc">wielkość czcionek i piconów: lista kanałów, EPG, pasek kanału</string>
+    <string name="section_epg">EPG i picony kanałów</string>
+    <string name="section_epg_desc">pobieranie EPG, picony z dekodera</string>
+    <string name="section_general">Ogólne</string>
+    <string name="section_general_desc">bukiety, kanał startowy, pilot, PIN</string>
+    <string name="section_updates">Informacje i aktualizacje</string>
+    <string name="section_updates_desc">wersja i aktualizacja aplikacji, opis aplikacji i wtyczki EPG Scan</string>
+    <string name="section_logs">Logi i zrzuty</string>
+    <string name="section_logs_desc">diagnostyka: statystyki, log, zrzuty TS, miejsce zapisu</string>
+    <string name="menu_event_epg">EPG wydarzenia</string>
+    <string name="menu_channel_epg">EPG kanału</string>
+    <string name="menu_multi_epg">Multi EPG</string>
+    <string name="menu_epg_search">Szukaj w EPG</string>
+    <string name="menu_audio_track">Ścieżka dźwięku…</string>
+    <string name="menu_scheduled_switches">Przełączenia wg harmonogramu</string>
+    <string name="menu_receiver_timers">Harmonogramy dekodera</string>
 </resources>

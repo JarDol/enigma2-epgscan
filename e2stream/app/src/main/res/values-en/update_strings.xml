@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_check_failed">Could not check for updates</string>
+    <string name="update_updating">Updating to version %1$s…</string>
+    <string name="update_available">Version %1$s is available — Settings → Check for updates</string>
+    <string name="update_no_releases">No E2Stream releases found</string>
+    <string name="update_latest_installed">You have the latest version (%1$s)</string>
+    <string name="update_choose">Choose an E2Stream version</string>
+    <string name="update_latest">latest</string>
+    <string name="update_newer">newer</string>
+    <string name="update_older">older</string>
+    <string name="update_downloading">Downloading %1$d%%</string>
+    <string name="update_allow_install">Allow E2Stream to install apps and try again</string>
+    <string name="update_install_error">Installation error: %1$s</string>
+    <string name="update_download_error">Download error: %1$s</string>
+    <string name="update_downgrade_warning">\n\nAndroid may refuse to install an older version; this depends on the device system.</string>
+    <string name="update_title">E2Stream update</string>
+    <string name="update_confirm">Selected version %1$s (installed: %2$s). Download and install?%3$s</string>
+    <string name="update_install">Install</string>
+    <string name="update_not_now">Not now</string>
+    <string name="update_channel_stable">Stable</string>
+</resources>

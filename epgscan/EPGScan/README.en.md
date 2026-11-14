@@ -4,6 +4,8 @@ An Enigma2 plugin (OpenPLi 9.x, Python 3) that keeps the electronic programme gu
 date on its own. It combines three listing sources and one tool that looks after your channel list:
 
 - **satellite** – parallel scanning of transponders on free tuners (EIT),
+- **channel parameters** – separate PAT/PMT and audio/video/subtitle/teletext PID scan for each DVB channel in the
+  selected bouquets, with audio selection and optional E2Stream propagation,
 - **internet listings** – Polish TV listings downloaded directly on the receiver
   (teleman.pl, programtv.onet.pl, programtv.naziemna.info, pilot.wp.pl) plus XMLTV import,
 - **epgpl server** (optional) – a ready-made listings file prepared on a server in your home network,
@@ -17,8 +19,11 @@ Everything can run at night in standby on a schedule; in the morning you get a s
 The plugin was built with Polish channels on Hotbird 13.0E in mind, but the satellite scan, XMLTV import and
 SatWatch work with any orbital position and any bouquets.
 
-**Language of the user interface:** the on-screen texts are in Polish. This document gives the Polish menu
-names in *italics* followed by an English translation, so you can find each item on screen.
+**Interface language:** select Enigma2 language (default), Polish or English under **Settings →
+Updates and plugin information** and save with green. The Enigma2 setting uses Polish for a Polish
+receiver language and English otherwise. Logs, older reports, some technical details and external
+data may remain in their original language. This document includes Polish menu names.
+The on-screen plugin description is read from the installed version's bundled README in the selected language.
 Polish version of this description: [README.md](README.md).
 
 ---
@@ -31,6 +36,7 @@ Polish version of this description: [README.md](README.md).
 4. [Actions and profile](#4-actions-and-profile)
 5. [What happens during a run](#5-what-happens-during-a-run)
 6. [Satellite – transponder scan](#6-satellite--transponder-scan)
+   - [Channel parameters (PAT/PMT)](#channel-parameters-patpmt)
 7. [Internet listings](#7-internet-listings)
 8. [SatWatch – satellite changes and bouquets](#8-satwatch--satellite-changes-and-bouquets)
    - [8.4 Tuner setup – what to set in the system and what in the plugin](#84-tuner-setup--what-to-set-in-the-system-and-what-in-the-plugin)
@@ -50,6 +56,14 @@ Polish version of this description: [README.md](README.md).
 
 ```
 opkg install /tmp/enigma2-plugin-extensions-epgscan_X.Y.Z_all.ipk && init 4; sleep 2; init 3
+```
+
+**If Enigma keeps restarting:** copy the IPK to `/tmp` over the network and connect using SSH or Telnet.
+Stopping Enigma interrupts current recordings. Restart it only after installation succeeds:
+
+```
+init 4
+opkg install /tmp/enigma2-plugin-extensions-epgscan_X.Y.Z_all.ipk && init 3
 ```
 
 **ZIP archive**:
@@ -121,7 +135,10 @@ appears when they finish.
 ![Actions and profile](../../docs/img/02-akcje.png)
 
 ***Akcje*** (green) is the list of steps of a run. What is ticked here is what **OK** on the main screen and the
-schedule do (after saving it with yellow as default). Green/OK inside *Akcje* runs once without changing the profile.
+schedule do (after saving it with yellow as default). Green inside *Akcje* runs once without changing the profile.
+**OK** opens the selected module: SatWatch, satellite settings, receiver or server channel mapping, XMLTV sources,
+or channel parameters. For clearing EPG and fetching fresh data, OK opens a choice of modes. Left/right still change
+profile values. **Menu** opens the schedule and **Info/EPG** shows a scrollable description of the actions.
 
 | Item | Meaning |
 |---|---|
@@ -132,6 +149,7 @@ schedule do (after saving it with yellow as default). Green/OK inside *Akcje* ru
 | ***Serwer epgpl*** | *fallback* (the server's file when the receiver has none of its own) / *always* / *no* |
 | ***Pozostałe źródła XMLTV*** (other XMLTV sources) | XMLTV lists ticked in the settings |
 | ***Pobierz świeże dane*** (fetch fresh data) | *yes – in one place*: if the other side (server or receiver) already has today's full package, it is used instead of downloading; *yes – download again*: always download; *no*: use existing files (still downloads if a file is missing or older than 30 h) |
+| **Channel parameter scan** | PAT/PMT during EPG, then scan missing services |
 
 Below the list you see a description of the selected item and the full order of steps, e.g.
 `SatWatch (changes) -> satellite -> receiver -> server (fallback) -> others`.
@@ -174,7 +192,90 @@ the importer skips the conflicting entry and logs a warning rather than risk rep
 - **Hung tuner**: 3 failed tunings in a row on the same tuner (different transponders) = log entry with the state of
   all tuners and a note in the night summary; at night in standby Enigma2 is restarted and the run repeated (at most
   once per night), on a manual start you are asked about a restart.
-- Before a timer recording the plugin keeps tuners free and pauses new scans.
+- Two minutes before recording or channel-switch timers, both scans add one free tuner per upcoming
+  timer to the reserve and pause new independent tuning. Already-used transponders can still be
+  scanned without another tuner. The screen shows the effective reserve, including timers.
+  If timers cannot be read, independent tuning is paused and the error is logged.
+
+---
+
+### Channel parameters (PAT/PMT)
+
+This does not replace the EPG scan and does not clear or modify the EPG database. It scans
+each unique DVB service in the selected bouquets, grouped by transport stream. One tuned service provides PAT
+and PMTs for the group. During EPG, capture and PMT change monitoring run until its service is released, without
+affecting EPG duration; PMT filters are limited and rotated. A standalone group has
+a 20-second limit, after which or on failure only missing channels are checked individually.
+EPG Scan's parallel limit
+and free-tuner reserve are shared; a standalone scan keeps at least two tuners free (at least one on a
+two-tuner receiver; a single-tuner receiver can use a zero reserve). With six free tuners and a reserve of two,
+up to four independent groups can run at once; with eight free tuners, up to six. New tunes start one at a time,
+at least two seconds apart; groups that have already started can run in parallel.
+Transponder grouping can be disabled, at the cost of more retunes. If watching, streaming or a recording needs a tuner, the scan
+releases a group and resumes it later. IPTV and unknown service types are reported as unsupported; tuning and
+table-read errors are included in the report.
+
+Enable the scan as a profile step: on the main screen choose **Actions** and select
+**Channel parameters (PAT/PMT)**. Green **Run** starts the selected profile actions; yellow
+**Save as default** stores the profile. During EPG scanning, PAT/PMT is read from the already tuned service,
+without another tune or extending the EPG job. After the other steps, only services not captured in this run
+are scanned separately, including skipped and failed EPG transponders; old results do not count as a successful
+capture. Progress and the PAT/PMT/audio summary appear on the main screen. You can also start a standalone scan from **Menu** in the
+results screen.
+Stopping preserves successfully captured results without marking the incomplete scan as completed.
+
+Review results from **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. **OK** tunes to a channel and opens
+its available audio tracks; if scan data is missing, the plugin attempts a PAT/PMT read for that channel.
+**OK** on a failed channel retries its read while preserving other errors from the previous scan. If it fails
+again, the plugin reports the reason and lets you inspect available audio from Enigma2 or an earlier result,
+but this does not mean PMT was read. **Green** refreshes, **Yellow** filters, **Blue** selects bouquets,
+**Menu** offers sorting and channel scanning, and **Info/EPG** opens data synchronization.
+
+In the audio-track screen, **Red** returns, **Green** selects the track active according to Enigma2,
+**Yellow/Blue** choose the first/second user language preference. **Up/Down** auditions the highlighted
+track without closing the screen, **OK** confirms it, and **Red** returns and restores the track that was
+active before preview. **Info/EPG** shows full PAT/PMT and stream data. Audio preferences can come from
+Enigma2's automatic-audio settings or a manually ordered list (for example `pol,eng`). If PAT/PMT scanning
+does not identify audio tracks, the picker uses the audio list supplied by the current Enigma2 service.
+The first track in the highest-priority available language is accepted as the default, or the first track if
+no language matches. An existing manual or legacy confirmed PID without a source is retained if still present;
+previous automatic defaults are recalculated.
+Track selection is saved immediately.
+
+The **Channel parameters (PAT/PMT)** settings group selects language preferences, bouquets, parallel limit,
+tuner reserve, transponder grouping and an interval of 1/2/4/7 days. An optional single extra attempt for failed
+channels runs after the entire scan, including scheduled scans; without it there are no post-scan retries.
+Missing transport-stream data is first checked individually as a separate fallback.
+An automatic capture runs during the main scheduled EPG run when the selected interval has elapsed, with missing
+services scanned afterwards; it follows the **Schedule** conditions (standby,
+recordings and wake-up). EPG top-ups do not trigger it.
+
+Regardless of synchronization, a successful read refreshes that channel in the scanner's local results file;
+other channels and still-available manual audio choices are retained. The overwrite and add-missing modes below
+apply separately to files synchronized with E2Stream, not to the scanner's local results.
+
+Post-scan synchronization, including scheduled scans, is configurable and disabled by default for both targets.
+Common defaults can be overwritten or missing entries added; all `device-*.json` profiles can be overwritten,
+filled, or repaired. Repair also fills missing profile audio entries from `common.json`, including channels not read
+in the current run. Only successful scan results from the current run are synchronized. Fill never replaces existing
+audio or PMT values, even invalid ones; repair keeps a client PID present in the current PMT and does not guess replacements
+for unrelated references. Failures are reported and existing files are backed up before changes.
+
+**Info/EPG** in the results screen provides five confirmed operations:
+
+- replace default audio/PMT values in `common.json` or add missing values;
+- replace audio values on selected E2Stream receivers, add missing values, or repair missing PIDs.
+
+Valid PMT data can be sent without a selected audio track; audio is sent only for a confirmed selection.
+PMT data is sent only when its SID is not ambiguous across scanned services. PMTs are synchronized to the shared
+`common.json`, not to client profiles. Obsolete profile PMTs are removed at plugin startup and before updating a
+profile, with a backup before each change. Shared PMTs and the player's local PMT cache are not removed.
+The profile backups can still contain the old PMTs for recovery.
+Results are stored in
+`/etc/enigma2/epgscan/channelparams.json`.
+
+When the receiver enters standby, open EPG Scan windows close without saving pending settings. An active scan
+continues in the background, and the preview window does not restore the previous channel.
 
 ---
 
@@ -208,7 +309,7 @@ Alternatively the map can come from the epgpl server (*Mapa kanałów dla dekode
 Own import (no EPG Import plugin needed):
 
 - sources: *EPG PL (dekoder)*, the epgpl server, lists from the `epgimport-sources` package (e.g. Rytec), your own
-  lists by URL or from `/etc/enigma2/epgscan_sources/wlasne`; without the package – a built-in list of mirrors,
+  lists by URL or from `/etc/enigma2/epgscan/sources/wlasne`; without the package – a built-in list of mirrors,
 - adjustable source order (e.g. receiver → server → others),
 - *Co uzupełniać* (what to fill): only channels without EPG, or also gaps and later days of the others,
 - channels from the selected bouquets (all / selected / those being scanned) and optionally copies of channels
@@ -266,7 +367,7 @@ busy – watching, fast channel change (FCC) or streaming. A second cable to inp
 After the scan, services no longer found on a scanned transponder can be removed from `lamedb` (with protection
 against a "suspicious" transponder where less than half of the channels were found). With removal off, the report
 still lists them, and bouquet channels pointing to them go to replacement or decision like lost channels
-(list: `/etc/enigma2/satwatch/nieaktualne.json`).
+(list: `/etc/enigma2/epgscan/satwatch-nieaktualne.json`).
 
 ### 8.2 Bouquet repair
 
@@ -364,7 +465,10 @@ streaming to clients.**
   transponders (default, including existing installations) or only those with soon-ending EPG. The latter
   considers all EPG, including XMLTV, and does not detect internal gaps. It can run always or only in standby,
   optionally at a fixed time. A new E2Stream pack is built after the scan if the client server and packs are enabled.
-- **SatWatch: full scan once a week** on a chosen day (on other days – checking for changes only).
+- **Channel parameters**: after the main scheduled EPG run, no more often than every 1/2/4/7 days; it follows the
+  main schedule's run conditions and is not triggered by top-ups.
+- **SatWatch: full scan once a week** is configured in *Ustawienia → SatWatch – transpondery*; the EPG schedule
+  controls when SatWatch may run.
 - **Restart after the night run** (*never* / *when needed* / *always*). "When needed" means: tuners do not tune, low
   free memory, Enigma2 uses much more memory than after start-up, SatWatch updated `satellites.xml`, optionally
   preventively every N days. Restart only in standby, with no recording now or within 15 min, at most once per 20 h.
@@ -375,10 +479,13 @@ streaming to clients.**
 
 ## 10. EPG backups, log, disk cleanup
 
+Configure backups and the log in *Ustawienia → Updates, backups, log, E2Stream*; disk cleanup is in
+*Ustawienia → Notifications, restart, cleanup*.
 - **EPG backup after a scan** to the backup directory (default `/media/hdd/epgscan/`), keeping the last N.
 - **Restore at start-up when the EPG is empty** – automatically or after asking (two measurements a minute apart).
 - **Yellow – *Kopie EPG*** on the main screen: restore a chosen backup or back up now.
-- **Log** `epgscan.log` in the backup directory (or in `/tmp`); a few previous runs in `epgscan.log.1`, `.2`…
+- **Log** `epgscan.log` in the backup directory (or in `/tmp`); previous runs in `epgscan.log.1`, `.2`… – deleted
+  after the *Logi i raporty* period (shared with SatWatch).
 - **Disk cleanup** (off by default): every N minutes deletes, from the selected directories, timeshift files older than
   N hours (files in use are skipped) and keeps the N newest Enigma2 crash logs (counted across all directories).
   Directories are chosen from a list: storage devices, the timeshift and crash-log directories from the Enigma2
@@ -396,7 +503,9 @@ item ticks/unticks it, green saves, red cancels.
 
 1. **SatWatch** – list of SatWatch actions: check, scan, channels awaiting decision (8.3), snapshot, backups, tuner
    setup (settings are in *Ustawienia*, SatWatch reports and log in *Raporty*).
-2. ***Dopasowanie kanałów: dekoder*** (channel matching: receiver) – channels from your bouquets and their assigned
+2. **Channel parameters (PAT/PMT)** – scans DVB channels in the selected bouquets. Menu starts or stops a scan,
+   OK selects an audio track, green previews, yellow filters, and blue synchronizes with E2Stream.
+3. ***Dopasowanie kanałów: dekoder*** (channel matching: receiver) – channels from your bouquets and their assigned
    stations. Keys: **OK** – choose the source (station selection window), **Menu** – sorting (bouquet order /
    alphabetical) and listings download (on the server, ready file, on the receiver), **Info/EPG** – differences with
    the other map and synchronisation (below), red – close, green – refresh, yellow – filter (all / unmatched / no
@@ -447,7 +556,8 @@ item ticks/unticks it, green saves, red cancels.
 
 **Info/EPG** on the main screen:
 
-- **SatWatch** – latest report, history (last 30), log,
+- **SatWatch** – latest report, history (recent days per the *Logi i raporty* setting), log,
+- **Channel parameter scan – latest report** – PAT/PMT results, errors, skipped channels and full synchronization details and conflicts,
 - **EPG statistics** – number of events, channels with EPG, coverage in days, duplicates,
 - **Channels – EPG coverage** (shortest first), **Duplicates** – overlapping events,
 - **Download on the receiver** – last result, file, stations per website, errors,
@@ -456,12 +566,22 @@ item ticks/unticks it, green saves, red cancels.
 - **Tuner setup** – advice for the detected tuner layout,
 - **Plugin description (README)** and **epgpl server description (README)** on the receiver screen.
 
+The PAT/PMT report and EPG statistics include tuner usage for the latest scan, including a stopped scan:
+free and busy tuners, scanned services, reserve, timers, queue, start attempts and the maximum number of
+independent groups. Waiting conditions are observations rather than proven causes, and their durations may
+overlap. Tuner usage is refreshed approximately every 5 s during EPG and 250 ms during standalone PAT/PMT.
+PAT/PMT also uses services already tuned for EPG: see EPG statistics for their usage; the PAT/PMT report
+shows the number of borrowed tunes and its separate scanning phase. Long change histories are truncated,
+but summaries cover the entire scan. Reports persist across restarts and are replaced by the next scan of
+the same type.
+
 ---
 
 ## 13. All settings
 
-**Blue → *Ustawienia***, five groups, starting with SatWatch. Defaults in brackets. Every option has a description
-below the settings list.
+**Blue → *Ustawienia***. Main groups: *Satelita – EPG*, *Channel parameters*, *Program z internetu*, *Harmonogram*,
+*Notifications, restart, cleanup*, *Backups, log, E2Stream* and *Updates and plugin information*. SatWatch has its own settings. Defaults
+are in brackets. Every option has a description below the settings list.
 
 ### *SatWatch – transpondery*
 | Setting | Description |
@@ -481,7 +601,6 @@ below the settings list.
 | Channels from bouquets (OK – list) | TV bouquets, below them radio bouquets marked *(radio)*; ticked ones are watched, new bouquets at once (all except Last Scanned) |
 | Snapshot and bouquet report on each check | (yes) |
 | Reload transponders after update | without a GUI restart (no) |
-| Log and report history directory | internal memory / disk / USB (internal memory) |
 | On-screen notification | never / only on changes / always (only on changes) |
 | Number of satellites.xml backups | (5) |
 | Verify SSL certificate | (yes) |
@@ -499,6 +618,18 @@ below the settings list.
 | Min. / max. time on a transponder | (30 s / 180 s) |
 | End after no new events | (60 s) |
 | Skip transponders without EPG / recheck every | (no / 7 days) |
+| Daytime satellite update | (no); all TPs / short EPG; interval, standby and fixed-time options |
+
+### Channel parameters (PAT/PMT)
+| Setting | Description |
+|---|---|
+| Audio language preferences | Enigma2 automatic-audio settings / custom order (Enigma2) |
+| Channels from bouquets | same selected bouquets as the satellite scan |
+| Max parallel scans / free-tuner reserve | shared with *Satelita – EPG* |
+| Group channels by transponder | recommended; read group PAT/PMTs from one tune, then missing channels individually |
+| Retry failed channels once after scan | one extra attempt after the entire scan, one channel at a time, gap at least 2 s (yes) |
+| Gap between tunings (Unicable) | 0.5 / 1 / 1.5 / 2 / 3 s – shorter = faster scan; go back to 2 s on tuning errors (1 s) |
+| Scan channels every | 1 / 2 / 4 / 7 days; scan follows the main EPG schedule |
 
 ### *Program z internetu* (internet listings)
 
@@ -523,7 +654,7 @@ below the settings list.
 | Log download errors | (yes) |
 | Yellow: other XMLTV sources | tick lists, add your own addresses (blue) |
 
-### *Harmonogram* (schedule and top-up)
+### *Harmonogram*
 | Setting | Description |
 |---|---|
 | Schedule on / mode | switch (yes); mode: off / at a time on chosen days / every N hours (off) |
@@ -531,16 +662,33 @@ below the settings list.
 | When to run | only in standby / always (only in standby) |
 | Wait while recording | (no) |
 | Wake from deep standby / return afterwards | (no / yes) |
-| SatWatch: full scan once a week, day | (yes, Sunday) |
-| Daytime satellite update | (no); all transponders (default, including existing installations) / short EPG only; every (3 h), threshold for short EPG (6 h), when (always), optionally at a fixed time (no, 14:00) |
+| Schedule | controls the main EPG run and the channel-parameter scan that follows it |
 
-### *Kopie EPG* (backups, log, notifications, restart, disk cleanup)
+### Backups, log and E2Stream; updates
+| Setting | Description |
+|---|---|
+| EPG backup after scan, directory, number of backups | (yes, `/media/hdd/epgscan/`, 3) |
+| Restore EPG at start-up when empty | off / ask / automatically (automatically) |
+| Write log | in the backup directory / in `/tmp` (in the backup directory); also applies to the SatWatch log and reports |
+| Logs and reports: delete older than | 7 / 14 / 30 / 90 days (30) – shared by EPG Scan and SatWatch |
+| Automatic update | (no); checks daily and installs/restarts only in safe standby |
+| Automatic update channel | stable-only (default) or beta and stable; also filters the manual *Update now* list |
+| Update now | OK – lists releases with a ZIP asset from the selected channel (including older ones); installation requires confirmation |
+| Plugin information | description bundled with the installed version, available offline |
+| Server for E2Stream | (yes); receiver API, port (8770), optional token |
+| Build client data now | OK – immediately build the EPG/icons/reference package |
+
+When the E2Stream server is enabled, EPG Scan advertises `_epgscan._tcp` using Avahi, including the API port and
+available OpenWebif and streaming ports. `avahi-daemon` must be installed and running on the receiver; the plugin
+does not install it automatically and reports its status in the server summary and log. Cross-VLAN discovery
+requires an mDNS reflector and firewall access to the relevant TCP ports. Without Avahi, E2Stream can search an
+additional subnet or use a manually entered address. After installing and starting Avahi, restart Enigma2 to refresh
+the service status.
+
+### Notifications, restart and cleanup
 | Setting | Description |
 |---|---|
 | Notification after background work | (yes) |
-| EPG backup after scan, directory, number of backups | (yes, `/media/hdd/epgscan/`, 3) |
-| Restore EPG at start-up when empty | off / ask / automatically (automatically) |
-| Write log | in the backup directory / in `/tmp` (in the backup directory) |
 | Restart after the night run | never / when needed / always (when needed) |
 | Preventively every [days], free memory threshold | (no, 100 MB) |
 | Disk cleanup | (no); directories (OK – list: storage devices, timeshift and crash-log directories from Enigma2, your own – yellow add, blue remove; `/media/hdd`), timeshift older than (6 h), keep crash logs – in total (10), every N minutes (15) |
@@ -553,16 +701,23 @@ below the settings list.
 |---|---|
 | `/etc/enigma2/settings` | settings `config.plugins.epgscan.*` and `config.plugins.satwatch.*` |
 | `/etc/enigma2/epgscan/wskazania.txt`, `aliases.txt` | manual station choices, your own mappings (same names as on the server) |
-| `/etc/enigma2/epgscan_sources/` | copies of XMLTV source lists, your own lists, the "EPG PL (dekoder)" source |
-| `/etc/enigma2/epgscan_tps.json`, `epgscan_xmltv.json`, `epgscan_wakeup` | transponder state, sources, wake-up |
-| `/etc/enigma2/satwatch/` | SatWatch state, bouquet snapshot, backups of bouquets and `satellites.xml` |
+| `/etc/enigma2/epgscan/channelparams.json` | PAT/PMT scan results and confirmed audio selections |
+| `/etc/enigma2/epgscan/tuners-epg.json`, `tuners-params.json` | latest tuner usage reports |
+| `/etc/enigma2/epgscan/sources/` | copies of XMLTV source lists, your own lists (`wlasne/`), the "EPG PL (dekoder)" source |
+| `/etc/enigma2/epgscan/tps.json`, `xmltv.json`, `wakeup` | transponder state, sources, wake-up |
+| `/etc/enigma2/epgscan/satwatch-*` | SatWatch state (`satwatch-state.json`, `satwatch-snapshot.json`, …), bouquet backups (`satwatch-bouquet_backup/`) and `satellites.xml` backups (`satwatch-backup/`); log and reports when no disk |
 | `/etc/enigma2/satellites.xml` | only when SatWatch has updated transponders |
 | `/media/hdd/epgscan/` | EPG backups, log, `lokalne/` (downloaded listings, channel map, reports) |
-| `/media/hdd/satwatch/` | SatWatch log and report history (when this directory is chosen) |
+| `/media/hdd/epgscan/satwatch.log`, `raporty/satwatch-*.txt` | SatWatch log and reports next to the EPG Scan log |
 
 The plugin does **not change**: bouquets (except repairs by SatWatch, always with a backup), tuner settings, the
 system file `/etc/tuxbox/satellites.xml`, cron. It changes the EIT setting in Menu → EPG only according to the
 options in the *Satelita* group.
+
+Since 2.19 all plugin files live in `/etc/enigma2/epgscan/` and in the backup directory (default
+`/media/hdd/epgscan/`). Files from the old locations (`/etc/enigma2/epgscan_*`, `/etc/enigma2/satwatch/`, the previously
+chosen SatWatch log directory) are moved once on the first start – the log lists what was moved. E2Stream logs sent
+from the app go to the directory set in the app (default `/media/hdd/e2stream`).
 
 ---
 
@@ -583,11 +738,12 @@ watch: [chapter 8.4](#84-tuner-setup--what-to-set-in-the-system-and-what-in-the-
 
 **A channel disappeared from a bouquet after a change on the satellite.** Menu → *Kanały* → *SatWatch* → *Kanały do decyzji*.
 
-**Where are the logs?** Info/EPG → *Log EPG Scan* and *SatWatch – log*; files in `/media/hdd/epgscan/` and
-`/media/hdd/satwatch/`.
+**Where are the logs?** Info/EPG → *Log EPG Scan* and *SatWatch – log*; `epgscan.log` and `satwatch.log` in
+`/media/hdd/epgscan/`, SatWatch reports in `/media/hdd/epgscan/raporty/`.
 
-**Is the interface available in English?** Not yet – the on-screen texts are Polish. This document maps the menu
-items to English.
+**Is the interface available in English?** Choose English under **Settings → Updates and plugin
+information**. Logs, older reports, some technical details and external data may remain in their
+original language.
 
 ## Support
 

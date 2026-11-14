@@ -17,6 +17,11 @@ from __future__ import print_function
 import difflib
 import hashlib
 import json
+try:
+    from ..i18n import _
+except (ImportError, ValueError):
+    _ = lambda message: message
+
 import os
 import re
 import shutil
@@ -30,8 +35,17 @@ VERSION = "0.4.2"
 
 DEFAULT_URL = "https://raw.githubusercontent.com/OpenPLi/tuxbox-xml/master/xml/satellites.xml"
 E2DIR = "/etc/enigma2"
-DATA_DIR = "/etc/enigma2/satwatch"
-LOG_PREF = ""   # wybrany katalog logu i historii raportow (np. /media/hdd/satwatch); "" = DATA_DIR
+DATA_DIR = "/etc/enigma2/epgscan"   # pliki SatWatch z przedrostkiem satwatch- (do 2.18: /etc/enigma2/satwatch)
+PREFIX = "satwatch-"
+LOG_PREF = ""   # katalog logu i raportow: katalog kopii EPG Scan (np. /media/hdd/epgscan); "" = DATA_DIR
+REPORTS = "raporty"                 # podkatalog raportow (wspolny z EPG Scan), pliki satwatch-RRRRMMDD-GGMMSS.txt
+KEEP_DAYS = 30                      # logi i raporty starsze sa usuwane (ustawienie EPG Scan)
+LAST_REPORT = PREFIX + "last_report.txt"
+
+
+def data_file(name):
+    """Plik stanu SatWatch w katalogu EPG Scan: satwatch-<nazwa>."""
+    return os.path.join(DATA_DIR, PREFIX + name)
 TARGET = "/etc/enigma2/satellites.xml"
 DEFAULT_IGNORE = "Last Scanned"
 SYSTEM = "/etc/tuxbox/satellites.xml"
@@ -162,7 +176,7 @@ def parse_sat_xml(data_or_path):
     else:
         root = ET.parse(data_or_path).getroot()
     if root.tag != "satellites":
-        raise ValueError("to nie jest satellites.xml (root <%s>)" % root.tag)
+        raise ValueError(_("to nie jest satellites.xml (root <%s>)") % root.tag)
     sats = {}
     for sat in root.findall("sat"):
         try:
@@ -170,7 +184,7 @@ def parse_sat_xml(data_or_path):
         except (TypeError, ValueError):
             pass
     if not sats:
-        raise ValueError("brak elementow <sat> w pliku")
+        raise ValueError(_("brak elementow <sat> w pliku"))
     return root, sats
 
 
@@ -288,7 +302,7 @@ def build_output_xml(local_root, remote_root, remote_sats, positions, mode, sour
 
 
 def backup_and_write(content, backups=5):
-    bdir = os.path.join(DATA_DIR, "backup")
+    bdir = data_file("backup")
     ensure_dir(bdir)
     src = local_xml_path()
     if os.path.exists(src):
@@ -304,14 +318,14 @@ def backup_and_write(content, backups=5):
 
 
 def list_backups():
-    bdir = os.path.join(DATA_DIR, "backup")
+    bdir = data_file("backup")
     if not os.path.isdir(bdir):
         return []
     return sorted((f for f in os.listdir(bdir) if f.startswith("satellites.xml.")), reverse=True)
 
 
 def restore_backup(name):
-    src = os.path.join(DATA_DIR, "backup", name)
+    src = os.path.join(data_file("backup"), name)
     with open(src, "rb") as f:
         atomic_write(TARGET, f.read())
 
@@ -325,7 +339,7 @@ def download(url, state, verify=True, timeout=60):
     Zwraca (bytes, changed). Jesli serwer odpowie 304, zwraca kopie z cache.
     state: dict (etag, url) - aktualizowany na miejscu.
     """
-    cache = os.path.join(DATA_DIR, "remote_satellites.xml")
+    cache = data_file("remote_satellites.xml")
     headers = {"User-Agent": "SatWatch/%s (Enigma2)" % VERSION}
     if state.get("url") == url and state.get("etag") and os.path.exists(cache):
         headers["If-None-Match"] = state["etag"]
@@ -586,7 +600,7 @@ def str_key(s):
 
 
 def stale_kept_path():
-    return os.path.join(DATA_DIR, "nieaktualne.json")
+    return data_file("nieaktualne.json")
 
 
 def stale_kept():
@@ -630,7 +644,7 @@ def take_snapshot(e2dir=None):
 
 
 def snapshot_path():
-    return os.path.join(DATA_DIR, "snapshot.json")
+    return data_file("snapshot.json")
 
 
 def save_snapshot(snap):
@@ -878,6 +892,62 @@ _TIE = (("in_bq", "juz w Twoich bukietach"), ("new", "NOWY"), ("same_ts", "ten s
         ("same_sid", "ten sam SID"))
 
 
+def display_reason(reason):
+    """Translate a decision reason without changing stored decision data."""
+    if not reason:
+        return reason
+    base, separator, tie = reason.partition(", rozstrzyga: ")
+    match = re.match(r"^(\d+) kandydatow: (.*)$", base)
+    if match:
+        base = _("%d kandydatow: %s") % (int(match.group(1)), display_reason(match.group(2)))
+    else:
+        patterns = (
+            (r"^nazwa i SID nie pasuja do niczego - (\d+) kanalow z tego TP / nadawcy do wyboru$",
+             _("nazwa i SID nie pasuja do niczego - %d kanalow z tego TP / nadawcy do wyboru")),
+            (r"^jedyny kandydat za malo podobny \((\d+)%\)$",
+             _("jedyny kandydat za malo podobny (%d%%)")),
+            (r"^(\d+) podobnych kandydatow$", _("%d podobnych kandydatow")),
+        )
+        for pattern, message in patterns:
+            match = re.match(pattern, base)
+            if match:
+                base = message % int(match.group(1))
+                break
+        else:
+            base = _(base)
+    if separator:
+        base += _(", rozstrzyga: ") + ", ".join(_(part) for part in tie.split(", "))
+    return base
+
+
+def display_scan_kind(kind):
+    if not kind:
+        return kind
+    suffix = " (wznowienie)"
+    resumed = kind.endswith(suffix)
+    base = kind[:-len(suffix)] if resumed else kind
+    return _(base) + (_(suffix) if resumed else "")
+
+
+def display_scan_status(status):
+    """Format scan-result statuses for display; their original values drive retries."""
+    if not status:
+        return status
+    patterns = (
+        (r"^brak tunera skonfigurowanego na (.*)$", _("brak tunera skonfigurowanego na %s"), str),
+        (r"^przerwano - brak wolnego tunera przez (\d+) min$", _("przerwano - brak wolnego tunera przez %d min"), int),
+        (r"^przerwano - tunery zajete \(FBC\) przez (\d+) min$", _("przerwano - tunery zajete (FBC) przez %d min"), int),
+        (r"^blad skanu (.*)$", _("blad skanu %s"), str),
+        (r"^limit czasu (\d+) s$", _("limit czasu %d s"), int),
+        (r"^tuner potrzebny uzytkownikowi \((\d+)x\)$", _("tuner potrzebny uzytkownikowi (%dx)"), int),
+    )
+    for pattern, message, convert in patterns:
+        match = re.match(pattern, str(status))
+        if match:
+            return message % convert(match.group(1))
+    return _(status)
+
+
 def _known_first(pool):
     """Gdy sa kandydaci od dostawcow z Twoich bukietow i od innych (np. zagraniczne
     pakiety) - zostaja tylko ci pierwsi."""
@@ -1026,7 +1096,7 @@ def apply_bouquet_replacements(repl, ignore=None, e2dir=None, keep=10):
         if changed:
             to_write.append((path, fname, "\n".join(lines)))
     if to_write:
-        bdir = os.path.join(DATA_DIR, "bouquet_backup")
+        bdir = data_file("bouquet_backup")
         tdir = os.path.join(bdir, time.strftime("%Y%m%d-%H%M%S"))
         ensure_dir(tdir)
         for path, fname, content in to_write:
@@ -1085,7 +1155,7 @@ def remove_from_bouquets(key, ignore=None, e2dir=None, keep=10):
         if changed:
             to_write.append((path, fname, "\n".join(out)))
     if to_write:
-        bdir = os.path.join(DATA_DIR, "bouquet_backup")
+        bdir = data_file("bouquet_backup")
         tdir = os.path.join(bdir, time.strftime("%Y%m%d-%H%M%S"))
         ensure_dir(tdir)
         for path, fname, content in to_write:
@@ -1106,25 +1176,25 @@ def resolve_decision(ks, action, cand=None, ignore_text=None):
     if action == "replace" and cand:
         ch = apply_bouquet_replacements({str_key(ks): (str_key(cand["key"]), cand["type"], cand["srcid"])}, ign)
         changed = bool(ch)
-        msg = "Podmieniono na %s (%s) w %d miejscach" % (cand["name"], cand["ref"], len(ch))
+        msg = _("Podmieniono na %s (%s) w %d miejscach") % (cand["name"], cand["ref"], len(ch))
     elif action == "remove":
         n = remove_from_bouquets(str_key(ks), ign)
         changed = bool(n)
-        msg = "Usunieto z bukietow (%d wpisow)" % n
+        msg = _("Usunieto z bukietow (%d wpisow)") % n
     else:
-        msg = "Zostawiono bez zmian"
+        msg = _("Zostawiono bez zmian")
     snap = load_snapshot() or {}
     ghosts = dict(snap.get("ghosts", {}))
     ghosts.pop(ks, None)
     new = take_snapshot()
     new["ghosts"] = ghosts
     save_snapshot(new)
-    append_report(["Decyzja (recznie): %s -> %s" % (ks, msg)])
+    append_report([_("Decyzja (recznie): %s -> %s") % (ks, msg)])
     return msg, changed
 
 
 def list_bouquet_backups():
-    bdir = os.path.join(DATA_DIR, "bouquet_backup")
+    bdir = data_file("bouquet_backup")
     if not os.path.isdir(bdir):
         return []
     return sorted((d for d in os.listdir(bdir) if os.path.isdir(os.path.join(bdir, d))), reverse=True)
@@ -1133,7 +1203,7 @@ def list_bouquet_backups():
 def restore_bouquet_backup(name, e2dir=None):
     """Przywraca pliki bukietow z kopii (sprzed podmiany). Zwraca liczbe plikow."""
     e2dir = e2dir or E2DIR
-    src = os.path.join(DATA_DIR, "bouquet_backup", name)
+    src = os.path.join(data_file("bouquet_backup"), name)
     n = 0
     for f in os.listdir(src):
         with open(os.path.join(src, f), "rb") as fh:
@@ -1154,8 +1224,8 @@ def process_bouquets(ignore_text=None, autoreplace=True, e2dir=None):
     new = take_snapshot(e2dir)
     if not old:
         save_snapshot(new)
-        return {"lines": ["Bukiety: pierwszy zrzut - porownanie przy nastepnym sprawdzeniu.",
-                          "Zapisano zrzut: %d serwisow w lamedb, %d wpisow w bukietach."
+        return {"lines": [_("Bukiety: pierwszy zrzut - porownanie przy nastepnym sprawdzeniu."),
+                          _("Zapisano zrzut: %d serwisow w lamedb, %d wpisow w bukietach.")
                           % (len(new["services"]), len(new["bouquets"]))],
                 "replaced": 0, "unresolved": 0, "unresolved_new": 0, "changed": False}
     res = compare_snapshots(old, new, ign)
@@ -1180,7 +1250,7 @@ def process_bouquets(ignore_text=None, autoreplace=True, e2dir=None):
     save_snapshot(new)
     lines = format_bouquet_report(res, old.get("time"))
     lines.append("")
-    lines.append("Zapisano zrzut: %d serwisow w lamedb, %d wpisow w bukietach."
+    lines.append(_("Zapisano zrzut: %d serwisow w lamedb, %d wpisow w bukietach.")
                  % (len(new["services"]), len(new["bouquets"])))
     return {"lines": lines, "replaced": len([e for e in res["lost"] if e.get("replaced")]),
             "unresolved": len(ghosts),
@@ -1306,31 +1376,31 @@ def format_scan_report(kind, results, stale, removed, suspicious, kept=False):
     """kind: 'zmienione TP' / 'pelny'; results: lista dict TP z polami ok, status, found, tuner."""
     L = []
     okn = len([r for r in results if r.get("ok")])
-    L.append("Skan (%s): %d TP, poprawnie %d, nieudane %d" % (kind, len(results), okn, len(results) - okn))
+    L.append(_("Skan (%s): %d TP, poprawnie %d, nieudane %d") % (display_scan_kind(kind), len(results), okn, len(results) - okn))
     stopped = [r for r in results if str(r.get("status", "")).startswith("przerwano")]
     for r in results:
         if not r.get("ok") and r not in stopped:
-            L.append("  ! %s %s - %s" % (pos_str(r["position"]), tp_str(r), r.get("status", "?")))
+            L.append("  ! %s %s - %s" % (pos_str(r["position"]), tp_str(r), display_scan_status(r.get("status", "?"))))
     if stopped:
-        L.append("  ! %d TP niezeskanowanych: %s" % (len(stopped), stopped[0].get("status")))
+        L.append(_("  ! %d TP niezeskanowanych: %s") % (len(stopped), display_scan_status(stopped[0].get("status", "?"))))
     if removed:
-        L.append("Usunieto nieaktualne serwisy: %d" % len(removed))
+        L.append(_("Usunieto nieaktualne serwisy: %d") % len(removed))
         for s in removed[:40]:
             L.append("  - %s  (%s)" % (s["name"] or key_str(s["key"]), s["tp"]))
         if len(removed) > 40:
-            L.append("  ... i %d wiecej" % (len(removed) - 40))
+            L.append(_("  ... i %d wiecej") % (len(removed) - 40))
     notrem = [s for s in stale if s not in removed]
     if notrem and kept:
-        L.append("Nieaktualne - skan ich nie znalazl, nie usuniete (opcja wylaczona): %d" % len(notrem))
+        L.append(_("Nieaktualne - skan ich nie znalazl, nie usuniete (opcja wylaczona): %d") % len(notrem))
         for s in notrem[:40]:
             L.append("  - %s  (%s)" % (s["name"] or key_str(s["key"]), s["tp"]))
         if len(notrem) > 40:
-            L.append("  ... i %d wiecej" % (len(notrem) - 40))
-        L.append("  (kanaly z bukietow wsrod nich trafiaja do podmiany / decyzji jak zgubione)")
+            L.append(_("  ... i %d wiecej") % (len(notrem) - 40))
+        L.append(_("  (kanaly z bukietow wsrod nich trafiaja do podmiany / decyzji jak zgubione)"))
     elif notrem:
-        L.append("Nie udalo sie usunac: %d" % len(notrem))
+        L.append(_("Nie udalo sie usunac: %d") % len(notrem))
     for desc, f, k in suspicious:
-        L.append("  ? %s - znaleziono %d z %d znanych serwisow, nic nie usunieto" % (desc, f, k))
+        L.append(_("  ? %s - znaleziono %d z %d znanych serwisow, nic nie usunieto") % (desc, f, k))
     return L
 
 
@@ -1340,7 +1410,7 @@ def scan_failed_update(results, max_attempts=3, keep_aborted=True):
     TP spoza tego skanu zostaja bez zmian.
     keep_aborted=False (pelny skan): przerwane TP nie trafiaja do ponowien
     (pelny skan ma wlasne wznawianie)."""
-    state_path = os.path.join(DATA_DIR, "state.json")
+    state_path = data_file("state.json")
     state = load_json(state_path, {})
     prev = dict((tuple(x["id"]), x) for x in state.get("pending_failed", []))
     for r in results:
@@ -1367,7 +1437,7 @@ def scan_failed_update(results, max_attempts=3, keep_aborted=True):
 
 def resume_save(kind, results, hours=24):
     """Zapamietuje TP niezeskanowane z braku tunera - do wznowienia, gdy tunery beda wolne."""
-    state_path = os.path.join(DATA_DIR, "state.json")
+    state_path = data_file("state.json")
     state = load_json(state_path, {})
     tps = [dict((k, v) for k, v in r.items() if k not in ("ok", "status", "found", "tuner"))
            for r in results if str(r.get("status", "")).startswith("przerwano - ")]
@@ -1382,7 +1452,7 @@ def resume_save(kind, results, hours=24):
 
 def resume_add(kind, tps, hours=24):
     """Dopisuje TP do wznowienia w tle (gdy tunery beda wolne) - bez blokowania przebiegu EPG Scan."""
-    state_path = os.path.join(DATA_DIR, "state.json")
+    state_path = data_file("state.json")
     state = load_json(state_path, {})
     old = state.get("resume") or {}
     if old.get("tps") and time.time() <= old.get("until", 0):
@@ -1396,7 +1466,7 @@ def resume_add(kind, tps, hours=24):
 
 def resume_take():
     """Zwraca (kind, tps) do wznowienia albo None; czysci zapis."""
-    state_path = os.path.join(DATA_DIR, "state.json")
+    state_path = data_file("state.json")
     state = load_json(state_path, {})
     r = state.pop("resume", None)
     save_json(state_path, state)
@@ -1406,14 +1476,14 @@ def resume_take():
 
 
 def resume_pending():
-    r = load_json(os.path.join(DATA_DIR, "state.json"), {}).get("resume")
+    r = load_json(data_file("state.json"), {}).get("resume")
     if r and r.get("tps") and time.time() <= r.get("until", 0):
         return r
     return None
 
 
 def pending_failed_tps():
-    state = load_json(os.path.join(DATA_DIR, "state.json"), {})
+    state = load_json(data_file("state.json"), {})
     return [x["tp"] for x in state.get("pending_failed", [])]
 
 
@@ -1423,17 +1493,17 @@ def pending_failed_tps():
 
 def format_tp_diff(pos, d, sat_name=""):
     lines = []
-    head = "Pozycja %s" % (sat_name if sat_name.startswith(pos_str(pos)) else (pos_str(pos) + " " + sat_name))
+    head = _("Pozycja %s") % (sat_name if sat_name.startswith(pos_str(pos)) else (pos_str(pos) + " " + sat_name))
     if not diff_count(d):
-        return [head.strip() + ": bez zmian"]
-    lines.append(head.strip() + ":  nowe %d, usuniete %d, zmienione %d, przesuniete %d"
+        return [head.strip() + _(": bez zmian")]
+    lines.append(head.strip() + _(":  nowe %d, usuniete %d, zmienione %d, przesuniete %d")
                  % (len(d["added"]), len(d["removed"]), len(d["changed"]), len(d["shifted"])))
     for tp in d["added"]:
         lines.append("  + %s" % tp_str(tp))
     for tp in d["removed"]:
         lines.append("  - %s" % tp_str(tp))
     for a, b, fields in d["changed"]:
-        ch = ", ".join("%s %s->%s" % (FIELD_LABEL.get(f, f), a.get(f, "-"), b.get(f, "-")) for f in fields)
+        ch = ", ".join("%s %s->%s" % (_(FIELD_LABEL.get(f, f)), a.get(f, "-"), b.get(f, "-")) for f in fields)
         if a.get("frequency") != b.get("frequency"):
             ch = "freq %d->%d, " % (int(a["frequency"]) // 1000, int(b["frequency"]) // 1000) + ch
         lines.append("  * %s  [%s]" % (tp_str(a), ch))
@@ -1445,7 +1515,7 @@ def format_tp_diff(pos, d, sat_name=""):
 def _places(places, limit=6):
     s = []
     for bq, pos, section in places[:limit]:
-        s.append('"%s" poz. %d%s' % (bq, pos, (" [" + section + "]") if section else ""))
+        s.append(_('"%s" poz. %d%s') % (bq, pos, (" [" + section + "]") if section else ""))
     if len(places) > limit:
         s.append("... +%d" % (len(places) - limit))
     return s
@@ -1454,16 +1524,16 @@ def _places(places, limit=6):
 def _cand_lines(c, prefix="  -> "):
     tags = []
     if c.get("in_bq"):
-        tags.append("juz w bukietach")
+        tags.append(_("juz w bukietach"))
     if c["new"]:
-        tags.append("NOWY")
+        tags.append(_("NOWY"))
     if c["same_sid"]:
-        tags.append("ten sam SID")
+        tags.append(_("ten sam SID"))
     if c["same_ts"]:
-        tags.append("ten sam TS")
+        tags.append(_("ten sam TS"))
     if c.get("fallback"):
-        tags.append("nazwa i SID nie pasuja - kanal z tego TP / nadawcy")
-    return [prefix + "%s  (%s, %s) nazwa %d%%%s"
+        tags.append(_("nazwa i SID nie pasuja - kanal z tego TP / nadawcy"))
+    return [prefix + _("%s  (%s, %s) nazwa %d%%%s")
             % (c["name"], c["tp"], c["provider"] or "-", int(c["ratio"] * 100),
                (", " + ", ".join(tags)) if tags else ""),
             " " * len(prefix) + "ref %s" % c["ref"]]
@@ -1474,61 +1544,61 @@ def format_bouquet_report(cmp_res, ref_time=""):
     repl = [e for e in lost if e.get("replaced")]
     todo = [e for e in lost if not e.get("replaced")]
     L = []
-    L.append("Bukiety vs zrzut z %s:  zgubione %d (podmienione %d, do decyzji %d), "
-             "zmiana nazwy %d, zmiana TP %d, martwe od dawna %d"
+    L.append(_("Bukiety vs zrzut z %s:  zgubione %d (podmienione %d, do decyzji %d), "
+             "zmiana nazwy %d, zmiana TP %d, martwe od dawna %d")
              % (ref_time or "?", len(lost), len(repl), len(todo), len(cmp_res["renamed"]),
                 len(cmp_res["moved"]), len(cmp_res["dead"])))
-    L.append("  (w lamedb: nowych serwisow %d, usunietych %d)"
+    L.append(_("  (w lamedb: nowych serwisow %d, usunietych %d)")
              % (cmp_res["added_count"], cmp_res["removed_count"]))
     for e in repl:
         c = e["replaced"]
         L.append("")
-        L.append("PODMIENIONO: %s -> %s  (%s)%s" % (e["name"], c["name"], e.get("reason", ""),
-                                                   ("  [SID przejal: %s]" % e["now"]) if e.get("now") else ""))
-        L.append("  stary: %s  (%s)" % (e["ref"], e["tp"]))
-        L.append("  nowy:  %s  (%s)" % (c["ref"], c["tp"]))
+        L.append(_("PODMIENIONO: %s -> %s  (%s)%s") % (e["name"], c["name"], display_reason(e.get("reason", "")),
+                                                   (_("  [SID przejal: %s]") % e["now"]) if e.get("now") else ""))
+        L.append(_("  stary: %s  (%s)") % (e["ref"], e["tp"]))
+        L.append(_("  nowy:  %s  (%s)") % (c["ref"], c["tp"]))
         for p in _places(e["places"]):
-            L.append("  w:     %s" % p)
+            L.append(_("  w:     %s") % p)
     for e in todo:
         L.append("")
-        head = "DO DECYZJI" if ("reason" in e and not e.get("would")) else "ZGUBIONY"
+        head = _("DO DECYZJI") if ("reason" in e and not e.get("would")) else _("ZGUBIONY")
         L.append("%s: %s  (%s, %s)%s" % (head, e["name"], e["tp"], e["provider"] or "-",
-                                         "  [nierozwiazany od wczesniej]" if e.get("earlier") else ""))
+                                         _("  [nierozwiazany od wczesniej]") if e.get("earlier") else ""))
         L.append("  ref:   %s" % e["ref"])
         if e.get("now"):
-            L.append("  UWAGA: pod tym refem jest teraz inny kanal: %s" % e["now"])
+            L.append(_("  UWAGA: pod tym refem jest teraz inny kanal: %s") % e["now"])
         for p in _places(e["places"]):
-            L.append("  w:     %s" % p)
+            L.append(_("  w:     %s") % p)
         if e.get("would"):
-            L.append("  automat: podmienilby na %s (%s)" % (e["would"]["name"], e.get("reason", "")))
+            L.append(_("  automat: podmienilby na %s (%s)") % (e["would"]["name"], display_reason(e.get("reason", ""))))
         elif "reason" in e:
-            L.append("  powod: %s" % e["reason"])
+            L.append(_("  powod: %s") % display_reason(e["reason"]))
         if e["candidates"]:
             for c in e["candidates"][:3]:
                 L.extend(_cand_lines(c))
             if len(e["candidates"]) > 3:
-                L.append("  ... i %d kandydatow wiecej" % (len(e["candidates"]) - 3))
+                L.append(_("  ... i %d kandydatow wiecej") % (len(e["candidates"]) - 3))
         else:
-            L.append("  -> brak kandydata")
+            L.append(_("  -> brak kandydata"))
     if cmp_res["renamed"]:
         L.append("")
-        L.append("Zmiana nazwy:")
+        L.append(_("Zmiana nazwy:"))
         for e in cmp_res["renamed"]:
-            L.append("  %s -> %s   w: %s" % (e["old"], e["new"], "; ".join(_places(e["places"], 3))))
+            L.append(_("  %s -> %s   w: %s") % (e["old"], e["new"], "; ".join(_places(e["places"], 3))))
     if cmp_res["moved"]:
         L.append("")
-        L.append("Zmiana transpondera (kanal dziala, ten sam ref):")
+        L.append(_("Zmiana transpondera (kanal dziala, ten sam ref):"))
         for e in cmp_res["moved"]:
-            L.append("  %s  %s -> %s   w: %s" % (e["name"], e["old_tp"], e["new_tp"],
+            L.append(_("  %s  %s -> %s   w: %s") % (e["name"], e["old_tp"], e["new_tp"],
                                                "; ".join(_places(e["places"], 3))))
     if cmp_res["dead"]:
         L.append("")
-        L.append("Martwe wpisy (nie bylo ich w lamedb juz przy poprzednim zrzucie):")
+        L.append(_("Martwe wpisy (nie bylo ich w lamedb juz przy poprzednim zrzucie):"))
         for e in cmp_res["dead"][:50]:
-            L.append("  %s  ref %s   w: %s" % (e["name"] or "(bez nazwy)", e["ref"],
+            L.append(_("  %s  ref %s   w: %s") % (e["name"] or _("(bez nazwy)"), e["ref"],
                                               "; ".join(_places(e["places"], 3))))
         if len(cmp_res["dead"]) > 50:
-            L.append("  ... i %d wiecej" % (len(cmp_res["dead"]) - 50))
+            L.append(_("  ... i %d wiecej") % (len(cmp_res["dead"]) - 50))
     return L
 
 
@@ -1556,58 +1626,123 @@ def dir_usable(path):
 
 
 def out_dir():
-    """Katalog logu i historii raportow: wybrany, a gdy niedostepny - DATA_DIR."""
+    """Katalog logu i raportow: katalog kopii EPG Scan, a gdy niedostepny - DATA_DIR."""
     if LOG_PREF and os.path.abspath(LOG_PREF) != os.path.abspath(DATA_DIR) and dir_usable(LOG_PREF):
         return LOG_PREF
     return DATA_DIR
 
 
-def migrate_out_dir(old, new):
-    """Po zmianie katalogu: kopiuje log i historie raportow (stare zostaja)."""
-    n = 0
-    if not old or not new or os.path.abspath(old) == os.path.abspath(new) or not dir_usable(new):
+def reports_dir():
+    return os.path.join(out_dir(), REPORTS)
+
+
+def report_files(rdir=None):
+    """Raporty SatWatch w katalogu raportow, od najnowszego."""
+    rdir = rdir or reports_dir()
+    try:
+        return sorted((f for f in os.listdir(rdir) if f.startswith(PREFIX) and f.endswith(".txt")), reverse=True)
+    except Exception:
+        return []
+
+
+def report_stamp(name):
+    """satwatch-20261114-174500.txt -> "20261114-174500"."""
+    return name[len(PREFIX):len(PREFIX) + 15]
+
+
+def prune_old(paths, days=None, keep_newest=1):
+    """Usuwa pliki starsze niz days dni (ustawienie EPG Scan); najnowszy plik zostaje zawsze."""
+    days = KEEP_DAYS if days is None else days
+    if not days or days <= 0:
         return 0
-    for f in os.listdir(old) if os.path.isdir(old) else []:
-        if f.startswith("satwatch.log") or f == "last_report.txt":
-            if not os.path.exists(os.path.join(new, f)):
-                shutil.copy2(os.path.join(old, f), os.path.join(new, f))
+    limit = time.time() - days * 86400
+    items = []
+    for p in paths:
+        try:
+            items.append((os.path.getmtime(p), p))
+        except OSError:
+            pass
+    items.sort(reverse=True)
+    n = 0
+    for mtime, p in items[keep_newest:]:
+        if mtime < limit:
+            try:
+                os.remove(p)
                 n += 1
-    src = os.path.join(old, "reports")
-    if os.path.isdir(src):
-        dst = os.path.join(new, "reports")
-        ensure_dir(dst)
-        for f in os.listdir(src):
-            if not os.path.exists(os.path.join(dst, f)):
-                shutil.copy2(os.path.join(src, f), os.path.join(dst, f))
+            except OSError:
+                pass
+    return n
+
+
+def prune_reports(days=None):
+    rdir = reports_dir()
+    return prune_old([os.path.join(rdir, f) for f in report_files(rdir)], days)
+
+
+def migrate_legacy(sources, new=None):
+    """Do 2.19: log i raporty SatWatch ze starych katalogow (np. /media/hdd/satwatch, /etc/enigma2/satwatch,
+    /media/hdd/epgscan/satwatch) przenoszone do katalogu EPG Scan: satwatch.log*, satwatch-last_report.txt,
+    raporty/satwatch-*.txt. Puste stare katalogi sa usuwane. Nic nie jest nadpisywane."""
+    new = new or out_dir()
+    n = 0
+    for old in sources:
+        if not old or not os.path.isdir(old) or os.path.abspath(old) == os.path.abspath(new):
+            continue
+        for f in os.listdir(old):
+            target = None
+            if f.startswith("satwatch.log"):
+                target = os.path.join(new, f)
+            elif f == "last_report.txt":
+                target = os.path.join(new, LAST_REPORT)
+            if target and not os.path.exists(target):
+                ensure_dir(new)
+                shutil.move(os.path.join(old, f), target)
                 n += 1
+        src = os.path.join(old, "reports")
+        if os.path.isdir(src):
+            dst = os.path.join(new, REPORTS)
+            ensure_dir(dst)
+            for f in os.listdir(src):
+                name = PREFIX + f[len("report-"):] if f.startswith("report-") else f
+                if not os.path.exists(os.path.join(dst, name)):
+                    shutil.move(os.path.join(src, f), os.path.join(dst, name))
+                    n += 1
+            try:
+                os.rmdir(src)
+            except OSError:
+                pass
+        try:
+            os.rmdir(old)        # tylko pusty katalog
+        except OSError:
+            pass
     return n
 
 
 def save_report(text):
     if not text.endswith("\n"):
         text += "\n"
-    # last_report.txt zawsze w DATA_DIR (czyta go wtyczka), kopia + historia w out_dir()
-    atomic_write(os.path.join(ensure_dir(DATA_DIR) or DATA_DIR, "last_report.txt"), text)
     od = out_dir()
-    rdir = os.path.join(od, "reports")
-    ensure_dir(rdir)
+    ensure_dir(od)
+    atomic_write(os.path.join(od, LAST_REPORT), text)
     if od != DATA_DIR:
-        atomic_write(os.path.join(od, "last_report.txt"), text)
-    atomic_write(os.path.join(rdir, "report-%s.txt" % time.strftime("%Y%m%d-%H%M%S")), text)
-    files = sorted(os.listdir(rdir))
-    for f in files[:-30]:
         try:
-            os.remove(os.path.join(rdir, f))
+            os.remove(os.path.join(DATA_DIR, LAST_REPORT))   # stary z czasu bez dysku
         except OSError:
             pass
+    rdir = reports_dir()
+    ensure_dir(rdir)
+    atomic_write(os.path.join(rdir, "%s%s.txt" % (PREFIX, time.strftime("%Y%m%d-%H%M%S"))), text)
+    prune_reports()
 
 
 def read_last_report():
-    try:
-        with open(os.path.join(DATA_DIR, "last_report.txt"), "rb") as f:
-            return f.read().decode("utf-8", "replace")
-    except Exception:
-        return ""
+    for d in (out_dir(), DATA_DIR):
+        try:
+            with open(os.path.join(d, LAST_REPORT), "rb") as f:
+                return f.read().decode("utf-8", "replace")
+        except Exception:
+            pass
+    return ""
 
 
 # --------------------------------------------------------------------------
@@ -1623,26 +1758,26 @@ def run_check(opts):
                  bq_changed (pliki bukietow zmienione - trzeba przeladowac)
     """
     ensure_dir(DATA_DIR)
-    state_path = os.path.join(DATA_DIR, "state.json")
+    state_path = data_file("state.json")
     state = load_json(state_path, {})
     tol = int(opts.get("tol_mhz", 3)) * 1000
     positions = opts.get("positions") or [130]
     ign_text = opts.get("ignore_bouquets", DEFAULT_IGNORE)
     R = []
-    R.append("SatWatch %s  |  %s" % (VERSION, time.strftime("%Y-%m-%d %H:%M")))
-    R.append("Zrodlo: %s" % opts["url"])
+    R.append(_("SatWatch %s  |  %s") % (VERSION, time.strftime("%Y-%m-%d %H:%M")))
+    R.append(_("Zrodlo: %s") % opts["url"])
     base = {"changes": 0, "updated": False, "error": None, "scan_tps": [], "bq_changed": False}
 
     try:
         data, fresh = download(opts["url"], state, verify=opts.get("verify_ssl", True))
     except Exception as e:
-        msg = "Blad pobierania: %s" % e
+        msg = _("Blad pobierania: %s") % e
         R.append(msg)
         text = "\n".join(R)
         save_report(text)
         return dict(base, summary=msg, report=text, error=msg, scan_tps=pending_failed_tps())
 
-    R.append("Plik zdalny: %s (ETag %s)" % ("pobrany" if fresh else "bez zmian od ostatniego pobrania",
+    R.append(_("Plik zdalny: %s (ETag %s)") % (_("pobrany") if fresh else _("bez zmian od ostatniego pobrania"),
                                             (state.get("etag") or "-")[:20]))
     remote_root, remote_sats = parse_sat_xml(data)
     lpath = local_xml_path()
@@ -1650,8 +1785,8 @@ def run_check(opts):
         local_root, local_sats = parse_sat_xml(lpath)
     except Exception as e:
         local_root, local_sats = None, {}
-        R.append("Uwaga: nie moge odczytac lokalnego %s (%s)" % (lpath, e))
-    R.append("Plik lokalny: %s" % lpath)
+        R.append(_("Uwaga: nie moge odczytac lokalnego %s (%s)") % (lpath, e))
+    R.append(_("Plik lokalny: %s") % lpath)
     R.append("")
 
     diffs = {}
@@ -1660,20 +1795,20 @@ def run_check(opts):
     no_local = set()      # pozycje bez lokalnych danych: odtworzenie z pliku zdalnego, bez skanu
     restore_full = local_root is None
     if restore_full:
-        R.append("Brak lokalnego satellites.xml - zostanie odtworzony z pliku zdalnego (bez skanu transponderow).")
+        R.append(_("Brak lokalnego satellites.xml - zostanie odtworzony z pliku zdalnego (bez skanu transponderow)."))
     for pos in positions:
         lt = sat_tps(local_sats.get(pos))
         rt = sat_tps(remote_sats.get(pos))
         if not lt and rt:
             no_local.add(pos)
             if not restore_full:
-                R.append("Pozycja %s: brak w lokalnym pliku - zostanie dodana z pliku zdalnego (bez skanu)." % pos_str(pos))
+                R.append(_("Pozycja %s: brak w lokalnym pliku - zostanie dodana z pliku zdalnego (bez skanu).") % pos_str(pos))
         if pos not in remote_sats:
-            R.append("Pozycja %s: BRAK w pliku zdalnym - pomijam" % pos_str(pos))
+            R.append(_("Pozycja %s: BRAK w pliku zdalnym - pomijam") % pos_str(pos))
             sane = False
             continue
         if lt and len(rt) < 0.8 * len(lt):
-            R.append("Pozycja %s: plik zdalny ma podejrzanie malo TP (%d vs %d lokalnie)"
+            R.append(_("Pozycja %s: plik zdalny ma podejrzanie malo TP (%d vs %d lokalnie)")
                      % (pos_str(pos), len(rt), len(lt)))
             sane = False
         d = diff_tps(lt, rt, tol)
@@ -1687,13 +1822,17 @@ def run_check(opts):
         hits = bouquet_hits_for_tps(diffs, tol, ignore=parse_ignore(ign_text))
     except Exception as e:
         hits = {}
-        R.append("Uwaga: blad analizy bukietow: %s" % e)
+        R.append(_("Uwaga: blad analizy bukietow: %s") % e)
     if hits:
-        R.append("Twoje kanaly na zmienionych/usunietych TP:")
+        R.append(_("Twoje kanaly na zmienionych/usunietych TP:"))
         for label in sorted(hits):
+            for prefix in ("zmieniony: ", "przesuniety: ", "usuniety: "):
+                if label.startswith(prefix):
+                    label = _(prefix) + label[len(prefix):]
+                    break
             R.append("  %s" % label)
             for bq, p, name in hits[label]:
-                R.append('     "%s" poz. %d: %s' % (bq, p, name))
+                R.append(_('     "%s" poz. %d: %s') % (bq, p, name))
         R.append("")
 
     # TP do skanu: nowe i zmienione (nowe parametry), usuniete (stare parametry -
@@ -1714,23 +1853,23 @@ def run_check(opts):
     retry = pending_failed_tps()
     scan_tps = merge_tps(scan_new, retry)
     if retry:
-        R.append("Do ponowienia z poprzedniego skanu: %d TP" % len(retry))
+        R.append(_("Do ponowienia z poprzedniego skanu: %d TP") % len(retry))
 
     updated = False
     if opts.get("action") == "update" and total:
         if not sane:
-            R.append("Aktualizacja WSTRZYMANA - plik zdalny nie przeszedl kontroli.")
+            R.append(_("Aktualizacja WSTRZYMANA - plik zdalny nie przeszedl kontroli."))
         else:
             content = build_output_xml(local_root, remote_root, remote_sats, positions,
                                        "full" if restore_full else opts.get("mode", "positions"), opts["url"])
             backup_and_write(content, int(opts.get("backups", 5)))
             updated = True
-            R.append("Zaktualizowano %s (kopia w %s/backup)." % (TARGET, DATA_DIR))
+            R.append(_("Zaktualizowano %s (kopia w %s).") % (TARGET, data_file("backup")))
             R.append("")
     elif total:
-        R.append("Tryb 'tylko raport' - satellites.xml nie zostal zmieniony.")
+        R.append(_("Tryb 'tylko raport' - satellites.xml nie zostal zmieniony."))
         if restore_full or no_local:
-            R.append("UWAGA: brak danych satelity w lokalnym pliku - odtworz satellites.xml (np. z %s/backup)." % DATA_DIR)
+            R.append(_("UWAGA: brak danych satelity w lokalnym pliku - odtworz satellites.xml (np. z %s).") % data_file("backup"))
         R.append("")
 
     # bukiety: porownanie z ostatnim zrzutem (np. po recznym skanie), podmiany, nowy zrzut
@@ -1743,7 +1882,7 @@ def run_check(opts):
             bq_changed = b["changed"]
             bq_repl, bq_unres = b.get("replaced", 0), b.get("unresolved", 0)
         except Exception as e:
-            R.append("Uwaga: blad zrzutu bukietow: %s" % e)
+            R.append(_("Uwaga: blad zrzutu bukietow: %s") % e)
 
     state["last_check"] = time.strftime("%Y-%m-%d %H:%M:%S")
     state["last_changes"] = total
@@ -1752,13 +1891,13 @@ def run_check(opts):
     text = "\n".join(R)
     save_report(text)
     if restore_full or no_local:
-        summary = "SatWatch: satellites.xml %s" % (
-            "odtworzony z pliku zdalnego - potrzebny restart Enigma2" if updated else "bez danych satelity - odtworz plik!")
+        summary = _("SatWatch: satellites.xml %s") % (
+            _("odtworzony z pliku zdalnego - potrzebny restart Enigma2") if updated else _("bez danych satelity - odtworz plik!"))
         base = dict(base, restored=True)
     else:
-        summary = ("SatWatch: zmian w transponderach: %d" % total) + (" (plik zaktualizowany)" if updated else "")
+        summary = (_("SatWatch: zmian w transponderach: %d") % total) + (_(" (plik zaktualizowany)") if updated else "")
     if bq_repl or bq_unres:
-        summary += ", bukiety: podmieniono %d, do decyzji %d" % (bq_repl, bq_unres)
+        summary += _(", bukiety: podmieniono %d, do decyzji %d") % (bq_repl, bq_unres)
     return dict(base, summary=summary, report=text, changes=total, updated=updated,
                 scan_tps=scan_tps, scan_new=scan_new, retry=retry, bq_changed=bq_changed,
                 bq_replaced=bq_repl, unresolved=bq_unres)
@@ -1791,9 +1930,9 @@ def snapshot_compare_only(ignore_text=None):
     """Porownanie bez nadpisywania zrzutu i bez podmian (podglad)."""
     old = load_snapshot()
     if not old:
-        return "Brak zrzutu referencyjnego - najpierw zapisz zrzut."
+        return _("Brak zrzutu referencyjnego - najpierw zapisz zrzut.")
     new = take_snapshot()
-    L = ["SatWatch %s  |  %s  |  podglad (bez zmian)" % (VERSION, time.strftime("%Y-%m-%d %H:%M")), ""]
+    L = [_("SatWatch %s  |  %s  |  podglad (bez zmian)") % (VERSION, time.strftime("%Y-%m-%d %H:%M")), ""]
     L.extend(preview_bouquets(old, new, ignore_text))
     text = "\n".join(L)
     save_report(text)
@@ -1808,7 +1947,7 @@ def snapshot_save_only():
     snap["ghosts"] = dict((k, v) for k, v in old.get("ghosts", {}).items()
                           if k in inbq and k not in snap["services"])
     save_snapshot(snap)
-    return "Zapisano zrzut (%s): %d serwisow w lamedb, %d wpisow w bukietach." % (
+    return _("Zapisano zrzut (%s): %d serwisow w lamedb, %d wpisow w bukietach.") % (
         snap["time"], len(snap["services"]), len(snap["bouquets"]))
 
 
@@ -1823,7 +1962,7 @@ def simulate(old_dir, out_dir, ref_dir="/etc/enigma2", ignore_text=DEFAULT_IGNOR
     """
     global DATA_DIR
     if os.path.abspath(out_dir) in (os.path.abspath(ref_dir), os.path.abspath(old_dir)):
-        raise SystemExit("KATALOG_WYNIKU musi byc inny niz stara lista i wzorzec")
+        raise SystemExit(_("KATALOG_WYNIKU musi byc inny niz stara lista i wzorzec"))
     ensure_dir(out_dir)
     for f in os.listdir(out_dir):
         p = os.path.join(out_dir, f)
@@ -1852,10 +1991,10 @@ def simulate(old_dir, out_dir, ref_dir="/etc/enigma2", ignore_text=DEFAULT_IGNOR
             repl[str_key(e["key"])] = (str_key(cand["key"]), cand["type"], cand["srcid"])
     if repl:
         apply_bouquet_replacements(repl, ign, out_dir)
-    L = ["SatWatch %s - SYMULACJA  |  %s" % (VERSION, time.strftime("%Y-%m-%d %H:%M")),
-         "stara lista: %s (%d serwisow, %d wpisow w bukietach)" % (old_dir, len(old["services"]), len(old["bouquets"])),
-         "lamedb po 'skanie': %s (%d serwisow)" % (ref_dir, len(new["services"])), ""]
-    L.extend(format_bouquet_report(res, "stara lista"))
+    L = [_("SatWatch %s - SYMULACJA  |  %s") % (VERSION, time.strftime("%Y-%m-%d %H:%M")),
+         _("stara lista: %s (%d serwisow, %d wpisow w bukietach)") % (old_dir, len(old["services"]), len(old["bouquets"])),
+         _("lamedb po 'skanie': %s (%d serwisow)") % (ref_dir, len(new["services"])), ""]
+    L.extend(format_bouquet_report(res, _("stara lista")))
     rep = "\n".join(L) + "\n"
     atomic_write(os.path.join(out_dir, "raport.txt"), rep)
     # 4. porownanie wyniku z Twoimi aktualnymi bukietami (pozycja po pozycji, ten sam plik)
@@ -1884,8 +2023,8 @@ def simulate(old_dir, out_dir, ref_dir="/etc/enigma2", ignore_text=DEFAULT_IGNOR
         return out
 
     replaced_keys = set(repl.keys())
-    P = ["Porownanie: stara lista po automacie vs Twoja aktualna lista (%s)" % ref_dir,
-         "  (roznice moga wynikac tez z Twoich wlasnych zmian - przestawien, dodanych kanalow)", ""]
+    P = [_("Porownanie: stara lista po automacie vs Twoja aktualna lista (%s)") % ref_dir,
+         _("  (roznice moga wynikac tez z Twoich wlasnych zmian - przestawien, dodanych kanalow)"), ""]
     tot = {"same": 0, "auto_ok": 0, "auto_diff": 0, "other": 0}
     for fname, bname in _bouquet_files(out_dir):
         if bname.lower() in ign:
@@ -1893,7 +2032,7 @@ def simulate(old_dir, out_dir, ref_dir="/etc/enigma2", ignore_text=DEFAULT_IGNOR
         a = entries(out_dir, fname)
         b = entries(ref_dir, fname)
         if b is None:
-            P.append('"%s": brak takiego pliku w aktualnej liscie - pomijam' % bname)
+            P.append(_('"%s": brak takiego pliku w aktualnej liscie - pomijam') % bname)
             continue
         diffs = []
         same = 0
@@ -1907,14 +2046,14 @@ def simulate(old_dir, out_dir, ref_dir="/etc/enigma2", ignore_text=DEFAULT_IGNOR
         tot["same"] += same
         sa, sb = set(x for x in a if x), set(x for x in b if x)
         only_a, only_b = sa - sb, sb - sa
-        P.append('"%s": te same pozycje %d z %d; kanaly tylko u automatu %d, tylko u Ciebie %d'
+        P.append(_('"%s": te same pozycje %d z %d; kanaly tylko u automatu %d, tylko u Ciebie %d')
                  % (bname, same, max(len(a), len(b)), len(only_a), len(only_b)))
         if only_a or only_b:
             for k in sorted(only_a, key=name)[:25]:
-                P.append("   automat ma, Ty nie:  %s%s" % (name(k), "  (PODMIANA)" if k in
+                P.append(_("   automat ma, Ty nie:  %s%s") % (name(k), _("  (PODMIANA)") if k in
                                                          set(v[0] for v in repl.values()) else ""))
             for k in sorted(only_b, key=name)[:25]:
-                P.append("   Ty masz, automat nie: %s" % name(k))
+                P.append(_("   Ty masz, automat nie: %s") % name(k))
     # trafnosc podmian: czy nowy ref automatu jest gdziekolwiek w Twoich bukietach
     mine = set()
     for fname, bname in _bouquet_files(ref_dir):
@@ -1922,18 +2061,18 @@ def simulate(old_dir, out_dir, ref_dir="/etc/enigma2", ignore_text=DEFAULT_IGNOR
     hit = [e for e in res["lost"] if e.get("replaced") and str_key(e["replaced"]["key"]) in mine]
     miss = [e for e in res["lost"] if e.get("replaced") and str_key(e["replaced"]["key"]) not in mine]
     P.append("")
-    P.append("Podmiany, ktore masz tez u siebie (trafione): %d" % len(hit))
-    P.append("Podmiany, ktorych u siebie nie masz (do sprawdzenia): %d" % len(miss))
+    P.append(_("Podmiany, ktore masz tez u siebie (trafione): %d") % len(hit))
+    P.append(_("Podmiany, ktorych u siebie nie masz (do sprawdzenia): %d") % len(miss))
     for e in miss:
-        P.append("   %s -> %s (%s)" % (e["name"], e["replaced"]["name"], e.get("reason", "")))
+        P.append("   %s -> %s (%s)" % (e["name"], e["replaced"]["name"], display_reason(e.get("reason", ""))))
     P.append("")
-    P.append("Podmiany automatu: %d, do decyzji: %d (szczegoly w raport.txt)"
+    P.append(_("Podmiany automatu: %d, do decyzji: %d (szczegoly w raport.txt)")
              % (len(repl), len([e for e in res["lost"] if not e.get("replaced")])))
     cmpf = "\n".join(P) + "\n"
     atomic_write(os.path.join(out_dir, "porownanie.txt"), cmpf)
     print(rep)
     print(cmpf)
-    print("Pliki: %s/raport.txt, %s/porownanie.txt (nic nie zmieniono w %s)" % (out_dir, out_dir, ref_dir))
+    print(_("Pliki: %s/raport.txt, %s/porownanie.txt (nic nie zmieniono w %s)") % (out_dir, out_dir, ref_dir))
 
 
 # --------------------------------------------------------------------------
@@ -1959,5 +2098,5 @@ if __name__ == "__main__":
     elif len(sys.argv) >= 4 and sys.argv[1] == "snapshot":
         save_json(sys.argv[3], take_snapshot(sys.argv[2]))
     else:
-        print("uzycie: core.py diff LOCAL REMOTE [poz...] | snapshot E2DIR OUT.json | compare OLD.json E2DIR [\"Bukiet1,Bukiet2\"]\n"
-              "        core.py symuluj KATALOG_STAREJ_LISTY KATALOG_WYNIKU [KATALOG_WZORCA=/etc/enigma2]")
+        print(_("uzycie: core.py diff LOCAL REMOTE [poz...] | snapshot E2DIR OUT.json | compare OLD.json E2DIR [\"Bukiet1,Bukiet2\"]\n"
+                "        core.py symuluj KATALOG_STAREJ_LISTY KATALOG_WYNIKU [KATALOG_WZORCA=/etc/enigma2]"))

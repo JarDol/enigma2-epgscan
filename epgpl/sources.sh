@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-or-later
-# epgpl - plik zrodla dla odbiornika (EPG Scan: /etc/enigma2/epgscan_sources/wlasne/epgpl.sources.xml)
+# epgpl - plik zrodla dla odbiornika (EPG Scan: /etc/enigma2/epgscan/sources/wlasne/epgpl.sources.xml)
 # Opis jest staly - EPG Scan zapamietuje wybrane zrodla po opisie.
 BASE=${EPGPL_BASE:-/opt/epgpl}
 . "$BASE/config.env"

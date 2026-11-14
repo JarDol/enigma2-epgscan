@@ -13,6 +13,8 @@ import threading
 import time
 import urllib.request
 
+from .i18n import _
+
 SERVICE = "_epgpl._tcp.local"
 DEFAULT_PORT = 8088
 MDNS = ("224.0.0.251", 5353)
@@ -203,7 +205,7 @@ class Finder(object):
 		self.ports = [p for i, p in enumerate(ports) if p and p not in ports[:i]] or [DEFAULT_PORT]
 		self.threads = threads
 		self.found = []
-		self.text = "Szukanie serwera epgpl..."
+		self.text = _("Szukanie serwera epgpl...")
 		self.done = False
 		self.cancel = False
 		self.lock = threading.Lock()
@@ -220,7 +222,7 @@ class Finder(object):
 
 	def run(self):
 		try:
-			self.text = "Avahi (mDNS): pytam o _epgpl._tcp..."
+			self.text = _("Avahi (mDNS): pytam o _epgpl._tcp...")
 			for ip, port, name in mdns_browse():
 				info = check_server(ip, port)
 				if info:
@@ -251,7 +253,7 @@ class Finder(object):
 				t.start()
 			net = ", ".join("%s/%d" % x for x in nets) or "?"
 			while any(t.is_alive() for t in ths):
-				self.text = "Podsiec %s: sprawdzono %d z %d adresow, znaleziono %d" % (net, pos[0], total, len(self.found))
+				self.text = _("Podsiec %s: sprawdzono %d z %d adresow, znaleziono %d") % (net, pos[0], total, len(self.found))
 				time.sleep(0.3)
 			for h, p in hits:
 				if self.cancel:
@@ -259,9 +261,9 @@ class Finder(object):
 				info = check_server(h, p)
 				if info:
 					self.add(info, "podsiec")
-			self.text = "Gotowe: znaleziono serwerow epgpl: %d" % len(self.found)
+			self.text = _("Gotowe: znaleziono serwerow epgpl: %d") % len(self.found)
 		except Exception as e:
-			self.text = "Blad szukania: %s" % e
+			self.text = _("Blad szukania: %s") % e
 		self.done = True
 
 	def start(self):
@@ -272,11 +274,12 @@ class Finder(object):
 
 def label(info):
 	g = info.get("guide") or 0
-	age = ("plik programu %s" % time.strftime("%d.%m %H:%M", time.localtime(g))) if g else "brak pliku programu"
+	age = (_("plik programu %s") % time.strftime("%d.%m %H:%M", time.localtime(g))) if g else _("brak pliku programu")
 	extra = []
 	if info.get("running"):
-		extra.append("pobiera teraz")
+		extra.append(_("pobiera teraz"))
 	if info.get("stale_ip"):
-		extra.append("plik zrodla z innym IP - uruchom sources.sh na serwerze")
-	return "%s:%d  (%s; %s%s)" % (info["ip"], info["port"], ", ".join(info.get("via", [])), age,
+		extra.append(_("plik zrodla z innym IP - uruchom sources.sh na serwerze"))
+	via = [_(value) if value == "podsiec" else value for value in info.get("via", [])]
+	return "%s:%d  (%s; %s%s)" % (info["ip"], info["port"], ", ".join(via), age,
 		("; " + "; ".join(extra)) if extra else "")

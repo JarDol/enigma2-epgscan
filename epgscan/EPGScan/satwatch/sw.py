@@ -27,6 +27,7 @@ from Tools import Notifications
 
 from . import core
 from . import scanner
+from ..i18n import _, translate_choices
 
 
 def _clock(h, m):
@@ -71,14 +72,14 @@ cfg.resume = ConfigYesNo(default=True)
 
 def tuner_choices():
     """Preferowany tuner do skanu - lista z konfiguracji dekodera (tunery DVB-S wlaczone)."""
-    out = [("auto", "automatycznie (najwyższy wolny)")]
+    out = [("auto", _("automatycznie (najwyższy wolny)"))]
     try:
         from Components.NimManager import nimmanager
         for n in nimmanager.nim_slots:
             try:
                 if not (n.isCompatible("DVB-S") and n.isEnabled()):
                     continue
-                role = "FBC główny" if n.isFBCRoot() else ("FBC połączony" if n.isFBCLink() else "")
+                role = _("FBC główny") if n.isFBCRoot() else (_("FBC połączony") if n.isFBCLink() else "")
                 try:
                     mode = n.config_mode
                 except Exception:
@@ -94,7 +95,23 @@ def tuner_choices():
     return out
 
 
+def _keep_saved(element):
+    """Zapisany wybor, ktorego nie ma na liscie przy starcie (tuner jeszcze niewidoczny w NimManager,
+    katalog niezamontowany) - Enigma2 ustawilaby wtedy domyslny i nadpisala go przy nastepnym zapisie."""
+    try:
+        saved = element.saved_value
+        raw = element.choices.choices
+        current = list(raw.items()) if isinstance(raw, dict) else \
+            [(item[0], item[1]) if isinstance(item, tuple) else (item, item) for item in raw]
+        if saved and saved not in [key for key, label in current]:
+            element.setChoices(current + [(saved, saved)], default=element.default)
+            element.value = saved
+    except Exception:
+        pass
+
+
 cfg.scan_tuner = ConfigSelection(default="auto", choices=tuner_choices())
+_keep_saved(cfg.scan_tuner)
 cfg.urls = ConfigText(default="", fixed_size=False)     # dopisane adresy satellites.xml, rozdzielone "|"
 
 
@@ -107,7 +124,7 @@ def _logdir_choices():
     """Pamiec wewnetrzna + typowe nosniki (zawsze, by zapisany wybor nie przepadl, gdy
     dysk montuje sie pozniej) + inne zamontowane w /media."""
     import os
-    ch = [(core.DATA_DIR, "pamięć wewnętrzna (%s)" % core.DATA_DIR)]
+    ch = [(core.DATA_DIR, _("pamięć wewnętrzna (%s)") % core.DATA_DIR)]
     seen = set()
     roots = ["/media/hdd", "/media/usb", "/media/mmc"]
     try:
@@ -124,10 +141,49 @@ def _logdir_choices():
 
 
 cfg.logdir = ConfigSelection(default=core.DATA_DIR, choices=_logdir_choices())
+_keep_saved(cfg.logdir)
+
+
+def shared_logdir():
+    """Log i raporty SatWatch razem z EPG Scan: katalog kopii (np. /media/hdd/epgscan) albo /tmp,
+    gdy log EPG Scan jest ustawiony w /tmp."""
+    from ..common import backup_dir, cfg as epg_cfg
+    try:
+        if epg_cfg.log_place.value == "tmp":
+            return "/tmp"
+    except Exception:
+        pass
+    return backup_dir().rstrip("/")
 
 
 def apply_logdir():
-    core.LOG_PREF = "" if cfg.logdir.value == core.DATA_DIR else cfg.logdir.value
+    core.LOG_PREF = shared_logdir()
+    try:
+        from ..common import cfg as epg_cfg
+        core.KEEP_DAYS = int(epg_cfg.log_days.value)
+    except Exception:
+        pass
+
+
+def migrate_old_logdir():
+    """Do 2.19: osobny katalog logu SatWatch (ustawienie, np. /media/hdd/satwatch), /etc/enigma2/satwatch
+    i /etc/enigma2/epgscan/satwatch (2.19.0-beta.1) - log i raporty przenoszone raz do katalogu EPG Scan."""
+    import os
+    old = cfg.logdir.value
+    target = core.out_dir()
+    sources = [old if old and old != core.DATA_DIR else "",
+               os.path.join(shared_logdir(), "satwatch"),
+               "/etc/enigma2/satwatch", os.path.join(core.DATA_DIR, "satwatch")]
+    if target != core.LOG_PREF:
+        sources = sources[2:]      # dysk niezamontowany: tylko pamiec wewnetrzna, reszta przy nastepnym starcie
+    n = core.migrate_legacy(sources, target)
+    if n:
+        scanner.log("Katalog logu: przeniesiono %d plikow do %s" % (n, target))
+    if old and old != core.DATA_DIR and target == core.LOG_PREF:
+        cfg.logdir.value = core.DATA_DIR
+        cfg.logdir.save()
+        configfile.save()
+    return n
 
 
 def get_opts():
@@ -280,7 +336,7 @@ class Runner(object):
         if self.busy:
             return False
         self.busy = True
-        self.notify("Pracuję…")
+        self.notify(_("Pracuję…"))
 
         def ok(res):
             self.busy = False
@@ -290,6 +346,7 @@ class Runner(object):
             self.busy = False
             msg = "Błąd: %s" % f.getErrorMessage()
             scanner.log(msg)
+            msg = _("Błąd: %s") % f.getErrorMessage()
             done({"summary": msg, "report": msg, "changes": 0, "updated": False, "error": msg,
                   "scan_tps": [], "bq_changed": False, "lines": [msg], "changed": False,
                   "replaced": 0, "unresolved": 0})
@@ -316,7 +373,7 @@ class Runner(object):
                 tps = core.merge_tps(core.full_scan_tps(get_opts()["positions"]), res.get("scan_tps"))
                 kind = "pelny"
             except Exception as e:
-                res["report"] = core.append_report(["Pelny skan: nie moge odczytac satellites.xml: %s" % e])
+                res["report"] = core.append_report([_("Pelny skan: nie moge odczytac satellites.xml: %s") % e])
         elif cfg.autoscan.value and self.pipeline and "scan_new" in res:
             # krok przebiegu EPG Scan: tunery tylko dla realnych zmian; ponowienia nieudanych TP
             # ida do wznowienia w tle (gdy wszystkie tunery beda wolne od 2 min)
@@ -348,7 +405,7 @@ class Runner(object):
                                          wait_max=self.wait_override or int(cfg.wait_max.value) * 60,
                                          on_progress=self.notify, prefer=preferred_slot(),
                                          on_done=lambda r, f: self._scanDone(kind, pre, r, f))
-        self.notify("Skan (%s): %d TP" % (kind, len(tps)))
+        self.notify(_("Skan (%s): %d TP") % (core.display_scan_kind(kind), len(tps)))
         self.scanner.start()
 
     def abortScan(self):
@@ -373,7 +430,7 @@ class Runner(object):
         try:
             n = core.resume_save(kind, results) if cfg.resume.value else 0
             if n:
-                lines.append("  Wznowienie: %d TP zostanie zeskanowanych, gdy tunery beda wolne (do 24 h)." % n)
+                lines.append(_("  Wznowienie: %d TP zostanie zeskanowanych, gdy tunery beda wolne (do 24 h).") % n)
         except Exception as e:
             scanner.log("Wznowienie: %s" % e)
         self.busy = False
@@ -381,7 +438,7 @@ class Runner(object):
                         lambda b: self._bouquetsDone(kind, lines, results, removed, b, pre),
                         cfg.ignore_bq.value, cfg.autoreplace.value):
             self._bouquetsDone(kind, lines, results, removed,
-                               {"lines": ["Bukiety: pominiete (zajete)"], "changed": False,
+                               {"lines": [_("Bukiety: pominiete (zajete)")], "changed": False,
                                 "replaced": 0, "unresolved": 0}, pre)
 
     def _bouquetsDone(self, kind, lines, results, removed, b, pre=None):
@@ -394,6 +451,8 @@ class Runner(object):
         summary = "SatWatch: skan %s %d/%d TP OK, usunieto %d, podmieniono %d, do decyzji %d" % (
             kind, okn, len(results), len(removed), repl, b.get("unresolved", 0))
         scanner.log(summary)
+        summary = _("SatWatch: skan %s %d/%d TP OK, usunieto %d, podmieniono %d, do decyzji %d") % (
+            core.display_scan_kind(kind), okn, len(results), len(removed), repl, b.get("unresolved", 0))
         important = okn < len(results) or removed or b.get("replaced") or b.get("unresolved_new")
         nosig = len([r for r in results if not r.get("ok")])
         self.last_info.update({"scanned": len(results), "failed": nosig})
@@ -407,8 +466,8 @@ class Runner(object):
     def _fixDone(self, b):
         if b.get("changed"):
             reload_lists()
-        text = core.append_report(["Naprawa bukietow (recznie):"] + b.get("lines", []))
-        self.finish("Bukiety: podmieniono %d, do decyzji %d" % (b.get("replaced", 0), b.get("unresolved", 0)),
+        text = core.append_report([_("Naprawa bukietow (recznie):")] + b.get("lines", []))
+        self.finish(_("Bukiety: podmieniono %d, do decyzji %d") % (b.get("replaced", 0), b.get("unresolved", 0)),
                     text, False)
 
     def finish(self, summary, report, important, error=False, changed=False, unresolved=0, scanned_tps=None):
@@ -445,13 +504,13 @@ def progress_short():
     n = len(sc.tps) or 1
     i = min(sc.idx + 1, n)
     if sc.scan is None and sc.waited > 0:
-        return "Skan %d/%d - czeka na wolny tuner" % (i, n)
+        return _("Skan %d/%d - czeka na wolny tuner") % (i, n)
     pct = int(sc.idx * 100 / n)
     if sc.idx >= 3:
         import time as _t
         left = (_t.time() - sc.t0) / sc.idx * (n - sc.idx)
-        return "Skan %d/%d - %d%%, zostało ok. %s" % (i, n, pct, ("%d min" % round(left / 60.0)) if left >= 90 else ("%d s" % left))
-    return "Skan %d/%d - %d%%" % (i, n, pct)
+        return _("Skan %d/%d - %d%%, zostało ok. %s") % (i, n, pct, ("%d min" % round(left / 60.0)) if left >= 90 else ("%d s" % left))
+    return _("Skan %d/%d - %d%%") % (i, n, pct)
 
 
 def _f(v):
@@ -459,7 +518,7 @@ def _f(v):
 
 
 try:
-    _f.scale = getDesktop(0).size().width() / 1280.0
+    _f.scale = getDesktop(0).size().width() / 1440.0
 except Exception:
     _f.scale = 1.0
 
@@ -486,7 +545,7 @@ class SatWatchMain(Screen):
         <widget name="report" position="%d,%d" size="%d,%d" font="Console;%d" />
         <eLabel position="%d,%d" size="%d,%d" backgroundColor="#00606060" />
         <widget name="menu_hint" position="%d,%d" size="%d,%d" font="Regular;%d" foregroundColor="#00b0b0b0" />
-    </screen>""" % (_f(1200), _f(660),
+    </screen>""" % (_f(1200), _f(690),
                     _f(20), _f(10), _f(1160), _f(30), _f(20),
                     _f(20), _f(50), _f(1160), _f(560), _f(17),
                     _f(20), _f(616), _f(1160), _f(1),
@@ -496,10 +555,10 @@ class SatWatchMain(Screen):
         Screen.__init__(self, session)
         self.setTitle("SatWatch %s" % core.VERSION)
         self.start_action = action          # z menu Kanaly -> SatWatch: akcja do wykonania po otwarciu okna
-        rep = core.read_last_report() or "Brak raportu. Kanały -> SatWatch -> Sprawdź teraz."
+        rep = core.read_last_report() or _("Brak raportu. Kanały -> SatWatch -> Sprawdź teraz.")
         self["report"] = ScrollLabel(rep)
         self["status"] = Label(runner.status if runner.busy else self.statusText())
-        self["menu_hint"] = Label("Exit / OK - powrót do listy SatWatch (praca trwa w tle).  Strzałki - przewijanie raportu.")
+        self["menu_hint"] = Label(_("Exit / OK - powrót do listy SatWatch (praca trwa w tle).  Strzałki - przewijanie raportu."))
         self["actions"] = ActionMap(
             ["OkCancelActions", "DirectionActions"], {
                 "cancel": self.close,
@@ -528,12 +587,12 @@ class SatWatchMain(Screen):
             a, lambda: self.menuDone((a, a)))()
 
     def statusText(self):
-        st = core.load_json(core.DATA_DIR + "/state.json", {})
-        s = "Sprawdzenie: %s" % st.get("last_check", "-")
+        st = core.load_json(core.data_file("state.json"), {})
+        s = _("Sprawdzenie: %s") % st.get("last_check", "-")
         if runner.next_check:
-            s += " | następne %s" % time.strftime("%d.%m %H:%M", time.localtime(runner.next_check))
+            s += _(" | następne %s") % time.strftime("%d.%m %H:%M", time.localtime(runner.next_check))
         if runner.next_full:
-            s += " | pełny skan %s" % time.strftime("%d.%m %H:%M", time.localtime(runner.next_full))
+            s += _(" | pełny skan %s") % time.strftime("%d.%m %H:%M", time.localtime(runner.next_full))
         return s
 
     def cleanup(self):
@@ -546,7 +605,7 @@ class SatWatchMain(Screen):
             self["report"].setText(report)
 
     def busy(self):
-        self.session.open(MessageBox, "Trwa zadanie (%s). Poczekaj albo przerwij skan: Kanały -> SatWatch -> Przerwij skan."
+        self.session.open(MessageBox, _("Trwa zadanie (%s). Poczekaj albo przerwij skan: Kanały -> SatWatch -> Przerwij skan.")
                           % runner.status,
                           MessageBox.TYPE_INFO, timeout=6)
 
@@ -557,8 +616,8 @@ class SatWatchMain(Screen):
     def keySnap(self):
         self.session.openWithCallback(
             lambda ans: (runner.run(core.snapshot_save_only, self.simpleDone) or self.busy()) if ans else self.close(),
-            MessageBox, "Zapisać aktualny stan lamedb i bukietów jako zrzut referencyjny?\n"
-                        "Zrób to przed ręcznym skanem.", MessageBox.TYPE_YESNO)
+            MessageBox, _("Zapisać aktualny stan lamedb i bukietów jako zrzut referencyjny?\n"
+                        "Zrób to przed ręcznym skanem."), MessageBox.TYPE_YESNO)
 
     def keyCompare(self):
         if not runner.run(core.snapshot_compare_only, self.simpleDone, cfg.ignore_bq.value):
@@ -575,18 +634,18 @@ class SatWatchMain(Screen):
     def keyMenu(self):
         items = []
         if runner.scanner is not None:
-            items.append(("Przerwij skan", "abort"))
-        items += [("Do decyzji - wybierz kandydata", "decide"),
-                  ("Skan zmienionych TP teraz (sprawdzenie + skan)", "check"),
-                  ("Pełny skan teraz", "full"),
-                  ("Napraw bukiety teraz (podmiany wg reguł)", "fix"),
-                  ("Akceptuj obecny stan (wyczyść listę DO DECYZJI)", "accept"),
-                  ("Przywróć kopię bukietów", "restore_bq"),
-                  ("Przywróć kopię satellites.xml", "restore"),
-                  ("Przeładuj transpondery (bez restartu)", "reload"),
-                  ("Pokaż log (ostatnie 200 linii)", "log"),
-                  ("Konfiguracja tunerów - co ustawić (system, EPG Scan, SatWatch)", "tuners"),
-                  ("Ustawienia SatWatch (też: EPG Scan -> Ustawienia)", "setup")]
+            items.append((_("Przerwij skan"), "abort"))
+        items += [(_("Do decyzji - wybierz kandydata"), "decide"),
+                  (_("Skan zmienionych TP teraz (sprawdzenie + skan)"), "check"),
+                  (_("Pełny skan teraz"), "full"),
+                  (_("Napraw bukiety teraz (podmiany wg reguł)"), "fix"),
+                  (_("Akceptuj obecny stan (wyczyść listę DO DECYZJI)"), "accept"),
+                  (_("Przywróć kopię bukietów"), "restore_bq"),
+                  (_("Przywróć kopię satellites.xml"), "restore"),
+                  (_("Przeładuj transpondery (bez restartu)"), "reload"),
+                  (_("Pokaż log (ostatnie 200 linii)"), "log"),
+                  (_("Konfiguracja tunerów - co ustawić (system, EPG Scan, SatWatch)"), "tuners"),
+                  (_("Ustawienia SatWatch (też: EPG Scan -> Ustawienia)"), "setup")]
         self.session.openWithCallback(self.menuDone, ChoiceBox, title="SatWatch", list=items)
 
     def menuDone(self, choice):
@@ -601,19 +660,19 @@ class SatWatchMain(Screen):
             runner.check() or self.busy()
         elif c == "full":
             self.session.openWithCallback(lambda a: (runner.fullScan() or self.busy()) if a else self.close(), MessageBox,
-                                          "Uruchomić pełny skan monitorowanych pozycji?\n"
-                                          "Potrwa kilkanaście minut, używa jednego wolnego tunera.",
+                                          _("Uruchomić pełny skan monitorowanych pozycji?\n"
+                                          "Potrwa kilkanaście minut, używa jednego wolnego tunera."),
                                           MessageBox.TYPE_YESNO)
         elif c == "fix":
             runner.fixBouquets() or self.busy()
         elif c == "accept":
             self.session.openWithCallback(
-                lambda a: self["status"].setText("Wyczyszczono %d pozycji DO DECYZJI." % core.clear_unresolved()) if a else self.close(),
-                MessageBox, "Uznać obecne kanały w bukietach za poprawne?\n"
-                            "Pozycje DO DECYZJI przestaną wracać w raportach.", MessageBox.TYPE_YESNO)
+                lambda a: self["status"].setText(_("Wyczyszczono %d pozycji DO DECYZJI.") % core.clear_unresolved()) if a else self.close(),
+                MessageBox, _("Uznać obecne kanały w bukietach za poprawne?\n"
+                            "Pozycje DO DECYZJI przestaną wracać w raportach."), MessageBox.TYPE_YESNO)
         elif c == "log":
             od = core.out_dir()
-            note = "" if (core.LOG_PREF in ("", od)) else "  (wybrany %s niedostępny!)" % core.LOG_PREF
+            note = "" if (core.LOG_PREF in ("", od)) else _("  (wybrany %s niedostępny!)") % core.LOG_PREF
             self["status"].setText("Log: %s%s" % (scanner.log_path(), note))
             self["report"].setText(scanner.read_log(200))
         elif c == "setup":
@@ -624,21 +683,21 @@ class SatWatchMain(Screen):
             self["report"].setText(scanner.tuner_advice(-1 if p is None else p)[1])
         elif c == "reload":
             ok = reload_transponders()
-            self["status"].setText("Transpondery przeładowane." if ok else
-                                   "Przeładowanie nie powiodło się - zrestartuj GUI.")
+            self["status"].setText(_("Transpondery przeładowane.") if ok else
+                                   _("Przeładowanie nie powiodło się - zrestartuj GUI."))
         elif c == "restore":
             b = core.list_backups()
             if not b:
-                self.session.open(MessageBox, "Brak kopii.", MessageBox.TYPE_INFO, timeout=5)
+                self.session.open(MessageBox, _("Brak kopii."), MessageBox.TYPE_INFO, timeout=5)
                 return
-            self.session.openWithCallback(self.restoreDone, ChoiceBox, title="Kopia satellites.xml",
+            self.session.openWithCallback(self.restoreDone, ChoiceBox, title=_("Kopia satellites.xml"),
                                           list=[(x, x) for x in b])
         elif c == "restore_bq":
             b = core.list_bouquet_backups()
             if not b:
-                self.session.open(MessageBox, "Brak kopii bukietów.", MessageBox.TYPE_INFO, timeout=5)
+                self.session.open(MessageBox, _("Brak kopii bukietów."), MessageBox.TYPE_INFO, timeout=5)
                 return
-            self.session.openWithCallback(self.restoreBqDone, ChoiceBox, title="Kopia bukietów (sprzed podmiany)",
+            self.session.openWithCallback(self.restoreBqDone, ChoiceBox, title=_("Kopia bukietów (sprzed podmiany)"),
                                           list=[(x, x) for x in b])
 
     def restoreDone(self, choice):
@@ -646,9 +705,9 @@ class SatWatchMain(Screen):
             return self.close()
         try:
             core.restore_backup(choice[1])
-            self["status"].setText("Przywrócono %s. Zrestartuj GUI lub przeładuj transpondery." % choice[1])
+            self["status"].setText(_("Przywrócono %s. Zrestartuj GUI lub przeładuj transpondery.") % choice[1])
         except Exception as e:
-            self["status"].setText("Błąd przywracania: %s" % e)
+            self["status"].setText(_("Błąd przywracania: %s") % e)
 
     def restoreBqDone(self, choice):
         if not choice:
@@ -656,9 +715,9 @@ class SatWatchMain(Screen):
         try:
             n = core.restore_bouquet_backup(choice[1])
             reload_lists()
-            self["status"].setText("Przywrócono %d plików bukietów z %s." % (n, choice[1]))
+            self["status"].setText(_("Przywrócono %d plików bukietów z %s.") % (n, choice[1]))
         except Exception as e:
-            self["status"].setText("Błąd przywracania: %s" % e)
+            self["status"].setText(_("Błąd przywracania: %s") % e)
 
 
 class SatWatchSetup(ConfigListScreen, Screen):
@@ -668,7 +727,7 @@ class SatWatchSetup(ConfigListScreen, Screen):
         <eLabel position="%d,%d" size="%d,%d" backgroundColor="#00606060" />
         <widget name="help" position="%d,%d" size="%d,%d" font="Regular;%d" foregroundColor="#00b0b0b0" />
         %s
-    </screen>""" % (_f(1060), _f(640),
+    </screen>""" % (_f(1200), _f(690),
                     _f(20), _f(15), _f(1020), _f(416), _f(20), _f(32),
                     _f(20), _f(438), _f(1020), _f(1),
                     _f(20), _f(446), _f(1020), _f(140), _f(17),
@@ -676,7 +735,15 @@ class SatWatchSetup(ConfigListScreen, Screen):
 
     def __init__(self, session):
         Screen.__init__(self, session)
-        self.setTitle("SatWatch - transpondery - ustawienia")
+        self.setTitle(_("SatWatch - transpondery - ustawienia"))
+        # domyslna wartosc zostaje stala ("auto" / pamiec wewnetrzna): Enigma2 nie zapisuje wartosci rownej
+        # domyslnej, wiec default=value gubil wybrany tuner/katalog po restarcie
+        for element, choices, default in ((cfg.scan_tuner, tuner_choices(), "auto"),):
+            value = element.value
+            if value and value not in [key for key, label in choices]:
+                choices.append((value, value))
+            element.setChoices(choices, default=default)
+            element.value = value
         self["help"] = Label("")
         from . import pick
         self.pick = pick
@@ -686,8 +753,8 @@ class SatWatchSetup(ConfigListScreen, Screen):
         self.p_bouquets = NoSave(ConfigSelection(choices=[("v", pick.bouquets_text(self.v_ignore))]))
         self.p_url = NoSave(ConfigSelection(choices=[("v", pick.url_text(self.v_url))]))
         self.proxy_key = {id(self.p_positions): "positions", id(self.p_bouquets): "ignore_bq", id(self.p_url): "url"}
-        self["key_red"] = StaticText("Anuluj")
-        self["key_green"] = StaticText("Zapisz")
+        self["key_red"] = StaticText(_("Anuluj"))
+        self["key_green"] = StaticText(_("Zapisz"))
         lst = [
             getConfigListEntry("Akcja przy zmianach satellites.xml", cfg.action),
             getConfigListEntry("Skanuj zmienione TP automatycznie", cfg.autoscan),
@@ -705,12 +772,14 @@ class SatWatchSetup(ConfigListScreen, Screen):
             getConfigListEntry("Kanały z bukietów (OK - lista)", self.p_bouquets),
             getConfigListEntry("Zrzut i raport bukietów przy sprawdzaniu", cfg.snapshot),
             getConfigListEntry("Przeładuj transpondery po aktualizacji", cfg.reload),
-            getConfigListEntry("Katalog logu i historii raportów", cfg.logdir),
             getConfigListEntry("Powiadomienie na ekranie", cfg.popup),
             getConfigListEntry("Liczba kopii satellites.xml", cfg.backups),
             getConfigListEntry("Weryfikacja certyfikatu SSL", cfg.verify_ssl),
             getConfigListEntry("Adres satellites.xml (OK - lista)", self.p_url),
         ]
+        for element in (cfg.action, cfg.full_day, cfg.wait_max, cfg.mode, cfg.popup):
+            translate_choices(element)
+        lst = [(_(entry[0]),) + entry[1:] for entry in lst]
         ConfigListScreen.__init__(self, lst, session=session)
         self["config"].onSelectionChanged.append(self.showHelp)
         self.onLayoutFinish.append(self.showHelp)
@@ -729,8 +798,8 @@ class SatWatchSetup(ConfigListScreen, Screen):
         "autoscan": "Po aktualizacji satellites.xml skanuje tylko nowe i zmienione transpondery jednym wolnym tunerem. "
                     "Sprawdzenie: w nocnym przebiegu EPG Scan albo Kanały -> SatWatch -> Sprawdź teraz.",
         "full": "Raz w tygodniu, w wybrany dzień, nocny przebieg EPG Scan robi pełny skan wszystkich TP monitorowanych pozycji "
-                "(13.0E: ok. 70 TP, kilka minut); w pozostałe dni - tylko sprawdzenie zmian. To samo ustawienie jest "
-                "w EPG Scan -> Ustawienia -> Harmonogram.",
+                "(13.0E: ok. 70 TP, kilka minut); w pozostałe dni - tylko sprawdzenie zmian. Harmonogram EPG Scan określa "
+                "wyłącznie kiedy ten przebieg może się uruchomić.",
         "remove_stale": "Serwisy, których skan nie znalazł na zeskanowanym TP, są usuwane z lamedb (TP z mniej niż połową "
                         "znanych kanałów - nic nie usuwa). Wyłączone: zostają, ale raport je wypisuje, a kanały z bukietów "
                         "na nich trafiają do podmiany / decyzji.",
@@ -755,8 +824,6 @@ class SatWatchSetup(ConfigListScreen, Screen):
                     "i TP) i zapis nowego zrzutu. Ręcznie: Kanały -> SatWatch -> Zapisz zrzut / Podgląd bukietów.",
         "reload": "Po aktualizacji satellites.xml przeładowuje transpondery w Enigma2 bez restartu. Wyłączone: zmiana działa "
                   "po restarcie GUI (może go zrobić 'Restart po nocnym przebiegu' w EPG Scan).",
-        "logdir": "Gdzie trzymać satwatch.log i historię raportów (30 ostatnich). Dysk/USB oszczędza pamięć flash; gdy nośnik "
-                  "jest niedostępny, log trafia do pamięci wewnętrznej. Raporty i log: Info/EPG -> Raporty.",
         "popup": "Komunikat na ekranie po sprawdzeniu lub skanie: nigdy / tylko gdy coś się zmieniło / zawsze.",
         "backups": "Ile kopii satellites.xml sprzed aktualizacji trzymać. Przywracanie: Kanały -> SatWatch -> "
                    "Przywróć kopię satellites.xml.",
@@ -781,10 +848,12 @@ class SatWatchSetup(ConfigListScreen, Screen):
             if key:
                 break
         txt = self.HELP.get(key, "")
+        if txt:
+            txt = _(txt)
         if item in (cfg.scan_tuner, cfg.reserve, cfg.wait_max):
             p = preferred_slot()
-            txt += "\n" + scanner.tuner_advice(-1 if p is None else p)[0] + "  Pełna porada: Kanały -> SatWatch -> " \
-                "Konfiguracja tunerów."
+            txt += "\n" + scanner.tuner_advice(-1 if p is None else p)[0] + _("  Pełna porada: Kanały -> SatWatch -> " \
+                "Konfiguracja tunerów.")
         self["help"].setText(txt)
 
     def keyOk(self):
@@ -795,13 +864,13 @@ class SatWatchSetup(ConfigListScreen, Screen):
         k = self.proxy_key.get(id(item))
         if k == "positions":
             cur = core.parse_positions(self.v_positions) or [130]
-            self.session.openWithCallback(self.gotPositions, self.pick.SatWatchPick, "SatWatch - monitorowane pozycje",
+            self.session.openWithCallback(self.gotPositions, self.pick.SatWatchPick, _("SatWatch - monitorowane pozycje"),
                                           self.pick.position_items(cur),
-                                          "OK: zaznacz / odznacz.  Zielony: zapisz.  Czerwony: anuluj.")
+                                          _("OK: zaznacz / odznacz.  Zielony: zapisz.  Czerwony: anuluj."))
         elif k == "ignore_bq":
             ign = core.parse_ignore(self.v_ignore)
-            items = [(n + ("   (radio)" if radio else ""), n, n.lower() not in ign) for n, radio in self.pick.bouquet_list()]
-            self.session.openWithCallback(self.gotBouquets, self.pick.SatWatchPick, "SatWatch - kanały z bukietów", items)
+            items = [(n + (_("   (radio)") if radio else ""), n, n.lower() not in ign) for n, radio in self.pick.bouquet_list()]
+            self.session.openWithCallback(self.gotBouquets, self.pick.SatWatchPick, _("SatWatch - kanały z bukietów"), items)
         elif k == "url":
             self.session.openWithCallback(self.gotUrl, self.pick.SatWatchUrls, self.v_url, self.v_urls)
         else:
@@ -814,7 +883,7 @@ class SatWatchSetup(ConfigListScreen, Screen):
         if res is None:
             return
         if not res:
-            self.session.open(MessageBox, "Zaznacz co najmniej jedną pozycję.", MessageBox.TYPE_INFO, timeout=5)
+            self.session.open(MessageBox, _("Zaznacz co najmniej jedną pozycję."), MessageBox.TYPE_INFO, timeout=5)
             return
         self.v_positions = ", ".join(core.pos_str(p) for p in res)
         self.setProxy(self.p_positions, self.pick.positions_text(self.v_positions))
@@ -848,22 +917,9 @@ class SatWatchSetup(ConfigListScreen, Screen):
             if c.value != v:
                 c.value = v
                 c.save()
-        old = core.out_dir()
         for x in self["config"].list:
             x[1].save()
         configfile.save()
-        apply_logdir()
-        new = core.out_dir()
-        if core.LOG_PREF and new != core.LOG_PREF:
-            self.session.open(MessageBox, "Katalog %s jest niedostępny (nośnik niezamontowany?).\n"
-                              "Do czasu jego pojawienia się log zostaje w %s." % (core.LOG_PREF, new),
-                              MessageBox.TYPE_WARNING, timeout=10)
-        elif new != old:
-            try:
-                n = core.migrate_out_dir(old, new)
-                scanner.log("Katalog logu: %s -> %s (skopiowano %d plikow)" % (old, new, n))
-            except Exception as e:
-                scanner.log("Katalog logu: blad kopiowania %s" % e)
         self.close(True)
 
     def keyCancel(self):
@@ -877,6 +933,10 @@ class SatWatchSetup(ConfigListScreen, Screen):
 def init(session):
     """Start w EPG Scan (sessionstart): katalog logu, sesja dla skanera, zegar wznawiania przerwanych skanow."""
     apply_logdir()
+    try:
+        migrate_old_logdir()
+    except Exception as e:
+        scanner.log("Katalog logu: przeniesienie nieudane: %s" % e)
     runner.session = session
     runner.schedule()
 
@@ -894,7 +954,7 @@ def full_due(now=None):
 
 def _places(e):
     pl = e.get("places") or []
-    s = ", ".join('"%s" poz. %d' % (p[0], p[1]) for p in pl[:3])
+    s = ", ".join(_('"%s" poz. %d') % (p[0], p[1]) for p in pl[:3])
     return s + (" (+%d)" % (len(pl) - 3) if len(pl) > 3 else "")
 
 
@@ -902,14 +962,14 @@ def _cand_label(c):
     sid = core.str_key(c["key"])[0]
     extra = []
     if c.get("same_ts"):
-        extra.append("ten sam TS")
+        extra.append(_("ten sam TS"))
     if c.get("in_bq"):
-        extra.append("juz w bukietach")
+        extra.append(_("juz w bukietach"))
     if c.get("new"):
-        extra.append("NOWY")
+        extra.append(_("NOWY"))
     if c.get("fallback"):
-        extra.append("z tego TP" if c.get("same_ts") else "ten sam nadawca")
-    return "-> %s | %s | SID %X | nazwa %d%%%s" % (c["name"], c.get("tp") or "?", sid, int(c["ratio"] * 100),
+        extra.append(_("z tego TP") if c.get("same_ts") else _("ten sam nadawca"))
+    return _("-> %s | %s | SID %X | nazwa %d%%%s") % (c["name"], c.get("tp") or "?", sid, int(c["ratio"] * 100),
                                                   (" | " + ", ".join(extra)) if extra else "")
 
 
@@ -922,20 +982,20 @@ def open_decisions(session, back=None):
                                      MessageBox.TYPE_ERROR, timeout=8)
             return
         if not res:
-            session.openWithCallback(lambda *a: back and back(), MessageBox, "Brak kanalow do decyzji.",
+            session.openWithCallback(lambda *a: back and back(), MessageBox, _("Brak kanalow do decyzji."),
                                      MessageBox.TYPE_INFO, timeout=5)
             return
         items = []
         for e in res:
             pl = e.get("places") or []
-            items.append(("%s  -  %s%s  (kandydatow: %d)" % (
-                e["name"], ('"%s" poz. %d' % (pl[0][0], pl[0][1])) if pl else "?",
+            items.append((_("%s  -  %s%s  (kandydatow: %d)") % (
+                e["name"], (_('"%s" poz. %d') % (pl[0][0], pl[0][1])) if pl else "?",
                 (" +%d" % (len(pl) - 1)) if len(pl) > 1 else "", len(e.get("candidates") or [])), e))
         session.openWithCallback(lambda c: _entry(session, c[1], back) if c else (back and back()), ChoiceBox,
-                                 title="SatWatch - do decyzji: %d" % len(res), list=items, keys=[])
+                                 title=_("SatWatch - do decyzji: %d") % len(res), list=items, keys=[])
     if not runner.run(core.pending_decisions, got, cfg.ignore_bq.value):
         session.openWithCallback(lambda *a: back and back(), MessageBox,
-                                 "SatWatch pracuje (%s) - sprobuj za chwile." % runner.status, MessageBox.TYPE_INFO, timeout=6)
+                                 _("SatWatch pracuje (%s) - sprobuj za chwile.") % runner.status, MessageBox.TYPE_INFO, timeout=6)
 
 
 _STYPE = {1: "SD (MPEG-2)", 0x11: "HD (MPEG-2)", 0x16: "SD (H.264)", 0x19: "HD (H.264)", 0x1F: "UHD/HD (HEVC)",
@@ -943,7 +1003,7 @@ _STYPE = {1: "SD (MPEG-2)", 0x11: "HD (MPEG-2)", 0x16: "SD (H.264)", 0x19: "HD (
 
 
 def _stype(t):
-    return _STYPE.get(t or 1, "typ %X" % (t or 0))
+    return _STYPE.get(t or 1, _("typ %X") % (t or 0))
 
 
 def _sid(ks):
@@ -954,38 +1014,38 @@ def _cand_info(e, c, i, n):
     """Opis kandydata pod lista - wszystko, co pomaga zdecydowac."""
     osid, csid = _sid(e["key"]), _sid(c["key"])
     oprov, cprov = (e.get("provider") or "").strip(), (c.get("provider") or "").strip()
-    L = ["Kandydat %d/%d:  %s" % (i + 1, n, c["name"])]
+    L = [_("Kandydat %d/%d:  %s") % (i + 1, n, c["name"])]
     if c.get("fallback"):
-        L[0] += "   (nazwa i SID nie pasuja - kanal z tego samego TP / nadawcy)"
+        L[0] += _("   (nazwa i SID nie pasuja - kanal z tego samego TP / nadawcy)")
     if c.get("same_sid"):
-        L.append("SID:          %04X - ZGODNY z dawnym (najmocniejsza wskazowka)" % csid)
+        L.append(_("SID:          %04X - ZGODNY z dawnym (najmocniejsza wskazowka)") % csid)
     else:
-        L.append("SID:          %04X - inny niz dawny (%04X)" % (csid, osid))
+        L.append(_("SID:          %04X - inny niz dawny (%04X)") % (csid, osid))
     if c.get("same_ts"):
-        L.append("Transponder:  %s - ten sam strumien (TS) co dawniej" % (c.get("tp") or "?"))
+        L.append(_("Transponder:  %s - ten sam strumien (TS) co dawniej") % (c.get("tp") or "?"))
     else:
-        L.append("Transponder:  %s - inny niz dawny (%s)" % (c.get("tp") or "?", e.get("tp") or "?"))
+        L.append(_("Transponder:  %s - inny niz dawny (%s)") % (c.get("tp") or "?", e.get("tp") or "?"))
     if cprov and oprov and cprov.lower().rstrip(".") == oprov.lower().rstrip("."):
-        L.append("Nadawca:      %s - ten sam" % cprov)
+        L.append(_("Nadawca:      %s - ten sam") % cprov)
     else:
-        L.append("Nadawca:      %s - %s" % (cprov or "?", ("inny niz dawny (%s)" % oprov) if oprov else "dawny nieznany"))
+        L.append(_("Nadawca:      %s - %s") % (cprov or "?", (_("inny niz dawny (%s)") % oprov) if oprov else _("dawny nieznany")))
         if not c.get("known_prov", True):
-            L[-1] += ", spoza pakietow z Twoich bukietow"
-    nm = "Nazwa:        zgodnosc %d%%" % int(c["ratio"] * 100)
+            L[-1] += _(", spoza pakietow z Twoich bukietow")
+    nm = _("Nazwa:        zgodnosc %d%%") % int(c["ratio"] * 100)
     if c["name"].strip().lower() == (e.get("name") or "").strip().lower():
-        nm += " - identyczna"
+        nm += _(" - identyczna")
     elif c.get("compact_eq"):
-        nm += " - ta sama po pominieciu HD/spacji"
+        nm += _(" - ta sama po pominieciu HD/spacji")
     elif not c.get("first_eq"):
-        nm += " - inne pierwsze slowo"
+        nm += _(" - inne pierwsze slowo")
     L.append(nm)
-    L.append("Typ:          %s%s" % (_stype(c.get("type")), "" if c.get("type") == e.get("type") else
-                                     "  (dawniej %s)" % _stype(e.get("type"))))
+    L.append(_("Typ:          %s%s") % (_stype(c.get("type")), "" if c.get("type") == e.get("type") else
+                                     _("  (dawniej %s)") % _stype(e.get("type"))))
     flags = []
-    flags.append("JUZ JEST w Twoich bukietach (podmiana zrobi dubel)" if c.get("in_bq") else "nie ma go w Twoich bukietach")
+    flags.append(_("JUZ JEST w Twoich bukietach (podmiana zrobi dubel)") if c.get("in_bq") else _("nie ma go w Twoich bukietach"))
     if c.get("new"):
-        flags.append("NOWY w lamedb (pojawil sie od ostatniego sprawdzenia)")
-    L.append("Uwagi:        " + "; ".join(flags))
+        flags.append(_("NOWY w lamedb (pojawil sie od ostatniego sprawdzenia)"))
+    L.append(_("Uwagi:        ") + "; ".join(flags))
     return "\n".join(L)
 
 
@@ -1000,7 +1060,7 @@ class SatWatchDecision(Screen):
         <eLabel position="%d,%d" size="%d,%d" backgroundColor="#00505050" />
         <widget name="info" position="%d,%d" size="%d,%d" font="Regular;%d" />
         %s
-    </screen>""" % (_f(1200), _f(660),
+    </screen>""" % (_f(1200), _f(690),
                     _f(20), _f(8), _f(578), _f(150), _f(18),
                     _f(20), _f(166), _f(578), _f(160), _f(19), _f(32),
                     _f(618), _f(8), _f(564), _f(319),
@@ -1017,26 +1077,26 @@ class SatWatchDecision(Screen):
             e["reason"] = core.decide(e)[1]
         except Exception:
             pass
-        self.setTitle("SatWatch - decyzja: %s" % e["name"])
-        self["head"] = Label("Bylo:   %s  |  %s\n            %s\n            SID %04X  |  %s\nGdzie: %s\nPowod: %s" % (
+        self.setTitle(_("SatWatch - decyzja: %s") % e["name"])
+        self["head"] = Label(_("Bylo:   %s  |  %s\n            %s\n            SID %04X  |  %s\nGdzie: %s\nPowod: %s") % (
             e["name"], e.get("provider") or "?", e.get("tp") or "?", _sid(e["key"]), _stype(e.get("type")),
-            _places(e), e.get("reason") or "-"))
+            _places(e), core.display_reason(e.get("reason") or "-")))
         items = []
         for c in self.cands:
             tag = []
             if c.get("same_sid"):
-                tag.append("SID zgodny")
+                tag.append(_("SID zgodny"))
             if c.get("in_bq"):
-                tag.append("w bukietach")
+                tag.append(_("w bukietach"))
             items.append("%s  |  SID %04X%s" % (c["name"], _sid(c["key"]), ("  |  " + ", ".join(tag)) if tag else ""))
         if not items:
-            items = ["(brak kandydatow - usun kanal albo zostaw)"]
+            items = [_("(brak kandydatow - usun kanal albo zostaw)")]
         self["list"] = MenuList(items)
         self["info"] = Label("")
-        self["key_red"] = StaticText("Wroc")
-        self["key_green"] = StaticText("Podglad" if self.cands else "")
-        self["key_yellow"] = StaticText("Usun z bukietow")
-        self["key_blue"] = StaticText("Zostaw jak jest")
+        self["key_red"] = StaticText(_("Wroc"))
+        self["key_green"] = StaticText(_("Podglad") if self.cands else "")
+        self["key_yellow"] = StaticText(_("Usun z bukietow"))
+        self["key_blue"] = StaticText(_("Zostaw jak jest"))
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
             "ok": self.keyOk,
             "cancel": self.close,
@@ -1045,8 +1105,8 @@ class SatWatchDecision(Screen):
             "yellow": self.keyRemove,
             "blue": self.keyKeep,
         }, -1)
-        self["list"].onSelectionChanged.append(self.update)
-        self.onLayoutFinish.append(self.update)
+        self["list"].onSelectionChanged.append(self.update_info)
+        self.onLayoutFinish.append(self.update_info)
         try:
             self.orig = session.nav.getCurrentlyPlayingServiceOrGroup()
         except Exception:
@@ -1056,6 +1116,14 @@ class SatWatchDecision(Screen):
 
     def restore(self):
         """Po wyjsciu z decyzji wraca kanal ogladany wczesniej (gdy byl podglad)."""
+        try:
+            import Screens.Standby
+            if Screens.Standby.inStandby:
+                self.played = False
+                self.orig = None
+                return
+        except Exception:
+            pass
         if self.played and self.orig is not None:
             try:
                 self.session.nav.playService(self.orig)
@@ -1066,20 +1134,20 @@ class SatWatchDecision(Screen):
         i = self["list"].getSelectedIndex()
         return (i, self.cands[i]) if 0 <= i < len(self.cands) else (i, None)
 
-    def update(self):
+    def update_info(self):
         i, c = self.cur()
         if c is None:
-            self["info"].setText("Brak kandydatow w lamedb. Zolty: usun kanal z bukietow, niebieski: zostaw.")
+            self["info"].setText(_("Brak kandydatow w lamedb. Zolty: usun kanal z bukietow, niebieski: zostaw."))
             return
         self["info"].setText(_cand_info(self.e, c, i, len(self.cands)) +
-                             "\n\nOK: podmien na ten kanal   |   zielony: podglad w okienku obok (po wyjsciu wraca poprzedni kanal)")
+                             _("\n\nOK: podmien na ten kanal   |   zielony: podglad w okienku obok (po wyjsciu wraca poprzedni kanal)"))
 
     def keyOk(self):
         i, c = self.cur()
         if c is None:
             return
         self.session.openWithCallback(lambda yes: yes and self.close(("replace", c)), MessageBox,
-                                      "Podmienic %s na %s (SID %04X, %s) we wszystkich bukietach?" % (
+                                      _("Podmienic %s na %s (SID %04X, %s) we wszystkich bukietach?") % (
                                           self.e["name"], c["name"], _sid(c["key"]), c.get("tp") or "?"),
                                       MessageBox.TYPE_YESNO)
 
@@ -1095,7 +1163,7 @@ class SatWatchDecision(Screen):
 
     def keyRemove(self):
         self.session.openWithCallback(lambda yes: yes and self.close(("remove", None)), MessageBox,
-                                      "Usunac %s z bukietow (%s)?" % (self.e["name"], _places(self.e)),
+                                      _("Usunac %s z bukietow (%s)?") % (self.e["name"], _places(self.e)),
                                       MessageBox.TYPE_YESNO)
 
     def keyKeep(self):
@@ -1123,4 +1191,4 @@ def _resolve(session, e, action, c, back=None):
         session.openWithCallback(lambda *a: open_decisions(session, back), MessageBox, "%s: %s" % (e["name"], msg),
                                  MessageBox.TYPE_INFO, timeout=4)
     if not runner.run(core.resolve_decision, done, e["key"], action, c, cfg.ignore_bq.value):
-        session.open(MessageBox, "SatWatch pracuje - sprobuj za chwile.", MessageBox.TYPE_INFO, timeout=5)
+        session.open(MessageBox, _("SatWatch pracuje - sprobuj za chwile."), MessageBox.TYPE_INFO, timeout=5)

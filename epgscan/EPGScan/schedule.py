@@ -8,7 +8,7 @@ import time
 from enigma import eTimer
 import NavigationInstance
 
-from .common import cfg, log, save_cfg, is_due, sched_active, next_run, fmt_ts, WAKEUP_FILE, topup_candidates, topup_label, TOPUP_INFO
+from .common import cfg, log, save_cfg, is_due, sched_active, next_run, last_slot, fmt_ts, WAKEUP_FILE, topup_candidates, topup_label, TOPUP_INFO
 from .engine import get_engine
 
 CHECK_EVERY = 60    # co ile sekund sprawdzac, czy pora na skan
@@ -43,16 +43,17 @@ def read_wakeup():
 
 def wakeup_time():
 	"""Wywolywane przez Enigma2 przy przejsciu w gleboki sen: kiedy wybudzic odbiornik."""
-	if not sched_active() or not cfg.sched_wakeup.value:
+	times = []
+	if sched_active() and cfg.sched_wakeup.value:
+		ts = next_run()
+		if ts:
+			times.append(ts)
+	if not times:
 		_write_wakeup(0)
 		return -1
-	ts = next_run()
-	if not ts:
-		_write_wakeup(0)
-		return -1
-	ts -= 120   # 2 min na start odbiornika
-	_write_wakeup(ts)
-	return ts
+	wakeup = min(times) - 120   # 2 min na start odbiornika
+	_write_wakeup(wakeup)
+	return wakeup
 
 
 def _write_wakeup(ts):
@@ -90,6 +91,16 @@ class Scheduler(object):
 			log("Harmonogram: skan czeka - %s" % why)
 			self.waiting = why
 
+	def blocked_reason(self, when, skip_recording):
+		if when == "standby" and not in_standby() and not self.woke:
+			return "odbiornik nie jest w czuwaniu"
+		try:
+			if skip_recording and NavigationInstance.instance.RecordTimer.isRecording():
+				return "trwa nagrywanie"
+		except Exception:
+			pass
+		return ""
+
 	def check(self):
 		if self.first:
 			self.first = False
@@ -111,28 +122,30 @@ class Scheduler(object):
 			self.resume = False
 			cfg.auto_in_progress.value = False
 			save_cfg()
-		if not sched_active() or not (is_due() or self.resume):
+		now = int(time.time())
+		epg_due = sched_active() and (is_due(now) or self.resume)
+		if not epg_due:
 			self.waiting = ""
 			self.check_topup()
 			return
 		eng = get_engine(self.session)
 		if eng.running:
 			return
-		if cfg.sched_when.value == "standby" and not in_standby() and not self.woke:
-			return self.wait("odbiornik nie jest w czuwaniu")
-		try:
-			nav = NavigationInstance.instance
-			if cfg.sched_skip_rec.value and nav.RecordTimer.isRecording():
-				return self.wait("trwa nagrywanie")
-		except Exception:
-			pass
+		when = cfg.sched_when.value
+		skip_recording = cfg.sched_skip_rec.value
+		blocked = self.blocked_reason(when, skip_recording)
+		if blocked:
+			return self.wait(blocked)
 		self.waiting = ""
 		if self.resume:
 			log("Harmonogram: powtorka przerwanego skanu")
 			self.resume = False
+			scheduled_start = cfg.last_auto_run.value or now
 		else:
-			cfg.last_auto_run.value = int(time.time())
+			scheduled_start = last_slot(now) if cfg.sched_mode.value == "daily" else now
+			cfg.last_auto_run.value = scheduled_start
 		save_cfg()
+		eng.auto_start_time = scheduled_start
 		if eng.start(auto=True, woke=self.woke):
 			log("Harmonogram: skan uruchomiony, nastepny: %s" % fmt_ts(next_run()))
 			self.report()

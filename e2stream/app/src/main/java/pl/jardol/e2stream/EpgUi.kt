@@ -35,17 +35,66 @@ class EpgUi(
         fun message(t: String)
     }
 
-    private val pl = Locale("pl", "PL")
-    private val hm = SimpleDateFormat("HH:mm", pl)
-    private val day = SimpleDateFormat("EEE dd.MM", pl)
-    private val eventTime = EpgTimeFormat()
+    private val locale = Locale.forLanguageTag(AppLanguage.selected(a))
+    private val hm = SimpleDateFormat("HH:mm", locale)
+    private val day = SimpleDateFormat("EEE dd.MM", locale)
+    private val eventTime = EpgTimeFormat(locale = locale, until = a.getString(R.string.epg_until))
     private val cache = HashMap<String, Pair<Long, List<EpgEvent>>>()
 
     private fun now() = System.currentTimeMillis() / 1000
     private fun t(sec: Long) = hm.format(Date(sec * 1000))
     private fun d(sec: Long) = day.format(Date(sec * 1000))
 
-    private fun load(ref: String): List<EpgEvent> {
+    /** Audycje z EIT strumienia (teraz/następne) — nakładane na EPG kanału, aż się skończą. */
+    private val eitOverlay = HashMap<String, List<EpgEvent>>()
+
+    private fun withEit(ref: String, ev: List<EpgEvent>): List<EpgEvent> {
+        val k = OpenWebif.key(ref)
+        val extra = synchronized(cache) {
+            val list = eitOverlay[k] ?: return ev
+            val live = list.filter { it.end > now() }
+            if (live.isEmpty()) { eitOverlay.remove(k); return ev }
+            live
+        }
+        return EitMerge.merge(ev, extra, { it.begin }, { it.end }, { it.id })
+    }
+
+    /**
+     * EIT „teraz/następne” z oglądanego strumienia: różnice względem EPG trafiają do logu, audycje do nakładki;
+     * przy [persist] także do zapisanego EPG kanału (do następnej aktualizacji z dekodera). [done] = czy coś się zmieniło.
+     */
+    fun applyEit(ch: Channel, events: List<EitEvent>, persist: Boolean, done: (Boolean) -> Unit) {
+        if (events.isEmpty()) return
+        io.execute {
+            val eit = events.map { EpgEvent(it.id, it.begin, it.duration, it.title, it.shortDesc, it.longDesc, ch.ref, ch.name) }
+            val base = try { loadRaw(ch.ref) } catch (_: Exception) { emptyList() }
+            val diff = EitMerge.changes(base, eit, { it.begin }, { it.end }, { it.title })
+            synchronized(cache) { eitOverlay[OpenWebif.key(ch.ref)] = eit }
+            val f = SimpleDateFormat("HH:mm", Locale.US)      // wątek tła - własny format (SimpleDateFormat nie jest bezpieczny wątkowo)
+            fun t(sec: Long) = f.format(Date(sec * 1000))
+            for ((old, new) in diff) {
+                AppLog.i("EIT: ${ch.name} – " + if (old == null) "nowa audycja ${new.title} ${t(new.begin)}–${t(new.end)}"
+                    else "zmiana: ${old.title} ${t(old.begin)}–${t(old.end)} → ${new.title} ${t(new.begin)}–${t(new.end)}")
+            }
+            if (persist && diff.isNotEmpty()) {
+                try {
+                    val at = store.read(ch.ref)?.first ?: System.currentTimeMillis()
+                    store.write(ch.ref, EitMerge.merge(base, eit, { it.begin }, { it.end }, { it.id }), at)
+                } catch (e: Exception) {
+                    AppLog.i("EIT: zapis EPG kanału ${ch.name}: $e")
+                }
+            }
+            a.runOnUiThread { done(diff.isNotEmpty()) }
+        }
+    }
+
+    private fun load(ref: String): List<EpgEvent> = withEit(ref, loadRaw(ref))
+
+    /** Test EIT: tylko zapisane EPG (z EIT), bez zapytań do dekodera. */
+    @Volatile var eitOnly = false
+
+    private fun loadRaw(ref: String): List<EpgEvent> {
+        if (eitOnly) return try { store.read(ref)?.second } catch (_: Exception) { null } ?: emptyList()
         val k = OpenWebif.key(ref)
         synchronized(cache) {
             cache[k]?.let { if (System.currentTimeMillis() - it.first < 10 * 60_000) return it.second }
@@ -68,12 +117,12 @@ class EpgUi(
         val n = now()
         val ev = synchronized(cache) { cache[OpenWebif.key(ref)]?.second }
             ?: try { store.read(ref)?.second } catch (_: Exception) { null }
-            ?: return null
-        return ev.firstOrNull { it.begin <= n && it.end > n }
+            ?: emptyList()
+        return withEit(ref, ev).firstOrNull { it.begin <= n && it.end > n }
     }
 
     private fun cached(ref: String): List<EpgEvent> =
-        synchronized(cache) { cache[OpenWebif.key(ref)]?.second } ?: emptyList()
+        withEit(ref, synchronized(cache) { cache[OpenWebif.key(ref)]?.second } ?: emptyList())
 
     // ------------------------------------------------------------ lista
 
@@ -103,7 +152,7 @@ class EpgUi(
         }
     }
 
-    private fun bigList(title: String, adapter: RowAdapter, hint: String = "OK opis audycji  •  WSTECZ zamknij", timeoutSec: Int = 0, wrap: Boolean = false, pageKeys: Boolean = false,
+    private fun bigList(title: String, adapter: RowAdapter, hint: String = a.getString(R.string.epg_hint_list), timeoutSec: Int = 0, wrap: Boolean = false, pageKeys: Boolean = false,
                         onLongPick: ((Int) -> Boolean)? = null,
                         onPick: (Int) -> Unit): android.app.Dialog =
         TvDialog.panel(a, title, hint, widthFrac = 0.85f, maxH = 0.9f, timeoutSec = timeoutSec) { ctx, _ ->
@@ -124,7 +173,7 @@ class EpgUi(
         val n = now()
         if (ev.begin > n || ev.end <= n || ev.duration <= 0) return ""
         val pct = ((n - ev.begin) * 100 / ev.duration).toInt()
-        return "  •  trwa ($pct%, zostało ${(ev.end - n) / 60} min)"
+        return a.getString(R.string.epg_progress, pct, (ev.end - n) / 60)
     }
 
     // ------------------------------------------------------------ audycja
@@ -139,18 +188,18 @@ class EpgUi(
         val btns = mutableListOf<TvDialog.Btn>()
         if (ref.isNotBlank()) {
             if (isCurrentChannel) {
-                btns += TvDialog.Btn("Oglądaj")
+                btns += TvDialog.Btn(a.getString(R.string.epg_watch))
             } else {
-                btns += TvDialog.Btn("Przełącz na kanał") {
+                btns += TvDialog.Btn(a.getString(R.string.epg_switch_channel)) {
                     confirmAction(
-                        "Potwierdź przełączenie",
-                        "Przełączyć na kanał ${name.ifBlank { ref }}?",
-                        "Przełącz",
+                        a.getString(R.string.epg_confirm_switch),
+                        a.getString(R.string.epg_switch_question, name.ifBlank { ref }),
+                        a.getString(R.string.epg_switch),
                         onBack = returnToSchedule,
                     ) {
                         host.zapTo(ref) { ok, result ->
                             showActionResult(
-                                if (ok) "Przełączono na kanał" else "Nie udało się przełączyć",
+                                a.getString(if (ok) R.string.epg_switched else R.string.epg_switch_failed),
                                 result,
                                 returnToSchedule ?: {},
                             )
@@ -158,61 +207,61 @@ class EpgUi(
                     }
                 }
             }
-            if (ev.end > now()) btns += TvDialog.Btn("Nagraj na dekoderze") {
+            if (ev.end > now()) btns += TvDialog.Btn(a.getString(R.string.epg_record_receiver)) {
                 confirmAction(
-                    "Potwierdź nagranie",
-                    "Dodać do nagrań dekodera?\n\n$name — ${ev.title}\n${t(ev.begin)}–${t(ev.end)}",
-                    "Nagraj",
+                    a.getString(R.string.epg_confirm_record),
+                    a.getString(R.string.epg_record_question, name, ev.title, t(ev.begin), t(ev.end)),
+                    a.getString(R.string.epg_record),
                     onBack = returnToSchedule,
                 ) { record(ref, ev, onInfoClose = returnToSchedule ?: {}) }
             }
             if (scheduledTimer != null) {
-                btns += TvDialog.Btn("Usuń przełączenie") {
+                btns += TvDialog.Btn(a.getString(R.string.epg_remove_switch)) {
                     confirmAction(
-                        "Potwierdź usunięcie",
-                        "Usunąć zaplanowane przełączenie?\n\n${scheduledTimer.channel} — ${scheduledTimer.title}\n${t(scheduledTimer.begin)}",
-                        "Usuń",
+                        a.getString(R.string.epg_confirm_remove),
+                        a.getString(R.string.epg_remove_question, scheduledTimer.channel, scheduledTimer.title, t(scheduledTimer.begin)),
+                        a.getString(R.string.epg_remove),
                         onBack = onReturn,
                     ) {
                         ZapTimers.remove(a, scheduledTimer)
-                        showActionResult("Usunięto przełączenie",
+                        showActionResult(a.getString(R.string.epg_switch_removed),
                             "${scheduledTimer.channel}\n${scheduledTimer.title}", onReturn)
                     }
                 }
             // przełączenie o początku audycji (tylko na tym telewizorze, gdy aplikacja działa)
             } else if (!running && ev.begin > now()) {
-                if (ZapTimers.has(a, ref, ev.begin)) btns += TvDialog.Btn("Usuń przełączenie") {
+                if (ZapTimers.has(a, ref, ev.begin)) btns += TvDialog.Btn(a.getString(R.string.epg_remove_switch)) {
                     confirmAction(
-                        "Potwierdź usunięcie",
-                        "Usunąć zaplanowane przełączenie?\n\n$name — ${ev.title}\n${t(ev.begin)}",
-                        "Usuń",
+                        a.getString(R.string.epg_confirm_remove),
+                        a.getString(R.string.epg_remove_question, name, ev.title, t(ev.begin)),
+                        a.getString(R.string.epg_remove),
                     ) {
                         ZapTimers.remove(a, ZapTimers.Timer(ref, name, ev.title, ev.begin, ev.end, ev.id))
-                        showActionResult("Usunięto przełączenie",
+                        showActionResult(a.getString(R.string.epg_switch_removed),
                             "${name.ifBlank { ref }}\n${ev.title}")
                     }
-                } else btns += TvDialog.Btn("Przełącz o ${t(ev.begin)}") {
+                } else btns += TvDialog.Btn(a.getString(R.string.epg_switch_at, t(ev.begin))) {
                     confirmAction(
-                        "Potwierdź przełączenie",
-                        "Dodać do harmonogramu przełączenie na:\n\n$name — ${ev.title}\n${t(ev.begin)}",
-                        "Dodaj",
+                        a.getString(R.string.epg_confirm_switch),
+                        a.getString(R.string.epg_schedule_question, name, ev.title, t(ev.begin)),
+                        a.getString(R.string.epg_add),
                     ) {
                         scheduleZap(ZapTimers.Timer(ref, name.ifBlank { ref }, ev.title, ev.begin, ev.end, ev.id))
                     }
                 }
             }
         }
-        if (btns.isEmpty()) btns += TvDialog.Btn("Zamknij")      // WSTECZ też zamyka
+        if (btns.isEmpty()) btns += TvDialog.Btn(a.getString(R.string.epg_close))      // WSTECZ też zamyka
         // nagłówek jak wiersz listy kanałów (ikona, kanał, tytuł, czas, postęp), niżej opis, akcje na dole
-        TvDialog.panel(a, null, "OK wybierz  •  WSTECZ wróć", btns, widthFrac = 0.8f,
+        TvDialog.panel(a, null, a.getString(R.string.epg_hint_actions), btns, widthFrac = 0.8f,
             onBack = returnToSchedule, focusChip = true, timeoutSec = Prefs(a).actionDialogSec,
             onTimeout = returnToSchedule) { ctx, _ ->
-            EventCard.content(ctx, ev, ref, name, EventCard.body(ev).ifEmpty { "Brak opisu" })
+            EventCard.content(ctx, ev, ref, name, EventCard.body(ev).ifEmpty { a.getString(R.string.epg_no_description) })
         }
     }
 
     fun showScheduledEvent(timer: ZapTimers.Timer, onReturn: () -> Unit) {
-        host.message("Pobieram EPG: ${timer.title}…")
+        host.message(a.getString(R.string.epg_loading, timer.title))
         io.execute {
             val ev = try {
                 val events = load(timer.ref)
@@ -230,21 +279,21 @@ class EpgUi(
         val conflicts = ZapTimers.list(a).filter { it.begin == timer.begin && it.key() != timer.key() }
         if (conflicts.isEmpty()) {
             ZapTimers.add(a, timer)
-            showActionResult("Dodano do harmonogramu",
-                "O ${t(timer.begin)} przełączę na ${timer.channel} — ${timer.title}")
+            showActionResult(a.getString(R.string.epg_added_schedule),
+                a.getString(R.string.epg_schedule_message, t(timer.begin), timer.channel, timer.title))
             return
         }
         val current = conflicts.joinToString("\n") { "${it.channel} — ${it.title}" }
-        TvDialog.confirm(a, "Kolizja harmonogramu",
-            "O ${t(timer.begin)} zaplanowano już:\n$current\n\nZamienić na:\n${timer.channel} — ${timer.title}?",
+        TvDialog.confirm(a, a.getString(R.string.epg_schedule_conflict),
+            a.getString(R.string.epg_conflict_question, t(timer.begin), current, timer.channel, timer.title),
             listOf(
-                TvDialog.Btn("Zamień") {
+                TvDialog.Btn(a.getString(R.string.epg_replace)) {
                     ZapTimers.replaceAt(a, timer)
-                    showActionResult("Zamieniono w harmonogramie",
-                        "O ${t(timer.begin)} przełączę na ${timer.channel} — ${timer.title}")
+                    showActionResult(a.getString(R.string.epg_replaced),
+                        a.getString(R.string.epg_schedule_message, t(timer.begin), timer.channel, timer.title))
                 },
-                TvDialog.Btn("Zostaw obecne"),
-                TvDialog.Btn("Nagraj na dekoderze") {
+                TvDialog.Btn(a.getString(R.string.epg_keep)),
+                TvDialog.Btn(a.getString(R.string.epg_record_receiver)) {
                     recordTimer(timer) { ok -> ZapTimers.mark(a, timer, if (ok) ZapTimers.RECORDED else ZapTimers.RECORD_FAILED) }
                 },
             ))
@@ -269,7 +318,7 @@ class EpgUi(
             AppLog.i("nagranie: ${ev.title} ${d(ev.begin)} ${t(ev.begin)} -> ${r.first} ${r.second}")
             a.runOnUiThread {
                 showActionResult(
-                    if (r.first) "Nagranie ustawione" else "Nie udało się ustawić nagrania",
+                    a.getString(if (r.first) R.string.epg_recording_set else R.string.epg_recording_failed),
                     "${ev.title}\n${r.second}".trim(),
                     onInfoClose,
                 )
@@ -287,7 +336,7 @@ class EpgUi(
         onBack: (() -> Unit)? = null, action: () -> Unit,
     ) {
         TvDialog.confirm(a, title, message, listOf(
-            TvDialog.Btn(confirmLabel, action),
+            TvDialog.Btn(confirmLabel, onClick = action),
         ), onBack = onBack, onTimeout = onBack)
     }
 
@@ -311,13 +360,13 @@ class EpgUi(
         if (ch == null) return
         io.execute {
             val ev = try { load(ch.ref) } catch (e: Exception) {
-                a.runOnUiThread { host.message("Błąd EPG: ${e.message}") }
+                a.runOnUiThread { host.message(a.getString(R.string.epg_error, e.message)) }
                 return@execute
             }
             val n = now()
             val cur = ev.firstOrNull { it.begin <= n && it.end > n } ?: ev.firstOrNull { it.begin > n }
             a.runOnUiThread {
-                if (cur == null) host.message("Brak EPG dla ${ch.name}") else showEvent(cur, ch)
+                if (cur == null) host.message(a.getString(R.string.epg_no_epg, ch.name)) else showEvent(cur, ch)
             }
         }
     }
@@ -326,23 +375,23 @@ class EpgUi(
 
     fun showChannelEpg(ch: Channel? = host.current()) {
         if (ch == null) return
-        host.message("Pobieram EPG: ${ch.name}…")
+        host.message(a.getString(R.string.epg_loading, ch.name))
         io.execute {
             val ev = try { load(ch.ref) } catch (e: Exception) {
-                a.runOnUiThread { host.message("Błąd EPG: ${e.message}") }
+                a.runOnUiThread { host.message(a.getString(R.string.epg_error, e.message)) }
                 return@execute
             }
             a.runOnUiThread {
                 val n = now()
                 val list = ev.filter { it.end > n }
-                if (list.isEmpty()) { host.message("Brak EPG dla ${ch.name}"); return@runOnUiThread }
+                if (list.isEmpty()) { host.message(a.getString(R.string.epg_no_epg, ch.name)); return@runOnUiThread }
                 val rows = list.map {
                     Row(eventTime.dayAndRange(it.begin, it.end), it.title, epgDescriptionPreview(it.shortDesc, it.longDesc) + progress(it), it, ch)
                 }
                 val adapter = RowAdapter(rows)
                 bigList("EPG: ${ch.num} ${ch.name}",
                     adapter,
-                    hint = "◀ ▶ strony  •  OK opis audycji  •  długie OK akcje  •  WSTECZ zamknij",
+                    hint = a.getString(R.string.epg_hint_pages),
                     timeoutSec = Prefs(a).epgChannelSec,
                     wrap = true,
                     pageKeys = true,
@@ -353,10 +402,10 @@ class EpgUi(
     }
 
     private fun showChannelEpgActions(current: Channel) {
-        TvDialog.list(a, "EPG kanału", listOf(
-            TvDialog.Item("Wybierz inny kanał"),
-            TvDialog.Item("Szukaj w EPG"),
-        ), hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f) { selected ->
+        TvDialog.list(a, a.getString(R.string.menu_channel_epg), listOf(
+            TvDialog.Item(a.getString(R.string.epg_other_channel)),
+            TvDialog.Item(a.getString(R.string.epg_search)),
+        ), hint = a.getString(R.string.epg_hint_actions), widthFrac = 0.55f) { selected ->
             if (selected == 1) {
                 TvDialog.dismissAll()
                 showSearch()
@@ -369,30 +418,30 @@ class EpgUi(
     private fun showEpgBouquetPicker(current: Channel) {
         val bouquets = host.bouquetList()
         if (bouquets.isEmpty()) {
-            host.message("Brak widocznych bukietów TV")
+            host.message(a.getString(R.string.epg_no_bouquets))
             return
         }
         val currentBouquet = host.currentBouquet()
-        TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
+        TvDialog.list(a, a.getString(R.string.epg_choose_bouquet), bouquets.map { TvDialog.Item(it.name) },
             selected = bouquets.indexOfFirst { it.ref == currentBouquet?.ref }.coerceAtLeast(0),
-            hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.6f, wrap = true) { selected ->
+            hint = a.getString(R.string.epg_hint_actions), widthFrac = 0.6f, wrap = true) { selected ->
             val bouquet = bouquets[selected]
-            host.message("Pobieram kanały: ${bouquet.name}…")
+            host.message(a.getString(R.string.epg_loading_channels, bouquet.name))
             io.execute {
                 val channels = try {
                     api.channels(bouquet)
                 } catch (e: Exception) {
-                    a.runOnUiThread { host.message("Błąd listy kanałów ${bouquet.name}: ${e.message}") }
+                    a.runOnUiThread { host.message(a.getString(R.string.epg_channels_error, bouquet.name, e.message)) }
                     return@execute
                 }
                 a.runOnUiThread {
                     if (channels.isEmpty()) {
-                        host.message("Brak kanałów w bukiecie ${bouquet.name}")
+                        host.message(a.getString(R.string.epg_no_channels, bouquet.name))
                     } else {
-                        TvDialog.list(a, "Wybierz kanał — ${bouquet.name}",
+                        TvDialog.list(a, a.getString(R.string.epg_choose_channel, bouquet.name),
                             channels.map { TvDialog.Item("${it.num}  ${it.name}") },
                             selected = channels.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(current.ref) }.coerceAtLeast(0),
-                            hint = "OK pokaż EPG  •  WSTECZ wróć", widthFrac = 0.7f, wrap = true) { channelIndex ->
+                            hint = a.getString(R.string.epg_hint_show), widthFrac = 0.7f, wrap = true) { channelIndex ->
                             TvDialog.dismissAll()
                             showChannelEpg(channels[channelIndex])
                         }
@@ -410,7 +459,7 @@ class EpgUi(
     fun showMultiEpg() {
         val bouquets = host.bouquetList()
         if (bouquets.isEmpty()) {
-            host.message("Brak widocznych bukietów TV")
+            host.message(a.getString(R.string.epg_no_bouquets))
             return
         }
         val current = host.currentBouquet()
@@ -420,12 +469,12 @@ class EpgUi(
     }
 
     private fun loadMulti(bouquet: Bouquet, knownChannels: List<Channel>, bouquets: List<Bouquet>, at: Long) {
-        host.message("Pobieram EPG bukietu: ${bouquet.name}…")
+        host.message(a.getString(R.string.epg_loading_bouquet, bouquet.name))
         io.execute {
             try {
                 val chans = knownChannels.ifEmpty { api.channels(bouquet) }
                 if (chans.isEmpty()) {
-                    a.runOnUiThread { host.message("Brak kanałów w bukiecie ${bouquet.name}") }
+                    a.runOnUiThread { host.message(a.getString(R.string.epg_no_channels, bouquet.name)) }
                     return@execute
                 }
                 val pool = Executors.newFixedThreadPool(4)
@@ -434,7 +483,7 @@ class EpgUi(
                 pool.awaitTermination(60, TimeUnit.SECONDS)
                 a.runOnUiThread { multiT = at; openMulti(chans, bouquet, bouquets) }
             } catch (e: Exception) {
-                a.runOnUiThread { host.message("Błąd EPG bukietu ${bouquet.name}: ${e.message}") }
+                a.runOnUiThread { host.message(a.getString(R.string.epg_bouquet_error, bouquet.name, e.message)) }
             }
         }
     }
@@ -446,7 +495,7 @@ class EpgUi(
         Row(
             c.name,
             cur?.let { "${eventTime.range(it.begin, it.end)}  ${it.title}" } ?: "—",
-            next?.let { "następnie ${eventTime.range(it.begin, it.end)}  ${it.title}" } ?: "",
+            next?.let { a.getString(R.string.epg_next, eventTime.range(it.begin, it.end), it.title) } ?: "",
             cur ?: next,
             c,
         )
@@ -457,7 +506,7 @@ class EpgUi(
         fun title() = "Multi-EPG: ${bouquet.name} — ${d(multiT)} ${t(multiT)}"
         multiDialog?.dismiss()
         val dlg = TvDialog.panel(a, title(),
-            "Długie OK akcje  •  ▲ ▼ kanały  •  ◀ ▶ czas  •  OK opis  •  WSTECZ zamknij",
+            a.getString(R.string.epg_hint_multi),
             widthFrac = 0.85f, maxH = 0.9f, timeoutSec = Prefs(a).epgMultiSec, hintBelowTitle = true) { ctx, _ ->
             ListView(ctx).apply {
                 this.adapter = adapter
@@ -471,17 +520,17 @@ class EpgUi(
                 isLongClickable = true
                 setOnItemLongClickListener { _, _, _, _ ->
                     TvDialog.list(a, "Multi-EPG", listOf(
-                        TvDialog.Item("Wybierz bukiet"),
-                        TvDialog.Item("Szukaj w EPG"),
-                    ), hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f) { action ->
+                        TvDialog.Item(a.getString(R.string.epg_choose_bouquet)),
+                        TvDialog.Item(a.getString(R.string.epg_search)),
+                    ), hint = a.getString(R.string.epg_hint_actions), widthFrac = 0.55f) { action ->
                         if (action == 1) {
                             multiDialog?.dismiss()
                             multiDialog = null
                             showSearch()
                         } else {
-                            TvDialog.list(a, "Wybierz bukiet", bouquets.map { TvDialog.Item(it.name) },
+                            TvDialog.list(a, a.getString(R.string.epg_choose_bouquet), bouquets.map { TvDialog.Item(it.name) },
                                 selected = bouquets.indexOfFirst { it.ref == bouquet.ref },
-                                hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.55f, wrap = true) { picked ->
+                                hint = a.getString(R.string.epg_hint_actions), widthFrac = 0.55f, wrap = true) { picked ->
                                 val next = bouquets[picked]
                                 if (next.ref != bouquet.ref) {
                                     multiDialog?.dismiss()
@@ -520,29 +569,29 @@ class EpgUi(
     fun showSearch() {
         val et = EditText(a)
         et.inputType = InputType.TYPE_CLASS_TEXT
-        et.hint = "tytuł audycji"
+        et.hint = a.getString(R.string.epg_search_hint)
         et.textSize = 22f
         et.setSingleLine(true)
         et.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
-        TvDialog.input(a, "Szukaj w EPG", "", et, "Szukaj") { search(et.text.toString().trim()) }
+        TvDialog.input(a, a.getString(R.string.epg_search), "", et, a.getString(R.string.epg_search_button)) { search(et.text.toString().trim()) }
     }
 
     private fun search(q: String) {
-        if (q.length < 2) { host.message("Wpisz co najmniej 2 znaki"); return }
-        host.message("Szukam „$q”…")
+        if (q.length < 2) { host.message(a.getString(R.string.epg_search_short)); return }
+        host.message(a.getString(R.string.epg_searching, q))
         io.execute {
             val res = try { api.epgSearch(q) } catch (e: Exception) {
-                a.runOnUiThread { host.message("Błąd wyszukiwania: ${e.message}") }
+                a.runOnUiThread { host.message(a.getString(R.string.epg_search_error, e.message)) }
                 return@execute
             }
             a.runOnUiThread {
                 val n = now()
                 val list = res.filter { it.end > n }
-                if (list.isEmpty()) { host.message("Nic nie znaleziono: „$q”"); return@runOnUiThread }
+                if (list.isEmpty()) { host.message(a.getString(R.string.epg_no_results, q)); return@runOnUiThread }
                 val rows = list.map {
                     Row("${d(it.begin)}  ${t(it.begin)}", it.title, "${it.sname}   ${it.shortDesc}${progress(it)}", it, null)
                 }
-                bigList("Wyniki: „$q” (${rows.size})", RowAdapter(rows)) { w -> showEvent(rows[w].ev!!, null) }
+                bigList(a.getString(R.string.epg_results, q, rows.size), RowAdapter(rows)) { w -> showEvent(rows[w].ev!!, null) }
             }
         }
     }

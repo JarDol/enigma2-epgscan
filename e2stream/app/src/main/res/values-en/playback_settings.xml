@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ts_usb_unavailable">USB drive unavailable</string>
+    <string name="ts_choose_location">choose a buffer location (USB drive or allow device storage)</string>
+    <string name="ts_off">disabled</string>
+    <string name="ts_capacity">%1$s  •  space for ~%2$s</string>
+    <string name="ts_recommended_suffix">, recommended %1$s</string>
+    <string name="ts_no_space_suffix">\u0020— insufficient space</string>
+    <string name="ts_immediately">immediately</string>
+    <string name="ts_after_pause">disabled (buffer starts only after pausing)</string>
+    <string name="ts_after_seconds">after %1$d s</string>
+    <string name="ts_device_free">device storage  •  %1$s free</string>
+    <string name="ts_not_selected">not selected</string>
+    <string name="ts_unavailable">%1$s — unavailable</string>
+    <string name="ts_free">%1$s  •  %2$s free</string>
+    <string name="ts_insufficient">insufficient space</string>
+    <string name="ts_recommended">recommended (longest duration that fits)</string>
+    <string name="ts_capacity_title">Timeshift — space for ~%1$s</string>
+    <string name="ts_choose_shorter">Not enough space for %1$s — choose a shorter duration or another drive</string>
+    <string name="ts_permission_needed">permission required (continuous writing wears flash storage)</string>
+    <string name="ts_space_choice">%1$s free → ~%2$s</string>
+    <string name="ts_recommended_choice">\u0020(recommended %1$s)</string>
+    <string name="ts_flash_warning">Timeshift writes the stream continuously (an HD channel uses several GB per hour). TV flash storage has a limited number of writes and may wear out faster with prolonged daily use.\n\nA USB drive is safer. Allow device storage?</string>
+    <string name="ts_capacity_set">Space for ~%1$s — set to %2$s</string>
+    <string name="ts_disabled_space">Not enough space — timeshift disabled</string>
+    <string name="ts_capacity_recommended">Space for ~%1$s — recommended %2$s (enable under “Timeshift”)</string>
+    <string name="engine_exo">ExoPlayer (tunnelling, fastest startup)</string>
+    <string name="engine_vlc">VLC (alternative deinterlacing and frame timing)</string>
+    <string name="hw_off">disabled</string>
+    <string name="hw_decode">decoding (video rendered by VLC)</string>
+    <string name="hw_full">full</string>
+    <string name="hw_auto">automatic (recommended)</string>
+    <string name="chroma_recommended">RGB 32-bit (recommended)</string>
+    <string name="deint_default">VLC default (recommended)</string>
+    <string name="deint_auto">automatic</string>
+    <string name="deint_off">disabled</string>
+    <string name="deint_yadif">yadif 2x (50 fps)</string>
+    <string name="deint_bob">bob (50 fps)</string>
+</resources>

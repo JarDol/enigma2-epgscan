@@ -8,6 +8,7 @@
 
 import json
 import os
+import re
 import shutil
 import time
 import zipfile
@@ -25,16 +26,24 @@ BACKUP_DIR = "/tmp/EPGScan.poprzednia"
 _auto = None
 
 
-def _vt(v):
-	return tuple(int(x) if x.isdigit() else 0 for x in v.split("."))
+def _version_key(version):
+	match = re.match(r"^(\d+(?:\.\d+)*)(?:[-+](.*))?$", version)
+	if not match:
+		return ((), 0, ())
+	numbers = [int(part) for part in match.group(1).split(".")]
+	numbers += [0] * max(0, 4 - len(numbers))
+	prerelease = match.group(2)
+	parts = tuple((0, int(part)) if part.isdigit() else (1, part.lower())
+		for part in re.split(r"[.-]", prerelease) if part) if prerelease else ()
+	return tuple(numbers[:4]), 0 if prerelease else 1, parts
 
 
 def newer(a, b):
-	return _vt(a) > _vt(b)
+	return _version_key(a) > _version_key(b)
 
 
-def latest():
-	"""(wersja, adres ZIP) najnowszego wydania wtyczki albo None."""
+def available_releases():
+	"""Wydania GitHub z pasujacym ZIP-em: (wersja, URL, prerelease), od najnowszego."""
 	try:
 		from urllib.request import Request, urlopen
 		req = Request(API, headers={"User-Agent": "EPGScan/%s" % VERSION, "Accept": "application/vnd.github+json"})
@@ -42,17 +51,26 @@ def latest():
 	except Exception as e:
 		log("Aktualizacja: brak odpowiedzi GitHub (%s)" % e)
 		return None
-	best = None
+	releases = []
 	for r in data:
 		tag = r.get("tag_name", "")
-		if r.get("draft") or r.get("prerelease") or not tag.startswith("epgscan-"):
+		if r.get("draft") or not tag.startswith("epgscan-"):
 			continue
 		ver = tag[len("epgscan-"):]
 		for a in r.get("assets", []):
-			if a.get("name") == "epgscan-%s.zip" % ver:
-				if best is None or newer(ver, best[0]):
-					best = (ver, a.get("browser_download_url"))
-	return best
+			url = a.get("browser_download_url")
+			if a.get("name") == "epgscan-%s.zip" % ver and url:
+				releases.append((ver, url, bool(r.get("prerelease"))))
+				break
+	return sorted(releases, key=lambda release: _version_key(release[0]), reverse=True)
+
+
+def latest(include_beta=False):
+	"""(wersja, adres ZIP) najnowszego wydania z wybranego kanalu albo None."""
+	releases = available_releases()
+	if releases is None:
+		return None
+	return next(((version, url) for version, url, prerelease in releases if include_beta or not prerelease), None)
 
 
 def install(url, ver):
@@ -93,10 +111,25 @@ def install(url, ver):
 		return str(e)
 
 
-def check_async(callback):
+def releases_for_channel(releases, channel):
+	"""Lista reczna: kanal stabilny pokazuje tylko wydania stabilne (i zainstalowana wersje),
+	kanal beta - bety i wydania stabilne."""
+	if channel == "beta":
+		return list(releases)
+	return [item for item in releases if not item[2] or item[0] == VERSION]
+
+
+def check_async(callback, include_beta=False):
 	"""callback(info) na watku glownym; info = (wersja, url) albo None."""
 	from twisted.internet import threads
-	d = threads.deferToThread(latest)
+	d = threads.deferToThread(latest, include_beta)
+	d.addCallback(callback)
+	d.addErrback(lambda f: callback(None))
+
+
+def releases_async(callback):
+	from twisted.internet import threads
+	d = threads.deferToThread(available_releases)
 	d.addCallback(callback)
 	d.addErrback(lambda f: callback(None))
 
@@ -172,7 +205,7 @@ class AutoUpdate(object):
 		if time.time() - cfg.upd_last.value < 20 * 3600:
 			return
 		self.busy = True
-		check_async(self.checked)
+		check_async(self.checked, cfg.upd_channel.value == "beta")
 
 	def checked(self, info):
 		cfg.upd_last.value = int(time.time())

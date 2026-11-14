@@ -11,17 +11,33 @@ import time
 from Components.config import config, ConfigSubsection, ConfigSelection, ConfigYesNo, \
 	ConfigText, ConfigDirectory, ConfigInteger, ConfigSelectionNumber, ConfigClock
 from enigma import eServiceReference, eServiceCenter, eEPGCache, iServiceInformation
+from .bouquetchannels import read_bouquet_channels
+from .i18n import _, configure as configure_language
 
 try:
 	from Components.NimManager import nimmanager
 except Exception:
 	nimmanager = None
 
-VERSION = "2.16.0"
+VERSION = "2.19.1"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
-TP_STATS = "/etc/enigma2/epgscan_tps.json"
-WAKEUP_FILE = "/etc/enigma2/epgscan_wakeup"
+DATA_DIR = os.path.join(E2, "epgscan")          # wszystkie pliki wtyczki w pamieci wewnetrznej
+CHANNEL_PARAMS_FILE = os.path.join(DATA_DIR, "channelparams.json")
+TP_STATS = os.path.join(DATA_DIR, "tps.json")
+WAKEUP_FILE = os.path.join(DATA_DIR, "wakeup")
+XMLTV_STATE_FILE = os.path.join(DATA_DIR, "xmltv.json")
+PLUGIN_SOURCES_DIR = os.path.join(DATA_DIR, "sources")
+SATWATCH_FILES = ("state.json", "snapshot.json", "nieaktualne.json", "remote_satellites.xml", "backup", "bouquet_backup")
+# 2.19: stare miejsca w /etc/enigma2 -> /etc/enigma2/epgscan (przenoszone raz, przy starcie); pliki SatWatch
+# z przedrostkiem satwatch- (z /etc/enigma2/satwatch i z /etc/enigma2/epgscan/satwatch z 2.19.0-beta.1)
+OLD_PATHS = [
+	(os.path.join(E2, "epgscan_tps.json"), TP_STATS),
+	(os.path.join(E2, "epgscan_wakeup"), WAKEUP_FILE),
+	(os.path.join(E2, "epgscan_xmltv.json"), XMLTV_STATE_FILE),
+	(os.path.join(E2, "epgscan_sources"), PLUGIN_SOURCES_DIR),
+] + [(os.path.join(old, name), os.path.join(DATA_DIR, "satwatch-" + name))
+	for old in (os.path.join(DATA_DIR, "satwatch"), os.path.join(E2, "satwatch")) for name in SATWATCH_FILES]
 RADIO_TYPES = {2, 10}
 DAYS = ["Poniedzialek", "Wtorek", "Sroda", "Czwartek", "Piatek", "Sobota", "Niedziela"]
 
@@ -32,7 +48,7 @@ COUNT_EVERY = 5     # co ile sekund liczyc zdarzenia EPG
 TUNE_GAP = 2        # min. odstep miedzy kolejnymi strojeniami [s] (Unicable)
 NO_TUNER_WAIT = 15  # przy braku tunera ponow probe po tylu sekundach
 USAGE_EVERY = 5     # co ile sekund sprawdzac zajetosc tunerow
-TIMER_AHEAD = 120   # tyle sekund przed nagraniem z timera zwalniamy/trzymamy dla niego tuner
+TIMER_AHEAD = 120   # tyle sekund przed nagraniem/przelaczeniem zwalniamy/trzymamy tuner
 FREQ_TOL = 5000     # tolerancja czestotliwosci przy porownaniu transponderow [kHz]
 REP_CHECK = 5       # ile kanalow transpondera sprawdzic przy wyborze kanalu do strojenia
 COUNT_CAP = 80      # maks. kanalow transpondera liczonych przy postepie (duze listy)
@@ -43,8 +59,19 @@ RESTORE_RATIO = 0.3 # odtworz kopie, gdy w EPG jest mniej niz 30% zdarzen z osta
 
 config.plugins.epgscan = ConfigSubsection()
 cfg = config.plugins.epgscan
+cfg.ui_language = ConfigSelection(default="enigma", choices=[
+	("enigma", "Jezyk Enigma2"), ("pl", "Polski"), ("en", "English")])
+_active_language = cfg.ui_language.value
+configure_language(lambda: _active_language)
+
+
+def apply_ui_language():
+	global _active_language
+	_active_language = cfg.ui_language.value
+
+
 cfg.max_parallel = ConfigSelectionNumber(1, 8, 1, default=4)
-cfg.reserve = ConfigSelectionNumber(0, 4, 1, default=1)
+cfg.reserve = ConfigSelectionNumber(0, 8, 1, default=1)
 cfg.min_time = ConfigSelectionNumber(10, 600, 10, default=30)
 cfg.idle_time = ConfigSelectionNumber(10, 600, 10, default=60)
 cfg.max_time = ConfigSelectionNumber(60, 1800, 30, default=180)
@@ -98,6 +125,25 @@ cfg.sched_skip_rec = ConfigYesNo(default=False)
 cfg.sched_wakeup = ConfigYesNo(default=False)
 cfg.sched_deep_after = ConfigYesNo(default=True)
 cfg.last_auto_run = ConfigInteger(default=0)
+# skan PID-ow i wybor sciezki dzwiekowej
+cfg.cp_language_source = ConfigSelection(default="enigma", choices=[
+	("enigma", "preferencje jezykow z Enigma2"),
+	("manual", "wlasna kolejnosc jezykow")])
+cfg.cp_languages = ConfigText(default="pol,eng", fixed_size=False)
+cfg.cp_group_tp = ConfigYesNo(default=True)
+cfg.cp_retry_failed = ConfigYesNo(default=True)
+cfg.cp_tune_gap = ConfigSelection(default="1", choices=[
+	("0.5", "0,5 s"), ("1", "1 s"), ("1.5", "1,5 s"), ("2", "2 s"), ("3", "3 s")])
+cfg.cp_interval = ConfigSelection(default="7", choices=[(str(x), "%d dni" % x) for x in (1, 2, 4, 7)])
+cfg.cp_last_run = ConfigInteger(default=0)
+cfg.cp_auto_in_progress = ConfigYesNo(default=False)
+cfg.cp_sync_common = ConfigSelection(default="off", choices=[
+	("off", "wylaczona"), ("missing", "dopisz braki"), ("overwrite", "nadpisz wszystko")])
+cfg.cp_sync_devices = ConfigSelection(default="off", choices=[
+	("off", "wylaczona"), ("missing", "dopisz braki"),
+	("repair", "popraw nieistniejace i dopisz braki"), ("overwrite", "nadpisz wszystko")])
+cfg.cp_common_overwrite = ConfigYesNo(default=False)
+cfg.cp_devices_overwrite = ConfigYesNo(default=False)
 # doczytywanie brakow w ciagu dnia
 cfg.topup = ConfigYesNo(default=False)
 cfg.topup_mode = ConfigSelection(default="all", choices=[
@@ -141,6 +187,8 @@ cfg.cli_pack = ConfigYesNo(default=True)                         # paczka EPG/ik
 cfg.cli_pack_last = ConfigText(default="", fixed_size=False)     # "czas|wynik" ostatniej paczki
 # aktualizacja wtyczki z wydan GitHub (reczna dziala zawsze)
 cfg.upd_auto = ConfigYesNo(default=False)
+cfg.upd_channel = ConfigSelection(default="stable", choices=[
+	("stable", "stabilne"), ("beta", "beta i stabilne")])
 cfg.upd_last = ConfigInteger(default=0, limits=(0, 4000000000))      # ostatnie sprawdzenie automatyczne
 cfg.upd_pending = ConfigText(default="", fixed_size=False)           # zainstalowana wersja czekajaca na restart
 
@@ -163,6 +211,7 @@ cfg.epgpl_grab = ConfigSelection(default="ready", choices=[     # serwer epgpl p
 cfg.log_place = ConfigSelection(default="backup", choices=[
 	("backup", "w katalogu kopii EPG"),
 	("tmp", "w /tmp (znika przy restarcie dekodera)")])
+cfg.log_days = ConfigSelection(default="30", choices=[(str(x), "%d dni" % x) for x in (7, 14, 30, 90)])   # logi i raporty (EPG Scan, SatWatch)
 cfg.last_events = ConfigInteger(default=0)
 cfg.last_summary = ConfigText(default="")
 cfg.last_fetch = ConfigText(default="")       # ostatnie pobranie programu (dekoder) - ekran glowny
@@ -175,6 +224,7 @@ cfg.p_srv = ConfigSelection(default="zapas", choices=SRV_CHOICES)
 cfg.p_other = ConfigYesNo(default=True)       # pozostale zaznaczone zrodla XMLTV
 cfg.p_fetch = ConfigYesNo(default=True)       # pobierz swieze dane (dekoder / serwer) przed importem
 cfg.p_one = ConfigYesNo(default=True)         # ... w jednym miejscu: gdy druga strona ma dzisiejsza pelna paczke - ona zamiast pobierania
+cfg.p_channelparams = ConfigYesNo(default=False)  # skan PAT/PMT jako etap recznego profilu
 cfg.src_order = ConfigSelection(default="dso", choices=[
 	("dso", "dekoder, serwer, pozostale"), ("dos", "dekoder, pozostale, serwer"),
 	("sdo", "serwer, dekoder, pozostale"), ("sod", "serwer, pozostale, dekoder"),
@@ -248,15 +298,18 @@ def profile_default():
 	"""Profil startu: OK na ekranie glownym i harmonogram (Akcje -> Zapisz jako domyslne)."""
 	return {"sw": cfg.p_sw.value, "clear": cfg.clear_mode.value, "sat": bool(cfg.sat_import.value), "dek": bool(cfg.p_dek.value),
 		"srv": cfg.p_srv.value, "other": bool(cfg.p_other.value), "fetch": bool(cfg.p_fetch.value),
-		"one": bool(cfg.p_one.value and cfg.one_place.value)}
+		"one": bool(cfg.p_one.value and cfg.one_place.value), "channelparams": bool(cfg.p_channelparams.value)}
 
 
-def profile_text(p):
-	order = {"d": "dekoder", "s": "serwer", "o": "pozostale"}
+def profile_text(p, localized=False):
+	tr = _ if localized else lambda text: text
+	order = {"d": tr("dekoder"), "s": tr("serwer"), "o": tr("pozostale")}
 	on = {"d": p["dek"], "s": p["srv"] != "nie", "o": p["other"]}
-	parts = (["SatWatch (%s)" % p["sw"]] if p.get("sw", "nie") != "nie" else []) + (["satelita"] if p["sat"] else []) + ["%s%s" % (order[c], " (zapas)" if c == "s" and p["srv"] == "zapas" else "")
+	parts = (["SatWatch (%s)" % tr(p["sw"])] if p.get("sw", "nie") != "nie" else []) + ([tr("satelita")] if p["sat"] else []) + ["%s%s" % (order[c], tr(" (zapas)") if c == "s" and p["srv"] == "zapas" else "")
 		for c in cfg.src_order.value if on[c]]
-	return " -> ".join(parts) or "nic"
+	if p.get("channelparams"):
+		parts.append(tr("skan parametrow kanalow"))
+	return " -> ".join(parts) or tr("nic")
 
 
 def xmltv_in_profile(p):
@@ -292,17 +345,60 @@ def log_path():
 	return LOG
 
 
-def log_count():
+LOG_ROTATE_MAX = 60   # najwiecej starszych plikow epgscan.log.N (dodatkowo usuwane starsze niz ustawienie)
+
+
+def log_days():
 	try:
-		return max(2, int(cfg.backup_keep.value))
+		return int(cfg.log_days.value)
 	except Exception:
-		return 2
+		return 30
+
+
+def prune_files(paths, days, keep_newest=0):
+	"""Usuwa pliki starsze niz days dni (najnowsze keep_newest zostaja zawsze)."""
+	limit = time.time() - days * 86400
+	items = []
+	for p in paths:
+		try:
+			items.append((os.path.getmtime(p), p))
+		except OSError:
+			pass
+	items.sort(reverse=True)
+	n = 0
+	for mtime, p in items[keep_newest:]:
+		if mtime < limit:
+			try:
+				os.remove(p)
+				n += 1
+			except OSError:
+				pass
+	return n
+
+
+def prune_logs():
+	"""Logi i raporty EPG Scan i SatWatch starsze niz ustawienie 'Logi i raporty' (katalog logu i raporty/)."""
+	d = os.path.dirname(log_path())
+	n = 0
+	try:
+		names = os.listdir(d)
+	except Exception:
+		return 0
+	rotated = [os.path.join(d, f) for f in names if re.match(r"^(epgscan|satwatch)\.log\.\d+$", f)]
+	n += prune_files(rotated, log_days())
+	rdir = os.path.join(d, "raporty")
+	try:
+		reports = [os.path.join(rdir, f) for f in os.listdir(rdir) if f.endswith(".txt")]
+	except Exception:
+		reports = []
+	n += prune_files(reports, log_days(), keep_newest=1)
+	return n
 
 
 def rotate_logs():
-	"""epgscan.log -> .1 -> .2 ...; zostaje tyle logow, ile kopii EPG (min. 2)."""
+	"""epgscan.log -> .1 -> .2 ... przy kazdym przebiegu; starsze niz ustawienie 'Logi i raporty' sa usuwane."""
 	p = log_path()
-	n = log_count()
+	n = LOG_ROTATE_MAX
 	try:
 		for i in range(n - 1, 0, -1):
 			src = p if i == 1 else "%s.%d" % (p, i - 1)
@@ -311,6 +407,10 @@ def rotate_logs():
 		for extra in range(n, n + 10):
 			if os.path.exists("%s.%d" % (p, extra)):
 				os.remove("%s.%d" % (p, extra))
+	except Exception:
+		pass
+	try:
+		prune_logs()
 	except Exception:
 		pass
 
@@ -515,6 +615,11 @@ def bouquet_refs(files):
 	for f in files:
 		walk(f)
 	return groups
+
+
+def channel_params_bouquet_channels(files):
+	"""Wszystkie pozycje kanalow bukietu, lacznie z IPTV i nieobslugiwanymi ref."""
+	return read_bouquet_channels(files, E2, service_name)
 
 
 _lamedb = {"mtime": None, "groups": {}}
@@ -1200,7 +1305,7 @@ def hints_skin(x, y, width, height=50, hints=None):
 		out.append('<widget name="hint_cap%d" position="%d,%d" size="%d,%d" font="Regular;24" halign="center" '
 			'valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />' % (i, x0 + 1, y + 8, cw - 2, kh - 2))
 		out.append('<widget name="hint_txt%d" position="%d,%d" size="%d,%d" font="Regular;28" valign="center" '
-			'foregroundColor="#ffffff" transparent="1" zPosition="4" />' % (i, x0 + cw + 14, y + 2, min(tw + 20, bx + w - x0 - cw - 18), height - 4))
+			'foregroundColor="#ffffff" transparent="1" zPosition="4" />' % (i, x0 + cw + 14, y + 2, bx + w - x0 - cw - 18, height - 4))
 	return "\n".join(out)
 
 
@@ -1208,7 +1313,7 @@ def init_hints(screen, hints=None):
 	from Components.Label import Label
 	for i, (cap, txt) in enumerate(hints or HINTS):
 		screen["hint_cap%d" % i] = Label(cap)
-		screen["hint_txt%d" % i] = Label(txt)
+		screen["hint_txt%d" % i] = Label(_(txt))
 
 
 def init_keys(screen, exit_key=False):
@@ -1237,7 +1342,7 @@ def set_keys(screen, red="", green="", yellow="", blue="", exit=None):
 		items.append(("exit", exit))
 	for name, txt in items:
 		w = screen["key_" + name]
-		w.setText(txt)
+		w.setText(_(txt))
 		try:
 			if txt:
 				w.show()
@@ -1290,8 +1395,12 @@ def epg_stats(refs):
 	}
 
 
-def stats_text(st):
-	return "przyszle %d, minione %d, kanalow z EPG %d, nakladajacych sie (duble) %d, zasieg dni: min %.1f / mediana %.1f / maks %.1f (do %s)" % (
+def stats_text(st, localized=False):
+	if localized:
+		template = _("przyszle %d, minione %d, kanalow z EPG %d, nakladajacych sie (duble) %d\nzasieg dni: min %.1f / mediana %.1f / maks %.1f (do %s)")
+	else:
+		template = "przyszle %d, minione %d, kanalow z EPG %d, nakladajacych sie (duble) %d, zasieg dni: min %.1f / mediana %.1f / maks %.1f (do %s)"
+	return template % (
 		st["future"], st["past"], st["channels"], st["dups"], st["min"], st["median"], st["max"], st["until"])
 
 
@@ -1575,9 +1684,9 @@ def bouquet_channels():
 
 def fmt_span(sec):
 	if sec <= 0:
-		return "brak"
+		return _("brak")
 	h = sec / 3600.0
-	return "%.1f h" % h if h < 24 else "%.1f dni" % (h / 24.0)
+	return "%.1f h" % h if h < 24 else _("%.1f dni") % (h / 24.0)
 
 
 def channel_table():
@@ -1610,3 +1719,32 @@ def whole_cache_stats():
 	except Exception:
 		finfo = "%s: brak pliku" % path
 	return len(refs), cov, n, finfo
+
+
+def migrate_paths(old_paths=None):
+	"""Jednorazowo: pliki i katalogi wtyczki ze starych miejsc w /etc/enigma2 do /etc/enigma2/epgscan.
+	Gdy nowe miejsce juz istnieje, stare zostaje nietkniete (nic nie jest nadpisywane)."""
+	moved = []
+	for old, new in (OLD_PATHS if old_paths is None else old_paths):
+		try:
+			if not os.path.lexists(old) or os.path.lexists(new):
+				continue
+			parent = os.path.dirname(new)
+			if not os.path.isdir(parent):
+				os.makedirs(parent)
+			os.rename(old, new)
+			moved.append("%s -> %s" % (old, new))
+		except Exception as e:
+			try:
+				log("Przenoszenie %s -> %s nieudane: %s" % (old, new, e))
+			except Exception:
+				pass
+	if moved:
+		try:
+			log("Katalogi: przeniesiono do %s: %s" % (DATA_DIR, "; ".join(moved)))
+		except Exception:
+			pass
+	return moved
+
+
+migrate_paths()

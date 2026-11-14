@@ -22,6 +22,10 @@ Do tego harmonogram (nocny przebieg w czuwaniu), kopie EPG, raporty, sprzątanie
 
 Więcej zrzutów w [opisie wtyczki](epgscan/EPGScan/README.md).
 
+Język interfejsu można wybrać w **Ustawienia → Aktualizacje i informacje**: zgodny z Enigma2,
+polski lub angielski. Logi, niektóre szczegóły techniczne i dane ze źródeł zewnętrznych
+mogą pozostać w języku oryginału.
+
 ## Zawartość repozytorium
 
 | Katalog | Co to jest | Opis |

@@ -2,6 +2,7 @@ package pl.jardol.e2stream
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -49,6 +50,10 @@ import java.util.concurrent.Executors
 import kotlin.math.abs
 
 class PlayerActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
 
     companion object {
         const val EXTRA_WAKE_TIMER_KEY = "zap_alarm_timer_key"
@@ -58,17 +63,17 @@ class PlayerActivity : Activity() {
     }
 
     private fun showDecoderTimers() {
-        showMessage("Pobieram harmonogramy z dekodera…", 3000)
+        showMessage(getString(R.string.message_loading_timers_from_receiver))
         io.execute {
             val result = try { api.decoderTimers() to null } catch (e: Exception) { null to (e.message ?: e.toString()) }
             runOnUiThread {
                 val timers = result.first
                 if (timers == null) {
-                    showMessage("Nie udało się pobrać harmonogramów: ${result.second}", 8000)
+                    showMessage(getString(R.string.player_timers_failed, result.second))
                     return@runOnUiThread
                 }
                 if (timers.isEmpty()) {
-                    showMessage("Brak harmonogramów na dekoderze", 5000)
+                    showMessage(getString(R.string.message_no_timers_on_the_receiver))
                     return@runOnUiThread
                 }
                 val now = System.currentTimeMillis() / 1000
@@ -82,14 +87,14 @@ class PlayerActivity : Activity() {
                     actions += null
                     for (timer in section) {
                         labels += TvDialog.Item(timer.title.ifBlank { timer.channel },
-                            "${if (timer.disabled) "wyłączony • " else ""}${timer.channel}  •  ${zapDf.format(Date(timer.begin * 1000))}  •  ${if (timer.switchOnly) "przełączenie" else "nagranie"}")
+                            "${if (timer.disabled) getString(R.string.player_disabled_prefix) else ""}${timer.channel}  •  ${zapDf.format(Date(timer.begin * 1000))}  •  ${getString(if (timer.switchOnly) R.string.player_switch_type else R.string.player_record_type)}")
                         actions += timer
                     }
                 }
-                addSection("PRZYSZŁE", future)
-                addSection("ZREALIZOWANE", completed)
-                TvDialog.list(this, "Harmonogramy dekodera", labels,
-                    hint = "OK szczegóły  •  WSTECZ zamknij", widthFrac = 0.75f) { selected ->
+                addSection(getString(R.string.player_future), future)
+                addSection(getString(R.string.player_completed), completed)
+                TvDialog.list(this, getString(R.string.message_receiver_timers), labels,
+                    hint = getString(R.string.player_details_hint), widthFrac = 0.75f) { selected ->
                     actions[selected]?.let { showDecoderTimer(it) }
                 }
             }
@@ -100,27 +105,27 @@ class PlayerActivity : Activity() {
         val description = listOf(
             timer.channel,
             "${zapDf.format(Date(timer.begin * 1000))} – ${SimpleDateFormat("HH:mm", Locale("pl", "PL")).format(Date(timer.end * 1000))}",
-            if (timer.switchOnly) "Przełączenie" else "Nagranie",
-            if (timer.disabled) "Wyłączony" else "",
+            getString(if (timer.switchOnly) R.string.player_switch_type_title else R.string.player_record_type_title),
+            if (timer.disabled) getString(R.string.player_disabled) else "",
             timer.description,
         ).filter { it.isNotBlank() }.joinToString("\n")
         TvDialog.confirm(this, timer.title.ifBlank { timer.channel }, description,
-            listOf(TvDialog.Btn("Usuń z dekodera") { confirmDeleteDecoderTimer(timer) }),
+            listOf(TvDialog.Btn(getString(R.string.message_delete_from_receiver)) { confirmDeleteDecoderTimer(timer) }),
             onBack = { showDecoderTimers() }, timeoutSec = prefs.actionDialogSec,
             onTimeout = { showDecoderTimers() })
     }
 
     private fun confirmDeleteDecoderTimer(timer: DecoderTimer) {
-        TvDialog.confirm(this, "Usunąć timer z dekodera?", "${timer.channel}\n${timer.title}\n${zapDf.format(Date(timer.begin * 1000))}",
+        TvDialog.confirm(this, getString(R.string.message_delete_timer_from_receiver), "${timer.channel}\n${timer.title}\n${zapDf.format(Date(timer.begin * 1000))}",
             listOf(
-                TvDialog.Btn("Usuń") {
+                TvDialog.Btn(getString(R.string.message_delete)) {
                     io.execute {
                         val result = try { api.timerDelete(timer) } catch (e: Exception) { false to (e.message ?: e.toString()) }
                         runOnUiThread {
                             val (title, message) = if (result.first) {
-                                "Usunięto timer" to "${timer.channel}\n${timer.title}"
+                                getString(R.string.player_timer_deleted) to "${timer.channel}\n${timer.title}"
                             } else {
-                                "Nie udało się usunąć timera" to "${timer.title}\n${result.second}"
+                                getString(R.string.player_timer_delete_failed) to "${timer.title}\n${result.second}"
                             }
                             TvDialog.info(this@PlayerActivity, title, message) { showDecoderTimers() }
                         }
@@ -160,6 +165,7 @@ class PlayerActivity : Activity() {
     private var watchdog: StreamWatchdog? = null
     private val ui = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
+    private val probeIo = Executors.newSingleThreadExecutor()
 
     private var bouquets: List<Bouquet> = emptyList()
     private var playBouquet = 0
@@ -181,11 +187,13 @@ class PlayerActivity : Activity() {
     private var settingsVersion = -1
     private var settingsShown = false
     private var safeMode = false
+    private val playbackRecovery = PlaybackRecovery()
+    private var vlcFailureDialog: Dialog? = null
     private var numberBuffer = ""
     private var suppressOkUp = false
     private var okAction = Act.DEFAULT_OK
     private val backExit = DoubleBackExit()
-    private var streamGen = 0
+    @Volatile private var streamGen = 0
     private var analyzer: TsAnalyzer? = null
     private var analyzerRing = -1
     private var lastDumpAt = 0L
@@ -193,14 +201,32 @@ class PlayerActivity : Activity() {
     private var epgStartupPending = false
     private var epgReturnFromSettings = false
     private var streamStartAt = 0L
+    private var decoderAvailableAt = 0L
+    private var firstStreamByteLogged = false
+    private var firstStreamFrameLogged = false
     private var readyLogged = false
     private var lastStartMs = -1L
     private var audioAppliedGen = -1
+    private var audioCheckGen = -1
+    private var audioCheckStarted = 0L
+    private var audioWindow = AudioSelectionWindow()
+    private var audioCheckLastTarget: String? = null
+    private var audioCheckDescription = ""
     private var wakeTimerKey: String? = null
     private var wakeTestId: String? = null
     private var scheduledChannelRef: String? = null
     private var scheduledAppliedRef: String? = null      // kanał z harmonogramu dostrojony przed końcem startu
     private var scheduledAppliedAt = 0L
+    private var connectionDialog: Dialog? = null
+    private var connectionProbePending = false
+    private var connectionProbeId = 0
+    private var decoderUnavailable = false
+    private var disconnectedRecordingPosition = 0L
+    private var lastProbeAt = 0L
+    @Volatile private var startupProbeGeneration = 0
+    private var backupCheckRunning = false
+    private var backupDialogOpen = false
+    private var backupCheckGeneration = 0
 
     // ---------------------------------------------------------------- cykl życia
 
@@ -228,7 +254,7 @@ class PlayerActivity : Activity() {
             override fun currentBouquet(): Bouquet? = bouquets.getOrNull(playBouquet)?.takeIf { it.ref != REC_REF }
             override fun zapTo(ref: String, onResult: ((Boolean, String) -> Unit)?) =
                 this@PlayerActivity.zapTo(ref, onResult = onResult)
-            override fun message(t: String) = showMessage(t, 4000)
+            override fun message(t: String) = showMessage(t)
         })
         AppLog.i("=== Start E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} | ${prefs.displayName} | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) | ekran: ${displayInfo()}")
         if (wakeTimerKey != null || wakeTestId != null) {
@@ -289,24 +315,21 @@ class PlayerActivity : Activity() {
         }
 
         val crash = prefs.lastCrash
-        if (crash.isNotEmpty()) {
+        val attempt = prefs.playbackAttempt
+        if (crash.isNotEmpty() || attempt.isNotEmpty()) {
             prefs.lastCrash = ""
-            safeMode = true
-            AppLog.i("start w trybie bezpiecznym po awarii")
-            Tools.uploadLog(prefs, true) { }
-            TvDialog.confirm(this, "Poprzednie uruchomienie zakończyło się błędem",
-                crash.lines().take(14).joinToString("\n") +
-                    "\n\nLog z pełnym opisem wysłano na dekoder (${prefs.ftpDir}/${Tools.logName(prefs)}).",
-                listOf(
-                    TvDialog.Btn("Kontynuuj") { safeMode = false; settingsVersion = -1; startUp() },
-                    TvDialog.Btn("Ustawienia") { openSettings() },
-                    TvDialog.Btn("Zamknij") { finish() },
-                ), cancelable = false)
+            val details = buildList {
+                if (crash.isNotEmpty()) add(getString(R.string.player_crash_details, crash.lines().take(14).joinToString("\n")))
+                if (attempt.isNotEmpty()) add(getString(R.string.player_attempt_details, attempt))
+            }.joinToString("\n\n")
+            AppLog.i("start w trybie bezpiecznym; poprzednia awaria lub nieukończony start")
+            showRecoveryDialog(details)
         }
     }
 
     override fun onStart() {
         super.onStart()
+        if (recreateForLanguage()) return
         if (!epgReturnFromSettings) epgStartupPending = true
         epgReturnFromSettings = false
         ZapWakeAlarms.setAppForeground(this, true)
@@ -314,6 +337,52 @@ class PlayerActivity : Activity() {
         if (safeMode) return
         startUp()
         showWakeTestResult()
+    }
+
+    private fun showRecoveryDialog(detail: String, stopPlayback: Boolean = false) {
+        safeMode = true
+        startupProbeGeneration++
+        if (stopPlayback) {
+            ui.removeCallbacks(restartRunnable)
+            ui.removeCallbacks(connectionGuardTick)
+            ui.removeCallbacks(epgTick)
+            ui.removeCallbacks(zapTick)
+            connectionProbePending = false
+            dismissConnectionDialog()
+            releasePlayer()
+        }
+        TvDialog.confirm(
+            this,
+            getString(R.string.message_starting_in_safe_mode),
+            getString(R.string.player_safe_details, detail),
+            listOf(
+                TvDialog.Btn(getString(R.string.message_open_safe_menu)) {
+                    AppLog.i("tryb bezpieczny: otwieram menu bez dekodera")
+                    showQuickMenu()
+                },
+                TvDialog.Btn(getString(R.string.message_go_to_settings)) { openSettings() },
+                TvDialog.Btn(getString(R.string.message_close)) { finish() },
+            ),
+            cancelable = false,
+        )
+    }
+
+    private fun markPlaybackHealthy() {
+        playbackRecovery.markHealthy()
+        if (prefs.playbackAttempt.isNotEmpty()) {
+            prefs.playbackAttempt = ""
+            AppLog.i("start: odtwarzanie uznane za działające")
+        }
+        failStreak = 0
+    }
+
+    private fun retryNormalStartup() {
+        if (!safeMode || isFinishing) return
+        safeMode = false
+        settingsVersion = -1
+        playbackRecovery.resetSession()
+        AppLog.i("tryb bezpieczny: użytkownik jawnie ponawia normalny start")
+        startUp()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -327,6 +396,7 @@ class PlayerActivity : Activity() {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
+        if (safeMode) return
         zapPrompted = null
         ui.removeCallbacks(zapTick)
         ui.post(zapTick)
@@ -339,13 +409,17 @@ class PlayerActivity : Activity() {
         wakeTestId = null
         AppLog.i("wybudzanie: pokazuję popup testu id=$id")
         ui.post {
-            if (!isFinishing) TvDialog.confirm(this, "Test wybudzania dotarł",
-                "Android dostarczył RTC_WAKEUP i uruchomił E2Stream.\n\nJeśli nie naciskałeś pilota, pełnoekranowe powiadomienie działa.\nId testu: $id",
-                listOf(TvDialog.Btn("Zamknij")))
+            if (!isFinishing) TvDialog.confirm(this, getString(R.string.message_wake_up_test_received),
+                getString(R.string.player_test_details, id),
+                listOf(TvDialog.Btn(getString(R.string.message_close))))
         }
     }
 
     private fun startUp() {
+        if (safeMode) {
+            AppLog.i("tryb bezpieczny: pomijam połączenie z dekoderem i odtwarzanie")
+            return
+        }
         AppLog.i("start: host=${prefs.host} ${Build.MANUFACTURER} ${Build.MODEL} API ${Build.VERSION.SDK_INT}")
         if (prefs.host.isBlank()) {
             if (settingsShown) { finish(); return }
@@ -353,16 +427,25 @@ class PlayerActivity : Activity() {
             openSettings()
             return
         }
+        if (SyncManager.needsBackupDecision) {
+            checkInitialBackup()
+            return
+        }
         AppLog.init(this, Storage.dir(this, prefs))
+        epg.eitOnly = prefs.eitOnlyActive
+        if (epg.eitOnly) AppLog.i("EPG: tryb testowy EIT — EPG tylko ze strumienia, bez pobierania z dekodera")
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
         keyMap = KeyMap.load(prefs)
         UiScale.apply(banner, UiScale.pct(prefs.uiBannerFont), UiScale.pct(prefs.uiBannerIcon))
+        UiScale.apply(message, UiScale.pct(prefs.uiBannerFont))
         ui.removeCallbacks(epgTick)
         ui.postDelayed(epgTick, 15_000)
         ui.removeCallbacks(zapTick)
         ui.postDelayed(zapTick, if (wakeTimerKey != null) 0 else 5000)
         ensureAnalyzer()
         buildPlayer()
+        ui.removeCallbacks(connectionGuardTick)
+        ui.post(connectionGuardTick)
         applyDisplayMode()
         if (!updateChecked) {
             updateChecked = true
@@ -373,9 +456,11 @@ class PlayerActivity : Activity() {
         SyncManager.onSettingsApplied = {
             if (!isFinishing) {
                 AppLog.i("synchronizacja: zastosowano ustawienia z dekodera — przeładowanie")
-                releasePlayer()
-                settingsVersion = -1
-                startUp()
+                if (!recreateForLanguage()) {
+                    releasePlayer()
+                    settingsVersion = -1
+                    startUp()
+                }
             }
         }
         SyncManager.syncAsync()
@@ -395,10 +480,94 @@ class PlayerActivity : Activity() {
         }
     }
 
+    private fun checkInitialBackup() {
+        if (backupCheckRunning || backupDialogOpen) return
+        backupCheckRunning = true
+        val generation = ++backupCheckGeneration
+        val host = prefs.host
+        showMessage(getString(R.string.message_checking_settings_backups_on_receiver))
+        io.execute {
+            val result = runCatching {
+                if (!PluginApi.check(prefs)) null
+                else SyncManager.profiles(prefs).filter { it.backup != null || it.data.length() > 0 }
+            }
+            runOnUiThread {
+                if (generation != backupCheckGeneration) return@runOnUiThread
+                backupCheckRunning = false
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (prefs.host != host) { startUp(); return@runOnUiThread }
+                result.onFailure { error ->
+                    AppLog.i("kopia ustawień: błąd pobierania: $error")
+                    showBackupCheckError(getString(R.string.player_backup_check_error, error.message ?: error))
+                }.onSuccess { profiles ->
+                    if (profiles == null) {
+                        showBackupCheckError(getString(R.string.player_backup_plugin_missing))
+                    } else if (profiles.isEmpty()) {
+                        AppLog.i("kopia ustawień: brak profili na dekoderze")
+                        SyncManager.finishBackupDecision()
+                        startUp()
+                    } else {
+                        AppLog.i("kopia ustawień: znaleziono ${profiles.size} profili")
+                        showInitialBackupChoice(profiles)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showBackupCheckError(detail: String) {
+        backupDialogOpen = true
+        TvDialog.confirm(this, getString(R.string.message_settings_backup), getString(R.string.player_backup_retry, detail),
+            listOf(
+                TvDialog.Btn(getString(R.string.message_retry)) { backupDialogOpen = false; checkInitialBackup() },
+                TvDialog.Btn(getString(R.string.message_continue)) { backupDialogOpen = false; SyncManager.finishBackupDecision(skipCommonAudio = true); startUp() },
+                TvDialog.Btn(getString(R.string.message_settings)) { backupDialogOpen = false; openSettings() },
+                TvDialog.Btn(getString(R.string.message_exit)) { finish() },
+            ), cancelable = false, timeoutSec = 0)
+    }
+
+    private fun showInitialBackupChoice(profiles: List<SyncManager.Profile>) {
+        backupDialogOpen = true
+        TvDialog.confirm(this, getString(R.string.message_settings_backups_found),
+            getString(R.string.player_backup_found),
+            listOf(
+                TvDialog.Btn(getString(R.string.message_choose_backup)) { backupDialogOpen = false; selectInitialBackup(profiles) },
+                TvDialog.Btn(getString(R.string.message_do_not_import)) { backupDialogOpen = false; SyncManager.finishBackupDecision(skipCommonAudio = true); startUp() },
+                TvDialog.Btn(getString(R.string.message_exit)) { finish() },
+            ), cancelable = false, timeoutSec = 0)
+    }
+
+    private fun selectInitialBackup(profiles: List<SyncManager.Profile>) {
+        backupDialogOpen = true
+        val fmt = SimpleDateFormat("dd.MM HH:mm", Locale.forLanguageTag(AppLanguage.selected(this)))
+        TvDialog.list(this, getString(R.string.message_choose_a_settings_backup),
+            profiles.map { profile ->
+                TvDialog.Item(profile.name.ifBlank { profile.model },
+                    "${profile.model} • ${fmt.format(Date(profile.updated))}" +
+                        if (profile.backup == null) getString(R.string.player_backup_legacy) else "")
+            }, onCancel = { backupDialogOpen = false; showInitialBackupChoice(profiles) }) { index ->
+            backupDialogOpen = false
+            try {
+                val count = SyncManager.restore(profiles[index])
+                SyncManager.finishBackupDecision()
+                AppLog.i("kopia ustawień: przywrócono $count ustawień")
+                ZapWakeAlarms.sync(this)
+                if (!recreateForLanguage()) startUp()
+            } catch (e: Exception) {
+                AppLog.i("kopia ustawień: błąd przywracania: $e")
+                TvDialog.confirm(this, getString(R.string.message_could_not_restore_backup),
+                    e.message ?: e.toString(), listOf(TvDialog.Btn(getString(R.string.message_back)) { showInitialBackupChoice(profiles) }),
+                    cancelable = false, timeoutSec = 0)
+                backupDialogOpen = true
+            }
+        }
+    }
+
     /** Co minutę: czy przypada pobranie EPG z harmonogramu. */
     private val epgTick = object : Runnable {
         override fun run() {
-            if (EpgSync.due(prefs, epgStartupPending)) {
+            if (safeMode) return
+            if (!prefs.eitOnlyActive && EpgSync.due(prefs, epgStartupPending)) {
                 epgStartupPending = false
                 if (!prefs.pluginOk) AppLog.i("EPG: pobieranie wg harmonogramu (${prefs.epgHour})")
                 EpgSync.run(applicationContext, prefs, epgStore, false, { },
@@ -411,6 +580,10 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        backupCheckGeneration++
+        backupCheckRunning = false
+        backupDialogOpen = false
+        startupProbeGeneration++
         epgReturnFromSettings = settingsOpen
         if (settingsOpen && !recMode) {
             val channel = playList.getOrNull(playIndex)
@@ -425,21 +598,31 @@ class PlayerActivity : Activity() {
         backgrounded = true       // wyjście do ekranu głównego — po powrocie start jak przy uruchomieniu
         ui.removeCallbacks(epgTick)
         ui.removeCallbacks(zapTick)
+        ui.removeCallbacks(connectionGuardTick)
+        connectionProbeId++
+        connectionProbePending = false
+        dismissConnectionDialog()
+        dismissVlcFailureDialog()
+        if (!safeMode && prefs.playbackAttempt.isNotEmpty()) prefs.playbackAttempt = ""
         releasePlayer()
         ui.removeCallbacks(logTick)
-        if (AppLog.dirty) uploadLog(false)
-        syncChannels()
+        if (!safeMode) {
+            if (AppLog.dirty) uploadLog(false)
+            syncChannels()
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         io.shutdownNow()
+        probeIo.shutdownNow()
     }
 
     // ---------------------------------------------------------------- odtwarzacz
 
     private fun buildPlayer() {
         if (player != null) return
+        playbackRecovery.resetSession()
 
         val trackSelector = DefaultTrackSelector(this)
         val langs = AudioTrackLabels.preferredLanguages(prefs.audioLang)
@@ -503,8 +686,8 @@ class PlayerActivity : Activity() {
             }
 
             override fun onRenderedFirstFrame() {
-                lastStartMs = SystemClock.elapsedRealtime() - streamStartAt
-                AppLog.i("start: pierwszy obraz po $lastStartMs ms")
+                if (!tsMode) logFirstStreamFrame("ExoPlayer: pierwsza klatka")
+                markPlaybackHealthy()
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -524,7 +707,12 @@ class PlayerActivity : Activity() {
                         } + ")")
                     }
                 }
-                if (tsMode) applyTimeshiftAudio() else applySavedAudio()
+                if (tsMode) applyTimeshiftAudio()
+                else if (recMode) applySavedAudio()
+                else if (prefs.engine != "vlc" && aud.isNotEmpty() &&
+                    p.currentMediaItem?.localConfiguration?.uri?.toString() == currentUrl) {
+                    startAudioCheck()
+                }
             }
         })
 
@@ -616,12 +804,48 @@ class PlayerActivity : Activity() {
                 // zapamiętany PMT kanału, a gdy go nie ma — PMT zbudowany z PID-ów z dekodera (EPG Scan)
                 a.pmtCacheGet = { sid -> prefs.pmtFor(sid) ?: PmtBuilder.build(sid, prefs.pidsFor(sid)) }
                 a.pmtCachePut = { sid, b -> prefs.setPmtFor(sid, b) }
+                a.onEit = { session, _, now, next -> ui.post { onStreamEit(session, now, next) } }
             }
             analyzerRing = ring
         }
         analyzer?.clean = prefs.cleanTs
         // kopia strumienia na żywo do bufora timeshiftu (nie przy nagraniach z dekodera)
         analyzer?.tee = { b, o, l -> if (!recMode && SystemClock.elapsedRealtime() >= tsWriteFrom) tsBuf?.write(b, o, l) }
+    }
+
+    // --- EIT ze strumienia
+    private var eitChannel: Channel? = null
+    private var eitSession = -1L
+    private var eitPending: Pair<EitEvent?, EitEvent?>? = null
+    private var eitMissingLogged = false
+
+    /** Nowa wersja EIT teraz/następne z analizatora; krótka zwłoka, bo „teraz” i „następne” przychodzą osobno. */
+    private fun onStreamEit(session: Long, now: EitEvent?, next: EitEvent?) {
+        if (session != eitSession || eitChannel == null) return
+        eitPending = now to next
+        ui.removeCallbacks(eitApply)
+        ui.postDelayed(eitApply, 800)
+    }
+
+    private val eitApply = Runnable {
+        val ch = eitChannel ?: return@Runnable
+        val (now, next) = eitPending ?: return@Runnable
+        eitPending = null
+        if (playList.getOrNull(playIndex) !== ch) return@Runnable
+        epg.applyEit(ch, listOfNotNull(now, next), prefs.eitReplace) { changed ->
+            if (!changed || playList.getOrNull(playIndex) !== ch) return@applyEit
+            now?.let { ch.now = it.title; ch.nowBegin = it.begin; ch.nowEnd = it.end }
+            adapter.notifyDataSetChanged()
+            if (banner.visibility == View.VISIBLE && tsChBar) showBanner(ch)
+        }
+    }
+
+    /** Opcja włączona, a z dekodera nie przychodzi PID 0x12 - podpowiedź w logu (raz na uruchomienie aplikacji). */
+    private val eitMissingCheck = Runnable {
+        val a = analyzer ?: return@Runnable
+        if (!a.eitEnabled || eitMissingLogged || a.eitPackets > 0 || a.sessionId != eitSession) return@Runnable
+        eitMissingLogged = true
+        AppLog.i("EIT: dekoder nie wysyła EIT w strumieniu (Enigma2: Include EIT in http streams wyłączone?)")
     }
 
     private var encrypted = false
@@ -642,7 +866,7 @@ class PlayerActivity : Activity() {
                 watchdog?.paused = true
                 ui.removeCallbacks(restartRunnable); restartPending = false
                 AppLog.i("kanał kodowany: dekoder nie rozkodowuje (${(ratio * 100).toInt()}% pakietów kodowanych) — bez restartów")
-                showMessage("Kanał kodowany — dekoder go nie rozkodowuje (karta / softcam)", 15_000)
+                showMessage(getString(R.string.message_encrypted_channel_receiver_is_not_decrypting_it_card_so))
             }
         } else if (ratio < 0.2) {
             scrHits = 0
@@ -803,6 +1027,8 @@ class PlayerActivity : Activity() {
     }
 
     private fun releasePlayer() {
+        ui.removeCallbacks(audioCheck)
+        audioCheckGen = -1
         tsStopAll()
         ui.removeCallbacks(vlcTick)
         proxy?.stop(); proxy = null          // najpierw źródło danych — VLC kończy odczyt
@@ -833,27 +1059,53 @@ class PlayerActivity : Activity() {
             DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
                 DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
         )
+        val generation = streamGen
         val analyzing = DataSource.Factory {
-            AnalyzingDataSource(http.createDataSource()) { analyzer }
+            AnalyzingDataSource(http.createDataSource()) { if (generation == streamGen) analyzer else null }
         }
         return ProgressiveMediaSource.Factory(analyzing, extractors)
             .createMediaSource(MediaItem.fromUri(url))
     }
 
-    private fun startStream(url: String, startMs: Long = 0) {
+    private fun startStream(url: String, startMs: Long = 0, availableAt: Long = 0) {
+        if (safeMode) return
         val p = player ?: return
         currentUrl = url
+        connectionProbeId++
+        connectionProbePending = false
         streamGen++
+        ui.removeCallbacks(audioCheck)
+        audioCheckGen = -1
         streamStartAt = SystemClock.elapsedRealtime()
+        decoderAvailableAt = availableAt
+        firstStreamByteLogged = false
+        firstStreamFrameLogged = false
         readyLogged = false
         cushionReset()
         lastStartMs = -1
         // SID serwisu = 4. pole referencji (hex), np. 1:0:19:3DD2:640:13E:820000:0:0:0:
         val sid = url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
+        proxy?.invalidate()
         analyzer?.reset(sid)
+        // EIT „teraz/następne” ze strumienia (opcja; nie przy nagraniach z dysku dekodera)
+        eitChannel = if (!recMode) playList.getOrNull(playIndex) else null
+        analyzer?.eitEnabled = prefs.eitStream && eitChannel != null && sid >= 0
+        eitSession = analyzer?.sessionId ?: -1
+        eitPending = null
+        ui.removeCallbacks(eitApply)
+        ui.removeCallbacks(eitMissingCheck)
+        if (analyzer?.eitEnabled == true) ui.postDelayed(eitMissingCheck, 20_000)
         // nagranie z pliku: bez poprawiania strumienia — po przewinięciu znaczniki czasu skaczą względem
         // ostatniego PCR i „poprawka” przesuwała dźwięk (obraz wyprzedzał dźwięk)
         analyzer?.clean = if (recMode) false else prefs.cleanTs
+        if (decoderUnavailable && !recMode) {
+            p.stop()
+            proxy?.stop(); proxy = null
+            ui.removeCallbacks(vlcTick)
+            vlc?.release(); vlc = null
+            return
+        }
+        if (!playbackRecovery.hasPlayed) prefs.playbackAttempt = "${appVersion()} / ${prefs.engine.uppercase()}"
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
             return
@@ -874,6 +1126,26 @@ class PlayerActivity : Activity() {
         watchdog?.reset()
     }
 
+    private fun logFirstStreamByte() {
+        val first = analyzer?.firstFeedAt ?: 0L
+        if (firstStreamByteLogged || first <= 0 || first < streamStartAt) return
+        firstStreamByteLogged = true
+        val fromProbe = if (decoderAvailableAt > 0) ", ${first - decoderAvailableAt} ms od testu dekodera" else ""
+        AppLog.i("start: pierwszy bajt po ${first - streamStartAt} ms$fromProbe")
+    }
+
+    private fun logFirstStreamFrame(source: String) {
+        if (firstStreamFrameLogged || streamStartAt <= 0) return
+        logFirstStreamByte()
+        val now = SystemClock.elapsedRealtime()
+        lastStartMs = now - streamStartAt
+        val first = analyzer?.firstFeedAt ?: 0L
+        val fromByte = if (first >= streamStartAt && first > 0) ", ${now - first} ms od pierwszych bajtów" else ""
+        val fromProbe = if (decoderAvailableAt > 0) ", ${now - decoderAvailableAt} ms od testu dekodera" else ""
+        AppLog.i("start: $source po $lastStartMs ms$fromByte$fromProbe")
+        firstStreamFrameLogged = true
+    }
+
     // ---------------------------------------------------------------- VLC
 
     private lateinit var vlcLayout: org.videolan.libvlc.util.VLCVideoLayout
@@ -881,6 +1153,8 @@ class PlayerActivity : Activity() {
     private var proxy: TsProxy? = null
     private var vlcLastTime = -1L
     private var vlcLastMove = 0L
+    private var vlcProgressAt = 0L
+    private var vlcProgressPosition = 0L
 
     private fun startVlc(url: String) {
         player?.stop()
@@ -888,21 +1162,35 @@ class PlayerActivity : Activity() {
         vlcLayout.visibility = View.VISIBLE
         val px = proxy ?: TsProxy({ analyzer }, { api.authHeader() }).also { it.start(); proxy = it }
         px.setTarget(url)
-        val v = vlc ?: VlcEngine(this, prefs, vlcLayout,
-            onEvent = { m ->
-                if (m == "VLC: odtwarzanie") ui.post { applySavedVlcAudio() }
-                if (!readyLogged) { readyLogged = true; AppLog.i("start: $m po ${SystemClock.elapsedRealtime() - streamStartAt} ms") }
-            },
-            onFailure = { r -> scheduleRestart(r) }).also { vlc = it }
+        val v = vlc ?: run {
+            lateinit var created: VlcEngine
+            created = VlcEngine(this, prefs, vlcLayout,
+                onEvent = { m ->
+                    val generation = streamGen
+                    ui.post {
+                        if (vlc !== created || generation != streamGen) return@post
+                        if (m == "VLC: odtwarzanie") startAudioCheck()
+                        if (!readyLogged) {
+                            readyLogged = true
+                            AppLog.i("start: $m po ${SystemClock.elapsedRealtime() - streamStartAt} ms")
+                        }
+                    }
+                },
+                onFailure = { r -> if (vlc === created) scheduleRestart(r) })
+            vlc = created
+            created
+        }
         AppLog.i("VLC: ${v.info()}")
         vlcLastTime = -1
         vlcLastMove = SystemClock.elapsedRealtime()
+        vlcProgressAt = 0
+        vlcProgressPosition = 0
         v.play(px.url())
         ui.postDelayed({
             Thread { vlc?.vlcLog()?.forEach { AppLog.i("VLC log: $it") } }.start()
         }, 6000)
         ui.removeCallbacks(vlcTick)
-        ui.postDelayed(vlcTick, 2000)
+        ui.postDelayed(vlcTick, 250)
     }
 
     /** Zawieszenie przy VLC: czas odtwarzania stoi dłużej niż próg (po starcie: 15 s). */
@@ -910,10 +1198,34 @@ class PlayerActivity : Activity() {
         override fun run() {
             val v = vlc ?: return
             if (prefs.engine != "vlc") return
-            ui.postDelayed(this, 1000)
             val now = SystemClock.elapsedRealtime()
+            logFirstStreamByte()
+            if (!firstStreamFrameLogged && v.displayedPictures() > 0) {
+                val sampleMs = if (now - streamStartAt >= 15_000) 1000 else 250
+                logFirstStreamFrame("VLC: pierwsza klatka wg licznika (próbkowanie do $sampleMs ms)")
+                markPlaybackHealthy()
+            }
+            ui.postDelayed(this, if (firstStreamFrameLogged || now - streamStartAt >= 15_000) 1000 else 250)
             val t = v.time()
-            if (t != vlcLastTime) { vlcLastTime = t; vlcLastMove = now; return }
+            if (t != vlcLastTime) {
+                vlcLastTime = t
+                vlcLastMove = now
+                if (v.playing && t >= 0) {
+                    if (vlcProgressAt == 0L || t < vlcProgressPosition) {
+                        vlcProgressAt = now
+                        vlcProgressPosition = t
+                    } else if (now - vlcProgressAt >= 10_000 && t - vlcProgressPosition >= 2000) {
+                        if (!playbackRecovery.hasPlayed) {
+                            AppLog.i("VLC: czas odtwarzania postępuje, licznik pierwszej klatki niedostępny")
+                            markPlaybackHealthy()
+                        }
+                        playbackRecovery.resetVlcRestarts()
+                        vlcProgressAt = now
+                        vlcProgressPosition = t
+                    }
+                }
+                return
+            }
             val limit = if (v.playing) prefs.stallSec.coerceIn(1, 30) * 1000L + 2000 else 15_000L
             if (prefs.watchdog && now - vlcLastMove > limit) {
                 vlcLastMove = now
@@ -924,8 +1236,152 @@ class PlayerActivity : Activity() {
 
     private val restartRunnable = Runnable { doRestart() }
 
+    private val connectionGuardTick = object : Runnable {
+        override fun run() {
+            if (isFinishing || backgrounded) return
+            ui.postDelayed(this, 1000)
+            if (currentUrl == null || (recMode && !decoderUnavailable)) return
+            logFirstStreamByte()
+            val now = SystemClock.elapsedRealtime()
+            val lastFeed = analyzer?.lastFeedAt ?: 0L
+            if (decoderUnavailable) {
+                if (!connectionProbePending && now - lastProbeAt >= 3000) probeStalledStream()
+                return
+            }
+            val lastData = lastFeed.takeIf { it > 0 } ?: streamStartAt
+            if (lastData <= 0 || now - lastData < 8000) return
+            if (!connectionProbePending && now - lastProbeAt >= 3000) probeStalledStream()
+        }
+    }
+
+    private fun probeStalledStream(onReachableWithData: (() -> Unit)? = null) {
+        if (connectionProbePending) return
+        val url = currentUrl ?: return
+        val generation = streamGen
+        val probeId = ++connectionProbeId
+        connectionProbePending = true
+        lastProbeAt = SystemClock.elapsedRealtime()
+        probeIo.execute {
+            val result = try { api.probe() } catch (e: java.io.IOException) {
+                DecoderProbe.Result(false, "${e.javaClass.simpleName}: ${e.message}")
+            } catch (e: IllegalArgumentException) {
+                DecoderProbe.Result(false, "${e.javaClass.simpleName}: ${e.message}")
+            }
+            runOnUiThread {
+                if (probeId != connectionProbeId) return@runOnUiThread
+                connectionProbePending = false
+                if (isFinishing || backgrounded || generation != streamGen || currentUrl != url) return@runOnUiThread
+                if (!result.reachable) {
+                    if (!decoderUnavailable && recMode) disconnectedRecordingPosition = player?.currentPosition ?: 0
+                    if (!decoderUnavailable) AppLog.i("dekoder: brak komunikacji (${result.detail})")
+                    decoderUnavailable = true
+                    playbackRecovery.resetVlcRestarts()
+                    if (prefs.playbackAttempt.isNotEmpty()) prefs.playbackAttempt = ""
+                    ui.removeCallbacks(restartRunnable)
+                    restartPending = false
+                    dismissVlcFailureDialog()
+                    if (tsMode) {
+                        tsRec?.stop(); tsRec = null
+                    } else {
+                        ui.removeCallbacks(vlcTick)
+                        proxy?.stop(); proxy = null
+                        vlc?.release(); vlc = null
+                        player?.stop()
+                    }
+                    if (prefs.blockOnDisconnect) showConnectionDialog(false)
+                    else if (!connectionDialogShown()) showMessage(getString(R.string.player_unreachable_retry, prefs.host))
+                    return@runOnUiThread
+                }
+                val wasUnavailable = decoderUnavailable
+                decoderUnavailable = false
+                dismissConnectionDialog()
+                if (wasUnavailable) AppLog.i("dekoder: komunikacja przywrócona")
+                val availableAt = SystemClock.elapsedRealtime()
+                val lastData = analyzer?.lastFeedAt?.takeIf { it > 0 } ?: streamStartAt
+                if (wasUnavailable || availableAt - lastData >= 8000) {
+                    if (vlcFailureDialog?.isShowing == true && !wasUnavailable) return@runOnUiThread
+                    if (!wasUnavailable) showMessage(getString(R.string.message_receiver_responds_but_no_stream_is_arriving_reconnectin))
+                    if (tsMode) restartTimeshiftRecorder(url, generation) else {
+                        failStreak = 0
+                        restartPending = false
+                        ui.removeCallbacks(restartRunnable)
+                        val position = if (recMode) {
+                            if (wasUnavailable) disconnectedRecordingPosition else (player?.currentPosition ?: 0)
+                        } else 0
+                        startStream(url, position, availableAt)
+                    }
+                } else onReachableWithData?.invoke()
+            }
+        }
+    }
+
+    private fun connectionDialogShown() = connectionDialog?.isShowing == true
+
+    private fun showConnectionDialog(startup: Boolean) {
+        if (connectionDialogShown()) {
+            TvDialog.setMessage(connectionDialog, getString(R.string.player_cannot_connect, prefs.host))
+            return
+        }
+        val buttons = mutableListOf(
+            TvDialog.Btn(getString(R.string.message_wait), closeOnClick = false) {
+                TvDialog.setMessage(connectionDialog, getString(R.string.player_wait_receiver, prefs.host))
+            },
+            TvDialog.Btn(getString(if (startup) R.string.message_exit else R.string.message_close)) { finish() },
+        )
+        if (startup) buttons += TvDialog.Btn(getString(R.string.message_settings)) {
+            startupProbeGeneration++
+            settingsVersion = -1
+            openSettings(onCancel = { if (!isFinishing && !backgrounded) loadBouquets() })
+        }
+        connectionDialog = TvDialog.confirm(
+            this,
+            getString(R.string.message_cannot_communicate_with_receiver),
+            getString(R.string.player_cannot_connect, prefs.host),
+            buttons,
+            cancelable = false,
+            timeoutSec = 0,
+        )
+    }
+
+    private fun dismissConnectionDialog() {
+        connectionDialog?.let { if (it.isShowing) it.dismiss() }
+        connectionDialog = null
+    }
+
+    private fun dismissVlcFailureDialog() {
+        vlcFailureDialog?.let { if (it.isShowing) it.dismiss() }
+        vlcFailureDialog = null
+    }
+
+    private fun showVlcPlaybackFailure(reason: String) {
+        if (vlcFailureDialog?.isShowing == true) return
+        AppLog.i("VLC: przerwano automatyczne restarty po ${playbackRecovery.vlcRestarts} próbach: $reason")
+        ui.removeCallbacks(vlcTick)
+        vlcFailureDialog = TvDialog.confirm(
+            this,
+            getString(R.string.player_vlc_failure_title),
+            getString(R.string.player_vlc_failure_message),
+            listOf(
+                TvDialog.Btn(getString(R.string.message_retry)) {
+                    vlcFailureDialog = null
+                    playbackRecovery.resetVlcRestarts()
+                    failStreak = 0
+                    currentUrl?.let { startStream(it) }
+                },
+                TvDialog.Btn(getString(R.string.message_settings)) {
+                    vlcFailureDialog = null
+                    openSettings()
+                },
+                TvDialog.Btn(getString(R.string.message_close)) { finish() },
+            ),
+            cancelable = false,
+            timeoutSec = 0,
+        )
+    }
+
     private fun scheduleRestart(reason: String) {
-        if (currentUrl == null || restartPending || encrypted) return
+        if (safeMode || decoderUnavailable || currentUrl == null || restartPending || encrypted ||
+            vlcFailureDialog?.isShowing == true) return
         restartPending = true
         pendingReason = reason
         val delays = longArrayOf(0, 1000, 2000, 5000, 10_000)
@@ -939,10 +1395,45 @@ class PlayerActivity : Activity() {
     private fun doRestart() {
         restartPending = false
         val url = currentUrl ?: return
+        if (safeMode) return
+        if (decoderUnavailable || vlcFailureDialog?.isShowing == true) return
+        if (connectionProbePending) {
+            restartPending = true
+            ui.postDelayed(restartRunnable, 500)
+            return
+        }
+        val lastFeed = analyzer?.lastFeedAt ?: 0L
+        val lastData = lastFeed.takeIf { it > 0 } ?: streamStartAt
+        val silence = SystemClock.elapsedRealtime() - lastData
+        if (silence >= 8000) {
+            probeStalledStream()
+            return
+        }
+        if (lastFeed == 0L) return
+        val isVlcLive = prefs.engine == "vlc" && !tsMode && !recMode
+        if (isVlcLive && playbackRecovery.vlcFailureAction() != VlcFailureAction.RETRY) {
+            probeStalledStream {
+                if (vlc?.playing == true && (vlc?.time() ?: 0) > 0 &&
+                    SystemClock.elapsedRealtime() - vlcLastMove < 1500) {
+                    AppLog.i("VLC: odtwarzanie wznowiło się przed otwarciem okna błędu")
+                    return@probeStalledStream
+                }
+                when (playbackRecovery.vlcFailureAction()) {
+                    VlcFailureAction.STARTUP_RECOVERY -> showRecoveryDialog(
+                        getString(R.string.player_vlc_retries, playbackRecovery.vlcRestarts, pendingReason),
+                        stopPlayback = true,
+                    )
+                    VlcFailureAction.PLAYBACK_RECOVERY -> showVlcPlaybackFailure(pendingReason)
+                    VlcFailureAction.RETRY -> Unit
+                }
+            }
+            return
+        }
         restarts++
         lastRestartReason = pendingReason
         if (tsMode) { tsGoLive(pendingReason); return }
-        showMessage("Wznawiam strumień ($pendingReason)")
+        if (isVlcLive) playbackRecovery.recordVlcRestart()
+        showMessage(getString(R.string.player_resuming, pendingReason))
         // nagranie: od miejsca, w którym przerwało, nie od początku
         startStream(url, if (recMode) (player?.currentPosition ?: 0) else 0)
     }
@@ -956,52 +1447,31 @@ class PlayerActivity : Activity() {
         cm.activeNetworkInfo?.isConnected == true
     } catch (_: Exception) { true }
 
-    /**
-     * Po włączeniu Mi Box łączy się z Wi-Fi kilkanaście sekund — najpierw czekamy na sieć (do 60 s),
-     * potem dekoder dostaje kilka prób; błąd połączenia z dekoderem dopiero, gdy sieć jest, a dekoder milczy.
-     */
-    private fun waitForNetwork(): Boolean {
-        if (networkUp()) return true
-        AppLog.i("sieć: brak połączenia — czekam")
-        runOnUiThread { showMessage("Czekam na połączenie z siecią…", 60_000) }
-        val until = android.os.SystemClock.elapsedRealtime() + 60_000
-        while (android.os.SystemClock.elapsedRealtime() < until) {
-            Thread.sleep(1000)
-            if (networkUp()) {
-                AppLog.i("sieć: połączono")
-                runOnUiThread { showMessage("Łączenie z ${prefs.host}…", 10_000) }
-                Thread.sleep(1500)      // adres IP i trasy chwilę po zgłoszeniu połączenia
-                return true
-            }
-        }
-        AppLog.i("sieć: brak połączenia po 60 s")
-        return false
-    }
-
     private fun loadBouquets() {
-        showMessage("Łączenie z ${prefs.host}…", 10_000)
+        if (safeMode) return
+        val generation = ++startupProbeGeneration
+        showMessage(getString(R.string.player_connecting, prefs.host))
         io.execute {
-            if (!waitForNetwork()) {
-                runOnUiThread {
-                    showMessage("Brak połączenia z siecią (Wi-Fi / kabel).\nSprawdź sieć telewizora — spróbuję ponownie, gdy wróci.", 30_000)
-                }
-                ui.postDelayed({ if (!isFinishing && bouquets.isEmpty()) loadBouquets() }, 15_000)
-                return@execute
-            }
-            var attempt = 0
-            while (true) {
-                attempt++
-                try {
-                    api.bouquets()
-                    break
-                } catch (e: Exception) {
-                    if (attempt >= 4 || isFinishing) break     // ostateczny błąd zgłosi pełna próba niżej
-                    AppLog.i("dekoder: brak odpowiedzi (próba $attempt): $e")
-                    runOnUiThread { showMessage("Łączenie z ${prefs.host}… (próba ${attempt + 1})", 10_000) }
+            try {
+                while (generation == startupProbeGeneration && !isFinishing) {
+                    val result = if (networkUp()) api.probe()
+                    else DecoderProbe.Result(false, getString(R.string.player_no_network))
+                    if (result.reachable) break
+                    AppLog.i("dekoder: brak komunikacji przy starcie (${result.detail})")
+                    runOnUiThread {
+                        if (generation == startupProbeGeneration && !isFinishing) {
+                            showConnectionDialog(true)
+                        }
+                    }
                     Thread.sleep(3000)
                 }
-            }
-            try {
+                if (generation != startupProbeGeneration || isFinishing) return@execute
+                runOnUiThread {
+                    if (generation == startupProbeGeneration) {
+                        decoderUnavailable = false
+                        dismissConnectionDialog()
+                    }
+                }
                 PluginApi.check(prefs)   // wtyczka EPG Scan na dekoderze?
                 val all = api.bouquets()
                 val hidden = prefs.hiddenBouquets
@@ -1016,7 +1486,7 @@ class PlayerActivity : Activity() {
                 runOnUiThread {
                     bouquets = withRec(bq)
                     if (bq.isEmpty()) {
-                        showMessage("Brak bukietów na dekoderze", 8000)
+                        showMessage(getString(R.string.message_no_bouquets_on_receiver))
                         return@runOnUiThread
                     }
                     message.visibility = View.GONE
@@ -1039,15 +1509,17 @@ class PlayerActivity : Activity() {
                     applyScheduledChannel()
                 }
             } catch (e: Exception) {
+                if (generation != startupProbeGeneration || isFinishing) return@execute
                 AppLog.i("błąd połączenia z OpenWebif: $e")
                 runOnUiThread {
-                    showMessage("Błąd połączenia z dekoderem: ${e.message}\nPrzytrzymaj OK → menu → Ustawienia", 15_000)
+                    showMessage(getString(R.string.player_load_failed, e.message))
                 }
             }
         }
     }
 
     private fun applyScheduledChannel() {
+        if (safeMode) return
         val ref = scheduledChannelRef ?: return
         if (bouquets.isEmpty()) return
         scheduledChannelRef = null
@@ -1078,7 +1550,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun playIn(bIdx: Int, chList: List<Channel>, index: Int) {
-        if (chList.isEmpty()) return
+        if (safeMode || chList.isEmpty()) return
         if (recMode) leaveRec()
         panelOnRec = false
         tsCtl = false; tsChBar = false
@@ -1097,6 +1569,7 @@ class PlayerActivity : Activity() {
         prefs.lastChannel = ch.ref
 
         failStreak = 0
+        playbackRecovery.resetVlcRestarts()
         ui.removeCallbacks(restartRunnable)
         restartPending = false
         encrypted = false; scrHits = 0; scrTick = 0
@@ -1211,15 +1684,22 @@ class PlayerActivity : Activity() {
         refreshPanel(0)
         val bq = bouquets[b]
         io.execute {
-            val ch = try { channelsOf(bq) } catch (e: Exception) {
-                if (bq.ref == REC_REF) runOnUiThread { showMessage("Nagrania: ${e.message}", 6000) }
-                emptyList()
-            }
+            val result = try { channelsOf(bq) to null } catch (e: Exception) { null to e }
             runOnUiThread {
                 if (panelBouquet == b) {
-                    panelList = ch
+                    val ch = result.first
+                    val error = result.second
+                    if (error != null) {
+                        AppLog.i("bukiet: nie udało się pobrać kanałów ${bq.name}: $error")
+                        showMessage(
+                            if (bq.ref == REC_REF) getString(R.string.player_recording_error, error.message ?: error.toString())
+                            else getString(R.string.player_bouquet_failed, bq.name, error.message))
+                        return@runOnUiThread
+                    }
+                    panelList = ch.orEmpty()
+                    if (panelList.isEmpty() && bq.ref != REC_REF) showMessage(getString(R.string.player_bouquet_empty, bq.name))
                     // nagrania: zaznaczone ostatnio oglądane
-                    val sel = if (bq.ref == REC_REF) ch.indexOfFirst { it.rec?.path == recLastPath }.coerceAtLeast(0) else 0
+                    val sel = if (bq.ref == REC_REF) panelList.indexOfFirst { it.rec?.path == recLastPath }.coerceAtLeast(0) else 0
                     refreshPanel(sel)
                     loadPanelEpg()
                 }
@@ -1232,7 +1712,7 @@ class PlayerActivity : Activity() {
         if (b.ref == REC_REF) return
         val target = panelList
         io.execute {
-            val map = try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
+            val map = if (epg.eitOnly) emptyMap() else try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
             // kanały, dla których dekoder nie podał bieżącej audycji (np. EPG tylko z paczki EPG Scan
             // pod inną referencją) — z zapisanego EPG, tak jak opis na dole listy
             val n = System.currentTimeMillis() / 1000
@@ -1311,13 +1791,14 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- przełączenia wg harmonogramu
 
-    private val zapDf = SimpleDateFormat("EEE dd.MM  HH:mm", Locale("pl", "PL"))
+    private val zapDf by lazy { SimpleDateFormat("EEE dd.MM  HH:mm", Locale.forLanguageTag(AppLanguage.selected(this))) }
     private var zapPrompted: String? = null          // klucz przełączenia, dla którego jest odliczanie
     private var zapDialog: android.app.Dialog? = null
 
     /** 30 s przed audycją pokazuje okno; odliczanie aktualizuje się co sekundę. */
     private val zapTick = object : Runnable {
         override fun run() {
+            if (safeMode) return
             val timers = ZapTimers.list(this@PlayerActivity)
             if (zapPrompted != null && timers.none { it.key() == zapPrompted }) {
                 try { zapDialog?.dismiss() } catch (_: Exception) {}
@@ -1345,7 +1826,7 @@ class PlayerActivity : Activity() {
                     ui.postDelayed(this, 5000)
                     return
                 }
-                TvDialog.setButtonLabel(zapDialog, 0, "Przełącz (${zapCountdown(t.begin - now)})")
+                TvDialog.setButtonLabel(zapDialog, 0, getString(R.string.prompt_switch_countdown, zapCountdown(t.begin - now)))
                 ui.postDelayed(this, 1000)
                 return
             }
@@ -1356,8 +1837,8 @@ class PlayerActivity : Activity() {
             val body = EventCard.cachedBody(this@PlayerActivity, t)
             zapDialog = TvDialog.panel(this@PlayerActivity, null, null,
                 listOf(
-                    TvDialog.Btn("Przełącz (${zapCountdown(t.begin - now)})") { zapFire(t) },
-                    TvDialog.Btn("Nagraj na dekoderze") {
+                    TvDialog.Btn(getString(R.string.prompt_switch_countdown, zapCountdown(t.begin - now))) { zapFire(t) },
+                    TvDialog.Btn(getString(R.string.message_record_on_receiver)) {
                         ZapTimers.remove(this@PlayerActivity, t)
                         zapPrompted = null
                         zapDialog = null
@@ -1390,7 +1871,7 @@ class PlayerActivity : Activity() {
         }
         hidePanel()
         zapTo(t.ref, forceTune)
-        showMessage("Harmonogram: ${t.channel} — ${t.title}", 4000)
+        showMessage(getString(R.string.player_schedule_message, t.channel, t.title))
     }
 
     private fun zapSkip(t: ZapTimers.Timer) {
@@ -1405,14 +1886,14 @@ class PlayerActivity : Activity() {
         val future = ZapTimers.list(this)
         val history = ZapTimers.history(this)
         if (future.isEmpty() && history.isEmpty()) {
-            showMessage("Brak zaplanowanych przełączeń — dodasz je w opisie audycji (przytrzymane OK na liście kanałów, EPG)", 6000)
+            showMessage(getString(R.string.message_no_scheduled_switches_add_one_from_programme_details_lo))
             return
         }
         val items = ArrayList<TvDialog.Item>()
         val actions = ArrayList<(() -> Unit)?>()
         val historyEntries = HashMap<Int, ZapTimers.History>()
         if (future.isNotEmpty()) {
-            items += TvDialog.Item("PRZYSZŁE WYDARZENIA", header = true)
+            items += TvDialog.Item(getString(R.string.player_future_events), header = true)
             actions += null
             for (timer in future) {
                 items += TvDialog.Item(timer.title, "${timer.channel}  •  ${zapDf.format(Date(timer.begin * 1000))}")
@@ -1420,7 +1901,7 @@ class PlayerActivity : Activity() {
             }
         }
         if (history.isNotEmpty()) {
-            items += TvDialog.Item("ZREALIZOWANE", header = true)
+            items += TvDialog.Item(getString(R.string.player_completed), header = true)
             actions += null
             for (entry in history) {
                 items += TvDialog.Item(entry.timer.title,
@@ -1432,8 +1913,8 @@ class PlayerActivity : Activity() {
                 }
             }
         }
-        TvDialog.list(this, "Przełączenia wg harmonogramu", items,
-            hint = "OK szczegóły  •  długie OK usuń  •  WSTECZ zamknij", widthFrac = 0.72f,
+        TvDialog.list(this, getString(R.string.message_scheduled_switches), items,
+            hint = getString(R.string.player_details_remove_hint), widthFrac = 0.72f,
             onLongPick = { position ->
                 historyEntries[position]?.let {
                     ui.post { showZapHistoryEntry(it) }
@@ -1443,24 +1924,24 @@ class PlayerActivity : Activity() {
     }
 
     private fun zapOutcomeLabel(outcome: String) = when (outcome) {
-            ZapTimers.SWITCHED -> "Przełączono"
-            ZapTimers.RECORDED -> "Nagrano na dekoderze"
-            ZapTimers.RECORD_FAILED -> "Nagranie nieudane"
-            ZapTimers.SKIPPED -> "Pominięto przy wyjściu"
-            ZapTimers.REPLACED -> "Zastąpiono innym timerem"
+            ZapTimers.SWITCHED -> getString(R.string.player_history_switched)
+            ZapTimers.RECORDED -> getString(R.string.player_history_recorded)
+            ZapTimers.RECORD_FAILED -> getString(R.string.player_history_failed)
+            ZapTimers.SKIPPED -> getString(R.string.player_history_skipped)
+            ZapTimers.REPLACED -> getString(R.string.player_history_replaced)
             else -> outcome
         }
 
     private fun showZapHistoryEntry(entry: ZapTimers.History, note: String? = null) {
         val buttons = listOf(
-            TvDialog.Btn("Usuń z historii") {
-                TvDialog.confirm(this, "Potwierdź usunięcie",
-                    "Usunąć tę pozycję z historii harmonogramu?\n\n${entry.timer.channel} — ${entry.timer.title}",
+            TvDialog.Btn(getString(R.string.message_remove_from_history)) {
+                TvDialog.confirm(this, getString(R.string.message_confirm_deletion),
+                    getString(R.string.player_history_remove_question, entry.timer.channel, entry.timer.title),
                     listOf(
-                        TvDialog.Btn("Usuń") {
+                        TvDialog.Btn(getString(R.string.message_delete)) {
                             ZapTimers.removeHistory(this, entry)
                             showZapTimers()
-                            TvDialog.info(this, "Usunięto z historii",
+                            TvDialog.info(this, getString(R.string.player_history_removed),
                                 "${entry.timer.channel}\n${entry.timer.title}")
                         },
                     ), onBack = { showZapTimers() }, onTimeout = { showZapTimers() })
@@ -1475,7 +1956,7 @@ class PlayerActivity : Activity() {
 
     private fun playZapRecording(entry: ZapTimers.History) {
         val timer = entry.timer
-        showMessage("Szukam nagrania: ${timer.title}", 5000)
+        showMessage(getString(R.string.player_recording_search, timer.title))
         io.execute {
             val (recording, error) = try {
                 val movies = api.movies("").second.filterNot { it.isDir }
@@ -1498,9 +1979,9 @@ class PlayerActivity : Activity() {
             runOnUiThread {
                 when {
                     recording != null -> showRecordingDetails(recording) { showZapTimers() }
-                    error != null -> TvDialog.info(this@PlayerActivity, "Nie udało się wyszukać nagrania",
+                    error != null -> TvDialog.info(this@PlayerActivity, getString(R.string.player_recording_search_failed),
                         error) { showZapTimers() }
-                    else -> showZapHistoryEntry(entry, "Nie znaleziono pliku nagrania.")
+                    else -> showZapHistoryEntry(entry, getString(R.string.player_recording_file_missing))
                 }
             }
         }
@@ -1544,7 +2025,7 @@ class PlayerActivity : Activity() {
             if (tsBuf != null || !tsWarned) {
                 tsWarned = true
                 AppLog.i("timeshift: nośnik ${prefs.tsDir.ifBlank { "pamięć urządzenia (brak zgody)" }} niedostępny — timeshift wyłączony")
-                showMessage("Timeshift wyłączony: dysk ${if (prefs.tsDir.isBlank()) "nie wybrany" else "USB niedostępny"}", 5000)
+                showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)))
             }
             tsBuf?.reset(); tsBuf = null
             return
@@ -1593,6 +2074,27 @@ class PlayerActivity : Activity() {
         tsPending = 0
     }
 
+    private fun restartTimeshiftRecorder(url: String, generation: Int) {
+        if (!tsMode || tsLiveUrl != url || streamGen != generation) return
+        tsRec?.stop()
+        lateinit var recorder: TimeshiftRecorder
+        recorder = TimeshiftRecorder(
+            url, api.authHeader(), { analyzer },
+            { analyzer?.dropCarry(); tsBuf?.resync() },
+            onFailure = {
+                runOnUiThread {
+                    if (tsMode && tsLiveUrl == url && streamGen == generation && tsRec === recorder) {
+                        tsRec = null
+                        AppLog.i("timeshift: brak strumienia na żywo — sprawdzam dekoder")
+                        probeStalledStream()
+                    }
+                }
+            },
+        )
+        tsRec = recorder
+        recorder.start()
+    }
+
     /** Chwila (odbioru), którą teraz widać na ekranie. */
     private fun tsShownWall(): Long = tsBaseWall + (player?.currentPosition ?: 0)
 
@@ -1603,29 +2105,30 @@ class PlayerActivity : Activity() {
     /** Czy timeshift jest skonfigurowany; jeśli nie — komunikat. */
     private fun tsConfigured(): Boolean {
         if (prefs.tsMin > 0) return true
-        showMessage("Brak skonfigurowanego timeshiftu — Ustawienia → Odtwarzanie i obraz → Timeshift", 5000)
+        showMessage(getString(R.string.message_timeshift_is_not_configured_settings_playback_and_video))
         return false
     }
 
     private fun tsEnter(pause: Boolean, backMs: Long) {
         val url = currentUrl
         if (!tsConfigured()) return
-        if (recMode) { showMessage("Timeshift nie działa przy odtwarzaniu nagrania", 3000); return }
-        if (url == null) { showMessage("Timeshift: brak odtwarzanego kanału", 3000); return }
+        if (recMode) { showMessage(getString(R.string.message_timeshift_is_unavailable_when_playing_a_recording)); return }
+        if (url == null) { showMessage(getString(R.string.message_timeshift_no_channel_playing)); return }
         if (tsBuf == null) tsNewChannel()          // bufor mógł nie powstać (np. dysk podłączony po starcie)
         val b = tsBuf
-        if (b == null) { showMessage("Timeshift niedostępny: dysk USB niedostępny albo brak zgody na pamięć urządzenia", 5000); return }
-        b.failed?.let { showMessage("Timeshift niedostępny: $it", 5000); return }
+        if (b == null) { showMessage(getString(R.string.message_timeshift_unavailable_usb_drive_unavailable_or_device_s)); return }
+        b.failed?.let { showMessage(getString(R.string.player_ts_error, it)); return }
         // bufor jeszcze nie zapisywany (opóźnienie / tryb ręczny) lub prawie pusty: pauza rusza od teraz, cofnięcie niemożliwe
         val fresh = b.total < 2_000_000
-        if (fresh && !pause) { showMessage("Timeshift: bufor jeszcze pusty — nie ma do czego cofnąć", 4000); return }
+        if (fresh && !pause) { showMessage(getString(R.string.message_timeshift_buffer_is_still_empty_nothing_to_rewind)); return }
         tsWriteFrom = 0
         val p = player ?: return
         // obraz na ekranie jest za danymi o zapas odtwarzacza
         val behind = if (vlc != null) prefs.bufferMs.toLong() else p.totalBufferedDuration
         tsAudioPid = vlc?.selectedAudioTrackId() ?: selectedAudioPid()
-        val target = if (fresh) SystemClock.elapsedRealtime() else
-            (SystemClock.elapsedRealtime() - behind - 300 - backMs).coerceAtLeast(b.oldestWall + 10_000)
+        val now = SystemClock.elapsedRealtime()
+        val target = if (fresh) now else
+            timeshiftSeekTarget(now - behind - 300, -backMs, b.oldestWall, now)
         AppLog.i("timeshift: zachowuję ścieżkę audio PID=${tsAudioPid ?: "auto"}")
         AppLog.i("timeshift: ${if (pause) "pauza" else "cofnięcie ${backMs / 1000} s"} (bufor ${b.spanMs() / 60000} min)")
         // strumień na żywo odtwarzacza zatrzymany — zapis przejmuje osobne połączenie
@@ -1634,8 +2137,8 @@ class PlayerActivity : Activity() {
         vlc?.release(); vlc = null
         p.stop()
         tsLiveUrl = url
-        tsRec = TimeshiftRecorder(url, api.authHeader(), { analyzer }, { analyzer?.dropCarry(); tsBuf?.resync() }).also { it.start() }
         tsMode = true
+        restartTimeshiftRecorder(url, streamGen)
         tsSetShifted(true)
         tsCtl = true
         tsPlayFrom(target, play = !pause)
@@ -1684,7 +2187,7 @@ class PlayerActivity : Activity() {
             tsSetShifted(false)
             ui.removeCallbacks(tsApply)
             tsPending = 0
-            showMessage("Na żywo", 2000)
+            showMessage(getString(R.string.message_live))
             // ~6 s za końcem bufora: odtwarzacz ma od razu zapas na start (dane z dekodera przychodzą paczkami)
             tsPlayFrom(SystemClock.elapsedRealtime() - 6000, play = true)
             if (showControls) tsCtlOpen() else playList.getOrNull(playIndex)?.let { showBanner(it) }
@@ -1693,7 +2196,7 @@ class PlayerActivity : Activity() {
         tsLeave()
         tsCtl = controlsActive
         AppLog.i("timeshift: na żywo${if (reason.isNotBlank()) " ($reason)" else ""}")
-        showMessage("Na żywo", 2000)
+        showMessage(getString(R.string.message_live))
         failStreak = 0
         startStream(url)
         if (showControls) tsCtlOpen() else playList.getOrNull(playIndex)?.let { showBanner(it) }
@@ -1709,13 +2212,14 @@ class PlayerActivity : Activity() {
         val ch = playList.getOrNull(playIndex)
         bannerName.text = ch?.let { "${it.num}   ${it.name}" } ?: ""
         Picons.show(bannerIcon, this, ch?.ref.orEmpty(), prefs.picons, prefs.missingPiconLogo)
-        val span = (tsBuf?.takeIf { it.total > 0 }?.spanMs() ?: 0L)
+        val buffered = tsBuf?.takeIf { it.total > 0 }
+        val span = buffered?.let { timeshiftAvailableSpan(it.oldestWall, SystemClock.elapsedRealtime()) } ?: 0L
         bannerClock.text = hm.format(Date())
-        bannerNow.text = "▶  Na żywo  •  Timeshift " + if (span > 0) "(w buforze ${fmtMs(span)})" else "(bufor rusza po pauzie)"
-        bannerStart.text = if (span > 0) "−${fmtMs(span)}" else ""
-        bannerEnd.text = "na żywo"
+        bannerNow.text = if (buffered != null) getString(R.string.player_ts_live_buffer, fmtMs(span)) else getString(R.string.player_ts_live_empty)
+        bannerStart.text = ""
+        bannerEnd.text = getString(R.string.player_live_lower)
         bannerProgress.progress = 1000
-        bannerNext.text = "◀ ▶ ±${prefs.tsStepSec} s   ▲ ▼ ±${prefs.tsStepMin} min   OK pauza / start   ■ na żywo   WSTECZ zamknij pasek"
+        bannerNext.text = getString(R.string.player_ts_controls, prefs.tsStepSec, prefs.tsStepMin)
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
         ui.postDelayed(hideBanner, prefs.tsBannerSec.coerceIn(1, 30) * 1000L)
@@ -1731,8 +2235,9 @@ class PlayerActivity : Activity() {
     /** Przewinięcie o [delta] ms; kilka naciśnięć z rzędu sumuje się (jedno przeładowanie). */
     private fun tsSeek(delta: Long) {
         if (!tsMode) return
+        val b = tsBuf ?: return
         val base = if (tsPending != 0L) tsPending else tsShownWall()
-        tsPending = base + delta
+        tsPending = timeshiftSeekTarget(base, delta, b.oldestWall, SystemClock.elapsedRealtime())
         tsShowBanner(sticky = player?.playWhenReady == false)
         ui.removeCallbacks(tsApply)
         ui.postDelayed(tsApply, 700)
@@ -1740,15 +2245,17 @@ class PlayerActivity : Activity() {
 
     private val tsApply = Runnable {
         val b = tsBuf
-        val target = tsPending
+        val requested = tsPending
         tsPending = 0
-        if (b == null || !tsMode || target == 0L) return@Runnable
+        if (b == null || !tsMode || requested == 0L) return@Runnable
         val now = SystemClock.elapsedRealtime()
+        val earliest = timeshiftEarliestSeekWall(b.oldestWall, now)
+        val target = maxOf(requested, earliest)
         when {
             target >= now - 6000 -> tsGoLive("przewinięte do końca")
-            target < b.oldestWall -> {
-                showMessage("Początek bufora (${b.spanMs() / 60000} min)", 2500)
-                tsPlayFrom(b.oldestWall + 10_000, play = player?.playWhenReady != false)
+            target == earliest -> {
+                showMessage(getString(R.string.player_ts_start, fmtMs(now - earliest)))
+                tsPlayFrom(earliest, play = player?.playWhenReady != false)
             }
             else -> tsPlayFrom(target, play = player?.playWhenReady != false)
         }
@@ -1767,7 +2274,7 @@ class PlayerActivity : Activity() {
             }
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> {
                 val forward = if (code == KeyEvent.KEYCODE_DPAD_RIGHT) prefs.tsStepSec * 1000L else prefs.tsStepMin * 60_000L
-                if (tsMode && tsShifted) tsSeek(forward) else { showMessage("Już na żywo", 1500); tsCtlOpen() }
+                if (tsMode && tsShifted) tsSeek(forward) else { showMessage(getString(R.string.message_already_live)); tsCtlOpen() }
             }
             // Wstecz: najpierw zamyka pasek (także przy pauzie), dopiero kolejne naciśnięcie wraca na żywo
             KeyEvent.KEYCODE_BACK -> {
@@ -1798,16 +2305,19 @@ class PlayerActivity : Activity() {
     private fun tsUpdateBanner() {
         val b = tsBuf ?: return
         val now = SystemClock.elapsedRealtime()
+        if (tsPending != 0L) tsPending = maxOf(tsPending, timeshiftEarliestSeekWall(b.oldestWall, now))
         val shown = if (tsPending != 0L) tsPending else tsShownWall()
         val behind = (now - shown).coerceAtLeast(0)
-        val span = b.spanMs().coerceAtLeast(1)
+        val oldest = b.oldestWall
+        val span = timeshiftAvailableSpan(oldest, now)
         val paused = player?.playWhenReady == false
         bannerClock.text = hm.format(Date(System.currentTimeMillis() - behind))
-        bannerNow.text = (if (paused) "⏸  Timeshift" else "▶  Timeshift") + "  −${fmtMs(behind)}"
-        bannerStart.text = "−${fmtMs(span)}"
-        bannerEnd.text = "na żywo"
-        bannerProgress.progress = ((span - behind) * 1000 / span).toInt().coerceIn(0, 1000)
-        bannerNext.text = "◀ ▶ ±${prefs.tsStepSec} s   ▲ ▼ ±${prefs.tsStepMin} min   OK pauza / start   ■ na żywo   WSTECZ zamknij pasek"
+        bannerNow.text = getString(R.string.player_ts_shifted_buffer,
+            if (paused) "⏸" else "▶", fmtMs(behind), fmtMs(span))
+        bannerStart.text = ""
+        bannerEnd.text = getString(R.string.player_live_lower)
+        bannerProgress.progress = timeshiftBufferProgress(shown, oldest, now)
+        bannerNext.text = getString(R.string.player_ts_controls, prefs.tsStepSec, prefs.tsStepMin)
     }
 
     /** Co sekundę: pasek, ukrywanie, pilnowanie okna przy długiej pauzie. */
@@ -1819,7 +2329,7 @@ class PlayerActivity : Activity() {
             if (player == null) return
             // pauza dłuższa niż okno: miejsce pauzy zaraz wypadnie z bufora — wznowienie od najstarszego
             if (tsPending == 0L && b.trimmed && tsShownWall() < b.oldestWall + 5000) {
-                showMessage("Bufor timeshiftu pełny — wznawiam od najstarszego zapisanego momentu", 5000)
+                showMessage(getString(R.string.message_timeshift_buffer_full_resuming_from_the_oldest_recorded))
                 AppLog.i("timeshift: pauza dłuższa niż okno — wznowienie od początku bufora")
                 tsPlayFrom(b.oldestWall + 10_000, play = true)
                 return
@@ -1841,11 +2351,11 @@ class PlayerActivity : Activity() {
     private var panelOnRec = false                // po powrocie z nagrania lista otwiera się na nagraniach
     private var recLastPath = ""
     private val recPos by lazy { getSharedPreferences("recpos", MODE_PRIVATE) }
-    private val dateFmt = SimpleDateFormat("EEE dd.MM  HH:mm", Locale("pl", "PL"))
+    private val dateFmt by lazy { SimpleDateFormat("EEE dd.MM  HH:mm", Locale.forLanguageTag(AppLanguage.selected(this))) }
 
     /** Bukiet „Nagrania” zawsze na końcu listy bukietów. */
     private fun withRec(bq: List<Bouquet>) = bq.filter { it.ref != REC_REF } +
-        (if (REC_REF in prefs.hiddenBouquets) emptyList() else listOf(Bouquet("Nagrania", REC_REF)))
+        (if (REC_REF in prefs.hiddenBouquets) emptyList() else listOf(Bouquet(getString(R.string.player_recordings), REC_REF)))
 
     /** Kanały bukietu albo (dla „Nagrania”) zawartość bieżącego katalogu nagrań. Poza wątkiem UI. */
     private fun channelsOf(bq: Bouquet): List<Channel> {
@@ -1902,8 +2412,8 @@ class PlayerActivity : Activity() {
         val saved = savedPos(r)
         if (saved > 60_000) {
             TvDialog.list(this, r.title, listOf(
-                TvDialog.Item("Wznów od ${fmtMs(saved)}"),
-                TvDialog.Item("Od początku"),
+                TvDialog.Item(getString(R.string.player_resume_recording, fmtMs(saved))),
+                TvDialog.Item(getString(R.string.player_from_beginning)),
             ), 0, widthFrac = 0.45f, onCancel = { onCancel?.invoke() }) { w ->
                 playRecording(r, if (w == 0) saved else 0)
             }
@@ -1912,11 +2422,11 @@ class PlayerActivity : Activity() {
 
     private fun recordingDescription(r: Recording) =
         listOf(r.service, if (r.begin > 0) dateFmt.format(Date(r.begin * 1000)) else "", if (r.lengthSec > 0) "${r.lengthSec / 60} min" else "")
-            .filter { it.isNotBlank() }.joinToString("  •  ") + "\n\n" + r.desc.ifBlank { "Brak opisu" }
+            .filter { it.isNotBlank() }.joinToString("  •  ") + "\n\n" + r.desc.ifBlank { getString(R.string.epg_no_description) }
 
     private fun showRecordingDetails(r: Recording, onBack: (() -> Unit)? = null) {
         TvDialog.confirm(this, r.title, recordingDescription(r),
-            listOf(TvDialog.Btn("Odtwórz") {
+            listOf(TvDialog.Btn(getString(R.string.message_play)) {
                 pickRecording(r, onCancel = onBack?.let { returnToSchedule ->
                     { showRecordingDetails(r, returnToSchedule) }
                 })
@@ -1925,15 +2435,15 @@ class PlayerActivity : Activity() {
     }
 
     private fun showRecordingActions(r: Recording) {
-        TvDialog.list(this, r.title, listOf(TvDialog.Item("Odtwórz"), TvDialog.Item("Usuń")),
-            hint = "OK wybierz  •  WSTECZ wróć", widthFrac = 0.45f) { selected ->
+        TvDialog.list(this, r.title, listOf(TvDialog.Item(getString(R.string.message_play)), TvDialog.Item(getString(R.string.message_delete))),
+            hint = getString(R.string.epg_hint_actions), widthFrac = 0.45f) { selected ->
             if (selected == 0) pickRecording(r) else confirmDeleteRecording(r)
         }
     }
 
     private fun confirmDeleteRecording(r: Recording) {
-        TvDialog.confirm(this, "Usunąć nagranie?", "${r.title}\n${r.path}",
-            listOf(TvDialog.Btn("Usuń") { deleteRecording(r) }))
+        TvDialog.confirm(this, getString(R.string.message_delete_recording), "${r.title}\n${r.path}",
+            listOf(TvDialog.Btn(getString(R.string.message_delete)) { deleteRecording(r) }))
     }
 
     private fun deleteRecording(r: Recording) {
@@ -1942,10 +2452,10 @@ class PlayerActivity : Activity() {
             runOnUiThread {
                 if (result.first) {
                     recPos.edit().remove(recPosKey(r)).apply()
-                    TvDialog.info(this@PlayerActivity, "Usunięto nagranie", r.title) {
+                    TvDialog.info(this@PlayerActivity, getString(R.string.player_recording_removed), r.title) {
                         reloadRecordings()
                     }
-                } else TvDialog.info(this@PlayerActivity, "Nie udało się usunąć nagrania", result.second)
+                } else TvDialog.info(this@PlayerActivity, getString(R.string.player_recording_remove_failed), result.second)
             }
         }
     }
@@ -1955,7 +2465,7 @@ class PlayerActivity : Activity() {
         if (bouquets.getOrNull(bqIndex)?.ref != REC_REF) return
         io.execute {
             val channels = try { channelsOf(bouquets[bqIndex]) } catch (e: Exception) {
-                runOnUiThread { showMessage("Nagrania: ${e.message}", 6000) }
+                runOnUiThread { showMessage(getString(R.string.player_recording_error, e.message ?: e.toString())) }
                 return@execute
             }
             runOnUiThread {
@@ -2026,7 +2536,7 @@ class PlayerActivity : Activity() {
         AppLog.i("nagranie: koniec")
         recMode = false
         recItem = null
-        showMessage("Koniec nagrania", 3000)
+        showMessage(getString(R.string.message_end_of_recording))
         stopPlayback()
         showRecordings()
     }
@@ -2096,7 +2606,7 @@ class PlayerActivity : Activity() {
         bannerStart.text = fmtMs(pos)
         bannerEnd.text = if (dur > 0) "${fmtMs(dur)}   (−${fmtMs(maxOf(0, dur - pos))})" else ""
         bannerProgress.progress = if (dur > 0) (pos * 1000 / dur).toInt().coerceIn(0, 1000) else 0
-        bannerNext.text = "◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pauza   WSTECZ powrót do TV"
+        bannerNext.text = getString(R.string.player_recording_controls)
     }
 
     /** Co 0,5 s w trybie nagrania: odświeżenie paska, ukrycie po czasie, zapis miejsca co 15 s. */
@@ -2170,7 +2680,7 @@ class PlayerActivity : Activity() {
         ch.rec?.let { r ->
             infoTitle.visibility = View.VISIBLE
             infoTitle.text = if (r.isDir) r.title else "${r.title}${if (r.service.isNotBlank()) "  •  " + r.service else ""}"
-            infoDesc.text = if (r.isDir) "Katalog nagrań" else r.desc.ifBlank { "Brak opisu" }
+            infoDesc.text = if (r.isDir) getString(R.string.player_recordings_folder) else r.desc.ifBlank { getString(R.string.epg_no_description) }
             return
         }
         epg.nowNext(ch) { cur, _ ->
@@ -2178,10 +2688,10 @@ class PlayerActivity : Activity() {
             infoTitle.text = cur?.let { "${t(it.begin)}–${t(it.end)}  ${it.title}" } ?: ""
             infoTitle.visibility = if (cur != null) View.VISIBLE else View.GONE
             infoDesc.text = when {
-                cur == null -> "Brak opisu w EPG"
+                cur == null -> getString(R.string.player_no_epg_description)
                 cur.shortDesc.isNotBlank() && cur.longDesc.isNotBlank() && cur.longDesc != cur.shortDesc ->
                     cur.shortDesc + "\n" + cur.longDesc
-                else -> cur.shortDesc.ifBlank { cur.longDesc }.ifBlank { "Brak opisu w EPG" }
+                else -> cur.shortDesc.ifBlank { cur.longDesc }.ifBlank { getString(R.string.player_no_epg_description) }
             }
         }
     }
@@ -2204,18 +2714,22 @@ class PlayerActivity : Activity() {
                 bannerEnd.text = "${t(cur.end)}   (−${(cur.end - System.currentTimeMillis() / 1000) / 60} min)"
                 bannerProgress.progress = progressOf(cur)
             }
-            bannerNext.text = next?.let { "Następnie  ${t(it.begin)}  ${it.title}" } ?: ""
+            bannerNext.text = next?.let { getString(R.string.player_next_event, t(it.begin), it.title) } ?: ""
         }
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
         ui.postDelayed(hideBanner, prefs.bannerSec.coerceIn(1, 30) * 1000L)
     }
 
-    private fun showMessage(t: String, ms: Long = 3000) {
+    private fun showMessage(t: String) {
+        ui.removeCallbacks(hideMessage)
+        if (!prefs.messageBar) {
+            message.visibility = View.GONE
+            return
+        }
         message.text = t
         message.visibility = View.VISIBLE
-        ui.removeCallbacks(hideMessage)
-        ui.postDelayed(hideMessage, ms)
+        ui.postDelayed(hideMessage, prefs.messageBarSec * 1000L)
     }
 
     private val statsTick = object : Runnable {
@@ -2243,37 +2757,38 @@ class PlayerActivity : Activity() {
         val ch = playList.getOrNull(playIndex)
         return buildString {
             appendLine("${ch?.num ?: ""}  ${ch?.name ?: ""}")
-            appendLine(
-                "Obraz: " + (v?.let {
+            appendLine(getString(R.string.diag_video, v?.let {
                     "${it.width}x${it.height} ${it.sampleMimeType ?: "?"}" +
                         (if (it.frameRate > 0) " %.2f fps".format(it.frameRate) else "")
-                } ?: "-")
-            )
-            appendLine(
-                "Dźwięk: " + (a?.let {
+                } ?: "-"))
+            appendLine(getString(R.string.diag_audio, a?.let {
                     "${it.sampleMimeType ?: "?"} ${it.channelCount}ch ${it.language ?: ""}"
-                } ?: "-")
-            )
-            if (prefs.engine == "vlc") appendLine("Silnik: ${vlc?.info() ?: "VLC"}")
-            else appendLine("Tunelowanie: " + if (prefs.tunneling) "włączone" else "wyłączone")
-            appendLine("Bufor: ${p.totalBufferedDuration} ms / zapas $cushionTarget ms" +
-                (if (cushionSpeed != 1f) " (dobudowuję, ${"%.2f".format(cushionSpeed)}×)" else if (cushionDisabled || prefs.tunneling || !prefs.cushionSlow) " (bez zwolnienia)" else "") +
-                "   start obrazu: " + (if (lastStartMs >= 0) "$lastStartMs ms" else "-"))
+                } ?: "-"))
+            if (prefs.engine == "vlc") appendLine(getString(R.string.diag_engine, vlc?.info() ?: "VLC"))
+            else appendLine(getString(R.string.diag_tunnel, getString(if (prefs.tunneling) R.string.diag_enabled else R.string.diag_disabled)))
+            val bufferState = if (cushionSpeed != 1f) getString(R.string.diag_building_buffer, "%.2f".format(cushionSpeed))
+                else if (cushionDisabled || prefs.tunneling || !prefs.cushionSlow) getString(R.string.diag_no_slowdown) else ""
+            appendLine(getString(R.string.diag_buffer, p.totalBufferedDuration, cushionTarget, bufferState,
+                if (lastStartMs >= 0) "$lastStartMs ms" else "-"))
             analyzer?.let { a ->
-                appendLine("TS: %.2f Mb/s  odczyt maks. ${a.maxGapMs} ms".format(a.bitrateKbps / 1000.0))
-                appendLine("TS paczki: przerwy ~${a.burstAvgMs} ms   wyczyszczone: ${a.cleaned}   poprawione PTS: ${a.tsFixed}")
-                appendLine("TS błędy: CC ${a.ccErrors}  TEI ${a.teiErrors}  kod. ${a.scrambled}  sync ${a.syncLoss}  PCR ${a.pcrJumps}  PMT ${a.pmtChanges}")
+                appendLine(getString(R.string.diag_ts_rate, a.bitrateKbps / 1000.0, a.maxGapMs))
+                appendLine(getString(R.string.diag_ts_bursts, a.burstAvgMs, a.cleaned, a.tsFixed))
+                appendLine(getString(R.string.diag_ts_errors, a.ccErrors, a.teiErrors, a.scrambled, a.syncLoss, a.pcrJumps, a.pmtChanges))
+                if (prefs.eitStream) {
+                    fun e(x: EitEvent?) = x?.let { "${it.title} ${hm.format(Date(it.begin * 1000))}–${hm.format(Date(it.end * 1000))}" } ?: "-"
+                    appendLine(getString(R.string.diag_eit, a.eitPackets, e(a.eitPresent), e(a.eitFollowing)))
+                }
             }
-            appendLine("Ekran: ${displayInfo()}")
-            appendLine("Odświeżanie: ${afrName(prefs.afrMode)}")
+            appendLine(getString(R.string.diag_screen, displayInfo()))
+            appendLine(getString(R.string.diag_refresh, afrName(prefs.afrMode)))
             if (wd != null) {
-                appendLine("Klatki: ${wd.frames}   utracone: ${wd.dropped}" + if (prefs.tunneling) " (w tunelu niewidoczne)" else "")
-                appendLine("Watchdog: ${wd.mode}")
+                appendLine(getString(R.string.diag_frames, wd.frames, wd.dropped, if (prefs.tunneling) getString(R.string.diag_tunnel_hidden) else ""))
+                appendLine(getString(R.string.diag_watchdog, wd.mode))
             } else {
-                appendLine("Watchdog: wyłączony")
+                appendLine(getString(R.string.diag_watchdog_off))
             }
-            appendLine("Wznowienia: $restarts")
-            append("Ostatni powód: $lastRestartReason")
+            appendLine(getString(R.string.diag_restarts, restarts))
+            append(getString(R.string.diag_last_reason, lastRestartReason))
         }
     }
 
@@ -2297,7 +2812,7 @@ class PlayerActivity : Activity() {
         numEntry.visibility = View.GONE
         if (n == null) return
         val i = playList.indexOfFirst { it.num == n }
-        if (i >= 0) { panelOnRec = false; play(i) } else showMessage("Brak kanału $n w bukiecie")
+        if (i >= 0) { panelOnRec = false; play(i) } else showMessage(getString(R.string.player_missing_number, n))
     }
 
     // ---------------------------------------------------------------- pilot
@@ -2310,6 +2825,22 @@ class PlayerActivity : Activity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && event.repeatCount > 0) return true
         if (keyCode != KeyEvent.KEYCODE_BACK) backExit.reset()
+        if (safeMode) {
+            when {
+                keyCode == KeyEvent.KEYCODE_BACK -> {
+                    if (backExit.press(SystemClock.elapsedRealtime())) finish()
+                    else showMessage(getString(R.string.message_press_back_again_to_exit))
+                    return true
+                }
+                keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_INFO || isOk(keyCode) -> {
+                    showQuickMenu()
+                    return true
+                }
+                keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
+                    keyCode == KeyEvent.KEYCODE_VOLUME_MUTE -> return super.onKeyDown(keyCode, event)
+                else -> return true
+            }
+        }
         if (panel.visibility == View.VISIBLE) {
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> { panelBouquetStep(-1); return true }
@@ -2373,7 +2904,7 @@ class PlayerActivity : Activity() {
                 if (backExit.press(SystemClock.elapsedRealtime())) {
                     finish()
                 } else {
-                    showMessage("Naciśnij ponownie WSTECZ, aby wyjść", 2500)
+                    showMessage(getString(R.string.message_press_back_again_to_exit))
                 }
                 return true
             }
@@ -2384,13 +2915,33 @@ class PlayerActivity : Activity() {
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
-            // widoczny pasek + timeshift: menu przewijania; w pozostałych przypadkach menu główne
-            if (prefs.tsMin > 0 && !recMode && banner.visibility == View.VISIBLE) {
-                if (tsShifted) tsShowBanner(sticky = player?.playWhenReady == false) else tsCtlOpen()
+            if (!recMode && banner.visibility == View.VISIBLE) {
+                val diskUnavailable = prefs.tsDir.isNotBlank() && !TimeshiftBuffer.available(prefs.tsDir)
+                val reason = when {
+                    diskUnavailable -> R.string.player_ts_setup_disk_unavailable
+                    prefs.tsDir.isBlank() && !prefs.tsInternalOk -> R.string.player_ts_setup_no_location
+                    prefs.tsMin <= 0 -> R.string.player_ts_setup_disabled
+                    else -> null
+                }
+                if (reason != null) {
+                    val message = getString(reason) +
+                        if (diskUnavailable && prefs.tsMin <= 0) "\n\n${getString(R.string.player_ts_setup_disabled)}" else ""
+                    val buttons = mutableListOf(
+                        TvDialog.Btn(getString(R.string.message_settings)) { openSettings(focusTimeshift = true) },
+                    )
+                    if (diskUnavailable && prefs.tsMin > 0 && prefs.tsInternalOk) {
+                        buttons += TvDialog.Btn(getString(R.string.message_continue)) { openTimeshiftControls() }
+                    } else buttons += TvDialog.Btn(getString(R.string.message_close))
+                    TvDialog.confirm(this, getString(R.string.setting_timeshift), message, buttons)
+                } else openTimeshiftControls()
             } else showQuickMenu()
             return true
         }
         return super.onKeyLongPress(keyCode, event)
+    }
+
+    private fun openTimeshiftControls() {
+        if (tsShifted) tsShowBanner(sticky = player?.playWhenReady == false) else tsCtlOpen()
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
@@ -2446,8 +2997,8 @@ class PlayerActivity : Activity() {
             }
             Act.TS_FORWARD -> when {
                 tsShifted -> tsSeek(prefs.tsStepSec * 1000L)
-                tsMode -> showMessage("Już na żywo", 1500)
-                prefs.tsMin > 0 -> showMessage("Już na żywo", 1500)
+                tsMode -> showMessage(getString(R.string.message_already_live))
+                prefs.tsMin > 0 -> showMessage(getString(R.string.message_already_live))
                 else -> tsConfigured()
             }
             Act.TS_LIVE -> if (tsMode) tsGoLive() else if (prefs.tsMin <= 0) tsConfigured()
@@ -2459,12 +3010,14 @@ class PlayerActivity : Activity() {
         }
     }
 
-    private fun openSettings() {
-        PinLock.ask(this, prefs) {
+    private fun openSettings(onCancel: () -> Unit = {}, focusTimeshift: Boolean = false) {
+        PinLock.ask(this, prefs, onCancel = onCancel) {
             settingsOpen = true
             settingsSig = streamSig()
             settingsBq = prefs.hiddenBouquets.toString()
-            startActivity(Intent(this, SettingsActivity::class.java))
+            startActivity(Intent(this, SettingsActivity::class.java).apply {
+                if (focusTimeshift) putExtra(SettingsActivity.EXTRA_FOCUS_TIMESHIFT, true)
+            })
         }
     }
 
@@ -2484,6 +3037,15 @@ class PlayerActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (recreateForLanguage()) return
+        // pierwsza konfiguracja: wybrano dekoder w ustawieniach, a decyzja o kopii ustawień jeszcze nie zapadła —
+        // pytanie od razu, niezależnie od tego, czy po powrocie z ustawień był pełny start (onStart)
+        if (!safeMode && prefs.host.isNotBlank() && SyncManager.needsBackupDecision && !backupCheckRunning && !backupDialogOpen) {
+            settingsOpen = false
+            AppLog.i("kopia ustawień: pytanie po powrocie z ustawień")
+            checkInitialBackup()
+            return
+        }
         if (!settingsOpen) return
         settingsOpen = false
         if (player == null && vlc == null) {
@@ -2507,7 +3069,13 @@ class PlayerActivity : Activity() {
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
         keyMap = KeyMap.load(prefs)
         UiScale.apply(banner, UiScale.pct(prefs.uiBannerFont), UiScale.pct(prefs.uiBannerIcon))
+        UiScale.apply(message, UiScale.pct(prefs.uiBannerFont))
+        if (!prefs.messageBar) {
+            ui.removeCallbacks(hideMessage)
+            message.visibility = View.GONE
+        }
         applyDisplayMode()
+        epg.eitOnly = prefs.eitOnlyActive
         epg.clearMemory()
         list.adapter = adapter      // wiersze od nowa (np. nowa wielkość czcionki)
         if (prefs.hiddenBouquets.toString() != settingsBq) {
@@ -2515,6 +3083,19 @@ class PlayerActivity : Activity() {
             reloadBouquetsKeepStream()
         }
         settingsVersion = prefs.version
+    }
+
+    private var recreatingLanguage = false
+
+    private fun recreateForLanguage(): Boolean {
+        if (recreatingLanguage) return true
+        if (!AppLanguage.needsUpdate(this) || isFinishing) return false
+        if (!safeMode && (player != null || vlc != null) && prefs.playbackAttempt.isNotEmpty()) {
+            prefs.playbackAttempt = ""
+        }
+        recreatingLanguage = true
+        recreate()
+        return true
     }
 
     // ---------------------------------------------------------------- zrzut przy zawieszeniu
@@ -2538,7 +3119,6 @@ class PlayerActivity : Activity() {
                 else -> "za mało danych"
             }
             AppLog.i("start: restart ($reason) — $why; ${a.summary()}")
-            if (a.bytes == 0L && failStreak >= 2) showMessage("Dekoder nie wysyła danych dla tego kanału", 6000)
             return
         }
         AppLog.i("ZAWIESZENIE ($reason) | ${a.summary()} | ${decoderInfo()}")
@@ -2582,13 +3162,24 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- aktualizacja
 
-    private fun checkUpdate(manual: Boolean) = Tools.checkUpdate(this, manual) { showMessage(it, 8000) }
+    private fun checkUpdate(manual: Boolean) = Tools.checkUpdate(this, manual) { showMessage(it) }
 
 
 
     // ---------------------------------------------------------------- menu podręczne
 
     private fun showQuickMenu() {
+        if (safeMode) {
+            val items = listOf(
+                getString(R.string.player_normal_start) to { retryNormalStartup() },
+                getString(R.string.message_settings) to { openSettings() },
+                getString(R.string.message_close) to { finish() },
+            )
+            TvDialog.list(this, getString(R.string.message_e2stream_safe_mode), items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f) { which ->
+                items[which].second()
+            }
+            return
+        }
         val actions = mapOf<String, () -> Unit>(
             "event" to { epg.showCurrentEvent() },
             "channel_epg" to { epg.showChannelEpg() },
@@ -2598,8 +3189,8 @@ class PlayerActivity : Activity() {
             "zap_timers" to { showZapTimers() },
             "decoder_timers" to { showDecoderTimers() },
         )
-        val items = QuickMenu.ordered(prefs).map { it.label to actions.getValue(it.id) } +
-            listOf("Ustawienia" to { openSettings() })
+        val items = QuickMenu.ordered(prefs).map { getString(it.labelRes) to actions.getValue(it.id) } +
+            listOf(getString(R.string.message_settings) to { openSettings() })
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->
             items[which].second()
         }
@@ -2611,18 +3202,19 @@ class PlayerActivity : Activity() {
         forceTune: Boolean = false,
         onResult: ((Boolean, String) -> Unit)? = null,
     ) {
+        if (safeMode) return
         val k = OpenWebif.key(ref)
         val i = playList.indexOfFirst { OpenWebif.key(it.ref) == k }
         if (!forceTune && i >= 0 && i == playIndex && currentUrl != null && !recMode) {
             // ten kanał już gra — tylko zamknij listę, bez ponownego uruchamiania strumienia
             hidePanel(); showBanner(playList[i])
-            onResult?.invoke(true, "Kanał ${playList[i].name} jest już odtwarzany.")
+            onResult?.invoke(true, getString(R.string.player_already_playing, playList[i].name))
             return
         }
         if (i >= 0) {
             hidePanel()
             play(i)
-            onResult?.invoke(true, "Rozpoczęto przełączanie na ${playList[i].name}.")
+            onResult?.invoke(true, getString(R.string.player_switch_started, playList[i].name))
             return
         }
         val bq = bouquets
@@ -2641,16 +3233,16 @@ class PlayerActivity : Activity() {
                     runOnUiThread {
                         hidePanel()
                         playIn(bi, ch, j)
-                        onResult?.invoke(true, "Rozpoczęto przełączanie na ${ch[j].name}.")
+                        onResult?.invoke(true, getString(R.string.player_switch_started, ch[j].name))
                     }
                     return@execute
                 }
             }
             runOnUiThread {
                 val message = if (lookupError == null) {
-                    "Tego kanału nie ma w widocznych bukietach."
+                    getString(R.string.player_channel_not_found)
                 } else {
-                    "Nie udało się sprawdzić kanału: ${lookupError?.message ?: lookupError.toString()}"
+                    getString(R.string.player_channel_check_failed, lookupError?.message ?: lookupError.toString())
                 }
                 showMessage(message)
                 onResult?.invoke(false, message)
@@ -2685,87 +3277,132 @@ class PlayerActivity : Activity() {
                 if (vlcAttempt < 12) {
                     ui.postDelayed({ showAudioDialog(vlcAttempt + 1) }, 250)
                 } else {
-                    showMessage("Brak ścieżek dźwięku")
+                    showMessage(getString(R.string.message_no_audio_tracks))
                 }
                 return
             }
             val labels = tracks.map { it.name }
             val selected = tracks.indexOfFirst { it.id == engine?.selectedAudioTrackId() }
-            TvDialog.single(this, "Ścieżka dźwięku (zapamiętywana dla kanału)", labels, selected) { which ->
+            TvDialog.single(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels, selected) { which ->
                 val track = tracks.getOrNull(which)
-                if (track != null && engine?.selectAudioTrack(track.id) == true) {
+                val previous = engine?.selectedAudioTrackId()
+                ui.removeCallbacks(audioCheck)
+                audioCheckGen = streamGen
+                if (track != null && (previous == track.id || engine?.selectAudioTrack(track.id) == true)) {
                     playList.getOrNull(playIndex)?.let { ch ->
                         prefs.setAudioFor(ch.ref, "${track.id}|${track.language}|${track.codec}")
-                        AppLog.i("wybrano audio dla ${ch.name}: ${track.name} (ID ${track.id})")
+                        AppLog.i("wybrano audio dla ${ch.name}: ${track.name} (ID ${track.id}, poprzedni $previous, VLC)")
                     }
                 } else {
-                    showMessage("Nie udało się wybrać ścieżki dźwięku")
+                    showMessage(getString(R.string.message_could_not_select_audio_track))
                 }
             }
             return
         }
         val tracks = audioTracks()
         if (tracks.isEmpty()) {
-            showMessage("Brak ścieżek dźwięku"); return
+            showMessage(getString(R.string.message_no_audio_tracks)); return
         }
         val labels = tracks.map { audioLabel(it.format) }.toTypedArray()
         val sel = tracks.indexOfFirst { it.group.isTrackSelected(it.index) }
-        TvDialog.single(this, "Ścieżka dźwięku (zapamiętywana dla kanału)", labels.toList(), sel) { which ->
+        TvDialog.single(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels.toList(), sel) { which ->
             selectAudio(tracks[which], remember = true)
         }
     }
 
-    private fun applySavedVlcAudio(attempt: Int = 0) {
-        val ch = playList.getOrNull(playIndex) ?: return
-        val engine = vlc ?: return
-        val tracks = engine.audioTracks()
-        if (tracks.isEmpty()) {
-            if (attempt < 12) ui.postDelayed({ applySavedVlcAudio(attempt + 1) }, 250)
-            else AppLog.i("VLC: brak ścieżek audio po uruchomieniu kanału ${ch.name}")
-            return
-        }
-        val saved = prefs.audioFor(ch.ref).split("|")
-        val savedId = saved.firstOrNull()?.substringAfterLast('/')?.toIntOrNull()
-        val savedLanguage = saved.getOrElse(1) { "" }
-        val savedCodec = saved.getOrElse(2) { "" }
-        val match = tracks.firstOrNull { savedId != null && it.id == savedId }
-            ?: tracks.firstOrNull {
-                savedLanguage.isNotBlank() &&
-                    AudioTrackLabels.languageCode(it.language) == AudioTrackLabels.languageCode(savedLanguage) &&
-                    (savedCodec.isBlank() || AudioTrackLabels.codecName(it.codec) == AudioTrackLabels.codecName(savedCodec))
+    private fun startAudioCheck() {
+        if (audioCheckGen == streamGen || tsMode || recMode) return
+        audioCheckGen = streamGen
+        audioCheckStarted = SystemClock.elapsedRealtime()
+        audioWindow = AudioSelectionWindow()
+        audioCheckLastTarget = null
+        audioCheckDescription = ""
+        ui.post(audioCheck)
+    }
+
+    private val audioCheck = object : Runnable {
+        override fun run() {
+            if (audioCheckGen != streamGen || backgrounded || tsMode || recMode) return
+            val ch = playList.getOrNull(playIndex) ?: return
+            val usingVlc = prefs.engine == "vlc"
+            val vlcEngine = if (usingVlc) vlc ?: return else null
+            val exoTracks = if (usingVlc) emptyList() else audioTracks()
+            val vlcTracks = vlcEngine?.audioTracks().orEmpty()
+            val selectedId = vlcEngine?.selectedAudioTrackId()
+            val candidates = if (usingVlc) vlcTracks.map {
+                AudioCandidate(it.id.toString(), it.language, it.codec, it.id == selectedId)
+            } else exoTracks.map {
+                AudioCandidate(it.format.id.orEmpty(), it.format.language, it.format.sampleMimeType,
+                    it.group.isTrackSelected(it.index))
             }
-        val selectedId = engine.selectedAudioTrackId()
-        val preferred = preferredAudioTrackIndex(
-            tracks.map { it.language },
-            AudioTrackLabels.preferredLanguages(prefs.audioLang),
-        )?.let(tracks::get)
-        val fallback = preferred ?: tracks.firstOrNull { it.id == selectedId } ?: tracks.firstOrNull()
-        val target = match ?: fallback ?: return
-        if (selectedId != target.id) {
-            if (engine.selectAudioTrack(target.id)) {
-                val action = when {
-                    match != null -> "przywrócono zapamiętaną"
-                    preferred != null -> "ustawiono preferowaną"
-                    else -> "ustawiono domyślną"
+            val now = SystemClock.elapsedRealtime()
+            if (candidates.isEmpty()) {
+                if (now - audioCheckStarted >= 3000) {
+                    AppLog.i("audio: brak obsługiwanych ścieżek dla ${ch.name}")
+                    return
                 }
-                AppLog.i("VLC: $action ścieżkę audio dla ${ch.name}: ${target.name} (ID ${target.id})")
+                ui.postDelayed(this, 250)
+                return
+            }
+            val saved = prefs.audioFor(ch.ref)
+            val languages = AudioTrackLabels.preferredLanguages(prefs.audioLang)
+            val (choice, remaining) = audioWindow.check(now, candidates, saved, languages, prefs.preferAc3)
+            val finalCheck = remaining == 0L
+            val description = "zapis=${saved.ifEmpty { "-" }}, preferowane=${languages.joinToString(",")}, dostępne=" +
+                candidates.joinToString { "${it.id}:${it.language}:${it.codec}${if (it.selected) "*" else ""}" }
+            if (description != audioCheckDescription) {
+                audioCheckDescription = description
+                AppLog.i("audio: ${ch.name}, $description")
+            }
+            if (choice != null) {
+                val target = candidates[choice.index]
+                val targetKey = "${choice.index}:${target.id}:${target.language}:${target.codec}"
+                if (target.selected) audioCheckLastTarget = null
+                if (!target.selected && targetKey != audioCheckLastTarget) {
+                    audioCheckLastTarget = targetKey
+                    if (usingVlc) {
+                        if (vlcEngine?.selectAudioTrack(vlcTracks[choice.index].id) == true) {
+                            AppLog.i("audio: wybieram ${choice.reason} ${target.id} dla ${ch.name}")
+                        } else {
+                            AppLog.i("audio: nie udało się wybrać ${choice.reason} ${target.id} dla ${ch.name}")
+                        }
+                    } else {
+                        AppLog.i("audio: wybieram ${choice.reason} ${target.id} dla ${ch.name}")
+                        selectAudio(exoTracks[choice.index], remember = false)
+                    }
+                }
+            }
+            if (finalCheck) {
+                if (saved.isNotEmpty() && choice?.reason != "zapamiętana") {
+                    AppLog.i("audio: zapamiętana ścieżka niedostępna dla ${ch.name}: $saved")
+                }
+                if (choice == null) AppLog.i("audio: brak zapamiętanej lub preferowanej ścieżki dla ${ch.name}")
+                else if (!candidates[choice.index].selected) AppLog.i("audio: wybór ${choice.reason} nie został jeszcze potwierdzony dla ${ch.name}")
+                else AppLog.i("audio: potwierdzono ${choice.reason} ${candidates[choice.index].id} dla ${ch.name}")
             } else {
-                AppLog.i("VLC: nie udało się wybrać ścieżki audio dla ${ch.name}: ${target.name} (ID ${target.id})")
+                ui.postDelayed(this, minOf(250L, remaining))
             }
         }
     }
 
     private fun selectAudio(t: AudioTrack, remember: Boolean) {
         val p = player ?: return
-        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-            .setOverrideForType(TrackSelectionOverride(t.group.mediaTrackGroup, t.index))
-            .build()
+        val previous = if (remember) audioTracks().firstOrNull { it.group.isTrackSelected(it.index) }?.format?.id else null
+        if (remember) {
+            ui.removeCallbacks(audioCheck)
+            audioCheckGen = streamGen
+        }
+        if (!t.group.isTrackSelected(t.index)) {
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                .setOverrideForType(TrackSelectionOverride(t.group.mediaTrackGroup, t.index))
+                .build()
+        }
         if (tsMode) tsAudioPid = mpegTsPid(t.format.id)
         val ch = playList.getOrNull(playIndex)
         if (remember && ch != null) {
             val f = t.format
             prefs.setAudioFor(ch.ref, "${f.id ?: ""}|${f.language ?: ""}|${f.sampleMimeType ?: ""}")
-            AppLog.i("wybrano audio dla ${ch.name}: ${audioLabel(f)}")
+            AppLog.i("wybrano audio dla ${ch.name}: ${audioLabel(f)} (id=${f.id}, poprzedni=$previous, tunelowanie=${prefs.tunneling})")
         }
     }
 
@@ -2835,7 +3472,7 @@ class PlayerActivity : Activity() {
         if (SyncManager.dirty) SyncManager.syncAsync()
     }
 
-    private fun uploadLog(manual: Boolean) = Tools.uploadLog(prefs, manual) { showMessage(it, 6000) }
+    private fun uploadLog(manual: Boolean) = Tools.uploadLog(this, prefs, manual) { showMessage(it) }
 
 
 
@@ -2845,11 +3482,11 @@ class PlayerActivity : Activity() {
         packageManager.getPackageInfo(packageName, 0).versionName ?: ""
     } catch (e: Exception) { "" }
 
-    private fun afrName(m: Int) = when (m) {
-        1 -> "zawsze 50 Hz"
-        2 -> "automatycznie"
-        else -> "bez zmian"
-    }
+    private fun afrName(m: Int) = getString(when (m) {
+        1 -> R.string.settings_refresh_50
+        2 -> R.string.settings_refresh_auto
+        else -> R.string.settings_refresh_unchanged
+    })
 
     @Suppress("DEPRECATION")
     private fun displayInfo(): String {
@@ -2861,7 +3498,7 @@ class PlayerActivity : Activity() {
             .map { "%.2f".format(it.refreshRate) }
             .distinct()
             .joinToString(", ")
-        return "${m.physicalWidth}x${m.physicalHeight} @ " + "%.2f".format(m.refreshRate) + " Hz (dostępne: $rates)"
+        return getString(R.string.diag_display_modes, "${m.physicalWidth}x${m.physicalHeight} @ " + "%.2f".format(m.refreshRate) + " Hz", rates)
     }
 
     private fun targetRate(fr: Float): Float = when {

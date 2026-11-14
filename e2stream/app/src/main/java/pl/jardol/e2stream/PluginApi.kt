@@ -120,11 +120,12 @@ class PluginApi(private val p: Prefs) {
         }
     }
 
-    fun syncState(id: String): JSONObject = get("/api/sync/state?id=" + enc(id))
+    fun syncState(id: String, oldId: String = ""): JSONObject =
+        get("/api/sync/state?id=" + enc(id) + if (oldId.isNotEmpty() && oldId != id) "&old=" + enc(oldId) else "")
 
     fun syncPush(id: String, body: JSONObject): JSONObject = post("/api/sync/push?id=" + enc(id), body)
 
-    fun devices(): JSONArray = get("/api/sync/devices").optJSONArray("devices") ?: JSONArray()
+    fun devices(): JSONArray = get("/api/sync/devices").getJSONArray("devices")
 
     companion object {
         /** Sprawdza wtyczkę i zapamiętuje wynik w ustawieniach. */

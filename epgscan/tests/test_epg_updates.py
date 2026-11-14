@@ -22,12 +22,15 @@ common.cfg = types.SimpleNamespace()
 common.log = lambda message: None
 common.E2 = "/etc/enigma2"
 common.save_cfg = lambda: None
+common.VERSION = "2.18.0-beta.4"
+common.XMLTV_STATE_FILE = "/tmp/epgscan-test-xmltv.json"
+common.PLUGIN_SOURCES_DIR = "/tmp/epgscan-test-sources"
 sys.modules[common.__name__] = common
 
 intervals = importlib.import_module(package.__name__ + ".epgintervals")
 xmltv = importlib.import_module(package.__name__ + ".xmltv")
 clientpack = importlib.import_module(package.__name__ + ".clientpack")
-for name in ("is_due", "sched_active", "next_run", "fmt_ts", "topup_candidates", "topup_label"):
+for name in ("is_due", "sched_active", "next_run", "last_slot", "fmt_ts", "topup_candidates", "topup_label"):
 	setattr(common, name, lambda *args, **kwargs: None)
 common.WAKEUP_FILE = "/tmp/epgscan-test-wakeup"
 common.TOPUP_INFO = {"recent": 0, "backoff": 0}
@@ -38,6 +41,7 @@ engine_module = types.ModuleType(package.__name__ + ".engine")
 engine_module.get_engine = lambda session: None
 sys.modules[engine_module.__name__] = engine_module
 schedule = importlib.import_module(package.__name__ + ".schedule")
+updater = importlib.import_module(package.__name__ + ".updater")
 
 
 class CoverageTests(unittest.TestCase):
@@ -68,17 +72,21 @@ class CoverageTests(unittest.TestCase):
 		job.cancelled = False
 		job.targets = {key: start + 7200}
 		job.coverage = {key: [(start + 3600, start + 7200)]}
-		with tempfile.NamedTemporaryFile() as f:
-			f.write(data)
-			f.flush()
-			got, _, _ = job.parse(f.name, "guide.xml", {"a": [key]}, start - 1)
+		with tempfile.TemporaryDirectory() as directory:
+			path = os.path.join(directory, "guide.xml")
+			with open(path, "wb") as f:
+				f.write(data)
+			got, _, _ = job.parse(path, "guide.xml", {"a": [key]}, start - 1)
 		self.assertEqual([(e[0], e[1], e[2]) for e in got[key]], [(start, 3600, "Missing")])
 
 	def test_import_skips_id_collision_without_replacing_existing_event(self):
 		key = (1, 2, 3, 4)
 		job = xmltv.XmltvImport.__new__(xmltv.XmltvImport)
 		job.cancelled = False
-		job.queue = [(key, [(100, 10, "collision", "", "", 0), (120, 10, "safe", "", "", 0)])]
+		job.queue = [
+			(key, [(100, 10, "collision", "", "", 0), (120, 10, "safe", "", "", 0)]),
+			(key, [(130, 10, "next", "", "", 0)]),
+		]
 		job.targets = {key: 1}
 		job.coverage = {key: []}
 		job.event_ids = {key: {100}}
@@ -89,9 +97,11 @@ class CoverageTests(unittest.TestCase):
 		written = []
 		cache = types.SimpleNamespace(importEvents=lambda refs, events: written.extend(events))
 		with patch.object(xmltv.eEPGCache, "getInstance", return_value=cache, create=True), \
-				patch.object(xmltv.cfg, "xmltv_gaps", types.SimpleNamespace(value="off"), create=True):
+				patch.object(xmltv.cfg, "xmltv_gaps", types.SimpleNamespace(value="off"), create=True), \
+				patch.object(xmltv, "_", return_value="saved (%d)"):
 			job.import_step()
-		self.assertEqual([event[2] for event in written], ["safe"])
+		self.assertEqual([event[2] for event in written], ["safe", "next"])
+		self.assertEqual(job.status, "saved (0)")
 
 
 class PackTests(unittest.TestCase):
@@ -175,6 +185,42 @@ class DaytimeScheduleTests(unittest.TestCase):
 			scheduler.check_topup()
 		self.assertEqual(started, [{"topup_jobs": jobs}])
 		self.assertEqual(cfg.last_topup.value, 20000)
+
+
+class SourcePathTests(unittest.TestCase):
+	def test_source_cache_is_plugin_directory_not_epgimport(self):
+		self.assertEqual(xmltv.SOURCES_DIR, "/etc/epgimport")
+		self.assertEqual(xmltv.CACHE_DIR, common.PLUGIN_SOURCES_DIR)
+		self.assertNotEqual(xmltv.CACHE_DIR, xmltv.SOURCES_DIR)
+
+
+class UpdaterChannelTests(unittest.TestCase):
+	def test_beta_channel_selects_newest_beta_while_stable_channel_ignores_it(self):
+		releases = [("2.18.0-beta.4", "beta.zip", True), ("2.17.5", "stable.zip", False)]
+		with patch.object(updater, "available_releases", return_value=releases):
+			self.assertEqual(updater.latest(), ("2.17.5", "stable.zip"))
+			self.assertEqual(updater.latest(include_beta=True), ("2.18.0-beta.4", "beta.zip"))
+
+	def test_manual_list_follows_update_channel(self):
+		releases = [("2.18.2-beta.1", "b1.zip", True), ("2.18.1", "s.zip", False), ("2.18.0-beta.15", "b15.zip", True)]
+		with patch.object(updater, "VERSION", "2.18.0-beta.15"):
+			self.assertEqual([item[0] for item in updater.releases_for_channel(releases, "stable")],
+				["2.18.1", "2.18.0-beta.15"])
+			self.assertEqual(updater.releases_for_channel(releases, "beta"), releases)
+
+	def test_automatic_update_passes_selected_channel_to_release_check(self):
+		config = types.SimpleNamespace(
+			upd_pending=types.SimpleNamespace(value=""),
+			upd_auto=types.SimpleNamespace(value=True),
+			upd_last=types.SimpleNamespace(value=0),
+			upd_channel=types.SimpleNamespace(value="beta"))
+		auto = updater.AutoUpdate.__new__(updater.AutoUpdate)
+		auto.busy = False
+		auto.session = None
+		with patch.object(updater, "cfg", config), patch.object(updater.time, "time", return_value=100000), \
+				patch.object(updater, "check_async") as check:
+			auto.run()
+		check.assert_called_once_with(auto.checked, True)
 
 
 if __name__ == "__main__":
