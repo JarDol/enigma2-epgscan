@@ -30,8 +30,77 @@ object LocalRecordings {
     fun isLocal(path: String) = path.startsWith(PREFIX)
     fun dirOf(path: String): File = File(path.removePrefix(PREFIX))
 
-    fun parts(dir: File): List<File> =
-        dir.listFiles { f -> f.name.startsWith("part-") && f.name.endsWith(".ts") }?.sortedBy { it.name } ?: emptyList()
+    /**
+     * Pliki nagrania w kolejności: kawałki part-*.ts; po konwersji — jeden plik .ts o czytelnej nazwie
+     * (w trakcie konwersji: pierwszy kawałek z doklejonymi kolejnymi + pozostałe kawałki).
+     */
+    fun parts(dir: File): List<File> {
+        val pieces = dir.listFiles { f -> f.name.startsWith("part-") && f.name.endsWith(".ts") }?.sortedBy { it.name } ?: emptyList()
+        if (pieces.isNotEmpty()) return pieces
+        return dir.listFiles { f -> f.isFile && f.name.endsWith(".ts") }?.sortedBy { it.name } ?: emptyList()
+    }
+
+    /** Czy nagranie jest już jednym plikiem. */
+    fun isSingleFile(dir: File) = parts(dir).size == 1
+
+    /**
+     * Konwersja na jeden plik w katalogu nagrania (bez drugiej kopii): kolejne kawałki są doklejane do pierwszego
+     * i od razu usuwane — dodatkowe miejsce to najwyżej jeden kawałek. Stan po każdym kawałku zapisany w meta.json,
+     * więc przerwanie (także wyłączenie zasilania) nie psuje nagrania; ponowne uruchomienie kontynuuje.
+     * Na końcu plik dostaje czytelną nazwę (jak eksport). [cancel] — zatrzymanie po bieżącym kawałku.
+     */
+    fun convert(dir: File, cancel: java.util.concurrent.atomic.AtomicBoolean, onProgress: (Long, Long, Long) -> Unit): Boolean {
+        val meta0 = readMeta(dir)
+        // przerwanie między zapisem stanu a usunięciem kawałka: ten kawałek jest już doklejony — tylko go usuń
+        meta0?.optString("mergedPart")?.takeIf { it.isNotBlank() }?.let { File(dir, it).delete() }
+        val all = parts(dir)
+        if (all.isEmpty()) throw IOException("brak plików nagrania")
+        val first = all[0]
+        val meta = meta0 ?: JSONObject()
+        // wznowienie po przerwaniu: pierwszy plik przycięty do długości zapisanej po ostatnim całym kawałku
+        val savedLen = meta.optLong("mergeLen", -1)
+        if (savedLen >= 0 && first.length() > savedLen) RandomAccessFile(first, "rw").use { it.setLength(savedLen) }
+        val rest = all.drop(1)
+        val total = rest.sumOf { it.length() }
+        var done = 0L
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        val buf = ByteArray(1 shl 20)
+        for (p in rest) {
+            if (cancel.get()) return false
+            val len = p.length()
+            java.io.FileOutputStream(first, true).use { out ->
+                java.io.FileInputStream(p).use { inp ->
+                    var copied = 0L
+                    while (true) {
+                        val n = inp.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        copied += n
+                        val el = android.os.SystemClock.elapsedRealtime() - t0
+                        val d = done + copied
+                        val eta = if (d > 0 && el > 1500) ((total - d) * el / d) / 1000 else -1
+                        if (copied % (8L shl 20) < n) onProgress(d, total, eta)
+                    }
+                }
+                out.fd.sync()
+            }
+            meta.put("mergeLen", first.length()).put("mergedPart", p.name)
+            writeMeta(dir, meta)
+            p.delete()
+            done += len
+        }
+        val target = File(dir, exportFile(dir).name)
+        if (first.name != target.name) {
+            if (target.exists()) target.delete()
+            if (!first.renameTo(target)) throw IOException("nie udało się zmienić nazwy ${first.name}")
+        }
+        meta.remove("mergeLen")
+        meta.remove("mergedPart")
+        meta.put("file", target.name)
+        writeMeta(dir, meta)
+        onProgress(total, total, 0)
+        return true
+    }
 
     fun size(dir: File): Long = parts(dir).sumOf { it.length() }
 

@@ -98,7 +98,7 @@
     <string name="player_localrec_reason_disk_full">" – storage full"</string>
     <string name="player_localrec_cannot_delete_running">This recording cannot be deleted – it is still being written</string>
     <string name="player_localrec_delete_failed">Could not delete the recording files</string>
-    <string name="player_localrec_export">Export to a single .ts file</string>
+    <string name="player_localrec_export">Export a copy to a single .ts file</string>
     <string name="player_localrec_export_busy">Export in progress: %1$s</string>
     <string name="player_localrec_export_running">The recording is still running – export it when it ends</string>
     <string name="player_localrec_export_no_space">Not enough space: the export needs %1$s (plus a margin), free %2$s.</string>
@@ -114,4 +114,9 @@
     <string name="player_localrec_export_failed">Export failed: %1$s</string>
     <string name="player_localrec_export_exists">File %1$s already exists. Replace it?</string>
     <string name="player_localrec_export_overwrite">Replace</string>
+    <string name="player_localrec_convert">Convert to a single .ts file (no copy)</string>
+    <string name="player_localrec_convert_playing">Stop playing this recording first</string>
+    <string name="player_localrec_convert_progress_title">Converting: %1$s</string>
+    <string name="player_localrec_convert_done">The recording is now a single file:\n%1$s\n\nParts deleted – the recording is still in “Local recordings”.</string>
+    <string name="player_localrec_convert_cancelled">Conversion stopped – the recording is intact, the conversion can be finished later</string>
 </resources>

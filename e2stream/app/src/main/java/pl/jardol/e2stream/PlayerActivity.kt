@@ -2611,7 +2611,11 @@ class PlayerActivity : Activity() {
     private fun showRecordingActions(r: Recording) {
         val acts = ArrayList<Pair<String, () -> Unit>>()
         acts += getString(R.string.message_play) to { pickRecording(r) }
-        if (LocalRecordings.isLocal(r.path)) acts += getString(R.string.player_localrec_export) to { exportLocalRecording(r) }
+        if (LocalRecordings.isLocal(r.path)) {
+            if (!LocalRecordings.isSingleFile(LocalRecordings.dirOf(r.path)))
+                acts += getString(R.string.player_localrec_convert) to { exportLocalRecording(r, convert = true) }
+            acts += getString(R.string.player_localrec_export) to { exportLocalRecording(r, convert = false) }
+        }
         acts += getString(R.string.message_delete) to { confirmDeleteRecording(r) }
         TvDialog.list(this, r.title, acts.map { TvDialog.Item(it.first) },
             hint = getString(R.string.epg_hint_actions), widthFrac = 0.45f) { selected -> acts[selected].second() }
@@ -2621,16 +2625,20 @@ class PlayerActivity : Activity() {
     private var exportCancel: java.util.concurrent.atomic.AtomicBoolean? = null
     private var exportDialog: android.app.Dialog? = null
     private var exportTitle = ""
+    private var exportConvert = false
 
-    private fun exportLocalRecording(r: Recording) {
+    /** Eksport kopii do jednego pliku (obok nagrań) albo konwersja na jeden plik w miejscu ([convert], bez drugiej kopii). */
+    private fun exportLocalRecording(r: Recording, convert: Boolean) {
         val dir = LocalRecordings.dirOf(r.path)
         if (exportCancel != null) {             // trwa inny eksport — pokaż jego postęp
             showExportDialog(getString(R.string.player_localrec_export_busy, exportTitle)); return
         }
         if (localRec?.pin?.dir == dir) { showMessage(getString(R.string.player_localrec_export_running)); return }
-        val target = LocalRecordings.exportFile(dir)
+        if (convert && recMode && recItem?.path == r.path) { showMessage(getString(R.string.player_localrec_convert_playing)); return }
+        val target = if (convert) File(dir, LocalRecordings.exportFile(dir).name) else LocalRecordings.exportFile(dir)
         fun start() {
-            val size = LocalRecordings.size(dir)
+            // konwersja: zapas na jeden kawałek; eksport: cała kopia
+            val size = if (convert) LocalRecordings.parts(dir).maxOfOrNull { it.length() } ?: 0L else LocalRecordings.size(dir)
             val free = dir.usableSpace
             if (size + TimeshiftBuffer.RESERVE > free) {
                 TvDialog.confirm(this, getString(R.string.player_localrec_export), getString(R.string.player_localrec_export_no_space,
@@ -2640,13 +2648,14 @@ class PlayerActivity : Activity() {
             val cancel = java.util.concurrent.atomic.AtomicBoolean(false)
             exportCancel = cancel
             exportTitle = r.title
-            AppLog.i("nagranie lokalne: eksport „${r.title}” → ${target.absolutePath} (${TimeshiftBuffer.gb(size)})")
+            exportConvert = convert
+            AppLog.i("nagranie lokalne: ${if (convert) "konwersja" else "eksport"} „${r.title}” → ${target.absolutePath} (${TimeshiftBuffer.gb(LocalRecordings.size(dir))})")
             showExportDialog(getString(R.string.player_localrec_export_start, target.name))
             Thread({
+                val progress: (Long, Long, Long) -> Unit = { done, total, eta -> runOnUiThread { exportProgress(done, total, eta) } }
                 val result = try {
-                    if (LocalRecordings.export(dir, target, cancel) { done, total, eta ->
-                            runOnUiThread { exportProgress(done, total, eta) }
-                        }) "ok" else "cancel"
+                    val ok = if (convert) LocalRecordings.convert(dir, cancel, progress) else LocalRecordings.export(dir, target, cancel, progress)
+                    if (ok) "ok" else "cancel"
                 } catch (e: Exception) { e.message ?: e.toString() }
                 runOnUiThread {
                     exportCancel = null
@@ -2655,11 +2664,17 @@ class PlayerActivity : Activity() {
                     d?.dismiss()
                     when (result) {
                         "ok" -> {
-                            AppLog.i("nagranie lokalne: eksport gotowy ${target.absolutePath}")
+                            AppLog.i("nagranie lokalne: ${if (convert) "konwersja" else "eksport"} gotowy ${target.absolutePath}")
                             TvDialog.confirm(this, getString(R.string.player_localrec_export_done_title),
-                                getString(R.string.player_localrec_export_done, target.absolutePath), listOf(TvDialog.Btn("OK")), timeoutSec = 0)
+                                getString(if (convert) R.string.player_localrec_convert_done else R.string.player_localrec_export_done, target.absolutePath),
+                                listOf(TvDialog.Btn("OK")), timeoutSec = 0)
+                            if (convert) reloadRecordings()
                         }
-                        "cancel" -> { AppLog.i("nagranie lokalne: eksport anulowany"); showMessage(getString(R.string.player_localrec_export_cancelled)) }
+                        "cancel" -> {
+                            AppLog.i("nagranie lokalne: ${if (convert) "konwersja przerwana" else "eksport anulowany"}")
+                            showMessage(getString(if (convert) R.string.player_localrec_convert_cancelled else R.string.player_localrec_export_cancelled))
+                            if (convert) reloadRecordings()
+                        }
                         else -> {
                             AppLog.i("nagranie lokalne: eksport nieudany ($result)")
                             TvDialog.confirm(this, getString(R.string.player_localrec_export), getString(R.string.player_localrec_export_failed, result),
@@ -2679,7 +2694,8 @@ class PlayerActivity : Activity() {
 
     private fun showExportDialog(message: String) {
         exportDialog?.dismiss()
-        exportDialog = TvDialog.progress(this, getString(R.string.player_localrec_export_progress_title, exportTitle), message,
+        exportDialog = TvDialog.progress(this,
+            getString(if (exportConvert) R.string.player_localrec_convert_progress_title else R.string.player_localrec_export_progress_title, exportTitle), message,
             getString(R.string.player_localrec_export_hide), getString(R.string.dialog_cancel),
             onHide = { exportDialog?.dismiss(); exportDialog = null; showMessage(getString(R.string.player_localrec_export_background)) },
             onCancel = { exportCancel?.set(true) })
@@ -3173,6 +3189,8 @@ class PlayerActivity : Activity() {
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
+            // pasek timeshiftu (nie pasek kanału): menu z „Nagraj…”
+            if (!recMode && banner.visibility == View.VISIBLE && tsCtl && !tsChBar) { showQuickMenu(); return true }
             if (!recMode && banner.visibility == View.VISIBLE) {
                 val diskUnavailable = prefs.tsDir.isNotBlank() && !TimeshiftBuffer.available(prefs.tsDir)
                 val reason = when {

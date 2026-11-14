@@ -98,7 +98,7 @@
     <string name="player_localrec_reason_disk_full">" – brak miejsca na nośniku"</string>
     <string name="player_localrec_cannot_delete_running">Tego nagrania nie można usunąć – trwa zapis</string>
     <string name="player_localrec_delete_failed">Nie udało się usunąć plików nagrania</string>
-    <string name="player_localrec_export">Eksportuj do jednego pliku .ts</string>
+    <string name="player_localrec_export">Eksportuj kopię do jednego pliku .ts</string>
     <string name="player_localrec_export_busy">Trwa eksport: %1$s</string>
     <string name="player_localrec_export_running">Nagranie jeszcze trwa – eksport po jego zakończeniu</string>
     <string name="player_localrec_export_no_space">Za mało miejsca na nośniku: eksport potrzebuje %1$s (plus zapas), wolne %2$s.</string>
@@ -114,4 +114,9 @@
     <string name="player_localrec_export_failed">Eksport nieudany: %1$s</string>
     <string name="player_localrec_export_exists">Plik %1$s już istnieje. Zastąpić go?</string>
     <string name="player_localrec_export_overwrite">Zastąp</string>
+    <string name="player_localrec_convert">Konwertuj na jeden plik .ts (bez kopii)</string>
+    <string name="player_localrec_convert_playing">Najpierw zakończ odtwarzanie tego nagrania</string>
+    <string name="player_localrec_convert_progress_title">Konwersja: %1$s</string>
+    <string name="player_localrec_convert_done">Nagranie jest teraz jednym plikiem:\n%1$s\n\nKawałki usunięte – nagranie nadal jest w „Nagraniach lokalnych”.</string>
+    <string name="player_localrec_convert_cancelled">Konwersja przerwana – nagranie jest całe, konwersję można dokończyć później</string>
 </resources>

@@ -123,7 +123,7 @@ Na nagraniu długie OK otwiera wybór Odtwórz/Usuń; usunięcie wymaga potwierd
 PIN do ustawień może mieć maksymalnie 6 cyfr. Historię przełączeń można czyścić po 7, 14 lub 28 dniach albo zachować bez limitu.
 Pasek timeshiftu pozostaje na ekranie w czasie pauzy, a po wznowieniu znika po czasie ustawionym w Ogólnych.
 
-**Nagrania lokalne z bufora timeshiftu.** Długie OK przy schowanym pasku (menu, także w trakcie timeshiftu) → *Nagraj…*:
+**Nagrania lokalne z bufora timeshiftu.** Długie OK przy schowanym pasku albo na pasku timeshiftu (menu) → *Nagraj…*:
 *Audycja* (od początku bieżącej audycji w buforze do jej końca wg EPG, +1 min), *Bufor do teraz* (natychmiast) albo
 *Cały bufor do zmiany kanału*. Kawałki bufora nie są kopiowane — przenoszone (zmiana nazwy) do katalogu `nagrania/`
 obok katalogu bufora (ten sam nośnik); po zakończeniu nagrania timeshift zaczyna od nowa, a odtwarzanie z bufora wraca na żywo.
@@ -131,7 +131,7 @@ Podczas nagrywania pasek pokazuje *● REC*, a pierwszą pozycją menu długiego
 też przy zmianie kanału, wyjściu z aplikacji, po limicie jednego nagrania (1–6 h, domyślnie 3 h) i po osiągnięciu limitu miejsca
 (domyślnie 70% pojemności nośnika — reszta dla timeshiftu). W pamięci urządzenia nagrania wymagają osobnej zgody.
 Nagrania są w bukiecie *Nagrania lokalne* (wznawianie, opis z EPG, długie OK → Odtwórz / Eksportuj do jednego pliku .ts / Usuń); można go ukryć w *Widoczne bukiety*.
-*Eksportuj do jednego pliku .ts* skleja kawałki w tle (pasek postępu, czas do końca, *Ukryj* — eksport trwa dalej, *Anuluj* — częściowy plik usunięty) do pliku `nagrania/RRRR-MM-DD GG-MM Kanał - Tytuł.ts`; nagranie w kawałkach zostaje bez zmian, plik wlicza się do limitu miejsca.
+*Konwertuj na jeden plik .ts (bez kopii)* dokleja kolejne kawałki do pierwszego i od razu je usuwa (dodatkowe miejsce ≈ jeden kawałek; przerwanie, także zanik zasilania, nie psuje nagrania — konwersję można dokończyć), na końcu plik w katalogu nagrania dostaje czytelną nazwę i nadal jest w *Nagraniach lokalnych*. *Eksportuj kopię do jednego pliku .ts* skleja kawałki w tle (pasek postępu, czas do końca, *Ukryj* — eksport trwa dalej, *Anuluj* — częściowy plik usunięty) do pliku `nagrania/RRRR-MM-DD GG-MM Kanał - Tytuł.ts`; nagranie w kawałkach zostaje bez zmian, plik wlicza się do limitu miejsca.
 Opcja „Wstecz na pustym ekranie → na żywo” pozwala wrócić z cofniętego strumienia do transmisji na żywo.
 Wyjście z aplikacji wymaga dwóch osobnych naciśnięć WSTECZ; przytrzymanie nie zamyka aplikacji.
 Tam też można ustawić osobne czasy zamykania listy kanałów oraz EPG wydarzenia, kanału i Multi EPG.
