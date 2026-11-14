@@ -36,7 +36,25 @@ buffering, deinterlacing, hardware decoding and preferred audio language.
 Optional PIN protection for settings, start channel, resume of the last channel,
 up/down inversion, banner and channel-list timeouts, list/banner font sizes and
 hidden bouquets are available as on Android. Features not yet present in the
-Windows player (full EPG, recordings, logs) are marked as in preparation.
+Windows player (full EPG guide, recordings) are marked as in preparation.
+
+**Wygląd** sets list, banner and EPG font sizes and channel-icon sizes.
+**EPG i ikony kanałów** stores the EPG update mode, daily refresh hour and
+number of days (used by the upcoming full EPG guide), refreshes the current
+EPG, and downloads channel picons into `%APPDATA%/E2Stream/picons`. Picons are
+taken from the EPG Scan pack (`picons.zip`), then from the decoder over FTP
+(configured directory or the one from `/etc/enigma2/settings`), then from
+OpenWebif. They are refreshed automatically once a day or at every start
+(**Aktualizacja z EPG Scan**) and can be redownloaded manually. Missing picons can
+show the "E2" placeholder. **Dekoder Enigma2** also holds the FTP user,
+password and target directory (default `/media/hdd/e2stream`).
+
+**Logi i zrzuty** shows VLC playback statistics (resolution, codec, bitrate,
+frames/s, lost frames, corrupted packets, discontinuities) in the bottom panel,
+sends `e2stream-<COMPUTER>.log` to the decoder (EPG Scan plugin upload with FTP
+fallback) on demand or every 2 minutes when it changed, and lets you choose
+and open the log directory (default `%APPDATA%/E2Stream/logs`, rotated at
+2 MB). TS dumps from the Android ExoPlayer pipeline do not apply under VLC.
 
 A **Wróć** button closing the current window is shown only while the mouse is
 being used: moving the mouse or clicking shows it, pressing a key or remote
@@ -84,6 +102,15 @@ separate background service is installed, so Power cannot start E2Stream after
 the app has closed. In the confirmation window, remote OK closes the app and
 Back cancels; Enter and Escape work on a keyboard. A second launch also signals
 the existing instance.
+
+IR remotes that are not HID/keyboard devices (serial or USB IR receivers) are
+supported through WinLIRC or a LIRC server: enable **Pilot i klawiatura →
+Odbieraj klawisze z WinLIRC / LIRC** and set the host and port (default
+`127.0.0.1:8765`, the WinLIRC default). WinLIRC must be running. Received
+buttons appear in **Test pilota** and can be mapped like other keys. A button
+mapped to Power works even when E2Stream is in the background; other buttons
+are handled only while an E2Stream window is active. The client reconnects
+every 5 seconds if WinLIRC is unavailable.
 Newly connected HID devices are registered as needed without repeatedly
 re-registering usages already monitored by the receiver.
 

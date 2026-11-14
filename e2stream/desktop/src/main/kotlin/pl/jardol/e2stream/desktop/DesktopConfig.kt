@@ -43,6 +43,26 @@ data class DesktopConfig(
     val navNoBanner: String = "",
     val navBanner: String = "",
     val backButtonMode: BackButtonMode = BackButtonMode.AUTO,
+    val ftpUser: String = "root",
+    val ftpPass: String = "",
+    val ftpDir: String = DEFAULT_FTP_DIR,
+    val uiListIcon: Int = 80,
+    val uiBannerIcon: Int = 100,
+    val uiEpgFont: Int = 100,
+    val epgUpdateMode: String = EPG_UPDATE_DAILY,
+    val epgDaily: Boolean = true,
+    val epgHour: String = "05:00",
+    val epgDays: Int = 3,
+    val picons: Boolean = true,
+    val missingPiconLogo: Boolean = false,
+    val piconDir: String = "",
+    val showStats: Boolean = false,
+    val logDir: String = "",
+    val logFtp: Boolean = false,
+    val lircEnabled: Boolean = false,
+    val lircHost: String = "127.0.0.1",
+    val lircPort: Int = 8765,
+    val lastPiconFetchDay: String = "",
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -78,11 +98,44 @@ data class DesktopConfig(
             setProperty("navNoBanner", navNoBanner)
             setProperty("navBanner", navBanner)
             setProperty("backButtonMode", backButtonMode.name)
+            setProperty("ftpUser", ftpUser)
+            setProperty("ftpPass", ftpPass)
+            setProperty("ftpDir", ftpDir)
+            setProperty("uiListIcon", uiListIcon.toString())
+            setProperty("uiBannerIcon", uiBannerIcon.toString())
+            setProperty("uiEpgFont", uiEpgFont.toString())
+            setProperty("epgUpdateMode", epgUpdateMode)
+            setProperty("epgDaily", epgDaily.toString())
+            setProperty("epgHour", epgHour)
+            setProperty("epgDays", epgDays.toString())
+            setProperty("picons", picons.toString())
+            setProperty("missingPiconLogo", missingPiconLogo.toString())
+            setProperty("piconDir", piconDir)
+            setProperty("showStats", showStats.toString())
+            setProperty("logDir", logDir)
+            setProperty("logFtp", logFtp.toString())
+            setProperty("lircEnabled", lircEnabled.toString())
+            setProperty("lircHost", lircHost)
+            setProperty("lircPort", lircPort.toString())
+            setProperty("lastPiconFetchDay", lastPiconFetchDay)
         }
         Files.newOutputStream(path).use { properties.store(it, "E2Stream settings") }
     }
 
     companion object {
+        const val DEFAULT_FTP_DIR = "/media/hdd/e2stream"
+        const val EPG_UPDATE_DAILY = "daily"
+        const val EPG_UPDATE_STARTUP = "startup"
+        private val hourPattern = Regex("^([01]?\\d|2[0-3]):[0-5]\\d$")
+
+        /** "H:MM" / "HH:MM" → "HH:MM"; null, gdy format jest błędny. */
+        fun normalizeHour(value: String): String? {
+            val trimmed = value.trim()
+            if (!hourPattern.matches(trimmed)) return null
+            val (hour, minute) = trimmed.split(':')
+            return "%02d:%s".format(hour.toInt(), minute)
+        }
+
         val deinterlaceModes = linkedMapOf(
             "auto" to "automatycznie",
             "off" to "wyłączone",
@@ -145,6 +198,27 @@ data class DesktopConfig(
                 navBanner = string("navBanner", ""),
                 backButtonMode = BackButtonMode.entries.firstOrNull { it.name == properties.getProperty("backButtonMode") }
                     ?: BackButtonMode.AUTO,
+                ftpUser = string("ftpUser", defaults.ftpUser).ifBlank { defaults.ftpUser },
+                ftpPass = string("ftpPass", ""),
+                ftpDir = string("ftpDir", defaults.ftpDir).ifBlank { defaults.ftpDir },
+                uiListIcon = int("uiListIcon", defaults.uiListIcon, 50..140),
+                uiBannerIcon = int("uiBannerIcon", defaults.uiBannerIcon, 50..140),
+                uiEpgFont = int("uiEpgFont", defaults.uiEpgFont, 50..140),
+                epgUpdateMode = string("epgUpdateMode", defaults.epgUpdateMode)
+                    .takeIf { it == EPG_UPDATE_DAILY || it == EPG_UPDATE_STARTUP } ?: defaults.epgUpdateMode,
+                epgDaily = bool("epgDaily", defaults.epgDaily),
+                epgHour = normalizeHour(string("epgHour", defaults.epgHour)) ?: defaults.epgHour,
+                epgDays = int("epgDays", defaults.epgDays, 1..14),
+                picons = bool("picons", defaults.picons),
+                missingPiconLogo = bool("missingPiconLogo", defaults.missingPiconLogo),
+                piconDir = string("piconDir", ""),
+                showStats = bool("showStats", defaults.showStats),
+                logDir = string("logDir", ""),
+                logFtp = bool("logFtp", defaults.logFtp),
+                lircEnabled = bool("lircEnabled", defaults.lircEnabled),
+                lircHost = string("lircHost", defaults.lircHost).ifBlank { defaults.lircHost },
+                lircPort = int("lircPort", defaults.lircPort, 1..65535),
+                lastPiconFetchDay = string("lastPiconFetchDay", ""),
             )
         }
 
@@ -158,11 +232,14 @@ data class DesktopConfig(
             }
         }
 
-        private fun configPath(): Path {
+        private fun configPath(): Path = appDataDir().resolve("settings.properties")
+
+        /** %APPDATA%\E2Stream — ustawienia, logi i ikony kanałów. */
+        fun appDataDir(): Path {
             val appData = System.getenv("APPDATA")
             val base = if (!appData.isNullOrBlank()) Paths.get(appData) else
                 Paths.get(System.getProperty("user.home"), ".config")
-            return base.resolve("E2Stream").resolve("settings.properties")
+            return base.resolve("E2Stream")
         }
     }
 }

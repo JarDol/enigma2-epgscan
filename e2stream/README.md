@@ -12,7 +12,11 @@ Uruchamia się w oknie odtwarzacza; ustawienia otwiera się przez menu (klawisz 
 Prawy przycisk myszy pokazuje i ukrywa przyciski sterowania. Ustawienia mają układ z Androida (lista sekcji,
 a w nich opcje), otwierają się w oknie bez paska tytułu i obejmują m.in. mapowanie OK/strzałek, konfigurację
 pilota oraz okno testu pilota. Przycisk „Wróć” jest widoczny tylko przy obsłudze myszą (lub na stałe, jeśli
-tak ustawiono).
+tak ustawiono). Ustawienia obejmują też ikony kanałów (pobierane z paczki wtyczki, przez FTP lub OpenWebif),
+wielkość ikon i czcionek, statystyki odtwarzania VLC, wysyłanie logu na dekoder (wtyczka lub FTP, także co 2 min)
+oraz pilota IR przez WinLIRC/LIRC (domyślnie `127.0.0.1:8765`). Klawisz Power działa w tle dla pilotów HID,
+Bluetooth i IR (WinLIRC), dopóki aplikacja jest uruchomiona. Ustawienia harmonogramu EPG są zapisywane na potrzeby
+przyszłego pełnego przewodnika EPG.
 
 * ExoPlayer (Media3) z **tunelowaniem wideo**
   (sprzętowy deinterlacer telewizora, płynne paski informacyjne).

@@ -3,6 +3,7 @@ package pl.jardol.e2stream.desktop
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class DesktopConfigTest {
     @Test
@@ -40,6 +41,26 @@ class DesktopConfigTest {
             navNoBanner = "OK=CHANNEL_LIST",
             navBanner = "UP=CH_UP",
             backButtonMode = BackButtonMode.ALWAYS,
+            ftpUser = "admin",
+            ftpPass = "ftp-secret",
+            ftpDir = "/media/usb/e2s",
+            uiListIcon = 120,
+            uiBannerIcon = 60,
+            uiEpgFont = 140,
+            epgUpdateMode = DesktopConfig.EPG_UPDATE_STARTUP,
+            epgDaily = false,
+            epgHour = "23:45",
+            epgDays = 7,
+            picons = false,
+            missingPiconLogo = true,
+            piconDir = "/usr/share/enigma2/picon",
+            showStats = true,
+            logDir = "D:\\logs",
+            logFtp = true,
+            lircEnabled = true,
+            lircHost = "192.168.1.5",
+            lircPort = 9000,
+            lastPiconFetchDay = "2025-01-31",
         )
 
         try {
@@ -50,5 +71,14 @@ class DesktopConfigTest {
             Files.deleteIfExists(path)
             Files.deleteIfExists(directory)
         }
+    }
+
+    @Test
+    fun normalizesEpgHourAndRejectsInvalidValues() {
+        assertEquals("05:00", DesktopConfig.normalizeHour(" 5:00 "))
+        assertEquals("23:59", DesktopConfig.normalizeHour("23:59"))
+        assertNull(DesktopConfig.normalizeHour("24:00"))
+        assertNull(DesktopConfig.normalizeHour("7:5"))
+        assertNull(DesktopConfig.normalizeHour("abc"))
     }
 }

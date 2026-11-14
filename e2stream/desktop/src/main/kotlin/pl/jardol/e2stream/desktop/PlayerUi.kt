@@ -1,5 +1,6 @@
 package pl.jardol.e2stream.desktop
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -31,11 +32,14 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -45,6 +49,7 @@ import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindow
@@ -86,6 +91,10 @@ internal fun PlayerPage(
     onChannels: () -> Unit,
     onMenu: () -> Unit,
     onBack: () -> Unit,
+    picon: ImageBitmap? = null,
+    piconStyle: PiconStyle = PiconStyle.OFF,
+    bannerIconScale: Float = 1f,
+    showStats: Boolean = false,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     var scaleMenuExpanded by remember { mutableStateOf(false) }
@@ -110,6 +119,18 @@ internal fun PlayerPage(
         statusVisible = session != null
         delay(7_000)
         statusVisible = false
+    }
+    var stats by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(showStats, session) {
+        stats = null
+        if (!showStats || session == null) return@LaunchedEffect
+        var previous: PlaybackStats? = null
+        while (true) {
+            val current = runCatching { session.statistics() }.getOrNull()
+            stats = current?.let { formatStats(it, previous) } ?: "Statystyki: brak danych z VLC"
+            previous = current
+            delay(1000)
+        }
     }
     val currentEvent = event?.takeIf { it.begin <= now && now < it.end }
     val colors = MaterialTheme.colorScheme
@@ -141,13 +162,20 @@ internal fun PlayerPage(
                 )
             }
         }
-        if ((channel != null && bannerVisible) || controlsVisible || statusVisible) {
+        if ((channel != null && bannerVisible) || controlsVisible || statusVisible || stats != null) {
             Column(
                 modifier = Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = 24.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (channel != null && bannerVisible) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (piconStyle != PiconStyle.OFF) {
+                            ChannelIcon(picon, piconStyle == PiconStyle.WITH_LOGO, 72.dp * bannerIconScale, 44.dp * bannerIconScale)
+                        }
                         Text(
                             "${channel.number}   ${channel.name}",
                             modifier = Modifier.weight(1f),
@@ -180,6 +208,7 @@ internal fun PlayerPage(
                         }
                     }
                 }
+                stats?.let { Text(it, color = secondary, fontSize = 13.sp, maxLines = 1) }
                 if (statusVisible && !controlsVisible) {
                     Text(status, color = secondary, maxLines = 2)
                 }
@@ -226,6 +255,9 @@ internal fun ChannelListDialog(
     onSelectedChange: (Int) -> Unit,
     onBouquetSelected: (Bouquet) -> Unit,
     onPlay: (Channel) -> Unit,
+    piconFor: (Channel) -> ImageBitmap? = { null },
+    piconStyle: PiconStyle = PiconStyle.OFF,
+    iconScale: Float = 0.8f,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     val listState = rememberLazyListState()
@@ -335,7 +367,12 @@ internal fun ChannelListDialog(
                                     onPlay(channel)
                                 }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            if (piconStyle != PiconStyle.OFF) {
+                                ChannelIcon(piconFor(channel), piconStyle == PiconStyle.WITH_LOGO, 80.dp * iconScale, 48.dp * iconScale)
+                                androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
+                            }
                             Text(channel.number.toString(), modifier = Modifier.width(55.dp * fontScale), color = secondaryText, fontSize = 20.sp * fontScale)
                             Column(Modifier.weight(1f)) {
                                 Text(channel.name, color = primaryText, fontSize = 22.sp * fontScale, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -361,5 +398,47 @@ internal fun ChannelListDialog(
                 }
             }
         }
+    }
+}
+
+/** Ikony kanałów: wyłączone, tylko picony, picony z logo E2Stream w miejscu brakujących. */
+internal enum class PiconStyle { OFF, PICONS, WITH_LOGO }
+
+internal fun piconStyle(config: DesktopConfig): PiconStyle = when {
+    !config.picons -> PiconStyle.OFF
+    config.missingPiconLogo -> PiconStyle.WITH_LOGO
+    else -> PiconStyle.PICONS
+}
+
+@Composable
+internal fun ChannelIcon(image: ImageBitmap?, logoFallback: Boolean, width: Dp, height: Dp) {
+    val colors = MaterialTheme.colorScheme
+    Box(Modifier.width(width).height(height), contentAlignment = Alignment.Center) {
+        when {
+            image != null -> Image(image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            logoFallback -> Box(
+                Modifier.fillMaxSize().background(colors.primaryContainer, RoundedCornerShape(6.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("E2", color = colors.onPrimaryContainer, fontWeight = FontWeight.Bold, fontSize = (height.value * 0.4f).sp)
+            }
+        }
+    }
+}
+
+internal fun formatStats(current: PlaybackStats, previous: PlaybackStats?): String {
+    val fps = previous?.let { (current.displayed - it.displayed).coerceAtLeast(0) }
+    val lost = previous?.let { (current.lost - it.lost).coerceAtLeast(0) }
+    return buildString {
+        append("Statystyki: ")
+        if (current.width > 0) append("${current.width}×${current.height}  ")
+        if (current.codec.isNotBlank()) append("${current.codec}  ")
+        append("${current.inputKbps} kb/s")
+        if (fps != null) append("  •  $fps kl./s")
+        append("  •  utracone klatki: ${current.lost}")
+        if (lost != null && lost > 0) append(" (+$lost)")
+        append("  •  uszkodzone pakiety: ${current.corrupted}")
+        append("  •  nieciągłości: ${current.discontinuities}")
+        append("  •  utracony dźwięk: ${current.audioLost}")
     }
 }

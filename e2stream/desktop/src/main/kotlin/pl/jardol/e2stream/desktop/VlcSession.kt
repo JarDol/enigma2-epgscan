@@ -30,6 +30,19 @@ internal fun vlcMediaOptions(config: DesktopConfig): List<String> = buildList {
     }
 }
 
+/** Liczniki VLC dla statystyk na ekranie. */
+internal data class PlaybackStats(
+    val inputKbps: Int,
+    val width: Int,
+    val height: Int,
+    val codec: String,
+    val displayed: Int,
+    val lost: Int,
+    val corrupted: Int,
+    val discontinuities: Int,
+    val audioLost: Int,
+)
+
 /** null wyłącza usuwanie przeplotu. */
 internal fun vlcDeinterlaceMode(value: String): DeinterlaceMode? = when (value) {
     "off" -> null
@@ -138,6 +151,27 @@ class VlcSession(private val onError: (String) -> Unit) {
     fun stop() {
         component.mediaPlayer().controls().stop()
         paused = false
+    }
+
+    /** Liczniki VLC do statystyk na ekranie; null, gdy nic nie jest odtwarzane. */
+    internal fun statistics(): PlaybackStats? {
+        if (closed) return null
+        val player = component.mediaPlayer()
+        if (!player.media().isValid) return null
+        val stats = player.media().info().statistics() ?: return null
+        val size = player.video().videoDimension()
+        val track = runCatching { player.media().info().videoTracks().firstOrNull() }.getOrNull()
+        return PlaybackStats(
+            inputKbps = (stats.inputBitrate() * 8000).toInt(),
+            width = size?.width ?: 0,
+            height = size?.height ?: 0,
+            codec = track?.codecDescription()?.takeIf(String::isNotBlank) ?: track?.codecName().orEmpty(),
+            displayed = stats.picturesDisplayed(),
+            lost = stats.picturesLost(),
+            corrupted = stats.demuxCorrupted(),
+            discontinuities = stats.demuxDiscontinuity(),
+            audioLost = stats.audioBuffersLost(),
+        )
     }
 
     fun close() {

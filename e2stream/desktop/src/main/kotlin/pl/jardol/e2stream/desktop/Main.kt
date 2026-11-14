@@ -53,6 +53,7 @@ import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.awt.Window as AwtWindow
 import java.net.URI
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
@@ -106,6 +107,12 @@ fun main() {
             var channelListSelected by remember { mutableIntStateOf(0) }
             var captureButton by remember { mutableStateOf<VirtualRemoteKey?>(null) }
             var hidDiagnostic by remember { mutableStateOf("Oczekiwanie na uruchomienie odbiornika HID.") }
+            var lircState by remember { mutableStateOf("wyłączony") }
+            var piconsBusy by remember { mutableStateOf(false) }
+            var piconStatus by remember { mutableStateOf("") }
+            var piconVersion by remember { mutableIntStateOf(0) }
+            var epgRefresh by remember { mutableIntStateOf(0) }
+            var logUploadStatus by remember { mutableStateOf("") }
             val hidDiagnosticDispatcher = remember {
                 LatestValueDispatcher<String>(
                     dispatch = { action -> EventQueue.invokeLater(action) },
@@ -213,7 +220,7 @@ fun main() {
                 onDispose { toolkit.removeAWTEventListener(listener) }
             }
 
-            LaunchedEffect(selectedBouquet, config.host, config.httpPort, config.username, config.password) {
+            LaunchedEffect(selectedBouquet, config.host, config.httpPort, config.username, config.password, epgRefresh) {
                 val bouquet = selectedBouquet
                 epgError = null
                 if (bouquet == null) return@LaunchedEffect
@@ -262,6 +269,39 @@ fun main() {
                 runCatching { updated.save() }
                     .onSuccess { if (message != null) status = message }
                     .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
+            }
+
+            LaunchedEffect(config.logDir) {
+                AppLog.setDirectory(AppLog.dirFor(config))
+            }
+            LaunchedEffect(Unit) {
+                AppLog.i("E2Stream ${appVersion()} uruchomiony; Java ${System.getProperty("java.version")}, ${System.getProperty("os.name")}")
+            }
+            LaunchedEffect(status) { withContext(Dispatchers.IO) { AppLog.i(status) } }
+            LaunchedEffect(epgError) { epgError?.let { withContext(Dispatchers.IO) { AppLog.i(it) } } }
+
+            suspend fun uploadLog(manual: Boolean) {
+                val current = config
+                val result = runCatching {
+                    withContext(Dispatchers.IO) { DecoderUpload.send(current, DecoderUpload.logName(), AppLog.snapshot()) }
+                }
+                result.onSuccess { where ->
+                    logUploadStatus = "wysłano: $where"
+                    if (manual) status = "Log wysłany: $where"
+                }.onFailure { error ->
+                    if (error is CancellationException) throw error
+                    AppLog.markDirty()
+                    logUploadStatus = "błąd: ${error.message}"
+                    if (manual) status = "Nie udało się wysłać logu: ${error.message}"
+                }
+            }
+
+            LaunchedEffect(config.logFtp, config.host) {
+                if (!config.logFtp || config.host.isBlank()) return@LaunchedEffect
+                while (true) {
+                    delay(120_000)
+                    if (AppLog.takeDirty()) uploadLog(manual = false)
+                }
             }
 
             fun visibleBouquets(): List<Bouquet> {
@@ -360,6 +400,49 @@ fun main() {
                     }
                     target?.let(::startChannel)
                 }
+            }
+
+            fun fetchPicons(fresh: Boolean, manual: Boolean) {
+                val currentCatalog = catalog
+                if (currentCatalog == null) {
+                    if (manual) status = "Najpierw połącz się z dekoderem."
+                    return
+                }
+                if (piconsBusy) return
+                scope.launch {
+                    piconsBusy = true
+                    val current = config
+                    val bouquets = visibleBouquets()
+                    try {
+                        val result = withContext(Dispatchers.IO) {
+                            if (fresh) Picons.clear()
+                            val all = bouquets.flatMap { bouquet ->
+                                piconStatus = "Kanały: ${bouquet.name}…"
+                                runCatching { DecoderClient(current).loadChannels(bouquet, currentCatalog.usesPlugin) }
+                                    .getOrDefault(emptyList())
+                            }.distinctBy { serviceKey(it.ref) }
+                            all.size to Picons.fetch(current, all) { piconStatus = it }
+                        }
+                        piconStatus = "ikony: ${result.second}/${result.first} kanałów"
+                        piconVersion++
+                        saveConfig(config.copy(lastPiconFetchDay = LocalDate.now().toString()))
+                        if (manual) status = "Ikony kanałów: ${result.second} z ${result.first}."
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        piconStatus = "błąd: ${e.message}"
+                        if (manual) status = "Nie udało się pobrać ikon: ${e.message}"
+                    } finally {
+                        piconsBusy = false
+                    }
+                }
+            }
+
+            LaunchedEffect(catalog) {
+                if (catalog == null || !config.picons) return@LaunchedEffect
+                val due = config.epgUpdateMode == DesktopConfig.EPG_UPDATE_STARTUP ||
+                    config.lastPiconFetchDay != LocalDate.now().toString()
+                if (due) fetchPicons(fresh = false, manual = false)
             }
 
             LaunchedEffect(Unit) {
@@ -637,6 +720,18 @@ fun main() {
                             config.copy(pluginToken = it.trim())
                         }
                     },
+                    SettingItem.Header("FTP (potrzebne tylko, gdy na dekoderze nie ma wtyczki EPG Scan)"),
+                    SettingItem.Action("FTP — użytkownik", config.ftpUser) {
+                        editText("FTP — użytkownik", config.ftpUser, "domyślnie root") { config.copy(ftpUser = it.trim().ifEmpty { "root" }) }
+                    },
+                    SettingItem.Action("FTP — hasło", if (config.ftpPass.isEmpty()) "brak" else "••••••") {
+                        editText("FTP — hasło", config.ftpPass, secret = true) { config.copy(ftpPass = it) }
+                    },
+                    SettingItem.Action("FTP — katalog na dekoderze", config.ftpDir) {
+                        editText("FTP — katalog na dekoderze", config.ftpDir, DesktopConfig.DEFAULT_FTP_DIR) {
+                            config.copy(ftpDir = it.trim().ifEmpty { DesktopConfig.DEFAULT_FTP_DIR })
+                        }
+                    },
                     SettingItem.Header("Bukiety i kanały"),
                     SettingItem.Action(
                         "Połącz i pobierz bukiety",
@@ -697,15 +792,73 @@ fun main() {
                 SettingsScreen.APPEARANCE -> listOf(
                     SettingItem.Header("Lista kanałów"),
                     percentItem("Czcionka listy kanałów", config.uiListFont) { config.copy(uiListFont = it) },
+                    percentItem("Ikony na liście kanałów", config.uiListIcon) { config.copy(uiListIcon = it) },
+                    SettingItem.Header("EPG (wydarzenia, EPG kanału, Multi EPG, szukanie) — okna EPG w przygotowaniu"),
+                    percentItem("Czcionka okien EPG", config.uiEpgFont) { config.copy(uiEpgFont = it) },
                     SettingItem.Header("Pasek kanału"),
                     percentItem("Czcionka paska kanału", config.uiBannerFont) { config.copy(uiBannerFont = it) },
+                    percentItem("Ikona na pasku kanału", config.uiBannerIcon) { config.copy(uiBannerIcon = it) },
                 )
                 SettingsScreen.EPG -> listOf(
-                    SettingItem.Header("Bieżące EPG"),
-                    SettingItem.Action("Bieżąca audycja", "pobierana z OpenWebif co minutę dla wybranego bukietu") {},
-                    SettingItem.Header("W przygotowaniu w wersji Windows"),
-                    SettingItem.Action("Pobieranie EPG z wtyczki EPG Scan", "pojawi się razem z oknami EPG") {},
-                    SettingItem.Action("Ikony kanałów (picony)", "pojawią się w kolejnych wersjach") {},
+                    SettingItem.Header("EPG — pełny przewodnik w przygotowaniu (harmonogram jest zapisywany na zapas)"),
+                    SettingItem.Action(
+                        "Aktualizacja z EPG Scan",
+                        (if (config.epgUpdateMode == DesktopConfig.EPG_UPDATE_STARTUP) "przy każdym uruchomieniu" else "raz dziennie") +
+                            " — na razie steruje pobieraniem ikon",
+                    ) {
+                        val modes = listOf(DesktopConfig.EPG_UPDATE_DAILY, DesktopConfig.EPG_UPDATE_STARTUP)
+                        val labels = listOf("raz dziennie", "przy każdym uruchomieniu")
+                        choose("Aktualizacja z EPG Scan", labels, modes.indexOf(config.epgUpdateMode)) {
+                            saveConfig(config.copy(epgUpdateMode = modes[it]), "Aktualizacja z EPG Scan: ${labels[it]}.")
+                        }
+                    },
+                    SettingItem.Toggle("Pobieraj EPG codziennie (bez wtyczki EPG Scan)", config.epgDaily) {
+                        saveConfig(config.copy(epgDaily = it))
+                    },
+                    SettingItem.Action("Godzina pobierania EPG", config.epgHour) {
+                        navigator.openEditor(SettingsEditor("Godzina pobierania EPG", config.epgHour, "HH:MM", maxLength = 5) { input ->
+                            val hour = DesktopConfig.normalizeHour(input)
+                            if (hour == null) "Format HH:MM, np. 05:00."
+                            else {
+                                saveConfig(config.copy(epgHour = hour), "Godzina pobierania EPG: $hour.")
+                                null
+                            }
+                        })
+                    },
+                    SettingItem.Action("EPG na ile dni do przodu", "${config.epgDays}") {
+                        editNumber("EPG na ile dni do przodu", config.epgDays, 1..14) { config.copy(epgDays = it) }
+                    },
+                    SettingItem.Action("Bieżąca audycja", epgError ?: "OpenWebif, odświeżana co minutę (${nowEvents.size} kanałów)") {
+                        epgRefresh++
+                        status = "Odświeżam bieżące EPG…"
+                    },
+                    SettingItem.Header("Ikony kanałów"),
+                    SettingItem.Toggle("Ikony kanałów z dekodera", config.picons) {
+                        saveConfig(config.copy(picons = it))
+                        if (it && Picons.count() == 0) fetchPicons(fresh = false, manual = true)
+                    },
+                    SettingItem.Toggle("Zastępuj brakujące picony logo E2Stream", config.missingPiconLogo) {
+                        saveConfig(config.copy(missingPiconLogo = it))
+                    },
+                    SettingItem.Action("Katalog picon na dekoderze", config.piconDir.ifBlank { "odczytaj z ustawień Enigmy2" }) {
+                        editText("Katalog picon na dekoderze", config.piconDir, "puste = odczytaj z ustawień Enigmy2") {
+                            config.copy(piconDir = it.trim().trimEnd('/'))
+                        }
+                    },
+                    SettingItem.Action(
+                        "Pobierz EPG i ikony teraz",
+                        when {
+                            piconsBusy -> "trwa… $piconStatus"
+                            piconStatus.isNotBlank() -> piconStatus
+                            else -> "zapisane ikony: ${Picons.count()}"
+                        },
+                    ) {
+                        epgRefresh++
+                        fetchPicons(fresh = false, manual = true)
+                    },
+                    SettingItem.Action("Pobierz ikony od nowa", "usuwa zapisane ikony i pobiera wszystkie") {
+                        fetchPicons(fresh = true, manual = true)
+                    },
                 )
                 SettingsScreen.GENERAL -> listOf(
                     SettingItem.Header("Bukiety i kanały"),
@@ -815,6 +968,19 @@ fun main() {
                     remoteKeyItem(VirtualRemoteKey.POWER),
                     SettingItem.Header("Odbiornik pilota HID"),
                     SettingItem.Action("Stan odbiornika", hidDiagnostic) {},
+                    SettingItem.Header("Pilot IR przez WinLIRC / LIRC"),
+                    SettingItem.Toggle("Odbieraj klawisze z WinLIRC / LIRC", config.lircEnabled) {
+                        saveConfig(config.copy(lircEnabled = it), if (it) "Pilot IR: łączenie z WinLIRC/LIRC." else "Pilot IR wyłączony.")
+                    },
+                    SettingItem.Action("Serwer WinLIRC / LIRC", "${config.lircHost}:${config.lircPort}") {
+                        editText("Adres serwera WinLIRC / LIRC", config.lircHost, "np. 127.0.0.1") {
+                            config.copy(lircHost = it.trim().ifEmpty { "127.0.0.1" })
+                        }
+                    },
+                    SettingItem.Action("Port serwera WinLIRC / LIRC", config.lircPort.toString()) {
+                        editNumber("Port serwera WinLIRC / LIRC", config.lircPort, 1..65535) { config.copy(lircPort = it) }
+                    },
+                    SettingItem.Action("Stan pilota IR", lircState) {},
                 )
                 SettingsScreen.REMOTE_KEYS -> listOf<SettingItem>(
                     SettingItem.Action("Przywróć domyślne klawisze", "Enter, strzałki, Esc, Home, PgUp/PgDn, F1, cyfry") {
@@ -854,7 +1020,31 @@ fun main() {
                     SettingItem.Action("Opis wtyczki (README)") { openBrowser("$REPOSITORY_URL/blob/main/epgscan/EPGScan/README.md") },
                 )
                 SettingsScreen.LOGS -> listOf(
-                    SettingItem.Header("Diagnostyka"),
+                    SettingItem.Header("Logi i diagnostyka"),
+                    SettingItem.Toggle("Statystyki na ekranie", config.showStats) {
+                        saveConfig(config.copy(showStats = it))
+                    },
+                    SettingItem.Action("Wyślij log na dekoder", "${config.ftpDir}/${DecoderUpload.logName()}") {
+                        if (config.host.isBlank()) status = "Najpierw ustaw adres dekodera."
+                        else {
+                            status = "Wysyłam log na dekoder…"
+                            scope.launch { uploadLog(manual = true) }
+                        }
+                    },
+                    SettingItem.Toggle("Wysyłaj log na dekoder (co 2 min)", config.logFtp) {
+                        saveConfig(config.copy(logFtp = it))
+                    },
+                    SettingItem.Action("Ostatnie wysłanie logu", logUploadStatus.ifBlank { "jeszcze nie wysyłano" }) {},
+                    SettingItem.Action("Miejsce zapisu logów", AppLog.dirFor(config).toString()) {
+                        editText("Miejsce zapisu logów", config.logDir, "puste = ${AppLog.defaultDir()}") { config.copy(logDir = it.trim()) }
+                    },
+                    SettingItem.Action("Otwórz katalog logów", "Eksplorator Windows") {
+                        val dir = AppLog.dirFor(config).toFile().also { it.mkdirs() }
+                        status = runCatching { java.awt.Desktop.getDesktop().open(dir) }
+                            .fold({ "Otwarto katalog logów: $dir" }, { "Nie udało się otworzyć katalogu: ${it.message}" })
+                    },
+                    SettingItem.Action("Zrzuty TS przy zawieszeniu", "nie dotyczy — w Windows obraz odtwarza VLC (bez bufora TS aplikacji)") {},
+                    SettingItem.Header("Pilot"),
                     SettingItem.Action(
                         "Śledzenie pilota",
                         if (remoteDiagnostics.enabled) "włączone (E2STREAM_HID_TRACE=1, wyjście na konsolę)"
@@ -864,8 +1054,6 @@ fun main() {
                         testEvents = emptyList()
                         navigator.push(SettingsScreen.REMOTE_TEST)
                     },
-                    SettingItem.Header("W przygotowaniu w wersji Windows"),
-                    SettingItem.Action("Statystyki, log i zrzuty TS", "pojawią się w kolejnych wersjach") {},
                 )
             }
 
@@ -1112,6 +1300,56 @@ fun main() {
                 onDispose { rawInput?.close() }
             }
 
+            DisposableEffect(config.lircEnabled, config.lircHost, config.lircPort) {
+                if (!config.lircEnabled) {
+                    lircState = "wyłączony"
+                    return@DisposableEffect onDispose { }
+                }
+                val repeatable = setOf(
+                    VirtualRemoteKey.UP, VirtualRemoteKey.DOWN, VirtualRemoteKey.LEFT, VirtualRemoteKey.RIGHT,
+                    VirtualRemoteKey.CHANNEL_UP, VirtualRemoteKey.CHANNEL_DOWN,
+                )
+                val client = LircClient(
+                    host = config.lircHost,
+                    port = config.lircPort,
+                    onEvent = lirc@{ event ->
+                        val id = event.physicalId
+                        // Power działa globalnie — także gdy E2Stream nie jest w pierwszym planie.
+                        if (event.repeat == 0 && id in globalPowerKeys.get()) {
+                            remoteDiagnostics.log { "source=lirc $id power" }
+                            currentRequestPower.value()
+                            return@lirc
+                        }
+                        EventQueue.invokeLater {
+                            val label = UniversalRemoteMap.label(id)
+                            if (!isForegroundApplication() || !belongsToApplication(
+                                    KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow,
+                                    desktopWindow,
+                                )
+                            ) {
+                                remoteDiagnostics.log { "source=lirc $label ignored=focus" }
+                                return@invokeLater
+                            }
+                            inputMode.onKey()
+                            val button = captureButton
+                            val key = UniversalRemoteMap.findKey(universalBindings, id)
+                            remoteDiagnostics.log { "source=lirc $label repeat=${event.repeat} mapped=${key ?: "none"}" }
+                            when {
+                                button != null -> if (event.repeat == 0) savePhysicalBinding(button, id, label)
+                                isRemoteTestOpen() && navigator.choice == null -> if (event.repeat == 0) {
+                                    recordTest("Pilot IR (LIRC)", label, key)
+                                    if (key == VirtualRemoteKey.BACK) handleVirtualKey(key)
+                                }
+                                key == null -> Unit
+                                event.repeat == 0 || (event.repeat >= 3 && key in repeatable) -> handleVirtualKey(key)
+                            }
+                        }
+                    },
+                    onState = { state -> EventQueue.invokeLater { lircState = state } },
+                )
+                onDispose { client.close() }
+            }
+
             // ---------- Okna ----------
 
             CompositionLocalProvider(
@@ -1147,6 +1385,10 @@ fun main() {
                             playingChannel = null
                             status = "Odtwarzanie zatrzymane."
                         },
+                        picon = channel?.let { piconVersion; Picons.image(it) },
+                        piconStyle = piconStyle(config),
+                        bannerIconScale = config.uiBannerIcon / 100f,
+                        showStats = config.showStats,
                     )
                 },
                 settings = {
@@ -1161,7 +1403,7 @@ fun main() {
                             status = "Przypisywanie anulowane."
                         },
                         onWindow = { settingsWindow = it },
-                        testContent = { RemoteTestPanel(testEvents, hidDiagnostic) },
+                        testContent = { RemoteTestPanel(testEvents, "$hidDiagnostic\nPilot IR (WinLIRC/LIRC): $lircState") },
                     )
                 },
             )
@@ -1181,6 +1423,9 @@ fun main() {
                         showChannelList = false
                         startChannel(it)
                     },
+                    piconFor = { piconVersion; Picons.image(it) },
+                    piconStyle = piconStyle(config),
+                    iconScale = config.uiListIcon / 100f,
                 )
             }
             if (showMenu && !navigator.isVisible) {

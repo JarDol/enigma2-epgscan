@@ -79,8 +79,12 @@ object UniversalRemoteMap {
     fun label(id: String): String = when {
         id.startsWith("K:") -> id.substringAfter(':').toIntOrNull()?.let(RemoteKeyMap::keyName) ?: id
         id.startsWith("H:") -> "Pilot HID · ${id.substringAfterLast(':').chunked(2).joinToString("-")}"
+        id.startsWith("L:") -> "Pilot IR · ${id.removePrefix("L:").substringBefore(':')} · ${id.substringAfterLast(':')}"
         else -> id
     }
+
+    /** Przycisk pilota IR z WinLIRC / LIRC. */
+    fun lircId(remote: String, button: String): String = "L:${remote.replace(':', '_')}:${button.replace(':', '_')}"
 
     fun parse(encoded: String): MutableMap<VirtualRemoteKey, Set<String>> {
         if (encoded.isBlank()) return defaults.toMutableMap()
@@ -133,5 +137,6 @@ object UniversalRemoteMap {
 
     private fun isValidPhysicalId(id: String): Boolean =
         id.startsWith("K:") && id.substringAfter(':').toIntOrNull() != null ||
-            id.startsWith("H:") && id.count { it == ':' } == 2
+            id.startsWith("H:") && id.count { it == ':' } == 2 ||
+            id.startsWith("L:") && id.count { it == ':' } == 2 && !id.endsWith(":") && !id.startsWith("L::")
 }

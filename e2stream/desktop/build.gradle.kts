@@ -34,6 +34,8 @@ compose.desktop {
         }
 
         nativeDistributions {
+            // jdk.net: TCP keep-alive klienta WinLIRC/LIRC (ExtendedSocketOptions).
+            modules("jdk.net")
             targetFormats(
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe,
