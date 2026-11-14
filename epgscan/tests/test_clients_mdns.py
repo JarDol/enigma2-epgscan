@@ -162,6 +162,24 @@ class ClientMigrationTests(unittest.TestCase):
 			clients.stop()
 
 
+class DeviceRenameTests(unittest.TestCase):
+	def test_old_android_id_file_is_renamed_once_without_overwriting(self):
+		with tempfile.TemporaryDirectory() as d, patch.object(clients, "DIR", d), \
+				patch.object(clients, "COMMON", os.path.join(d, "common.json")):
+			old = os.path.join(d, "device-53e8a45e43f7f532.json")
+			with open(old, "w") as f:
+				f.write('{"device": {"name": "Xiaomi"}, "data": {}}')
+			st = clients.state("android-MIBOX4-F532", "53e8a45e43f7f532")
+			self.assertEqual(st["device"]["device"]["name"], "Xiaomi")
+			self.assertFalse(os.path.exists(old))
+			self.assertTrue(os.path.exists(os.path.join(d, "device-android-MIBOX4-F532.json")))
+			with open(old, "w") as f:
+				f.write('{"device": {"name": "inny"}}')
+			self.assertFalse(clients.rename_device("android-MIBOX4-F532", "53e8a45e43f7f532"))   # nowy juz jest
+			self.assertTrue(os.path.exists(old))
+			self.assertFalse(clients.rename_device("x", ""))
+
+
 class StreamEitTests(unittest.TestCase):
 	def test_reports_enigma_stream_eit_setting_or_none(self):
 		cfg = types.SimpleNamespace(streaming=types.SimpleNamespace(stream_eit=types.SimpleNamespace(value=False)))

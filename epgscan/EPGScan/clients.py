@@ -6,7 +6,7 @@
 #   GET  /api/info                      - wersja wtyczki, wersja API, model dekodera
 #   GET  /api/bouquets                  - bukiety TV [{name, ref}]
 #   GET  /api/services?bRef=<ref>       - kanaly bukietu z rozwiazanymi alternatywami i PID-ami z lamedb
-#   GET  /api/sync/state?id=<id>        - dane wspolne + plik odbiornika
+#   GET  /api/sync/state?id=<id>[&old=<id>] - dane wspolne + plik odbiornika (old: dawna nazwa pliku - przenoszona)
 #   POST /api/sync/push?id=<id>         - zmiany odbiornika; serwer scala (nowszy wpis wygrywa) i dopisuje
 #                                         brakujace klucze do czesci wspolnej (PMT: nowszy wygrywa)
 #   GET  /api/sync/devices              - profile wszystkich odbiornikow (przenoszenie ustawien)
@@ -228,7 +228,24 @@ def _is_pmt(k):
 	return k.startswith("pmts_")
 
 
-def state(dev_id):
+def rename_device(dev_id, old_id):
+	"""Nowa, czytelna nazwa pliku odbiornika (np. device-android-MIBOX4-F532.json zamiast device-<ANDROID_ID>.json):
+	stary plik przenoszony raz, gdy nowego jeszcze nie ma. Zwraca True, gdy przeniesiono."""
+	if not old_id or _safe_id(old_id) == _safe_id(dev_id):
+		return False
+	old, new = _dev_path(old_id), _dev_path(dev_id)
+	if not os.path.exists(old) or os.path.exists(new):
+		return False
+	os.rename(old, new)
+	log("E2Stream: profil %s -> %s" % (os.path.basename(old), os.path.basename(new)))
+	return True
+
+
+def state(dev_id, old_id=None):
+	try:
+		rename_device(dev_id, old_id)
+	except Exception as e:
+		log("E2Stream: zmiana nazwy profilu %s nieudana: %s" % (old_id, e))
 	common = _load(COMMON, {"data": {}}) or {"data": {}}
 	cd = common.get("data") or {}
 	common["data"] = dict((k, v) for k, v in cd.items() if k not in DEVICE_ONLY)
@@ -384,14 +401,14 @@ def _resource():
 					except Exception:
 						model = ""
 					return self._json(request, {"name": "EPG Scan", "version": VERSION, "api": API,
-						"features": ["services", "pids", "sync", "pack", "upload", "stream_eit"], "model": model,
+						"features": ["services", "pids", "sync", "pack", "upload", "stream_eit", "rename_device"], "model": model,
 						"time": int(time.time()), "stream_eit": stream_eit()})
 				if path == "/api/bouquets":
 					return self._json(request, {"bouquets": bouquets()})
 				if path == "/api/services":
 					return self._json(request, {"services": services(self._arg(request, "bRef"))})
 				if path == "/api/sync/state":
-					return self._json(request, state(self._arg(request, "id")))
+					return self._json(request, state(self._arg(request, "id"), self._arg(request, "old")))
 				if path == "/api/sync/push" and request.method == b"POST":
 					body = json.loads(request.content.read().decode("utf-8") or "{}")
 					return self._json(request, push(self._arg(request, "id"), body))

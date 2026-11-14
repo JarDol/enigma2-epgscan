@@ -739,7 +739,7 @@ w E2Stream. Po instalacji i uruchomieniu Avahi zrestartuj Enigma2, aby odśwież
 | `/etc/enigma2/satellites.xml` | tylko gdy SatWatch zaktualizował transpondery |
 | `/media/hdd/epgscan/` | kopie EPG, log, `lokalne/` (pobrany program, mapa kanałów, raporty) |
 | `/media/hdd/epgscan/satwatch.log`, `raporty/satwatch-*.txt` | log i raporty SatWatch obok logu EPG Scan |
-| `/etc/enigma2/epgscan/clients/` | dane aplikacji E2Stream: `common.json` (domyślne dla nowych odbiorników, wspólne PMT kanałów), `device-<id>.json` (każdy odbiornik) |
+| `/etc/enigma2/epgscan/clients/` | dane aplikacji E2Stream: `common.json` (domyślne dla nowych odbiorników, wspólne PMT kanałów), `device-<id>.json` (każdy odbiornik; Android: `device-android-<model>-<znacznik>.json`, np. `device-android-MIBOX4-F532.json`, Windows: `device-win-<komputer>.json`) |
 | `/etc/enigma2/epgscan/channelparams.json` | wyniki skanu PAT/PMT i potwierdzone wybory audio |
 | `/etc/enigma2/epgscan/tuners-epg.json`, `tuners-params.json` | ostatnie raporty wykorzystania tunerów |
 

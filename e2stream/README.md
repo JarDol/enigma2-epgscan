@@ -69,7 +69,7 @@ i wymagają świadomego wyboru. Potwierdzenie rozpoznaje odpowiedź API, ale nie
 Na dekoderze w `<katalog FTP>/sync/` (domyślnie `/media/hdd/e2stream/sync/`):
 
 * `common.json` — wartości domyślne dla nowych odbiorników i wspólne PMT kanałów,
-* `device-<id>.json` — ustawienia, kopia ustawień i wybrane ścieżki dźwięku każdego odbiornika (z nazwą i modelem).
+* `device-<id>.json` — ustawienia, kopia ustawień i wybrane ścieżki dźwięku każdego odbiornika (z nazwą i modelem). Z wtyczką EPG Scan 2.19.1+ nazwa to `device-android-<model>-<znacznik>.json` (np. `device-android-MIBOX4-F532.json`; znacznik jak `[F532]` w nazwie odbiornika) — dawny plik `device-<ANDROID_ID>.json` jest przenoszony przy pierwszej synchronizacji. Przez FTP (bez wtyczki) zostaje dawna nazwa.
 
 Przy użyciu API wtyczki aktualna PMT jest przechowywana we wspólnym `common.json`, nie w profilach urządzeń.
 EPG Scan usuwa przestarzałe wpisy PMT z profili z zachowaniem ich kopii; lokalny cache PMT odtwarzacza pozostaje bez zmian.

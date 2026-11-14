@@ -108,9 +108,22 @@ object SyncManager {
     }
 
     @SuppressLint("HardwareIds")
-    fun deviceId(): String =
+    /** Dawna nazwa pliku odbiornika: device-<ANDROID_ID>.json (FTP i przeniesienie na nową nazwę). */
+    fun legacyDeviceId(): String =
         (Settings.Secure.getString(app.contentResolver, Settings.Secure.ANDROID_ID) ?: Build.MODEL)
             .replace(Regex("[^A-Za-z0-9_-]"), "_")
+
+    /**
+     * Czytelna nazwa pliku odbiornika na dekoderze, jak w aplikacji Windows (device-win-<komputer>):
+     * device-android-<model>-<znacznik>.json, np. device-android-MIBOX4-F532.json. Model i znacznik (koniec
+     * ANDROID_ID, ten sam co [F532] w nazwie) się nie zmieniają — zmiana nazwy odbiornika w aplikacji nie zmienia pliku.
+     */
+    fun deviceId(): String {
+        val model = Build.MODEL.replace(Regex("[^A-Za-z0-9_-]+"), "_").trim('_').take(24).ifEmpty { "TV" }
+        val hex = legacyDeviceId().filter { it.isLetterOrDigit() }.uppercase()
+        val tag = if (hex.length >= 4) hex.takeLast(4) else "0000"
+        return "android-$model-$tag"
+    }
 
     val dirty: Boolean get() = meta.getBoolean("dirty", false)
     val lastSyncAt: Long get() = meta.getLong("lastSync", 0)
@@ -184,7 +197,7 @@ object SyncManager {
     @Synchronized
     private fun sync(prefs: Prefs): String {
         val dir = dirPath(prefs)
-        val devName = "device-${deviceId()}.json"
+        val devName = "device-${legacyDeviceId()}.json"     // FTP (bez wtyczki): dawna nazwa
         var common: JSONObject? = null
         var dev: JSONObject? = null
         var legacy: JSONObject? = null
@@ -192,7 +205,7 @@ object SyncManager {
         if (!prefs.pluginOk) PluginApi.check(prefs)
         val plugin = if (prefs.pluginOk) PluginApi(prefs) else null
         if (plugin != null) {
-            val st = plugin.syncState(deviceId())
+            val st = plugin.syncState(deviceId(), legacyDeviceId())   // wtyczka 2.19.1+ przenosi dawny plik
             common = st.optJSONObject("common")
             dev = st.optJSONObject("device")
         } else {
@@ -280,7 +293,7 @@ object SyncManager {
         }
         val backup = JSONObject()
         for ((k, v) in SettingsBackup.values(prefs)) backup.put(k, toJson(v))
-        val device = JSONObject().put("id", deviceId()).put("name", prefs.displayName)
+        val device = JSONObject().put("id", if (plugin != null) deviceId() else legacyDeviceId()).put("name", prefs.displayName)
             .put("model", "${Build.MANUFACTURER} ${Build.MODEL}").put("app", Tools.appVersion(app))
             .put("updated", now).put("backup", backup)
         val oldDevice = dev?.optJSONObject("device")
