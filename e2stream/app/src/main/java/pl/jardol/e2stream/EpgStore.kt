@@ -41,7 +41,8 @@ class EpgStore(ctx: Context) {
         }
     }
 
-    fun write(ref: String, events: List<EpgEvent>) {
+    /** [at] = czas pobrania (ms) - przy podmianie z EIT zostaje czas ostatniej aktualizacji z dekodera. */
+    fun write(ref: String, events: List<EpgEvent>, at: Long = System.currentTimeMillis()) {
         val arr = JSONArray()
         for (e in events) {
             arr.put(
@@ -52,7 +53,7 @@ class EpgStore(ctx: Context) {
         val target = file(ref)
         val tmp = File.createTempFile("epg-", ".tmp", dir)
         try {
-            tmp.writeText(JSONObject().put("at", System.currentTimeMillis()).put("e", arr).toString())
+            tmp.writeText(JSONObject().put("at", at).put("e", arr).toString())
             if (!tmp.renameTo(target)) throw java.io.IOException("Nie można zapisać EPG kanału $ref")
         } catch (e: java.io.IOException) {
             tmp.delete()

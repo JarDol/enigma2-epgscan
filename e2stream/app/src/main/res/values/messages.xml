@@ -98,4 +98,10 @@
     <string name="message_no_audio_tracks" formatted="false">Brak ścieżek dźwięku</string>
     <string name="message_audio_track_remembered_for_this_channel" formatted="false">Ścieżka dźwięku (zapamiętywana dla kanału)</string>
     <string name="message_could_not_select_audio_track" formatted="false">Nie udało się wybrać ścieżki dźwięku</string>
+    <string name="message_eit_checking">Sprawdzam ustawienie EIT w Enigma2…</string>
+    <string name="eit_off_title">EIT w strumieniu wyłączone</string>
+    <string name="eit_off_message">Enigma2 nie wysyła EIT w strumieniu, więc tej opcji nie można włączyć. Na dekoderze: Menu → Ustawienia → System → Dostosuj (poziom ustawień: ekspert) → „Include EIT in http streams” = tak. Potem włącz tę opcję tutaj.</string>
+    <string name="eit_unknown_title">Nie można sprawdzić</string>
+    <string name="eit_unknown_message">Nie da się odczytać ustawienia EIT w Enigma2 (potrzebna wtyczka EPG Scan 2.19.1 lub nowsza). Jeśli Enigma2 nie wysyła EIT w strumieniu, opcja niczego nie zmieni. Włączyć?</string>
+    <string name="eit_enable">Włącz</string>
 </resources>

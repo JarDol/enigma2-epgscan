@@ -34,6 +34,27 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     var pmtCachePut: ((Int, ByteArray) -> Unit)? = null
 
     private var expectedSid = -1
+
+    // --- EIT „teraz/następne” (PID 0x12, tabela 0x4E) oglądanego programu
+    /** Zbieraj EIT (ustawienie aplikacji; nie przy nagraniach z dysku). */
+    @Volatile var eitEnabled = false
+    /** (sesja, SID, teraz, następne) — wołane z wątku odczytu przy zmianie wersji sekcji. */
+    @Volatile var onEit: ((Long, Int, EitEvent?, EitEvent?) -> Unit)? = null
+    /** Ile pakietów PID 0x12 przyszło w tej sesji (0 = dekoder nie wysyła EIT). */
+    @Volatile var eitPackets = 0L
+        private set
+    private val eitVersion = intArrayOf(-1, -1)
+    private var eitPresent: EitEvent? = null
+    private var eitFollowing: EitEvent? = null
+    private val eitAsm = SectionAssembler { b, len -> eitSection(b, len) }
+
+    private fun eitSection(b: ByteArray, len: Int) {
+        val sec = Eit.parsePf(b, len, expectedSid) ?: return
+        if (sec.number > 1 || eitVersion[sec.number] == sec.version) return
+        eitVersion[sec.number] = sec.version
+        if (sec.number == 0) eitPresent = sec.event else eitFollowing = sec.event
+        try { onEit?.invoke(sessionId, expectedSid, eitPresent, eitFollowing) } catch (_: Exception) { }
+    }
     @Volatile var patSeenAt = 0L
         private set
     @Volatile var pmtSeen = false
@@ -158,6 +179,11 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     fun reset(sid: Int = -1) {
         sessionId++
         expectedSid = sid
+        eitAsm.reset()
+        eitVersion.fill(-1)
+        eitPresent = null
+        eitFollowing = null
+        eitPackets = 0
         patSeenAt = 0
         pmtSeen = false
         pmtInjected = 0
@@ -358,6 +384,10 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
                 }
             }
             pidCc[pid] = cc
+            if (pid == Eit.PID) {
+                eitPackets++
+                if (eitEnabled && expectedSid >= 0 && payload < o + 188) eitAsm.packet(p, o, payload)
+            }
             if ((b1 and 0x40) != 0 && (pid in videoPids || pid in audioPids)) pes(p, payload, o + 188, pid, mutable)
             if (pid == pmtPid && pmtPid >= 0 && payload < o + 188) {
                 assemblePmt(p, o, payload, (b1 and 0x40) != 0)

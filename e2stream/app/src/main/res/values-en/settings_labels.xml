@@ -103,4 +103,6 @@
     <string name="setting_ts_dump_size_mb" formatted="false">TS dump size (MB)</string>
     <string name="setting_send_log_to_receiver_every_2_minutes" formatted="false">Send log to receiver (every 2 minutes)</string>
     <string name="setting_send_ts_dumps_to_receiver_2" formatted="false">Send TS dumps to receiver</string>
+    <string name="setting_eit_from_stream" formatted="false">EIT from the stream (now/next)</string>
+    <string name="setting_eit_replace_epg" formatted="false">Replace EPG when EIT is received</string>
 </resources>

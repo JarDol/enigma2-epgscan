@@ -338,6 +338,15 @@ def upload(dirname, name, data):
 	return {"ok": True, "path": os.path.join(d, name), "size": len(data)}
 
 
+def stream_eit():
+	"""Ustawienie Enigma2 'Include EIT in http streams' (config.streaming.stream_eit); None, gdy obraz go nie ma."""
+	try:
+		from Components.config import config
+		return bool(config.streaming.stream_eit.value)
+	except Exception:
+		return None
+
+
 def _resource():
 	from twisted.web import resource
 
@@ -375,7 +384,8 @@ def _resource():
 					except Exception:
 						model = ""
 					return self._json(request, {"name": "EPG Scan", "version": VERSION, "api": API,
-						"features": ["services", "pids", "sync", "pack", "upload"], "model": model, "time": int(time.time())})
+						"features": ["services", "pids", "sync", "pack", "upload", "stream_eit"], "model": model,
+						"time": int(time.time()), "stream_eit": stream_eit()})
 				if path == "/api/bouquets":
 					return self._json(request, {"bouquets": bouquets()})
 				if path == "/api/services":

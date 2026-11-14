@@ -188,6 +188,12 @@ class SettingsActivity : Activity() {
             { v -> if (Regex("^\\d{1,2}:\\d{2}$").matches(v.trim())) p.epgHour = v.trim() else toast(getString(R.string.message_format_hh_mm)) },
             InputType.TYPE_CLASS_DATETIME or InputType.TYPE_DATETIME_VARIATION_TIME, hint = "HH:MM"),
         num(getString(R.string.setting_days_of_epg_to_download), { p.epgDays }, { p.epgDays = it }, 1..14),
+        Item.Toggle(getString(R.string.setting_eit_from_stream), { p.eitStream }, { v ->
+            if (!v) { p.eitStream = false; items = buildItems(); refresh() } else enableStreamEit()
+        }),
+    ) + (if (p.eitStream) listOf<Item>(
+        Item.Toggle(getString(R.string.setting_eit_replace_epg), { p.eitReplace }, { p.eitReplace = it }),
+    ) else emptyList()) + listOf(
         Item.Toggle(getString(R.string.setting_channel_picons_from_receiver), { p.picons }, { p.picons = it }),
         Item.Toggle(getString(R.string.setting_replace_missing_picons_with_e2stream_logo), { p.missingPiconLogo }, { p.missingPiconLogo = it }),
         Item.Text(getString(R.string.setting_picon_directory_on_receiver), { p.piconDir }, { p.piconDir = it.trim().trimEnd('/') },
@@ -834,6 +840,35 @@ class SettingsActivity : Activity() {
                 if (isFinishing) return@runOnUiThread
                 if (ok != was) AppLog.i("ustawienia: wtyczka EPG Scan ${if (ok) p.pluginVersion else "brak"}")
                 items = buildItems(); refresh()
+            }
+        }.start()
+    }
+
+    /** EIT ze strumienia: włączenie tylko wtedy, gdy Enigma2 wysyła EIT (ustawienie odczytane przez wtyczkę EPG Scan). */
+    private fun enableStreamEit() {
+        toast(getString(R.string.message_eit_checking))
+        Thread {
+            val info = if (p.host.isBlank()) null else PluginApi(p).info()
+            val state: Boolean? = info?.takeIf { it.has("stream_eit") && !it.isNull("stream_eit") }?.optBoolean("stream_eit")
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                fun on() {
+                    p.eitStream = true
+                    markChanged("EIT ze strumienia = true (Enigma2: ${state ?: "nieznane"})")
+                    items = buildItems(); refresh()
+                }
+                when (state) {
+                    true -> on()
+                    false -> {
+                        AppLog.i("ustawienia: EIT ze strumienia - Enigma2 nie wysyła EIT (config.streaming.stream_eit = wyłączone)")
+                        TvDialog.confirm(this, getString(R.string.eit_off_title), getString(R.string.eit_off_message),
+                            listOf(TvDialog.Btn("OK")))
+                    }
+                    null -> TvDialog.confirm(this, getString(R.string.eit_unknown_title), getString(R.string.eit_unknown_message), listOf(
+                        TvDialog.Btn(getString(R.string.eit_enable)) { on() },
+                        TvDialog.Btn(getString(R.string.dialog_cancel)),
+                    ))
+                }
             }
         }.start()
     }

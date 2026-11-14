@@ -45,7 +45,52 @@ class EpgUi(
     private fun t(sec: Long) = hm.format(Date(sec * 1000))
     private fun d(sec: Long) = day.format(Date(sec * 1000))
 
-    private fun load(ref: String): List<EpgEvent> {
+    /** Audycje z EIT strumienia (teraz/następne) — nakładane na EPG kanału, aż się skończą. */
+    private val eitOverlay = HashMap<String, List<EpgEvent>>()
+
+    private fun withEit(ref: String, ev: List<EpgEvent>): List<EpgEvent> {
+        val k = OpenWebif.key(ref)
+        val extra = synchronized(cache) {
+            val list = eitOverlay[k] ?: return ev
+            val live = list.filter { it.end > now() }
+            if (live.isEmpty()) { eitOverlay.remove(k); return ev }
+            live
+        }
+        return EitMerge.merge(ev, extra, { it.begin }, { it.end }, { it.id })
+    }
+
+    /**
+     * EIT „teraz/następne” z oglądanego strumienia: różnice względem EPG trafiają do logu, audycje do nakładki;
+     * przy [persist] także do zapisanego EPG kanału (do następnej aktualizacji z dekodera). [done] = czy coś się zmieniło.
+     */
+    fun applyEit(ch: Channel, events: List<EitEvent>, persist: Boolean, done: (Boolean) -> Unit) {
+        if (events.isEmpty()) return
+        io.execute {
+            val eit = events.map { EpgEvent(it.id, it.begin, it.duration, it.title, it.shortDesc, it.longDesc, ch.ref, ch.name) }
+            val base = try { loadRaw(ch.ref) } catch (_: Exception) { emptyList() }
+            val diff = EitMerge.changes(base, eit, { it.begin }, { it.end }, { it.title })
+            synchronized(cache) { eitOverlay[OpenWebif.key(ch.ref)] = eit }
+            val f = SimpleDateFormat("HH:mm", Locale.US)      // wątek tła - własny format (SimpleDateFormat nie jest bezpieczny wątkowo)
+            fun t(sec: Long) = f.format(Date(sec * 1000))
+            for ((old, new) in diff) {
+                AppLog.i("EIT: ${ch.name} – " + if (old == null) "nowa audycja ${new.title} ${t(new.begin)}–${t(new.end)}"
+                    else "zmiana: ${old.title} ${t(old.begin)}–${t(old.end)} → ${new.title} ${t(new.begin)}–${t(new.end)}")
+            }
+            if (persist && diff.isNotEmpty()) {
+                try {
+                    val at = store.read(ch.ref)?.first ?: System.currentTimeMillis()
+                    store.write(ch.ref, EitMerge.merge(base, eit, { it.begin }, { it.end }, { it.id }), at)
+                } catch (e: Exception) {
+                    AppLog.i("EIT: zapis EPG kanału ${ch.name}: $e")
+                }
+            }
+            a.runOnUiThread { done(diff.isNotEmpty()) }
+        }
+    }
+
+    private fun load(ref: String): List<EpgEvent> = withEit(ref, loadRaw(ref))
+
+    private fun loadRaw(ref: String): List<EpgEvent> {
         val k = OpenWebif.key(ref)
         synchronized(cache) {
             cache[k]?.let { if (System.currentTimeMillis() - it.first < 10 * 60_000) return it.second }
@@ -68,12 +113,12 @@ class EpgUi(
         val n = now()
         val ev = synchronized(cache) { cache[OpenWebif.key(ref)]?.second }
             ?: try { store.read(ref)?.second } catch (_: Exception) { null }
-            ?: return null
-        return ev.firstOrNull { it.begin <= n && it.end > n }
+            ?: emptyList()
+        return withEit(ref, ev).firstOrNull { it.begin <= n && it.end > n }
     }
 
     private fun cached(ref: String): List<EpgEvent> =
-        synchronized(cache) { cache[OpenWebif.key(ref)]?.second } ?: emptyList()
+        withEit(ref, synchronized(cache) { cache[OpenWebif.key(ref)]?.second } ?: emptyList())
 
     // ------------------------------------------------------------ lista
 

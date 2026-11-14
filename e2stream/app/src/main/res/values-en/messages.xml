@@ -98,4 +98,10 @@
     <string name="message_no_audio_tracks" formatted="false">No audio tracks</string>
     <string name="message_audio_track_remembered_for_this_channel" formatted="false">Audio track (remembered for this channel)</string>
     <string name="message_could_not_select_audio_track" formatted="false">Could not select audio track</string>
+    <string name="message_eit_checking">Checking the Enigma2 EIT setting…</string>
+    <string name="eit_off_title">EIT in the stream is off</string>
+    <string name="eit_off_message">Enigma2 does not send EIT in the stream, so this option cannot be enabled. On the receiver: Menu → Setup → System → Customize (setup level: expert) → “Include EIT in http streams” = yes. Then enable this option here.</string>
+    <string name="eit_unknown_title">Cannot check</string>
+    <string name="eit_unknown_message">The Enigma2 EIT setting cannot be read (EPG Scan plugin 2.19.1 or newer is needed). If Enigma2 does not send EIT in the stream, the option changes nothing. Enable it?</string>
+    <string name="eit_enable">Enable</string>
 </resources>

@@ -270,6 +270,16 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("epgDaily", true)
         set(v) = putB("epgDaily", v)
 
+    /** EIT „teraz/następne” ze strumienia dekodera (Enigma2: Include EIT in http streams). */
+    var eitStream: Boolean
+        get() = sp.getBoolean("eitStream", false)
+        set(v) = putB("eitStream", v)
+
+    /** Podmiana EPG danymi z EIT — zapis w EPG aplikacji do następnej aktualizacji z dekodera. */
+    var eitReplace: Boolean
+        get() = sp.getBoolean("eitReplace", true)
+        set(v) = putB("eitReplace", v)
+
     /** Godzina codziennego pobierania EPG "HH:MM". */
     var epgHour: String
         get() = s("epgHour", "05:00")

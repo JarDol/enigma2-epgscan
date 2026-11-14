@@ -162,6 +162,17 @@ class ClientMigrationTests(unittest.TestCase):
 			clients.stop()
 
 
+class StreamEitTests(unittest.TestCase):
+	def test_reports_enigma_stream_eit_setting_or_none(self):
+		cfg = types.SimpleNamespace(streaming=types.SimpleNamespace(stream_eit=types.SimpleNamespace(value=False)))
+		with patch.dict(sys.modules, {"Components.config": types.SimpleNamespace(config=cfg)}):
+			self.assertIs(clients.stream_eit(), False)
+			cfg.streaming.stream_eit.value = True
+			self.assertIs(clients.stream_eit(), True)
+			del cfg.streaming.stream_eit
+			self.assertIsNone(clients.stream_eit())
+
+
 class MdnsTests(unittest.TestCase):
 	def setUp(self):
 		self.directory = tempfile.TemporaryDirectory()

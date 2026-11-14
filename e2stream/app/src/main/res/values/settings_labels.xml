@@ -103,4 +103,6 @@
     <string name="setting_ts_dump_size_mb" formatted="false">Rozmiar zrzutu TS (MB)</string>
     <string name="setting_send_log_to_receiver_every_2_minutes" formatted="false">Wysyłaj log na dekoder (co 2 min)</string>
     <string name="setting_send_ts_dumps_to_receiver_2" formatted="false">Wysyłaj zrzuty TS na dekoder</string>
+    <string name="setting_eit_from_stream" formatted="false">EIT ze strumienia (teraz/następne)</string>
+    <string name="setting_eit_replace_epg" formatted="false">Podmieniaj EPG po odebraniu EIT</string>
 </resources>

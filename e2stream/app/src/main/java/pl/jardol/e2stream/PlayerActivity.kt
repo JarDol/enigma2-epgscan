@@ -802,12 +802,48 @@ class PlayerActivity : Activity() {
                 // zapamiętany PMT kanału, a gdy go nie ma — PMT zbudowany z PID-ów z dekodera (EPG Scan)
                 a.pmtCacheGet = { sid -> prefs.pmtFor(sid) ?: PmtBuilder.build(sid, prefs.pidsFor(sid)) }
                 a.pmtCachePut = { sid, b -> prefs.setPmtFor(sid, b) }
+                a.onEit = { session, _, now, next -> ui.post { onStreamEit(session, now, next) } }
             }
             analyzerRing = ring
         }
         analyzer?.clean = prefs.cleanTs
         // kopia strumienia na żywo do bufora timeshiftu (nie przy nagraniach z dekodera)
         analyzer?.tee = { b, o, l -> if (!recMode && SystemClock.elapsedRealtime() >= tsWriteFrom) tsBuf?.write(b, o, l) }
+    }
+
+    // --- EIT ze strumienia
+    private var eitChannel: Channel? = null
+    private var eitSession = -1L
+    private var eitPending: Pair<EitEvent?, EitEvent?>? = null
+    private var eitMissingLogged = false
+
+    /** Nowa wersja EIT teraz/następne z analizatora; krótka zwłoka, bo „teraz” i „następne” przychodzą osobno. */
+    private fun onStreamEit(session: Long, now: EitEvent?, next: EitEvent?) {
+        if (session != eitSession || eitChannel == null) return
+        eitPending = now to next
+        ui.removeCallbacks(eitApply)
+        ui.postDelayed(eitApply, 800)
+    }
+
+    private val eitApply = Runnable {
+        val ch = eitChannel ?: return@Runnable
+        val (now, next) = eitPending ?: return@Runnable
+        eitPending = null
+        if (playList.getOrNull(playIndex) !== ch) return@Runnable
+        epg.applyEit(ch, listOfNotNull(now, next), prefs.eitReplace) { changed ->
+            if (!changed || playList.getOrNull(playIndex) !== ch) return@applyEit
+            now?.let { ch.now = it.title; ch.nowBegin = it.begin; ch.nowEnd = it.end }
+            adapter.notifyDataSetChanged()
+            if (banner.visibility == View.VISIBLE && tsChBar) showBanner(ch)
+        }
+    }
+
+    /** Opcja włączona, a z dekodera nie przychodzi PID 0x12 - podpowiedź w logu (raz na uruchomienie aplikacji). */
+    private val eitMissingCheck = Runnable {
+        val a = analyzer ?: return@Runnable
+        if (!a.eitEnabled || eitMissingLogged || a.eitPackets > 0 || a.sessionId != eitSession) return@Runnable
+        eitMissingLogged = true
+        AppLog.i("EIT: dekoder nie wysyła EIT w strumieniu (Enigma2: Include EIT in http streams wyłączone?)")
     }
 
     private var encrypted = false
@@ -1049,6 +1085,14 @@ class PlayerActivity : Activity() {
         val sid = url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
         proxy?.invalidate()
         analyzer?.reset(sid)
+        // EIT „teraz/następne” ze strumienia (opcja; nie przy nagraniach z dysku dekodera)
+        eitChannel = if (!recMode) playList.getOrNull(playIndex) else null
+        analyzer?.eitEnabled = prefs.eitStream && eitChannel != null && sid >= 0
+        eitSession = analyzer?.sessionId ?: -1
+        eitPending = null
+        ui.removeCallbacks(eitApply)
+        ui.removeCallbacks(eitMissingCheck)
+        if (analyzer?.eitEnabled == true) ui.postDelayed(eitMissingCheck, 20_000)
         // nagranie z pliku: bez poprawiania strumienia — po przewinięciu znaczniki czasu skaczą względem
         // ostatniego PCR i „poprawka” przesuwała dźwięk (obraz wyprzedzał dźwięk)
         analyzer?.clean = if (recMode) false else prefs.cleanTs
