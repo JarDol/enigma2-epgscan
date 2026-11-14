@@ -36,13 +36,14 @@ class DesktopNavigationTest {
             listOf(
                 DesktopMenuItem.IMAGE, DesktopMenuItem.CHANNEL_LIST, DesktopMenuItem.RECORDINGS,
                 DesktopMenuItem.ZAP_TIMERS, DesktopMenuItem.DECODER_TIMERS, DesktopMenuItem.WINDOW,
+                DesktopMenuItem.MULTI_EPG, DesktopMenuItem.EPG_CHANNEL, DesktopMenuItem.EPG_SEARCH, DesktopMenuItem.AUDIO,
                 DesktopMenuItem.SETTINGS, DesktopMenuItem.EXIT,
             ),
             items,
         )
         val navigation = DesktopNavigation()
         navigation.openMenu(items)
-        assertEquals(6, navigation.menuSelected)
+        assertEquals(10, navigation.menuSelected)
         navigation.handleMenuKey(VirtualRemoteKey.DOWN)
         navigation.handleMenuKey(VirtualRemoteKey.DOWN)
         assertEquals(MenuKeyResult(true, DesktopMenuItem.IMAGE), navigation.handleMenuKey(VirtualRemoteKey.OK))

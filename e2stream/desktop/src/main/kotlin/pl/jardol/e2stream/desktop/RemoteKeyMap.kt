@@ -54,5 +54,10 @@ object RemoteKeyMap {
     fun encode(bindings: Map<Int, RemoteAction>): String =
         bindings.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value.name}" }
 
-    fun keyName(keyCode: Int): String = KeyEvent.getKeyText(keyCode)
+    fun keyName(keyCode: Int): String = when (keyCode) {
+        UniversalRemoteMap.VK_VOLUME_MUTE -> "Wycisz (multimedia)"
+        UniversalRemoteMap.VK_VOLUME_DOWN -> "Głośność − (multimedia)"
+        UniversalRemoteMap.VK_VOLUME_UP -> "Głośność + (multimedia)"
+        else -> KeyEvent.getKeyText(keyCode)
+    }
 }

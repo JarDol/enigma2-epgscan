@@ -78,6 +78,13 @@ class DesktopConfigTest {
             menuOrder = listOf("IMAGE", "CHANNEL_LIST"),
             menuHidden = setOf("REMOTE_TEST"),
             appLanguage = AppLanguage.ENGLISH,
+            appVolume = 130,
+            appMuted = true,
+            volumeKeysApp = false,
+            volumeStep = 10,
+            lastEpgFetch = 1_700_000_000_000,
+            epgPackIdentity = "dekoder:8080/1:2:abc",
+            epgPackCheckAt = 1_700_000_100_000,
         )
 
         try {

@@ -35,6 +35,8 @@ internal class RawHidInput(
     private val suppressBrowserKeys: () -> Boolean,
     private val isPowerKey: (String) -> Boolean = { false },
     private val onPower: () -> Unit = {},
+    /** Zwraca true, gdy klawisz ma być obsłużony przez program i nie trafić do Windows (np. głośność). */
+    private val interceptKey: (physicalId: String, down: Boolean) -> Boolean = { _, _ -> false },
 ) : AutoCloseable {
     private val ready = CountDownLatch(1)
     private val failure = AtomicReference<Throwable?>()
@@ -58,7 +60,9 @@ internal class RawHidInput(
         ) {
             onPower()
         }
-        if (isPower && isForegroundApplication() ||
+        val intercepted = code >= 0 && !isPower && isForegroundApplication() &&
+            interceptKey(physicalId, message == WM_KEYDOWN || message == WM_SYSKEYDOWN)
+        if (intercepted || isPower && isForegroundApplication() ||
             code >= 0 && data.vkCode in setOf(VK_BROWSER_BACK, VK_BROWSER_HOME) &&
             isForegroundApplication() && isApplicationFocused() && suppressBrowserKeys()
         ) {

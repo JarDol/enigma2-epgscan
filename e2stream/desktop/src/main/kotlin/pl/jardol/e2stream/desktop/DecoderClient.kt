@@ -79,6 +79,41 @@ internal fun parseMovieList(json: JSONObject, requestedDir: String): Pair<String
 
 fun serviceKey(ref: String): String = ref.trim().trimEnd(':').uppercase()
 
+/** Audycja z EPG; czasy w sekundach epoki. */
+internal data class EpgEvent(
+    val id: Int,
+    val begin: Long,
+    val duration: Long,
+    val title: String,
+    val shortDesc: String,
+    val longDesc: String,
+    val sref: String,
+    val sname: String,
+) {
+    val end: Long get() = begin + duration
+}
+
+internal fun parseEpgEvents(json: JSONObject): List<EpgEvent> {
+    val events = json.optJSONArray("events") ?: return emptyList()
+    fun JSONObject.text(key: String): String =
+        optString(key).takeUnless { it == "None" || it == "null" }.orEmpty()
+    return (0 until events.length()).mapNotNull { index ->
+        val item = events.optJSONObject(index) ?: return@mapNotNull null
+        val title = OpenWebifText.unescape(item.text("title")).trim()
+        if (title.isBlank()) return@mapNotNull null
+        EpgEvent(
+            id = item.optInt("id"),
+            begin = item.optLong("begin_timestamp"),
+            duration = item.optLong("duration_sec"),
+            title = title,
+            shortDesc = OpenWebifText.unescape(item.text("shortdesc")).trim(),
+            longDesc = OpenWebifText.unescape(item.text("longdesc")).trim(),
+            sref = item.text("sref"),
+            sname = OpenWebifText.unescape(item.text("sname")).trim(),
+        )
+    }.sortedBy { it.begin }
+}
+
 data class DecoderTimer(
     val serviceRef: String,
     val channel: String,
@@ -289,6 +324,45 @@ class DecoderClient(private val config: DesktopConfig) {
             "/api/timeradd?sRef=${encode(ref)}&begin=${begin - 120}&end=${end + 300}&name=${encode(title)}",
         )
         return json.optBoolean("result") to json.optString("message")
+    }
+
+    /** Pełne EPG jednego kanału (OpenWebif). */
+    internal fun epgService(ref: String): List<EpgEvent> {
+        validatePort(config.httpPort, "OpenWebif")
+        return parseEpgEvents(get(config.httpPort, "/api/epgservice?sRef=${encode(ref)}", timeoutMs = 20_000))
+    }
+
+    /** Wyszukiwanie w EPG dekodera (tytuły audycji). */
+    internal fun epgSearch(query: String): List<EpgEvent> {
+        validatePort(config.httpPort, "OpenWebif")
+        return parseEpgEvents(get(config.httpPort, "/api/epgsearch?search=${encode(query)}", timeoutMs = 20_000))
+    }
+
+    /** Informacje o paczce EPG wtyczki EPG Scan; null, gdy wtyczka jej nie udostępnia. */
+    internal fun packInfo(): JSONObject? {
+        validatePort(config.pluginPort, "EPG Scan")
+        return try {
+            get(config.pluginPort, "/api/pack/info", plugin = true, timeoutMs = 5000)
+        } catch (e: IOException) {
+            if (e.message?.startsWith("HTTP 404") == true) null else throw e
+        }
+    }
+
+    /** Pobiera plik paczki do [target]; false, gdy go nie ma. */
+    internal fun packFile(name: String, target: java.io.File): Boolean {
+        val connection = URI("http://${hostForUrl(config.host)}:${config.pluginPort}/api/pack/$name")
+            .toURL().openConnection() as HttpURLConnection
+        connection.connectTimeout = 5000
+        connection.readTimeout = 120_000
+        if (config.pluginToken.isNotBlank()) connection.setRequestProperty("X-E2S-Token", config.pluginToken)
+        try {
+            if (connection.responseCode == HttpURLConnection.HTTP_NOT_FOUND) return false
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) throw IOException("HTTP ${connection.responseCode} z portu ${config.pluginPort}")
+            connection.inputStream.use { input -> target.outputStream().use { input.copyTo(it) } }
+            return true
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun validatePort(port: Int, service: String) {

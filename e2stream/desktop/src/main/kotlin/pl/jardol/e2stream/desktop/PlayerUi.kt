@@ -11,8 +11,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -101,6 +104,10 @@ internal fun PlayerPage(
     onLive: (() -> Unit)? = null,
     statusSeconds: Int = 7,
     showStatusMessages: Boolean = true,
+    volumeLabel: String = "",
+    onVolume: (Int) -> Unit = {},
+    onMute: () -> Unit = {},
+    onAudio: () -> Unit = {},
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     var statusVisible by remember { mutableStateOf(false) }
@@ -254,6 +261,10 @@ internal fun PlayerPage(
                     // Lista trybów otwiera się w osobnym oknie — rozwijane menu Compose chowa się pod obrazem VLC.
                     OutlinedButton(onClick = onScaleMenu) { Text("Obraz: ${videoScaleMode.label}") }
                     OutlinedButton(onClick = onWindowMode) { Text(windowMode.label) }
+                    OutlinedButton(onClick = { onVolume(-1) }) { Text("−") }
+                    OutlinedButton(onClick = onMute) { Text(volumeLabel) }
+                    OutlinedButton(onClick = { onVolume(1) }) { Text("+") }
+                    OutlinedButton(onClick = onAudio, enabled = session != null) { Text("Audio") }
                     OutlinedButton(onClick = onMenu) { Text("Menu") }
                     OutlinedButton(onClick = onBack, enabled = session != null) { Text("Zatrzymaj") }
                     Text(status, modifier = Modifier.weight(1f).padding(top = 12.dp), color = secondary, maxLines = 1)
@@ -517,8 +528,54 @@ internal data class QuickPick(
     val onBack: (() -> Unit)? = null,
     /** Identyfikator okna aktualizowanego w tle (np. odliczanie przełączenia). */
     val tag: String? = null,
+    /** Dłuższy tekst nad listą (np. opis audycji). */
+    val body: String? = null,
+    /** Własny czas zamknięcia w sekundach (0 = nie zamykaj); null = „Czas okien akcji”. */
+    val timeoutSec: Int? = null,
+    /** Akcja klawisza Menu (domyślnie jak Wstecz). */
+    val onMenu: (() -> Unit)? = null,
+    /** Strzałki lewo/prawo (−1/+1) zamiast powrotu, np. zmiana godziny w EPG. */
+    val onHorizontal: ((Int) -> Unit)? = null,
+    val fontScale: Float = 1f,
     val onSelect: (Int) -> Unit,
 )
+
+/** Krótki wskaźnik głośności aplikacji w prawym górnym rogu okna; nie zabiera fokusu. */
+@Composable
+internal fun VolumeOsd(
+    volume: Int,
+    muted: Boolean,
+    owner: java.awt.Window,
+    colors: androidx.compose.material3.ColorScheme,
+) {
+    val width = 300
+    val position = remember(owner.x, owner.y, owner.width) {
+        androidx.compose.ui.window.WindowPosition((owner.x + owner.width - width - 24).dp, (owner.y + 48).dp)
+    }
+    DialogWindow(
+        onCloseRequest = {},
+        title = "Głośność",
+        state = rememberDialogState(position = position, width = width.dp, height = 84.dp),
+        undecorated = true,
+        resizable = false,
+        focusable = false,
+    ) {
+        MaterialTheme(colorScheme = colors) {
+            androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
+                Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (muted) "Wyciszono ($volume%)" else "Głośność $volume%",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    LinearProgressIndicator(
+                        progress = { if (muted) 0f else volume / DesktopConfig.MAX_VOLUME.toFloat() },
+                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 internal fun QuickPickDialog(
@@ -527,12 +584,18 @@ internal fun QuickPickDialog(
     onClose: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
-    val rowsHeight = pick.options.size * 54 + pick.subtitles.count { it != null } * 24 + pick.headers.size * 40
-    val wide = pick.subtitles.isNotEmpty() || pick.headers.isNotEmpty()
+    val scale = pick.fontScale.coerceIn(0.7f, 1.6f)
+    val bodyHeight = if (pick.body.isNullOrBlank()) 0 else 260
+    val rowsHeight = ((pick.options.size * 54 + pick.subtitles.count { it != null } * 24 + pick.headers.size * 40) * scale).toInt() +
+        bodyHeight + if (pick.onHorizontal != null) 56 else 0
+    val wide = pick.subtitles.isNotEmpty() || pick.headers.isNotEmpty() || bodyHeight > 0
     DialogWindow(
         onCloseRequest = onClose,
         title = pick.title,
-        state = rememberDialogState(width = if (wide) 640.dp else 460.dp, height = (150 + rowsHeight).coerceAtMost(660).dp),
+        state = rememberDialogState(
+            width = if (wide) (720 * scale).coerceAtLeast(640f).dp else 460.dp,
+            height = (150 + rowsHeight).coerceAtMost(720).dp,
+        ),
         undecorated = true,
         resizable = false,
     ) {
@@ -542,6 +605,19 @@ internal fun QuickPickDialog(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(pick.title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)
                         BackButton(onClick = onClose)
+                    }
+                    if (pick.onHorizontal != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { pick.onHorizontal.invoke(-1) }) { Text("◀") }
+                        OutlinedButton(onClick = { pick.onHorizontal.invoke(1) }) { Text("▶") }
+                        pick.onMenu?.let { OutlinedButton(onClick = it) { Text("Menu") } }
+                    }
+                    pick.body?.takeIf { it.isNotBlank() }?.let { body ->
+                        Text(
+                            body,
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).verticalScroll(rememberScrollState()),
+                            fontSize = 16.sp * scale,
+                            color = colors.onSurface,
+                        )
                     }
                     val listState = rememberLazyListState()
                     val rowOf = remember(pick.headers) {
@@ -572,9 +648,9 @@ internal fun QuickPickDialog(
                                         .clickable { onSelect(index) }
                                         .padding(horizontal = 16.dp, vertical = 10.dp),
                                 ) {
-                                    Text(option, color = textColor, fontSize = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(option, color = textColor, fontSize = 20.sp * scale, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     pick.subtitles.getOrNull(index)?.let {
-                                        Text(it, color = textColor.copy(alpha = 0.75f), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                            Text(it, color = textColor.copy(alpha = 0.75f), fontSize = 15.sp * scale, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }

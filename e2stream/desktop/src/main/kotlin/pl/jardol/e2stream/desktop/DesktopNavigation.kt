@@ -13,6 +13,10 @@ internal enum class DesktopMenuItem(val label: String, val configurable: Boolean
     REMOTE_TEST("Test pilota"),
     IMAGE("Obraz — skalowanie"),
     WINDOW("Okno / pełny ekran"),
+    MULTI_EPG("Multi EPG"),
+    EPG_CHANNEL("EPG kanału"),
+    EPG_SEARCH("Szukaj w EPG"),
+    AUDIO("Ścieżka dźwięku"),
     SETTINGS("Ustawienia", configurable = false),
     EXIT("Wyłącz E2Stream", configurable = false),
     ;

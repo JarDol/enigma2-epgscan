@@ -87,6 +87,13 @@ data class DesktopConfig(
     val menuOrder: List<String> = emptyList(),
     val menuHidden: Set<String> = emptySet(),
     val appLanguage: String = AppLanguage.SYSTEM,
+    val appVolume: Int = 100,
+    val appMuted: Boolean = false,
+    val volumeKeysApp: Boolean = true,
+    val volumeStep: Int = 5,
+    val lastEpgFetch: Long = 0,
+    val epgPackIdentity: String = "",
+    val epgPackCheckAt: Long = 0,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -159,6 +166,13 @@ data class DesktopConfig(
             setProperty("menuOrder", menuOrder.joinToString(","))
             setProperty("menuHidden", JSONArray(menuHidden.sorted()).toString())
             setProperty("appLanguage", appLanguage)
+            setProperty("appVolume", appVolume.toString())
+            setProperty("appMuted", appMuted.toString())
+            setProperty("volumeKeysApp", volumeKeysApp.toString())
+            setProperty("volumeStep", volumeStep.toString())
+            setProperty("lastEpgFetch", lastEpgFetch.toString())
+            setProperty("epgPackIdentity", epgPackIdentity)
+            setProperty("epgPackCheckAt", epgPackCheckAt.toString())
         }
         Files.newOutputStream(path).use { properties.store(it, "E2Stream settings") }
     }
@@ -167,6 +181,8 @@ data class DesktopConfig(
         const val DEFAULT_FTP_DIR = "/media/hdd/e2stream"
         const val EPG_UPDATE_DAILY = "daily"
         const val EPG_UPDATE_STARTUP = "startup"
+        /** Głośność VLC ponad 100% to wzmocnienie programowe. */
+        const val MAX_VOLUME = 150
         private val hourPattern = Regex("^([01]?\\d|2[0-3]):[0-5]\\d$")
 
         /** "H:MM" / "HH:MM" → "HH:MM"; null, gdy format jest błędny. */
@@ -279,6 +295,13 @@ data class DesktopConfig(
                 menuOrder = string("menuOrder", "").split(',').map(String::trim).filter(String::isNotEmpty),
                 menuHidden = parseSet(properties.getProperty("menuHidden")),
                 appLanguage = string("appLanguage", defaults.appLanguage).takeIf(AppLanguage::isValid) ?: defaults.appLanguage,
+                appVolume = int("appVolume", defaults.appVolume, 0..MAX_VOLUME),
+                appMuted = bool("appMuted", defaults.appMuted),
+                volumeKeysApp = bool("volumeKeysApp", defaults.volumeKeysApp),
+                volumeStep = int("volumeStep", defaults.volumeStep, 1..25),
+                lastEpgFetch = properties.getProperty("lastEpgFetch")?.toLongOrNull() ?: 0,
+                epgPackIdentity = string("epgPackIdentity", ""),
+                epgPackCheckAt = properties.getProperty("epgPackCheckAt")?.toLongOrNull() ?: 0,
             )
         }
 

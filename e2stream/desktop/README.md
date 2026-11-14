@@ -39,15 +39,34 @@ timeshift bar shows the buffered range and delay.
 
 **Ogólne** also mirrors the Android options for menu entries (show/hide and
 order; Ustawienia and Wyłącz stay last), timeouts of the timeshift/recording
-bar, action and confirmation windows, channel EPG and Multi EPG (the EPG guide
-itself is still to come), information messages (or hide them), cleanup of
+bar, action and confirmation windows, channel EPG and Multi EPG, information
+messages (or hide them), cleanup of
 completed scheduled switches after 7/14/28 days, and the application language
 (automatic, Polish, English — English covers section names, menu and hints, as
 on Android). The menu has **Przełączenia wg harmonogramu** (local schedule with
 upcoming and completed entries; 30 s before the start a countdown offers to
 switch now or record on the receiver, Back skips) and **Harmonogramy
 dekodera** (receiver timers with deletion). New scheduled switches are added
-from the programme description in the EPG guide, so adding arrives with it.
+from the programme description in the EPG guide.
+
+**EPG guide:** INFO shows the current programme description, the menu and
+navigation actions open channel EPG, Multi EPG (GUIDE; ◀ ▶ move the time by
+30 minutes) and EPG search (SEARCH). In these windows ◀ ▶ jump between days or
+times, Menu picks another channel/bouquet or search, CH+/CH− page through the
+list, and OK opens the programme description with switch, scheduled switch and
+record-on-receiver actions (a scheduled switch at the same time asks whether to
+replace it). In the channel list INFO/GUIDE opens the selected channel's EPG.
+EPG is cached per channel in `%APPDATA%/E2Stream/epg`: imported from the EPG
+Scan pack (daily or at every start) or, without the plugin, fetched from
+OpenWebif at the configured hour; other channels are loaded on demand.
+
+**Audio:** the audio track (AUDIO key, menu or player button) is remembered per
+channel and receiver in `%APPDATA%/E2Stream/audio.properties` (matched by PID,
+then language and codec). Application volume (0–150%) and mute are separate
+from the Windows volume; volume up/down/mute keys of a keyboard or remote
+control the application while E2Stream is in the foreground (the key is not
+passed to Windows), and the system volume when it is in the background. This
+can be switched off in **Odtwarzanie i obraz → Dźwięk**.
 
 Settings follow the Android layout: a list of sections (Dekoder Enigma2,
 Odtwarzanie i obraz, Wygląd, EPG i ikony kanałów, Ogólne, Pilot i klawiatura,
@@ -59,13 +78,12 @@ network and an EPG Scan plugin check. Playback settings cover VLC network
 buffering, deinterlacing, hardware decoding and preferred audio language.
 Optional PIN protection for settings, start channel, resume of the last channel,
 up/down inversion, banner and channel-list timeouts, list/banner font sizes and
-hidden bouquets are available as on Android. Features not yet present in the
-Windows player (full EPG guide) are marked as in preparation.
+hidden bouquets are available as on Android.
 
 **Wygląd** sets list, banner and EPG font sizes and channel-icon sizes.
 **EPG i ikony kanałów** stores the EPG update mode, daily refresh hour and
-number of days (used by the upcoming full EPG guide), refreshes the current
-EPG, and downloads channel picons into `%APPDATA%/E2Stream/picons`. Picons are
+number of days, refreshes the current EPG, downloads the EPG on demand, clears
+the stored EPG, and downloads channel picons into `%APPDATA%/E2Stream/picons`. Picons are
 taken from the EPG Scan pack (`picons.zip`), then from the decoder over FTP
 (configured directory or the one from `/etc/enigma2/settings`), then from
 OpenWebif. They are refreshed automatically once a day or at every start
@@ -88,8 +106,7 @@ OK/arrow action mappings for playback with and without the channel banner
 (like Android), and **Test pilota**, which lists every received command with
 its source, physical key and mapped action. Press Back twice to leave the test.
 
-This is an early test version, not yet functionally equivalent to Android:
-the full EPG guide and some other Android features are not yet available.
+This is an early test version, not yet functionally equivalent to Android.
 
 ## Build and run
 

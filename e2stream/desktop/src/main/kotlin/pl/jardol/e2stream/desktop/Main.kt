@@ -42,6 +42,11 @@ import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.ui.window.Window
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -155,6 +160,15 @@ fun main() {
             var testEvents by remember { mutableStateOf<List<RemoteTestEvent>>(emptyList()) }
             var lastTestBackAt by remember { mutableLongStateOf(0L) }
             val scope = rememberCoroutineScope()
+            val audioChoices = remember { AudioChoices() }
+            val epgRepo = remember { EpgRepository() }
+            var epgSyncBusy by remember { mutableStateOf(false) }
+            var epgSyncStatus by remember { mutableStateOf("") }
+            var epgStartupDone by remember { mutableStateOf(false) }
+            var volumeOsdGeneration by remember { mutableIntStateOf(0) }
+            var volumeOsdVisible by remember { mutableStateOf(false) }
+            val volumeKeyIds = remember { AtomicReference<Set<String>>(emptySet()) }
+            val captureActive = remember { AtomicBoolean(false) }
             fun openMenu() = navigation.openMenu(DesktopMenuItem.visible(config.menuOrder, config.menuHidden))
             LaunchedEffect(config.appLanguage) { AppLanguage.apply(config.appLanguage) }
             var lastVirtualKey by remember { mutableStateOf<VirtualRemoteKey?>(null) }
@@ -164,6 +178,12 @@ fun main() {
                     captureButton != null || universalBindings.values.any { keys -> keys.any { it.startsWith("H:") } },
                 )
                 globalPowerKeys.set(if (captureButton == null) universalBindings[VirtualRemoteKey.POWER].orEmpty() else emptySet())
+                captureActive.set(captureButton != null)
+                volumeKeyIds.set(
+                    if (!config.volumeKeysApp) emptySet()
+                    else listOf(VirtualRemoteKey.VOLUME_UP, VirtualRemoteKey.VOLUME_DOWN, VirtualRemoteKey.MUTE)
+                        .flatMap { universalBindings[it].orEmpty() }.filter { it.startsWith("K:") }.toSet(),
+                )
             }
 
             fun recordTest(source: String, physical: String, key: VirtualRemoteKey?) {
@@ -402,10 +422,41 @@ fun main() {
                 playbackTick++
             }
 
+            var audioApplyJob by remember { mutableStateOf<Job?>(null) }
+            /** Zapamiętana dla kanału ścieżka dźwięku; ścieżki pojawiają się chwilę po starcie, więc kilka prób. */
+            fun applySavedAudio() {
+                val channel = playingChannel ?: return
+                if (playingRecording != null) return
+                val saved = audioChoices.get(config.host, channel.ref)
+                if (saved.isBlank()) return
+                audioApplyJob?.cancel()
+                audioApplyJob = scope.launch {
+                    repeat(12) { attempt ->
+                        val session = vlcSession ?: return@launch
+                        if (playingChannel?.ref != channel.ref) return@launch
+                        val tracks = session.audioTracks()
+                        val savedId = saved.substringBefore('|').toIntOrNull()
+                        // Dopasowanie po języku dopiero, gdy właściwy PID się nie pojawił.
+                        val match = tracks.firstOrNull { it.id == savedId }
+                            ?: if (attempt >= 3) matchAudioChoice(tracks, saved) else null
+                        if (match != null) {
+                            if (session.selectedAudioTrack() != match.id) {
+                                session.selectAudioTrack(match.id)
+                                AppLog.i("audio: ${channel.name} → ${match.name}")
+                            }
+                            return@launch
+                        }
+                        delay(250)
+                    }
+                }
+            }
+
             fun sessionOrNew(): VlcSession {
                 val session = vlcSession ?: VlcSession { status = it }.also { vlcSession = it }
                 session.onFinished = { finishedHandler.get()?.invoke() }
+                session.onPlaying = { applySavedAudio() }
                 session.setVideoScale(config.videoScaleMode)
+                session.setAudioLevel(config.appVolume, config.appMuted)
                 return session
             }
 
@@ -628,6 +679,73 @@ fun main() {
                 val due = config.epgUpdateMode == DesktopConfig.EPG_UPDATE_STARTUP ||
                     config.lastPiconFetchDay != LocalDate.now().toString()
                 if (due) fetchPicons(fresh = false, manual = false)
+            }
+
+            var epgLastAttempt by remember { mutableLongStateOf(0L) }
+            var epgStoreCount by remember { mutableIntStateOf(epgRepo.store.count()) }
+
+            fun syncEpg(manual: Boolean) {
+                val currentCatalog = catalog
+                if (currentCatalog == null) {
+                    if (manual) status = "Najpierw połącz się z dekoderem."
+                    return
+                }
+                if (epgSyncBusy) return
+                epgSyncBusy = true
+                epgLastAttempt = System.currentTimeMillis()
+                val current = config
+                val bouquets = visibleBouquets()
+                scope.launch {
+                    try {
+                        val result = withContext(Dispatchers.IO) {
+                            EpgSync.run(
+                                current,
+                                currentCatalog.usesPlugin,
+                                epgRepo.store,
+                                channels = {
+                                    bouquets.flatMap { bouquet ->
+                                        epgSyncStatus = "EPG: kanały ${bouquet.name}…"
+                                        runCatching { DecoderClient(current).loadChannels(bouquet, currentCatalog.usesPlugin) }
+                                            .getOrDefault(emptyList())
+                                    }.filterNot { it.ref.startsWith(REC_PREFIX) }.distinctBy { serviceKey(it.ref) }
+                                },
+                                manual = manual,
+                            ) { epgSyncStatus = it }
+                        }
+                        epgRepo.invalidate()
+                        epgStoreCount = epgRepo.store.count()
+                        epgSyncStatus = "EPG: ${result.message}"
+                        val now = System.currentTimeMillis()
+                        saveConfig(
+                            config.copy(
+                                lastEpgFetch = now,
+                                epgPackIdentity = result.packIdentity ?: config.epgPackIdentity,
+                                epgPackCheckAt = now,
+                            ),
+                        )
+                        AppLog.i("epg: ${result.message}")
+                        if (manual) status = "EPG: ${result.message}."
+                        epgStartupDone = true
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        epgSyncStatus = "błąd EPG: ${e.message}"
+                        AppLog.i("epg: błąd pobierania: ${e.message}")
+                        if (manual) status = "Nie udało się pobrać EPG: ${e.message}"
+                    } finally {
+                        epgSyncBusy = false
+                    }
+                }
+            }
+
+            LaunchedEffect(catalog) {
+                val currentCatalog = catalog ?: return@LaunchedEffect
+                while (true) {
+                    // Po błędzie ponawiaj najwcześniej po 30 minutach.
+                    val backoff = System.currentTimeMillis() - epgLastAttempt < 30 * 60_000L
+                    if (!backoff && EpgSync.isDue(config, currentCatalog.usesPlugin, epgStartupDone)) syncEpg(manual = false)
+                    delay(60_000)
+                }
             }
 
             LaunchedEffect(Unit) {
@@ -880,30 +998,6 @@ fun main() {
                 status = "$feature nie jest jeszcze dostępne w wersji Windows."
             }
 
-            fun runNavAction(action: NavAction) {
-                when (action) {
-                    NavAction.NONE -> Unit
-                    NavAction.CHANNEL_BANNER ->
-                        if (playingChannel != null) bannerGeneration++ else status = "Nie odtwarzasz żadnego kanału."
-                    NavAction.CHANNEL_LIST -> openChannelList()
-                    NavAction.EPG_EVENT -> unavailable("EPG wydarzenia")
-                    NavAction.EPG_CHANNEL -> unavailable("EPG kanału")
-                    NavAction.MULTI_EPG -> unavailable("Multi-EPG")
-                    NavAction.EPG_SEARCH -> unavailable("Wyszukiwanie EPG")
-                    NavAction.AUDIO -> unavailable("Wybór ścieżki dźwięku")
-                    NavAction.MENU -> openMenu()
-                    NavAction.SETTINGS -> openSettings()
-                    NavAction.RECALL -> recall()
-                    NavAction.CH_UP -> zap(true)
-                    NavAction.CH_DOWN -> zap(false)
-                    NavAction.PLAY_PAUSE -> togglePlaybackPause()
-                    NavAction.TIMESHIFT -> when {
-                        timeshift != null || playingRecording != null -> showPlaybackBar()
-                        else -> status = "Timeshift jest wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift."
-                    }
-                }
-            }
-
             var quickPick by remember { mutableStateOf<QuickPick?>(null) }
             fun pickVideoScale() {
                 val modes = VideoScaleMode.entries
@@ -929,7 +1023,7 @@ fun main() {
                     val days = config.zapHistoryDays
                     val (timers, history) = withContext(Dispatchers.IO) { zapStore.list() to zapStore.history(days) }
                     if (timers.isEmpty() && history.isEmpty()) {
-                        status = "Brak zaplanowanych przełączeń — dodasz je z opisu audycji w EPG (EPG na Windows w przygotowaniu)."
+                        status = "Brak zaplanowanych przełączeń — dodasz je z opisu audycji w EPG (Info lub EPG kanału)."
                         return@launch
                     }
                     val headers = buildMap {
@@ -1105,6 +1199,433 @@ fun main() {
                 }
             }
 
+            // ---------- Głośność i ścieżka dźwięku ----------
+
+            fun setAppVolume(volume: Int, muted: Boolean) {
+                val value = volume.coerceIn(0, DesktopConfig.MAX_VOLUME)
+                saveConfig(config.copy(appVolume = value, appMuted = muted))
+                vlcSession?.setAudioLevel(value, muted)
+                volumeOsdGeneration++
+            }
+
+            fun changeVolume(direction: Int) = setAppVolume(config.appVolume + direction * config.volumeStep, false)
+
+            fun toggleMute() = setAppVolume(config.appVolume, !config.appMuted)
+
+            fun showAudioPick() {
+                val session = vlcSession
+                if (session == null) {
+                    status = "Nic nie jest odtwarzane."
+                    return
+                }
+                val tracks = session.audioTracks()
+                if (tracks.isEmpty()) {
+                    status = "Strumień nie podał jeszcze ścieżek dźwięku — spróbuj za chwilę."
+                    return
+                }
+                val channel = playingChannel.takeIf { playingRecording == null }
+                val current = session.selectedAudioTrack()
+                quickPick = QuickPick(
+                    title = if (channel != null) "Ścieżka dźwięku (zapamiętywana dla kanału)" else "Ścieżka dźwięku",
+                    options = tracks.map { it.name },
+                    selected = tracks.indexOfFirst { it.id == current }.coerceAtLeast(0),
+                    subtitles = tracks.map { if (it.id == current) "odtwarzana" else null },
+                ) { index ->
+                    val track = tracks[index]
+                    audioApplyJob?.cancel()
+                    if (!session.selectAudioTrack(track.id)) {
+                        status = "VLC nie przełączył ścieżki dźwięku."
+                        return@QuickPick
+                    }
+                    if (channel != null) audioChoices.set(config.host, channel.ref, track)
+                    status = "Dźwięk: ${track.name}" + if (channel != null) " — zapamiętano dla ${channel.name}." else "."
+                }
+            }
+
+            // ---------- EPG ----------
+
+            val epgScale = config.uiEpgFont / 100f
+
+            fun epgChannelFor(ref: String, name: String): Channel =
+                (playList + channels).firstOrNull { serviceKey(it.ref) == serviceKey(ref) } ?: Channel(0, name, ref)
+
+            suspend fun loadEpg(channel: Channel): List<EpgEvent>? {
+                val current = config
+                return withContext(Dispatchers.IO) { runCatching { epgRepo.load(DecoderClient(current), channel.ref) } }
+                    .getOrElse {
+                        status = "Nie udało się pobrać EPG: ${it.message ?: "błąd połączenia"}"
+                        null
+                    }
+            }
+
+            fun recordEvent(event: EpgEvent, channel: Channel, back: (() -> Unit)?) {
+                quickPick = QuickPick(
+                    title = "Nagrać na dekoderze?",
+                    options = listOf("Nagraj", "Anuluj"),
+                    selected = 0,
+                    body = "${channel.name} — ${event.title}\n${EpgTime.dayAndRange(event.begin, event.end)}",
+                    onBack = back,
+                    fontScale = epgScale,
+                ) { choice ->
+                    if (choice != 0) {
+                        back?.invoke()
+                        return@QuickPick
+                    }
+                    val current = config
+                    scope.launch {
+                        val (ok, message) = withContext(Dispatchers.IO) {
+                            runCatching { DecoderClient(current).timerAddRecording(channel.ref, event.title, event.begin, event.end, event.id) }
+                                .getOrElse { false to (it.message ?: "błąd połączenia") }
+                        }
+                        status = if (ok) "Nagranie zaplanowane na dekoderze: ${event.title}."
+                        else "Nie udało się zaplanować nagrania: $message"
+                    }
+                }
+            }
+
+            fun scheduleZap(event: EpgEvent, channel: Channel, back: (() -> Unit)?) {
+                val timer = ZapTimer(channel.ref, channel.name, event.title, event.begin, event.end, event.id)
+                val time = EpgTime.clock(event.begin)
+                scope.launch {
+                    val collisions = withContext(Dispatchers.IO) {
+                        zapStore.list().filter { it.begin == event.begin && it.key != timer.key }
+                    }
+                    if (collisions.isEmpty()) {
+                        withContext(Dispatchers.IO) { zapStore.add(timer) }
+                        status = "Przełączenie o $time: ${channel.name} — ${event.title}."
+                        return@launch
+                    }
+                    val other = collisions.first()
+                    quickPick = QuickPick(
+                        title = "O $time jest już zaplanowane przełączenie",
+                        options = listOf("Zamień na nowe", "Zostaw dotychczasowe", "Nagraj nowe na dekoderze"),
+                        selected = 0,
+                        body = "Zaplanowane: ${other.channel} — ${other.title}\nNowe: ${channel.name} — ${event.title}",
+                        onBack = back,
+                        fontScale = epgScale,
+                    ) { choice ->
+                        when (choice) {
+                            0 -> scope.launch {
+                                withContext(Dispatchers.IO) { zapStore.replaceAt(timer) }
+                                status = "Przełączenie o $time zamienione: ${channel.name} — ${event.title}."
+                            }
+                            1 -> status = "Zostawiono przełączenie: ${other.channel} — ${other.title}."
+                            else -> recordEvent(event, channel, back)
+                        }
+                    }
+                }
+            }
+
+            // Okna EPG odwołują się do siebie nawzajem; implementacje są przypisywane niżej.
+            var showChannelEpgRef: (Channel, Int?) -> Unit = { _, _ -> }
+            var showMultiEpgRef: (Bouquet?, Long?, String?) -> Unit = { _, _, _ -> }
+            var openEpgSearchRef: (String) -> Unit = {}
+            fun showChannelEpg(channel: Channel, selectEventId: Int? = null) = showChannelEpgRef(channel, selectEventId)
+            fun showMultiEpg(bouquet: Bouquet? = null, at: Long? = null, selectRef: String? = null) =
+                showMultiEpgRef(bouquet, at, selectRef)
+            fun openEpgSearch(initial: String = "") = openEpgSearchRef(initial)
+
+            fun showEvent(event: EpgEvent, channel: Channel, onBack: (() -> Unit)?) {
+                scope.launch {
+                    val now = Instant.now().epochSecond
+                    val scheduled = withContext(Dispatchers.IO) { zapStore.list().firstOrNull { it.key == ZapTimer(channel.ref, "", "", event.begin, 0).key } }
+                    val isCurrent = playingChannel?.let { serviceKey(it.ref) == serviceKey(channel.ref) } == true
+                    val reopen = { showEvent(event, channel, onBack) }
+                    val actions = buildList<Pair<String, () -> Unit>> {
+                        add(
+                            (if (isCurrent) "Oglądaj" else "Przełącz na kanał") to {
+                                showChannelList = false
+                                if (!isCurrent) startChannel(channel)
+                            },
+                        )
+                        if (event.end > now) add("Nagraj na dekoderze" to { recordEvent(event, channel, reopen) })
+                        if (event.begin > now) {
+                            if (scheduled != null) {
+                                add(
+                                    "Usuń przełączenie o ${EpgTime.clock(event.begin)}" to {
+                                        scope.launch {
+                                            withContext(Dispatchers.IO) { zapStore.remove(scheduled) }
+                                            status = "Usunięto przełączenie: ${event.title}."
+                                        }
+                                    },
+                                )
+                            } else {
+                                add("Przełącz o ${EpgTime.clock(event.begin)}" to { scheduleZap(event, channel, reopen) })
+                            }
+                        }
+                        if (onBack == null) add("EPG kanału" to { showChannelEpg(channel, event.id) })
+                    }
+                    val header = EpgTime.dayAndRange(event.begin, event.end) +
+                        (EpgTime.progress(event, now)?.let { "  •  $it" } ?: "") +
+                        (if (scheduled != null) "  •  zaplanowane przełączenie" else "")
+                    quickPick = QuickPick(
+                        title = "${channel.name} — ${event.title}",
+                        options = actions.map { it.first },
+                        selected = 0,
+                        body = listOf(header, epgDescription(event)).filter { it.isNotBlank() }.joinToString("\n\n"),
+                        onBack = onBack,
+                        fontScale = epgScale,
+                    ) { actions[it].second() }
+                }
+            }
+
+            fun showCurrentEvent() {
+                val channel = playingChannel
+                if (channel == null) {
+                    status = "Nie odtwarzasz żadnego kanału."
+                    return
+                }
+                scope.launch {
+                    val events = loadEpg(channel) ?: return@launch
+                    val now = Instant.now().epochSecond
+                    val event = events.firstOrNull { it.begin <= now && it.end > now } ?: events.firstOrNull { it.end > now }
+                    if (event == null) status = "Brak EPG dla kanału ${channel.name}." else showEvent(event, channel, null)
+                }
+            }
+
+            fun pickEpgChannel(then: (Channel) -> Unit) {
+                val currentCatalog = catalog
+                val bouquets = visibleBouquets()
+                if (currentCatalog == null || bouquets.isEmpty()) {
+                    status = "Najpierw połącz się z dekoderem."
+                    return
+                }
+                quickPick = QuickPick(
+                    title = "EPG — wybierz bukiet",
+                    options = bouquets.map { it.name },
+                    selected = bouquets.indexOfFirst { it.ref == selectedBouquet?.ref }.coerceAtLeast(0),
+                ) { index ->
+                    val bouquet = bouquets[index]
+                    val current = config
+                    scope.launch {
+                        val list = if (bouquet.ref == selectedBouquet?.ref && channels.isNotEmpty()) channels
+                        else withContext(Dispatchers.IO) {
+                            runCatching { DecoderClient(current).loadChannels(bouquet, currentCatalog.usesPlugin) }.getOrNull()
+                        }
+                        if (list.isNullOrEmpty()) {
+                            status = "Brak kanałów w bukiecie „${bouquet.name}”."
+                            return@launch
+                        }
+                        quickPick = QuickPick(
+                            title = "EPG — ${bouquet.name}",
+                            options = list.map { "${it.number}  ${it.name}" },
+                            selected = list.indexOfFirst { it.ref == playingChannel?.ref }.coerceAtLeast(0),
+                            fontScale = epgScale,
+                        ) { then(list[it]) }
+                    }
+                }
+            }
+
+            fun runEpgSearch(query: String) {
+                val current = config
+                status = "Szukanie w EPG: „$query”…"
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { runCatching { DecoderClient(current).epgSearch(query) } }
+                    val now = Instant.now().epochSecond
+                    val list = result.getOrElse {
+                        status = "Nie udało się przeszukać EPG: ${it.message ?: "błąd połączenia"}"
+                        return@launch
+                    }.filter { it.end > now }
+                    if (list.isEmpty()) {
+                        status = "Nic nie znaleziono w EPG: „$query”."
+                        return@launch
+                    }
+                    status = "EPG: „$query” — wyników: ${list.size}."
+                    quickPick = QuickPick(
+                        title = "Szukaj w EPG: „$query” (${list.size})",
+                        options = list.map { it.title },
+                        selected = 0,
+                        subtitles = list.map { "${it.sname.ifBlank { "?" }}  •  ${EpgTime.dayAndRange(it.begin, it.end)}" },
+                        timeoutSec = config.epgChannelSec,
+                        onMenu = { openEpgSearch(query) },
+                        fontScale = epgScale,
+                        tag = "epg-search",
+                    ) { index ->
+                        val event = list[index]
+                        showEvent(event, epgChannelFor(event.sref, event.sname)) { runEpgSearch(query) }
+                    }
+                }
+            }
+
+            fun openEpgSearchImpl(initial: String) {
+                showMenu = false
+                navigator.openEditor(
+                    SettingsEditor("Szukaj w EPG", initial, "tytuł audycji, co najmniej 2 znaki") { value ->
+                        val query = value.trim()
+                        if (query.length < 2) "Wpisz co najmniej 2 znaki." else {
+                            runEpgSearch(query)
+                            null
+                        }
+                    },
+                )
+            }
+
+            fun epgMenu(back: () -> Unit, onChannel: (Channel) -> Unit) {
+                quickPick = QuickPick(
+                    title = "EPG — opcje",
+                    options = listOf("Wybierz inny kanał", "Multi EPG", "Szukaj w EPG"),
+                    selected = 0,
+                    onBack = back,
+                ) { choice ->
+                    when (choice) {
+                        0 -> pickEpgChannel(onChannel)
+                        1 -> showMultiEpg()
+                        else -> openEpgSearchImpl("")
+                    }
+                }
+            }
+
+            fun showChannelEpgImpl(channel: Channel, selectEventId: Int?) {
+                status = "EPG: ${channel.name}…"
+                scope.launch {
+                    val events = loadEpg(channel) ?: return@launch
+                    val now = Instant.now().epochSecond
+                    val list = events.filter { it.end > now }
+                    if (list.isEmpty()) {
+                        status = "Brak EPG dla kanału ${channel.name}."
+                        return@launch
+                    }
+                    status = "EPG: ${channel.name} — audycji: ${list.size}."
+                    val dayStarts = list.indices.filter { it == 0 || !EpgTime.sameDay(list[it - 1].begin, list[it].begin) }
+                    quickPick = QuickPick(
+                        title = "EPG: ${channel.name}",
+                        options = list.map { it.title },
+                        selected = list.indexOfFirst { it.id == selectEventId }.coerceAtLeast(0),
+                        subtitles = list.map { event ->
+                            listOfNotNull(
+                                EpgTime.range(event.begin, event.end),
+                                EpgTime.progress(event, now),
+                                epgPreview(event).takeIf { it.isNotBlank() },
+                            ).joinToString("  •  ")
+                        },
+                        headers = dayStarts.associateWith { EpgTime.day(list[it].begin).uppercase() },
+                        timeoutSec = config.epgChannelSec,
+                        tag = "epg-channel",
+                        fontScale = epgScale,
+                        onMenu = { epgMenu(back = { showChannelEpg(channel) }, onChannel = { showChannelEpg(it) }) },
+                        onHorizontal = { direction ->
+                            quickPick?.let { pick ->
+                                val start = dayStarts.lastOrNull { it <= pick.selected } ?: 0
+                                val target = if (direction > 0) dayStarts.firstOrNull { it > pick.selected }
+                                else if (pick.selected > start) start else dayStarts.lastOrNull { it < start }
+                                if (target != null) quickPick = pick.copy(selected = target)
+                            }
+                        },
+                    ) { index -> showEvent(list[index], channel) { showChannelEpg(channel, list[index].id) } }
+                }
+            }
+
+            fun showMultiEpgImpl(bouquet: Bouquet?, at: Long?, selectRef: String?) {
+                val visible = visibleBouquets()
+                val target = bouquet ?: selectedBouquet?.takeIf { it.ref != REC_BOUQUET }
+                    ?: visible.firstOrNull { it.ref == config.lastBouquetRef } ?: visible.firstOrNull()
+                val currentCatalog = catalog
+                if (target == null || currentCatalog == null) {
+                    status = "Najpierw połącz się z dekoderem."
+                    return
+                }
+                val current = config
+                scope.launch {
+                    val list = if (target.ref == selectedBouquet?.ref && channels.isNotEmpty()) channels
+                    else withContext(Dispatchers.IO) {
+                        runCatching { DecoderClient(current).loadChannels(target, currentCatalog.usesPlugin) }.getOrNull()
+                    }.orEmpty()
+                    if (list.isEmpty()) {
+                        status = "Brak kanałów w bukiecie „${target.name}”."
+                        return@launch
+                    }
+                    if (list.any { epgRepo.cached(it.ref) == null }) status = "Multi EPG: wczytywanie ${list.size} kanałów…"
+                    val client = DecoderClient(current)
+                    val limit = Semaphore(4)
+                    val epg = list.map { channel ->
+                        async(Dispatchers.IO) {
+                            limit.withPermit { serviceKey(channel.ref) to runCatching { epgRepo.load(client, channel.ref) }.getOrDefault(emptyList()) }
+                        }
+                    }.awaitAll().toMap()
+                    val now = Instant.now().epochSecond
+                    val time = (at ?: now).coerceAtLeast(now)
+                    val rows = list.map { channel ->
+                        val events = epg[serviceKey(channel.ref)].orEmpty()
+                        val running = events.firstOrNull { it.begin <= time && it.end > time }
+                        val next = events.firstOrNull { it.begin > time }
+                        Triple(channel, running, next)
+                    }
+                    status = "Multi EPG: ${target.name}."
+                    val wanted = selectRef ?: quickPick?.takeIf { it.tag == "multi-epg" }?.let { list.getOrNull(it.selected)?.ref } ?: playingChannel?.ref
+                    quickPick = QuickPick(
+                        title = "Multi EPG: ${target.name} — ${EpgTime.day(time)} ${EpgTime.clock(time)}",
+                        options = rows.map { (channel, running, _) -> "${channel.number}  ${channel.name}:  ${running?.title ?: "—"}" },
+                        selected = list.indexOfFirst { it.ref == wanted }.coerceAtLeast(0),
+                        subtitles = rows.map { (_, running, next) ->
+                            listOfNotNull(
+                                running?.let { EpgTime.range(it.begin, it.end) },
+                                next?.let { "następnie ${EpgTime.clock(it.begin)} ${it.title}" },
+                            ).joinToString("  •  ").ifBlank { null }
+                        },
+                        timeoutSec = config.epgMultiSec,
+                        tag = "multi-epg",
+                        fontScale = epgScale,
+                        onMenu = {
+                            quickPick = QuickPick(
+                                title = "Multi EPG — opcje",
+                                options = listOf("Wybierz bukiet", "Szukaj w EPG"),
+                                selected = 0,
+                                onBack = { showMultiEpg(target, time) },
+                            ) { choice ->
+                                if (choice == 0) {
+                                    quickPick = QuickPick(
+                                        title = "Multi EPG — bukiet",
+                                        options = visible.map { it.name },
+                                        selected = visible.indexOfFirst { it.ref == target.ref }.coerceAtLeast(0),
+                                        onBack = { showMultiEpg(target, time) },
+                                    ) { showMultiEpg(visible[it]) }
+                                } else {
+                                    openEpgSearchImpl("")
+                                }
+                            }
+                        },
+                        onHorizontal = { direction ->
+                            val selected = quickPick?.selected ?: 0
+                            // Krok co pół godziny, wyrównany do pełnych i połówek godzin; nie wcześniej niż teraz.
+                            val shifted = if (direction > 0) (time / 1800 + 1) * 1800 else ((time - 1) / 1800) * 1800
+                            showMultiEpg(target, shifted.coerceAtLeast(Instant.now().epochSecond), list.getOrNull(selected)?.ref)
+                        },
+                    ) { index ->
+                        val (channel, running, _) = rows[index]
+                        if (running != null) showEvent(running, channel) { showMultiEpg(target, time, channel.ref) }
+                        else showChannelEpg(channel)
+                    }
+                }
+            }
+
+            showChannelEpgRef = ::showChannelEpgImpl
+            showMultiEpgRef = ::showMultiEpgImpl
+            openEpgSearchRef = ::openEpgSearchImpl
+
+            fun runNavAction(action: NavAction) {
+                when (action) {
+                    NavAction.NONE -> Unit
+                    NavAction.CHANNEL_BANNER ->
+                        if (playingChannel != null) bannerGeneration++ else status = "Nie odtwarzasz żadnego kanału."
+                    NavAction.CHANNEL_LIST -> openChannelList()
+                    NavAction.EPG_EVENT -> showCurrentEvent()
+                    NavAction.EPG_CHANNEL -> playingChannel?.let { showChannelEpg(it) } ?: pickEpgChannel { showChannelEpg(it) }
+                    NavAction.MULTI_EPG -> showMultiEpg()
+                    NavAction.EPG_SEARCH -> openEpgSearch()
+                    NavAction.AUDIO -> showAudioPick()
+                    NavAction.MENU -> openMenu()
+                    NavAction.SETTINGS -> openSettings()
+                    NavAction.RECALL -> recall()
+                    NavAction.CH_UP -> zap(true)
+                    NavAction.CH_DOWN -> zap(false)
+                    NavAction.PLAY_PAUSE -> togglePlaybackPause()
+                    NavAction.TIMESHIFT -> when {
+                        timeshift != null || playingRecording != null -> showPlaybackBar()
+                        else -> status = "Timeshift jest wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift."
+                    }
+                }
+            }
+
             fun runMenuItem(item: DesktopMenuItem) {
                 when (item) {
                     DesktopMenuItem.CHANNEL_LIST -> openChannelList()
@@ -1115,6 +1636,10 @@ fun main() {
                     DesktopMenuItem.REMOTE_TEST -> openSettings(SettingsScreen.REMOTE, SettingsScreen.REMOTE_TEST)
                     DesktopMenuItem.IMAGE -> pickVideoScale()
                     DesktopMenuItem.WINDOW -> pickWindowMode()
+                    DesktopMenuItem.MULTI_EPG -> showMultiEpg()
+                    DesktopMenuItem.EPG_CHANNEL -> runNavAction(NavAction.EPG_CHANNEL)
+                    DesktopMenuItem.EPG_SEARCH -> openEpgSearch()
+                    DesktopMenuItem.AUDIO -> showAudioPick()
                     DesktopMenuItem.EXIT -> {
                         powerDialogOpen.set(true)
                         showExitConfirmation = true
@@ -1400,6 +1925,32 @@ fun main() {
                         saveConfig(config.copy(tsBackLive = it))
                     },
                     SettingItem.Header("Dźwięk"),
+                    SettingItem.Action(
+                        "Głośność aplikacji",
+                        "${config.appVolume}%" + (if (config.appMuted) " (wyciszone)" else "") + " — niezależna od głośności Windows",
+                    ) {
+                        editNumber("Głośność aplikacji (%)", config.appVolume, 0..DesktopConfig.MAX_VOLUME) {
+                            vlcSession?.setAudioLevel(it, config.appMuted)
+                            config.copy(appVolume = it)
+                        }
+                    },
+                    SettingItem.Toggle("Wyciszenie", config.appMuted) { setAppVolume(config.appVolume, it) },
+                    SettingItem.Toggle(
+                        "Klawisze głośności sterują aplikacją",
+                        config.volumeKeysApp,
+                        "gdy E2Stream jest na wierzchu; w tle działają jak zwykle w Windows",
+                    ) { saveConfig(config.copy(volumeKeysApp = it)) },
+                    SettingItem.Action("Krok głośności", "${config.volumeStep}%") {
+                        editNumber("Krok głośności (%)", config.volumeStep, 1..25) { config.copy(volumeStep = it) }
+                    },
+                    SettingItem.Action("Ścieżka dźwięku teraz", "wybór ścieżki bieżącego kanału (zapamiętywany)") {
+                        navigator.close()
+                        showAudioPick()
+                    },
+                    SettingItem.Action("Zapomnij zapamiętane ścieżki", "zapamiętane kanały: ${audioChoices.count()}") {
+                        audioChoices.clear()
+                        status = "Usunięto zapamiętane ścieżki dźwięku."
+                    },
                     SettingItem.Action("Preferowany język", config.audioLang.ifBlank { "domyślny strumienia" }) {
                         editText("Preferowany język dźwięku", config.audioLang, "kody języków, np. pl,pol,en") {
                             config.copy(audioLang = it.trim())
@@ -1414,18 +1965,17 @@ fun main() {
                     SettingItem.Header("Lista kanałów"),
                     percentItem("Czcionka listy kanałów", config.uiListFont) { config.copy(uiListFont = it) },
                     percentItem("Ikony na liście kanałów", config.uiListIcon) { config.copy(uiListIcon = it) },
-                    SettingItem.Header("EPG (wydarzenia, EPG kanału, Multi EPG, szukanie) — okna EPG w przygotowaniu"),
+                    SettingItem.Header("EPG (wydarzenia, EPG kanału, Multi EPG, szukanie)"),
                     percentItem("Czcionka okien EPG", config.uiEpgFont) { config.copy(uiEpgFont = it) },
                     SettingItem.Header("Pasek kanału"),
                     percentItem("Czcionka paska kanału", config.uiBannerFont) { config.copy(uiBannerFont = it) },
                     percentItem("Ikona na pasku kanału", config.uiBannerIcon) { config.copy(uiBannerIcon = it) },
                 )
                 SettingsScreen.EPG -> listOf(
-                    SettingItem.Header("EPG — pełny przewodnik w przygotowaniu (harmonogram jest zapisywany na zapas)"),
+                    SettingItem.Header("EPG"),
                     SettingItem.Action(
                         "Aktualizacja z EPG Scan",
-                        (if (config.epgUpdateMode == DesktopConfig.EPG_UPDATE_STARTUP) "przy każdym uruchomieniu" else "raz dziennie") +
-                            " — na razie steruje pobieraniem ikon",
+                        if (config.epgUpdateMode == DesktopConfig.EPG_UPDATE_STARTUP) "przy każdym uruchomieniu" else "raz dziennie",
                     ) {
                         val modes = listOf(DesktopConfig.EPG_UPDATE_DAILY, DesktopConfig.EPG_UPDATE_STARTUP)
                         val labels = listOf("raz dziennie", "przy każdym uruchomieniu")
@@ -1453,6 +2003,21 @@ fun main() {
                         epgRefresh++
                         status = "Odświeżam bieżące EPG…"
                     },
+                    SettingItem.Action(
+                        "Pobierz EPG teraz",
+                        when {
+                            epgSyncBusy -> "trwa… $epgSyncStatus"
+                            epgSyncStatus.isNotBlank() -> epgSyncStatus
+                            config.lastEpgFetch > 0 -> "ostatnio: " + EpgTime.day(config.lastEpgFetch / 1000) + " " + EpgTime.clock(config.lastEpgFetch / 1000)
+                            else -> "jeszcze nie pobierano"
+                        },
+                    ) { syncEpg(manual = true) },
+                    SettingItem.Action("Zapisane EPG", "kanałów: $epgStoreCount — usuń, aby pobrać od nowa") {
+                        epgRepo.store.clear()
+                        epgRepo.invalidate()
+                        epgStoreCount = 0
+                        saveConfig(config.copy(lastEpgFetch = 0, epgPackIdentity = ""), "Usunięto zapisane EPG.")
+                    },
                     SettingItem.Header("Ikony kanałów"),
                     SettingItem.Toggle("Ikony kanałów z dekodera", config.picons) {
                         saveConfig(config.copy(picons = it))
@@ -1475,6 +2040,7 @@ fun main() {
                         },
                     ) {
                         epgRefresh++
+                        syncEpg(manual = true)
                         fetchPicons(fresh = false, manual = true)
                     },
                     SettingItem.Action("Pobierz ikony od nowa", "usuwa zapisane ikony i pobiera wszystkie") {
@@ -1591,13 +2157,13 @@ fun main() {
                     },
                     SettingItem.Action(
                         "Czas EPG kanału (s, 0 = bez zamykania)",
-                        (if (config.epgChannelSec == 0) "bez zamykania" else "${config.epgChannelSec} s") + " • EPG w przygotowaniu",
+                        (if (config.epgChannelSec == 0) "bez zamykania" else "${config.epgChannelSec} s"),
                     ) {
                         editNumber("Czas EPG kanału (s)", config.epgChannelSec, 0..600) { config.copy(epgChannelSec = it) }
                     },
                     SettingItem.Action(
                         "Czas Multi EPG (s, 0 = bez zamykania)",
-                        (if (config.epgMultiSec == 0) "bez zamykania" else "${config.epgMultiSec} s") + " • EPG w przygotowaniu",
+                        (if (config.epgMultiSec == 0) "bez zamykania" else "${config.epgMultiSec} s"),
                     ) {
                         editNumber("Czas Multi EPG (s)", config.epgMultiSec, 0..600) { config.copy(epgMultiSec = it) }
                     },
@@ -1845,6 +2411,17 @@ fun main() {
                     currentRequestPower.value()
                     return true
                 }
+                when (key) {
+                    VirtualRemoteKey.VOLUME_UP, VirtualRemoteKey.VOLUME_DOWN, VirtualRemoteKey.MUTE ->
+                        if (!config.volumeKeysApp) return false
+                    else -> Unit
+                }
+                when (key) {
+                    VirtualRemoteKey.VOLUME_UP -> { changeVolume(1); return true }
+                    VirtualRemoteKey.VOLUME_DOWN -> { changeVolume(-1); return true }
+                    VirtualRemoteKey.MUTE -> { toggleMute(); return true }
+                    else -> Unit
+                }
                 if (navigator.isVisible) return handleSettingsKey(key)
                 if (showMenu) {
                     val result = navigation.handleMenuKey(key)
@@ -1855,11 +2432,28 @@ fun main() {
                     when (key) {
                         VirtualRemoteKey.UP -> quickPick = pick.copy(selected = (pick.selected - 1).mod(pick.options.size))
                         VirtualRemoteKey.DOWN -> quickPick = pick.copy(selected = (pick.selected + 1).mod(pick.options.size))
+                        VirtualRemoteKey.CHANNEL_UP -> quickPick = pick.copy(selected = (pick.selected - 8).coerceAtLeast(0))
+                        VirtualRemoteKey.CHANNEL_DOWN -> quickPick = pick.copy(selected = (pick.selected + 8).coerceAtMost(pick.options.lastIndex))
                         VirtualRemoteKey.OK -> {
                             quickPick = null
                             pick.onSelect(pick.selected)
                         }
-                        VirtualRemoteKey.BACK, VirtualRemoteKey.LEFT, VirtualRemoteKey.MENU -> {
+                        VirtualRemoteKey.LEFT, VirtualRemoteKey.RIGHT -> {
+                            val direction = if (key == VirtualRemoteKey.RIGHT) 1 else -1
+                            when {
+                                pick.onHorizontal != null -> pick.onHorizontal.invoke(direction)
+                                direction < 0 -> {
+                                    quickPick = null
+                                    pick.onBack?.invoke()
+                                }
+                                else -> return false
+                            }
+                        }
+                        VirtualRemoteKey.MENU -> {
+                            quickPick = null
+                            (pick.onMenu ?: pick.onBack)?.invoke()
+                        }
+                        VirtualRemoteKey.BACK -> {
                             quickPick = null
                             pick.onBack?.invoke()
                         }
@@ -1882,6 +2476,9 @@ fun main() {
                             showChannelList = false
                         }
                         VirtualRemoteKey.HOME -> showChannelList = false
+                        VirtualRemoteKey.INFO, VirtualRemoteKey.GUIDE -> channels.getOrNull(channelListSelected)
+                            ?.takeUnless { it.ref.startsWith(REC_PREFIX) || selectedBouquet?.ref == REC_BOUQUET }
+                            ?.let { showChannelEpg(it) }
                         VirtualRemoteKey.CHANNEL_UP -> if (channels.isNotEmpty()) {
                             channelListSelected = (channelListSelected - 8).coerceAtLeast(0)
                         }
@@ -2130,6 +2727,25 @@ fun main() {
                         suppressBrowserKeys = { suppressBrowserKeys.get() },
                         isPowerKey = { it in globalPowerKeys.get() },
                         onPower = { currentRequestPower.value() },
+                        interceptKey = intercept@{ physicalId, down ->
+                            val volumeKey = physicalId in setOf("K:173", "K:174", "K:175")
+                            val swallow = (captureActive.get() && volumeKey) || physicalId in volumeKeyIds.get()
+                            if (!swallow) return@intercept false
+                            if (down) EventQueue.invokeLater {
+                                inputMode.onKey()
+                                val label = UniversalRemoteMap.label(physicalId)
+                                val key = UniversalRemoteMap.findKey(universalBindings, physicalId)
+                                val button = captureButton
+                                remoteDiagnostics.log { "source=hook $label mapped=${key ?: "none"}" }
+                                when {
+                                    showExitConfirmation -> Unit
+                                    button != null -> savePhysicalBinding(button, physicalId, label)
+                                    isRemoteTestOpen() && navigator.choice == null -> recordTest("Klawiatura", label, key)
+                                    key != null -> handleVirtualKey(key)
+                                }
+                            }
+                            true
+                        },
                     )
                 } catch (e: Exception) {
                     status = "Obsługa pilota HID niedostępna: ${e.message ?: e.javaClass.simpleName}"
@@ -2148,6 +2764,7 @@ fun main() {
                 val repeatable = setOf(
                     VirtualRemoteKey.UP, VirtualRemoteKey.DOWN, VirtualRemoteKey.LEFT, VirtualRemoteKey.RIGHT,
                     VirtualRemoteKey.CHANNEL_UP, VirtualRemoteKey.CHANNEL_DOWN,
+                    VirtualRemoteKey.VOLUME_UP, VirtualRemoteKey.VOLUME_DOWN,
                 )
                 val client = LircClient(
                     host = config.lircHost,
@@ -2223,6 +2840,10 @@ fun main() {
                         videoScaleMode = config.videoScaleMode,
                         windowMode = windowMode,
                         onWindowMode = ::pickWindowMode,
+                        volumeLabel = if (config.appMuted) "Wyciszone" else "Głośność ${config.appVolume}%",
+                        onVolume = ::changeVolume,
+                        onMute = ::toggleMute,
+                        onAudio = ::showAudioPick,
                         onScaleMenu = ::pickVideoScale,
                         onChannels = ::openChannelList,
                         onMenu = ::openMenu,
@@ -2313,10 +2934,26 @@ fun main() {
                     )
                 }
                 LaunchedEffect(pick) {
-                    if (!pick.autoClose || config.actionDialogSec <= 0) return@LaunchedEffect
-                    delay(config.actionDialogSec * 1000L)
+                    val seconds = pick.timeoutSec ?: if (pick.autoClose) config.actionDialogSec else 0
+                    if (seconds <= 0) return@LaunchedEffect
+                    delay(seconds * 1000L)
                     if (quickPick === pick) quickPick = null
                 }
+            }
+            if (volumeOsdGeneration > 0) {
+                LaunchedEffect(volumeOsdGeneration) {
+                    volumeOsdVisible = true
+                    delay(2_000)
+                    volumeOsdVisible = false
+                }
+            }
+            if (volumeOsdVisible && !navigator.isVisible) {
+                VolumeOsd(
+                    volume = config.appVolume,
+                    muted = config.appMuted,
+                    owner = desktopWindow,
+                    colors = colorScheme,
+                )
             }
             if (showExitConfirmation) {
                 LaunchedEffect(Unit) {

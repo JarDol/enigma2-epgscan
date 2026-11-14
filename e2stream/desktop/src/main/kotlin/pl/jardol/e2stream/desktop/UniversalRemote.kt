@@ -31,6 +31,9 @@ enum class VirtualRemoteKey(val label: String) {
     REWIND("Przewiń wstecz"),
     FAST_FORWARD("Przewiń do przodu"),
     STOP("Stop / na żywo"),
+    VOLUME_UP("Głośność +"),
+    VOLUME_DOWN("Głośność −"),
+    MUTE("Wycisz"),
     DIGIT_0("0"),
     DIGIT_1("1"),
     DIGIT_2("2"),
@@ -55,6 +58,9 @@ object UniversalRemoteMap {
         put(VirtualRemoteKey.CHANNEL_UP, setOf(keyId(KeyEvent.VK_PAGE_UP)))
         put(VirtualRemoteKey.CHANNEL_DOWN, setOf(keyId(KeyEvent.VK_PAGE_DOWN)))
         put(VirtualRemoteKey.SETTINGS, setOf(keyId(KeyEvent.VK_F1)))
+        put(VirtualRemoteKey.VOLUME_UP, setOf(keyId(VK_VOLUME_UP)))
+        put(VirtualRemoteKey.VOLUME_DOWN, setOf(keyId(VK_VOLUME_DOWN)))
+        put(VirtualRemoteKey.MUTE, setOf(keyId(VK_VOLUME_MUTE)))
         put(VirtualRemoteKey.DIGIT_0, setOf(keyId(KeyEvent.VK_0), keyId(KeyEvent.VK_NUMPAD0)))
         put(VirtualRemoteKey.DIGIT_1, setOf(keyId(KeyEvent.VK_1), keyId(KeyEvent.VK_NUMPAD1)))
         put(VirtualRemoteKey.DIGIT_2, setOf(keyId(KeyEvent.VK_2), keyId(KeyEvent.VK_NUMPAD2)))
@@ -66,6 +72,11 @@ object UniversalRemoteMap {
         put(VirtualRemoteKey.DIGIT_8, setOf(keyId(KeyEvent.VK_8), keyId(KeyEvent.VK_NUMPAD8)))
         put(VirtualRemoteKey.DIGIT_9, setOf(keyId(KeyEvent.VK_9), keyId(KeyEvent.VK_NUMPAD9)))
     }
+
+    /** Klawisze multimedialne Windows (AWT ich nie zgłasza, przechwytuje je hak klawiatury). */
+    const val VK_VOLUME_MUTE = 0xAD
+    const val VK_VOLUME_DOWN = 0xAE
+    const val VK_VOLUME_UP = 0xAF
 
     fun keyId(keyCode: Int): String = "K:$keyCode"
 
@@ -91,6 +102,8 @@ object UniversalRemoteMap {
         return try {
             val json = JSONObject(encoded)
             VirtualRemoteKey.entries.associateWithTo(linkedMapOf()) { key ->
+                // Klawisze dodane w nowszej wersji dostają domyślne przypisanie.
+                if (!json.has(key.name)) return@associateWithTo defaults[key].orEmpty()
                 val items = json.optJSONArray(key.name) ?: return@associateWithTo emptySet()
                 buildSet {
                     for (index in 0 until items.length()) {

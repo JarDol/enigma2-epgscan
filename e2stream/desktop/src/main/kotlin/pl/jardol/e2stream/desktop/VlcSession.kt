@@ -11,6 +11,7 @@ import uk.co.caprica.vlcj.player.component.EmbeddedMediaPlayerComponent
 import uk.co.caprica.vlcj.player.base.DeinterlaceMode
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
+import uk.co.caprica.vlcj.media.TrackType
 
 internal fun vlcMediaOptions(config: DesktopConfig): List<String> = buildList {
     add(":network-caching=${config.bufferMs.coerceIn(250, 10_000)}")
@@ -62,6 +63,12 @@ class VlcSession(private val onError: (String) -> Unit) {
     private var scaleMode = VideoScaleMode.FIT
     private var closed = false
 
+    @Volatile private var volume = 100
+    @Volatile private var muted = false
+
+    /** Start odtwarzania (także po przewinięciu timeshiftu); wątek Swing. */
+    var onPlaying: (() -> Unit)? = null
+
     /** Koniec odtwarzanego materiału (plik nagrania, zamknięty strumień timeshiftu); wątek Swing. */
     var onFinished: (() -> Unit)? = null
 
@@ -105,11 +112,60 @@ class VlcSession(private val onError: (String) -> Unit) {
                     onError("VLC: nie udało się odtworzyć strumienia. Sprawdź połączenie i dane logowania.")
                 }
             }
+            override fun playing(mediaPlayer: MediaPlayer) {
+                mediaPlayer.submit { applyAudioLevel() }
+                SwingUtilities.invokeLater { if (!closed) onPlaying?.invoke() }
+            }
+            override fun elementaryStreamAdded(mediaPlayer: MediaPlayer, type: TrackType, id: Int) {
+                if (type == TrackType.AUDIO) mediaPlayer.submit { applyAudioLevel() }
+            }
             override fun finished(mediaPlayer: MediaPlayer) {
                 SwingUtilities.invokeLater { if (!closed) onFinished?.invoke() }
             }
         })
     }
+
+    /**
+     * Głośność tylko tego programu (0–150 %, w mikserze Windows jako osobna aplikacja) i wyciszenie.
+     * VLC przyjmuje je dopiero przy działającym wyjściu dźwięku, więc są ponawiane przy starcie odtwarzania.
+     */
+    fun setAudioLevel(volume: Int, muted: Boolean) {
+        this.volume = volume.coerceIn(0, DesktopConfig.MAX_VOLUME)
+        this.muted = muted
+        if (!closed) component.mediaPlayer().submit { applyAudioLevel() }
+    }
+
+    private fun applyAudioLevel() {
+        if (closed) return
+        val audio = component.mediaPlayer().audio()
+        if (audio.volume() != volume) audio.setVolume(volume)
+        if (audio.isMute != muted) audio.setMute(muted)
+    }
+
+    /** Ścieżki dźwięku bieżącego strumienia (bez pozycji „wyłączone”). */
+    internal fun audioTracks(): List<AudioTrack> {
+        if (closed) return emptyList()
+        val player = component.mediaPlayer()
+        val info = runCatching { player.media().info().audioTracks() }.getOrNull().orEmpty().associateBy { it.id() }
+        return player.audio().trackDescriptions().orEmpty().filter { it.id() >= 0 }.map { description ->
+            val track = info[description.id()]
+            val language = track?.language().orEmpty()
+            val codec = track?.codecName().orEmpty().trim()
+            val label = AudioTrackLabels.label(language.ifBlank { null }, codec, track?.channels() ?: 0)
+            val text = description.description().orEmpty().trim()
+            AudioTrack(
+                id = description.id(),
+                name = listOf(label, text.takeIf { it.isNotBlank() && !it.startsWith("Track", ignoreCase = true) })
+                    .filterNotNull().joinToString(" — ") + "  (PID ${description.id()})",
+                language = language,
+                codec = codec,
+            )
+        }
+    }
+
+    internal fun selectedAudioTrack(): Int = if (closed) -1 else component.mediaPlayer().audio().track()
+
+    internal fun selectAudioTrack(id: Int): Boolean = !closed && component.mediaPlayer().audio().setTrack(id) == 0
 
     fun setVideoScale(mode: VideoScaleMode) {
         scaleMode = mode

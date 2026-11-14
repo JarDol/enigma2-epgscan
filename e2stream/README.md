@@ -9,12 +9,18 @@ W katalogu [`desktop/`](desktop/) powstaje aplikacja Windows. Na tym etapie umo�
 przeglądanie bukietów i kanałów z bieżącym EPG, odtwarzanie na żywo przez zainstalowany VLC oraz konfigurowanie
 mapowania klawiatury i pilota, a także oglądanie nagrań z dysku dekodera (bukiet „Nagrania”, wznawianie od
 zapisanej pozycji) i timeshift buforowany na dysku komputera (Ustawienia → Odtwarzanie i obraz → Timeshift).
-Jest to wczesna wersja testowa, jeszcze bez pełnego przewodnika EPG. Tryb okna (okno, zmaksymalizowane, pełny
+Jest to wczesna wersja testowa. Przewodnik EPG obejmuje opis audycji (INFO), EPG kanału, Multi EPG bukietu
+(GUIDE, ◀ ▶ zmiana czasu o 30 min) i wyszukiwanie (SEARCH); Menu w tych oknach otwiera wybór kanału/bukietu.
+Z opisu audycji można przełączyć kanał, zaplanować przełączenie lub nagranie na dekoderze. EPG jest zapisywane
+w `%APPDATA%\E2Stream\epg` — z paczki EPG Scan (raz dziennie lub przy starcie) albo z OpenWebif o ustalonej
+godzinie. Tryb okna (okno, zmaksymalizowane, pełny
 ekran zasłaniający pasek zadań) wybiera się w ustawieniach, klawiszem F11 lub przyciskiem odtwarzacza;
 skalowanie obrazu — pozycją „Obraz” w menu. W ustawieniach Ogólne są — jak w Androidzie — pozycje i kolejność
 menu, czasy okien (pasek timeshiftu, okna akcji, potwierdzenia, EPG, informacyjne), czyszczenie zrealizowanych
 przełączeń oraz język aplikacji (automatycznie / polski / angielski). Menu zawiera „Przełączenia wg harmonogramu”
-i „Harmonogramy dekodera” (z usuwaniem); nowe przełączenia będzie można dodawać z opisu audycji w przewodniku EPG.
+i „Harmonogramy dekodera” (z usuwaniem). Ścieżka dźwięku (klawisz AUDIO lub menu) jest zapamiętywana dla kanału.
+Głośność i wyciszenie aplikacji (0–150%) są niezależne od głośności Windows: klawisze głośności i wyciszenia
+pilota/klawiatury sterują aplikacją, gdy E2Stream jest na wierzchu (Ustawienia → Odtwarzanie i obraz → Dźwięk).
 Uruchamia się w oknie odtwarzacza; ustawienia otwiera się przez menu (klawisz M lub przycisk Menu pilota).
 Prawy przycisk myszy pokazuje i ukrywa przyciski sterowania. Ustawienia mają układ z Androida (lista sekcji,
 a w nich opcje), otwierają się w oknie bez paska tytułu i obejmują m.in. mapowanie OK/strzałek, konfigurację
@@ -22,8 +28,7 @@ pilota oraz okno testu pilota. Przycisk „Wróć” jest widoczny tylko przy ob
 tak ustawiono). Ustawienia obejmują też ikony kanałów (pobierane z paczki wtyczki, przez FTP lub OpenWebif),
 wielkość ikon i czcionek, statystyki odtwarzania VLC, wysyłanie logu na dekoder (wtyczka lub FTP, także co 2 min)
 oraz pilota IR przez WinLIRC/LIRC (domyślnie `127.0.0.1:8765`). Klawisz Power działa w tle dla pilotów HID,
-Bluetooth i IR (WinLIRC), dopóki aplikacja jest uruchomiona. Ustawienia harmonogramu EPG są zapisywane na potrzeby
-przyszłego pełnego przewodnika EPG.
+Bluetooth i IR (WinLIRC), dopóki aplikacja jest uruchomiona.
 
 * ExoPlayer (Media3) z **tunelowaniem wideo**
   (sprzętowy deinterlacer telewizora, płynne paski informacyjne).
