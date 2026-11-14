@@ -1060,8 +1060,8 @@ class SatWatchDecision(Screen):
             "yellow": self.keyRemove,
             "blue": self.keyKeep,
         }, -1)
-        self["list"].onSelectionChanged.append(self.update)
-        self.onLayoutFinish.append(self.update)
+        self["list"].onSelectionChanged.append(self.update_info)
+        self.onLayoutFinish.append(self.update_info)
         try:
             self.orig = session.nav.getCurrentlyPlayingServiceOrGroup()
         except Exception:
@@ -1089,7 +1089,7 @@ class SatWatchDecision(Screen):
         i = self["list"].getSelectedIndex()
         return (i, self.cands[i]) if 0 <= i < len(self.cands) else (i, None)
 
-    def update(self):
+    def update_info(self):
         i, c = self.cur()
         if c is None:
             self["info"].setText(_("Brak kandydatow w lamedb. Zolty: usun kanal z bukietow, niebieski: zostaw."))
