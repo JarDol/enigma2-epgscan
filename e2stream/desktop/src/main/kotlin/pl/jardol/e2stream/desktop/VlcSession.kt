@@ -149,14 +149,14 @@ class VlcSession(private val onError: (String) -> Unit) {
         val info = runCatching { player.media().info().audioTracks() }.getOrNull().orEmpty().associateBy { it.id() }
         return player.audio().trackDescriptions().orEmpty().filter { it.id() >= 0 }.map { description ->
             val track = info[description.id()]
-            val language = track?.language().orEmpty()
+            val text = fixMojibake(description.description().orEmpty().trim())
+            val language = AudioTrackLabels.languageCode(
+                track?.language()?.takeIf { it.isNotBlank() } ?: AudioTrackLabels.languageFromDescription(text),
+            )
             val codec = track?.codecName().orEmpty().trim()
-            val label = AudioTrackLabels.label(language.ifBlank { null }, codec, track?.channels() ?: 0)
-            val text = description.description().orEmpty().trim()
             AudioTrack(
                 id = description.id(),
-                name = listOf(label, text.takeIf { it.isNotBlank() && !it.startsWith("Track", ignoreCase = true) })
-                    .filterNotNull().joinToString(" — ") + "  (PID ${description.id()})",
+                name = AudioTrackLabels.trackName(description.id(), language, codec, track?.channels() ?: 0, text),
                 language = language,
                 codec = codec,
             )

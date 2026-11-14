@@ -28,6 +28,8 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "pl.jardol.e2stream.desktop.MainKt"
+        // Napisy z libVLC (opisy ścieżek dźwięku) są w UTF-8.
+        jvmArgs += listOf("-Djna.encoding=UTF-8")
 
         buildTypes.release.proguard {
             isEnabled.set(false)

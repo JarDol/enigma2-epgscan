@@ -62,9 +62,9 @@ internal fun parseMovieList(json: JSONObject, requestedDir: String): Pair<String
                 title = OpenWebifText.unescape(
                     item.text("eventname").ifBlank { path.substringAfterLast('/').substringBeforeLast('.') },
                 ),
-                description = OpenWebifText.unescape(
-                    listOf(item.text("description"), item.text("descriptionExtended"))
-                        .filter(String::isNotBlank).distinct().joinToString("\n"),
+                description = mergeDescriptions(
+                    OpenWebifText.unescape(item.text("description")),
+                    OpenWebifText.unescape(item.text("descriptionExtended")),
                 ),
                 service = OpenWebifText.unescape(item.text("servicename")),
                 serviceRef = item.text("serviceref"),
@@ -78,6 +78,22 @@ internal fun parseMovieList(json: JSONObject, requestedDir: String): Pair<String
 }
 
 fun serviceKey(ref: String): String = ref.trim().trimEnd(':').uppercase()
+
+/**
+ * Opis krótki + rozszerzony bez powtórzeń: nadawcy często powtarzają w rozszerzonym opisie
+ * krótki opis albo te same linie („Tytuł oryginalny: …”).
+ */
+internal fun mergeDescriptions(vararg parts: String): String {
+    val seen = HashSet<String>()
+    val lines = parts.flatMap { it.replace("\r\n", "\n").replace('\u008A', '\n').split('\n') }
+        .map(String::trim)
+        .filter { it.isNotEmpty() && seen.add(it.lowercase()) }
+    // Linia zawarta w innej, dłuższej (krótki opis = początek rozszerzonego) jest zbędna.
+    return lines.filterIndexed { index, line ->
+        line.length < 15 ||
+        lines.withIndex().none { (other, text) -> other != index && text.length > line.length && text.contains(line, ignoreCase = true) }
+    }.joinToString("\n")
+}
 
 /** Audycja z EPG; czasy w sekundach epoki. */
 internal data class EpgEvent(
@@ -360,6 +376,32 @@ class DecoderClient(private val config: DesktopConfig) {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) throw IOException("HTTP ${connection.responseCode} z portu ${config.pluginPort}")
             connection.inputStream.use { input -> target.outputStream().use { input.copyTo(it) } }
             return true
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /** Stan synchronizacji z wtyczki EPG Scan: { common: {data}, device: {data} }. */
+    internal fun syncState(deviceId: String): JSONObject {
+        validatePort(config.pluginPort, "EPG Scan")
+        return get(config.pluginPort, "/api/sync/state?id=${encode(deviceId)}", plugin = true, timeoutMs = 20_000)
+    }
+
+    /** Wysyła plik odbiornika; wtyczka scala go (nowszy wpis wygrywa) i uzupełnia część wspólną. */
+    internal fun syncPush(deviceId: String, body: JSONObject): JSONObject {
+        validatePort(config.pluginPort, "EPG Scan")
+        val connection = URI("http://${hostForUrl(config.host)}:${config.pluginPort}/api/sync/push?id=${encode(deviceId)}")
+            .toURL().openConnection() as HttpURLConnection
+        connection.connectTimeout = 5000
+        connection.readTimeout = 20_000
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        if (config.pluginToken.isNotBlank()) connection.setRequestProperty("X-E2S-Token", config.pluginToken)
+        try {
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) throw IOException("HTTP ${connection.responseCode} z portu ${config.pluginPort}")
+            return JSONObject(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
         } finally {
             connection.disconnect()
         }

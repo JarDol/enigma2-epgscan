@@ -18,7 +18,10 @@ ekran zasłaniający pasek zadań) wybiera się w ustawieniach, klawiszem F11 lu
 skalowanie obrazu — pozycją „Obraz” w menu. W ustawieniach Ogólne są — jak w Androidzie — pozycje i kolejność
 menu, czasy okien (pasek timeshiftu, okna akcji, potwierdzenia, EPG, informacyjne), czyszczenie zrealizowanych
 przełączeń oraz język aplikacji (automatycznie / polski / angielski). Menu zawiera „Przełączenia wg harmonogramu”
-i „Harmonogramy dekodera” (z usuwaniem). Ścieżka dźwięku (klawisz AUDIO lub menu) jest zapamiętywana dla kanału.
+i „Harmonogramy dekodera” (z usuwaniem). Ścieżka dźwięku (klawisz AUDIO lub menu) jest zapamiętywana dla kanału
+w tym samym formacie co w Androidzie (`audio_<ref>` = `id|język|kodek`) i — przez wtyczkę EPG Scan — synchronizowana
+z dekoderem (`device-win-<komputer>.json`, brakujące kanały z części wspólnej), więc wybór z telewizora działa na
+komputerze i odwrotnie; bez zapamiętanego wyboru gra ścieżka w preferowanym języku.
 Głośność i wyciszenie aplikacji (0–150%) są niezależne od głośności Windows: klawisze głośności i wyciszenia
 pilota/klawiatury sterują aplikacją, gdy E2Stream jest na wierzchu (Ustawienia → Odtwarzanie i obraz → Dźwięk).
 Uruchamia się w oknie odtwarzacza; ustawienia otwiera się przez menu (klawisz M lub przycisk Menu pilota).

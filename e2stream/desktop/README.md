@@ -62,7 +62,11 @@ OpenWebif at the configured hour; other channels are loaded on demand.
 
 **Audio:** the audio track (AUDIO key, menu or player button) is remembered per
 channel and receiver in `%APPDATA%/E2Stream/audio.properties` (matched by PID,
-then language and codec). Application volume (0–150%) and mute are separate
+then language and codec). The choices use the Android format (`audio_<ref>` =
+`id|language|codec`) and are synchronised through the EPG Scan plugin
+(`device-win-<computer>.json`; channels missing locally come from the common
+part), so a track picked on a TV is used on the PC and vice versa. Without a
+saved choice the track in the preferred language is played. Application volume (0–150%) and mute are separate
 from the Windows volume; volume up/down/mute keys of a keyboard or remote
 control the application while E2Stream is in the foreground (the key is not
 passed to Windows), and the system volume when it is in the background. This

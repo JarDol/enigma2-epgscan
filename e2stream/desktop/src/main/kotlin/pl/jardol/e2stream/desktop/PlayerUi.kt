@@ -352,13 +352,17 @@ internal fun ChannelListDialog(
                     .focusable().padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.weight(1f)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.weight(1f, fill = false)) {
                         OutlinedButton(
                             onClick = { bouquetMenuExpanded = true },
                             enabled = !busy && bouquets.size > 1,
                         ) {
-                            Text("Bukiet: ${bouquet?.name ?: "Kanały"}")
+                            Text("Bukiet: ${bouquet?.name ?: "Kanały"}", maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         DropdownMenu(
                             expanded = bouquetMenuExpanded,
@@ -383,13 +387,17 @@ internal fun ChannelListDialog(
                         onClick = { bouquetOffset(bouquets, bouquet, 1)?.let(onBouquetSelected) },
                         enabled = !busy && bouquets.size > 1,
                     ) { Text("Bukiet ▶") }
-                    Text(
-                        if (recordings.isEmpty()) "← → bukiet   •   ↑ ↓ kanał   •   OK oglądaj   •   Wstecz zamknij"
-                        else "← → bukiet   •   ↑ ↓ nagranie   •   OK otwórz/odtwórz   •   Wstecz katalog wyżej/zamknij",
-                        color = secondary,
-                    )
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                     BackButton(onClick = onClose)
                 }
+                // Podpowiedź w osobnym wierszu — w jednym rzędzie ściskała przycisk bukietu do pionowego paska.
+                Text(
+                    if (recordings.isEmpty()) "← → bukiet   •   ↑ ↓ kanał   •   OK oglądaj   •   Wstecz zamknij"
+                    else "← → bukiet   •   ↑ ↓ nagranie   •   OK otwórz/odtwórz   •   Wstecz katalog wyżej/zamknij",
+                    color = secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 LazyColumn(Modifier.weight(3f), state = listState) {
                     itemsIndexed(channels) { index, channel ->
                         val recording = recordings[channel.ref]
@@ -444,7 +452,10 @@ internal fun ChannelListDialog(
                     }
                 }
                 Box(Modifier.fillMaxWidth().height(1.dp).background(colors.outlineVariant))
-                Column(Modifier.weight(1f).padding(8.dp)) {
+                Column(
+                    Modifier.weight(1f).fillMaxWidth().padding(8.dp)
+                        .verticalScroll(remember(selected, channels) { androidx.compose.foundation.ScrollState(0) }),
+                ) {
                     val channel = channels.getOrNull(selected)
                     val recording = channel?.let { recordings[it.ref] }
                     if (recording != null) {
@@ -453,8 +464,6 @@ internal fun ChannelListDialog(
                             if (recording.isDir) "Katalog — OK otwiera" else recording.description.ifBlank { recordingDetails(recording) },
                             color = colors.onSurface,
                             fontSize = 17.sp * fontScale,
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis,
                         )
                         return@Column
                     }

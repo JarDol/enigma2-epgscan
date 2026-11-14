@@ -76,6 +76,8 @@ private val testTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss")
 private fun appVersion(): String = System.getProperty("jpackage.app-version") ?: "wersja deweloperska"
 
 fun main() {
+    // libVLC zwraca napisy w UTF-8; bez tego JNA czyta je jako cp1250 („ĹšcieĹĽka” zamiast „Ścieżka”).
+    System.setProperty("jna.encoding", "UTF-8")
     val remoteDiagnostics = RemoteDiagnostics.fromEnvironment()
     val instance = SingleInstance.startOrSignal() ?: return
     application {
@@ -423,22 +425,32 @@ fun main() {
             }
 
             var audioApplyJob by remember { mutableStateOf<Job?>(null) }
-            /** Zapamiętana dla kanału ścieżka dźwięku; ścieżki pojawiają się chwilę po starcie, więc kilka prób. */
+            /**
+             * Zapamiętana dla kanału ścieżka dźwięku, a bez niej — pierwsza w preferowanym języku (jak w Androidzie);
+             * ścieżki pojawiają się chwilę po starcie, więc kilka prób.
+             */
             fun applySavedAudio() {
                 val channel = playingChannel ?: return
                 if (playingRecording != null) return
                 val saved = audioChoices.get(config.host, channel.ref)
-                if (saved.isBlank()) return
+                val preferred = AudioTrackLabels.preferredLanguages(config.audioLang)
+                if (saved.isBlank() && preferred.isEmpty()) return
                 audioApplyJob?.cancel()
                 audioApplyJob = scope.launch {
                     repeat(12) { attempt ->
                         val session = vlcSession ?: return@launch
                         if (playingChannel?.ref != channel.ref) return@launch
                         val tracks = session.audioTracks()
-                        val savedId = saved.substringBefore('|').toIntOrNull()
+                        val savedId = savedAudioId(saved)
                         // Dopasowanie po języku dopiero, gdy właściwy PID się nie pojawił.
-                        val match = tracks.firstOrNull { it.id == savedId }
-                            ?: if (attempt >= 3) matchAudioChoice(tracks, saved) else null
+                        val match = if (saved.isNotBlank()) {
+                            tracks.firstOrNull { it.id == savedId }
+                                ?: if (attempt >= 3) matchAudioChoice(tracks, saved) else null
+                        } else if (attempt >= 2 && tracks.isNotEmpty()) {
+                            val current = tracks.firstOrNull { it.id == session.selectedAudioTrack() }
+                            if (current != null && AudioTrackLabels.languageCode(current.language) in preferred) return@launch
+                            preferredAudioTrack(tracks, preferred) ?: return@launch
+                        } else null
                         if (match != null) {
                             if (session.selectedAudioTrack() != match.id) {
                                 session.selectAudioTrack(match.id)
@@ -679,6 +691,52 @@ fun main() {
                 val due = config.epgUpdateMode == DesktopConfig.EPG_UPDATE_STARTUP ||
                     config.lastPiconFetchDay != LocalDate.now().toString()
                 if (due) fetchPicons(fresh = false, manual = false)
+            }
+
+            var audioSyncStatus by remember { mutableStateOf("") }
+            var audioSyncBusy by remember { mutableStateOf(false) }
+            var audioSyncJob by remember { mutableStateOf<Job?>(null) }
+
+            /** Ścieżki dźwięku z dekoderem (wspólne z Androidem); wymaga wtyczki EPG Scan. */
+            fun syncAudio(manual: Boolean) {
+                val currentCatalog = catalog
+                if (currentCatalog == null || !currentCatalog.usesPlugin) {
+                    if (manual) status = "Synchronizacja ścieżek wymaga połączenia przez wtyczkę EPG Scan."
+                    return
+                }
+                if (audioSyncBusy) return
+                audioSyncBusy = true
+                val current = config
+                scope.launch {
+                    try {
+                        val result = withContext(Dispatchers.IO) { syncAudioChoices(current, audioChoices, appVersion()) }
+                        audioSyncStatus = "${LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))} — $result"
+                        AppLog.i("synchronizacja ścieżek dźwięku: $result")
+                        if (manual) status = "Ścieżki dźwięku: $result."
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        audioSyncStatus = "błąd: ${e.message}"
+                        AppLog.i("synchronizacja ścieżek dźwięku: błąd ${e.message}")
+                        if (manual) status = "Nie udało się zsynchronizować ścieżek: ${e.message}"
+                    } finally {
+                        audioSyncBusy = false
+                    }
+                }
+            }
+
+            /** Po zmianie wyboru — wysyłka po chwili (kilka zmian pod rząd to jedna synchronizacja). */
+            fun scheduleAudioSync() {
+                if (!config.audioSync) return
+                audioSyncJob?.cancel()
+                audioSyncJob = scope.launch {
+                    delay(5_000)
+                    syncAudio(manual = false)
+                }
+            }
+
+            LaunchedEffect(catalog) {
+                if (catalog?.usesPlugin == true && config.audioSync) syncAudio(manual = false)
             }
 
             var epgLastAttempt by remember { mutableLongStateOf(0L) }
@@ -1237,7 +1295,10 @@ fun main() {
                         status = "VLC nie przełączył ścieżki dźwięku."
                         return@QuickPick
                     }
-                    if (channel != null) audioChoices.set(config.host, channel.ref, track)
+                    if (channel != null) {
+                        audioChoices.set(config.host, channel.ref, track)
+                        scheduleAudioSync()
+                    }
                     status = "Dźwięk: ${track.name}" + if (channel != null) " — zapamiętano dla ${channel.name}." else "."
                 }
             }
@@ -1947,10 +2008,22 @@ fun main() {
                         navigator.close()
                         showAudioPick()
                     },
-                    SettingItem.Action("Zapomnij zapamiętane ścieżki", "zapamiętane kanały: ${audioChoices.count()}") {
-                        audioChoices.clear()
+                    SettingItem.Action("Zapomnij zapamiętane ścieżki", "zapamiętane kanały: ${audioChoices.count(config.host)}") {
+                        audioChoices.clear(config.host)
                         status = "Usunięto zapamiętane ścieżki dźwięku."
                     },
+                    SettingItem.Toggle(
+                        "Ścieżki wspólne z Androidem",
+                        config.audioSync,
+                        "wybory ścieżek synchronizowane z dekoderem (wtyczka EPG Scan) — jak w E2Stream na TV",
+                    ) {
+                        saveConfig(config.copy(audioSync = it))
+                        if (it) syncAudio(manual = true)
+                    },
+                    SettingItem.Action(
+                        "Synchronizuj ścieżki teraz",
+                        audioSyncStatus.ifBlank { if (catalog?.usesPlugin == true) "jeszcze nie synchronizowano" else "wymaga wtyczki EPG Scan" },
+                    ) { syncAudio(manual = true) },
                     SettingItem.Action("Preferowany język", config.audioLang.ifBlank { "domyślny strumienia" }) {
                         editText("Preferowany język dźwięku", config.audioLang, "kody języków, np. pl,pol,en") {
                             config.copy(audioLang = it.trim())

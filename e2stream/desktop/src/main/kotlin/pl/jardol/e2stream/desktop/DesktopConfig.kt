@@ -33,6 +33,8 @@ data class DesktopConfig(
     val vlcHwMode: String = "auto",
     val bufferMs: Int = 1000,
     val audioLang: String = "pl",
+    /** Ścieżki dźwięku kanałów wspólne z Androidem (przez wtyczkę EPG Scan). */
+    val audioSync: Boolean = true,
     val uiListFont: Int = 100,
     val uiBannerFont: Int = 100,
     val hiddenBouquets: Set<String> = emptySet(),
@@ -112,6 +114,7 @@ data class DesktopConfig(
             setProperty("vlcHwMode", vlcHwMode)
             setProperty("bufferMs", bufferMs.toString())
             setProperty("audioLang", audioLang)
+            setProperty("audioSync", audioSync.toString())
             setProperty("uiListFont", uiListFont.toString())
             setProperty("uiBannerFont", uiBannerFont.toString())
             setProperty("hiddenBouquets", JSONArray(hiddenBouquets.sorted()).toString())
@@ -237,6 +240,7 @@ data class DesktopConfig(
                 vlcHwMode = string("vlcHwMode", defaults.vlcHwMode).takeIf { it in hardwareModes } ?: defaults.vlcHwMode,
                 bufferMs = int("bufferMs", defaults.bufferMs, 250..10_000),
                 audioLang = string("audioLang", defaults.audioLang),
+                audioSync = bool("audioSync", defaults.audioSync),
                 uiListFont = int("uiListFont", defaults.uiListFont, 50..140),
                 uiBannerFont = int("uiBannerFont", defaults.uiBannerFont, 50..140),
                 hiddenBouquets = parseSet(properties.getProperty("hiddenBouquets")),

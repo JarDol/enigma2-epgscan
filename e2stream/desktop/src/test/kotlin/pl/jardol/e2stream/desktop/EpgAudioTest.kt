@@ -44,6 +44,45 @@ class EpgAudioTest {
         assertEquals(313, matchAudioChoice(tracks, "999|en|")?.id)
         assertNull(matchAudioChoice(tracks, "999|de|"))
         assertEquals("de", AudioTrackLabels.languageCode("ger"))
+        // Zapis z ExoPlayera na Androidzie: „1/312”.
+        assertEquals(312, matchAudioChoice(tracks, "1/312|pl|audio/mpeg")?.id)
+    }
+
+    @Test
+    fun buildsReadableTrackNamesFromVlcDescriptions() {
+        val text = fixMojibake("ĹšcieĹĽka 1 - [Polski]")
+        assertEquals("Ścieżka 1 - [Polski]", text)
+        assertEquals("Ścieżka 1 - [Polski]", fixMojibake(text))
+        val language = AudioTrackLabels.languageCode(AudioTrackLabels.languageFromDescription(text))
+        assertEquals("pl", language)
+        assertEquals("Polski  •  MPEG 2ch  •  PID 132", AudioTrackLabels.trackName(132, language, "mpga", 2, text))
+        assertEquals("Oryginalna  •  PID 734", AudioTrackLabels.trackName(734, "ORY", "", 0, "Ścieżka 2 - [ORY]"))
+        assertEquals(
+            "Polski  •  Audio description for the visually impaired  •  PID 1234",
+            AudioTrackLabels.trackName(1234, "pl", "", 0, "Audio description for the visually impaired - [Polski]"),
+        )
+        val tracks = listOf(AudioTrack(734, "", "ory", ""), AudioTrack(132, "", "pl", ""))
+        assertEquals(132, preferredAudioTrack(tracks, AudioTrackLabels.preferredLanguages("pol,en"))?.id)
+    }
+
+    @Test
+    fun plansAudioSyncLikeAndroid() {
+        val local = mapOf("A" to SyncEntry("1|pl|", 100), "B" to SyncEntry("2|pl|", 300))
+        val device = mapOf("A" to SyncEntry("5|en|", 200), "B" to SyncEntry("3|pl|", 50))
+        val common = mapOf("A" to SyncEntry("9||", 999), "C" to SyncEntry("7|pl|", 10), "D" to SyncEntry("8|pl|", 1))
+
+        val plan = planAudioSync(local, device, common, clearedAt = 5)
+
+        // Plik odbiornika: nowszy wygrywa; część wspólna tylko dla brakujących; „zapomnij” odcina starsze.
+        assertEquals(mapOf("A" to SyncEntry("5|en|", 200), "C" to SyncEntry("7|pl|", 10)), plan.apply)
+        assertEquals(setOf("B", "C"), plan.push.keys)
+    }
+
+    @Test
+    fun mergesRecordingDescriptionsWithoutRepeats() {
+        val short = "Tytuł oryginalny: Aftersun"
+        val extended = "Tytuł oryginalny: Aftersun\nDramat, Wielka Brytania 2022\ntytuł oryginalny: aftersun\nDramat"
+        assertEquals("Tytuł oryginalny: Aftersun\nDramat, Wielka Brytania 2022\nDramat", mergeDescriptions(short, extended))
     }
 
     @Test
