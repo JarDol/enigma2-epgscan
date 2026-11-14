@@ -249,7 +249,10 @@ class ChannelParamsScan(object):
 		self.unsupported = [row for row in rows if not row["supported"]]
 		self.queue = [ChannelJob(row) for row in rows if row["supported"]]
 		self.groups = group_channel_jobs(self.queue, bool(cfg.cp_group_tp.value))
-		self._log_groups()
+		try:
+			self._log_groups()
+		except Exception as e:
+			log("Skan parametrow: lista grup: %s" % e)
 		self.prepared = True
 		self.started = int(time.time())
 
@@ -510,8 +513,11 @@ class ChannelParamsScan(object):
 		"""Nieudane strojenie grupy: jedna ponowna proba calej grupy (jedno strojenie) po odstepie,
 		dopiero potem kanaly osobno. Pozostale grupy pracuja dalej rownolegle."""
 		group = job.group
-		if getattr(job, "borrowed", False) or group is None or job.shared or getattr(job, "tune_retried", False):
+		if getattr(job, "borrowed", False) or group is None or job.shared or job.individual:
 			self._handle_failure(job, reason)
+			return
+		if getattr(job, "tune_retried", False):
+			self._fail_group_tune(job, reason)
 			return
 		log("Skan parametrow: %s - %s; ponowie strojenie grupy" % (job.name, reason))
 		job.tune_retried = True
@@ -526,6 +532,28 @@ class ChannelParamsScan(object):
 			group.pending.insert(0, job)
 		if job not in self.queue:
 			self.queue.insert(0, job)
+
+	def _fail_group_tune(self, job, reason):
+		"""Transponder nie dal sie dostroic dwa razy: to blad calego transpondera, wiec kanaly grupy nie sa
+		strojone osobno (kazdy czekalby na timeout tego samego transpondera) - trafiaja od razu do bledow."""
+		group = job.group
+		members = [job] + [member for member in group.pending if not member.individual and member is not job]
+		job.batch_members = []
+		self._release(job)
+		for member in members:
+			if member in group.pending:
+				group.pending.remove(member)
+			if member in self.queue:
+				self.queue.remove(member)
+			if member.ref in self.scanned_refs:
+				member.state = "gotowe"
+				continue
+			member.state = "BLAD: " + reason
+			member.tune_failed = True
+			self.errors.append({"ref": member.ref, "name": member.name, "error": reason})
+			self.failed_jobs.append(member)
+		log("Skan parametrow: BLAD transpondera %s (%d kan.): %s" % (job.name, len(members), reason))
+		self._finish_group_if_idle(group)
 
 	def _start(self, job, shared):
 		job.batch_members = []
@@ -968,7 +996,9 @@ class ChannelParamsScan(object):
 				log("Skan parametrow: ponawiam %d blednych kanalow pojedynczo (odstep %.1f s)"
 					% (len(self.failed_jobs), max(tune_gap(), float(TUNE_GAP))))
 				for job in self.failed_jobs:
-					job.individual = True
+					# blad strojenia transpondera: grupa raz razem (jedno strojenie); blad odczytu: kanal osobno
+					job.individual = not getattr(job, "tune_failed", False)
+					job.tune_retried = True
 					job.not_before = 0
 					job.state = "czeka (ostatnia proba)"
 					job.group.done = False

@@ -4202,3 +4202,6 @@ msgstr "A new transponder is tuned only after the previous one has locked and th
 
 msgid "1,5 s"
 msgstr "1.5 s"
+
+msgid "Brak wydan dla wybranego kanalu aktualizacji."
+msgstr "No releases for the selected update channel."

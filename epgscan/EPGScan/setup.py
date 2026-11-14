@@ -593,6 +593,10 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		options = []
 		from .updater import releases_for_channel
 		releases = releases_for_channel(releases, cfg.upd_channel.value)
+		if not releases:
+			self.session.open(MessageBox, _("Brak wydan dla wybranego kanalu aktualizacji."), MessageBox.TYPE_INFO, timeout=8)
+			self.update_help()
+			return
 		for ver, _url, prerelease in releases:
 			label = "%s%s%s" % (ver, " (beta)" if prerelease else "",
 				_("  [zainstalowana]") if ver == VERSION else "")

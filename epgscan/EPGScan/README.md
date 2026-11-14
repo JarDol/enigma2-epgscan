@@ -208,9 +208,10 @@ Limit równoległości i rezerwa wolnych tunerów
 EPG Scan są wspólnymi ustawieniami; samodzielny skan zostawia co najmniej dwa wolne tunery (przy dwóch
 tunerach co najmniej jeden, przy jednym może użyć ustawionej rezerwy zero). Przy sześciu wolnych tunerach i rezerwie
 dwóch mogą pracować do czterech niezależnych grup naraz, a przy ośmiu wolnych – do sześciu. Nowe strojenia
-rozpoczynają się pojedynczo, z odstępem (domyślnie 2 s, ustawienie *Odstęp między strojeniami*); rozpoczęte grupy
+rozpoczynają się pojedynczo, z odstępem (domyślnie 1 s, ustawienie *Odstęp między strojeniami*); rozpoczęte grupy
 pracują równolegle. Dalsze kanały grupy na już dostrojonym transponderze ruszają bez czekania na odstęp (nic nie
-stroją). Nieudane strojenie grupy jest raz ponawiane w całości, dopiero potem kanały sprawdzane są osobno. Na
+stroją). Nieudane strojenie grupy jest raz ponawiane w całości; drugie nieudane strojenie oznacza błąd całego transpondera
+(kanały nie są strojone osobno). Osobno sprawdzane są tylko kanały, których PAT/PMT nie udało się odczytać. Na
 początku skanu log wypisuje grupy (transponder, liczba kanałów, nazwy).
 Grupowanie po transponderze można wyłączyć, kosztem dodatkowych strojeń. Gdy oglądanie, streaming lub
 nagranie potrzebuje tunera, skaner zwalnia grupę i wznawia ją później. IPTV i nierozpoznane typy są jawnie wymieniane
@@ -660,7 +661,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Maks. równoległych skanów / rezerwa wolnych tunerów | wspólne ustawienia z *Satelita – EPG* |
 | Grupowanie kanałów po transponderze | zalecane; PAT/PMT grupy z jednego dostrojenia, brakujące kanały osobno |
 | Ponów raz błędne kanały po skanie | jedna dodatkowa próba po całym skanie, pojedynczo, odstęp min. 2 s (tak) |
-| Odstęp między strojeniami (Unicable) | 0,5 / 1 / 1,5 / 2 / 3 s – krótszy = szybszy skan; przy błędach strojenia wróć do 2 s (2 s) |
+| Odstęp między strojeniami (Unicable) | 0,5 / 1 / 1,5 / 2 / 3 s – krótszy = szybszy skan; przy błędach strojenia wróć do 2 s (1 s) |
 | Skanuj kanały co | 1 / 2 / 4 / 7 dni; skan po głównym przebiegu harmonogramu EPG |
 
 ### Program z internetu

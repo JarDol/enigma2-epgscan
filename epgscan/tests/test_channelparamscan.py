@@ -2587,9 +2587,9 @@ class BatchScanTests(unittest.TestCase):
 				initial_counts = [sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows]
 			if self.engine.channel_params_scan is None:
 				break
-		# z ponowieniem strojenia grupy w trakcie skanu; runda koncowa dokłada po jednej probie
-		self.assertEqual(sorted(initial_counts), [2, 3])
-		self.assertEqual(sorted(sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows), [3, 4])
+		# z ponowieniem strojenia grupy w trakcie skanu; runda koncowa stroi transponder jeszcze raz (cala grupa)
+		self.assertEqual(sorted(initial_counts), [0, 2])
+		self.assertEqual(sorted(sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows), [0, 3])
 		self.assertEqual(len(reports), 1)
 		self.assertEqual(len(reports[0]["errors"]), 2)
 
@@ -2618,6 +2618,25 @@ class BatchScanTests(unittest.TestCase):
 			self.scan.tick()
 			self.assertEqual(len([job for job in self.scan.active if not job.shared]), 1)
 
+	def test_dead_transponder_is_not_tuned_once_per_channel(self):
+		common.cfg.cp_retry_failed.value = True
+		self.rows = [{"ref": "1:0:1:%X:1:1:13E:0:0:0:" % sid, "name": str(sid), "supported": True}
+			for sid in range(1, 7)]
+		reports = []
+		self.scan.done = reports.append
+		self.scan.start()
+		for _ in range(40):
+			for job in list(self.scan.active):
+				self.scan.rec_event(job.rec, enigma.iRecordableService.evTuneFailed)
+			self.now += common.TUNE_GAP
+			self.scan.tick()
+			if self.engine.channel_params_scan is None:
+				break
+		# 2 strojenia w skanie + 1 w rundzie koncowej - nie 6 osobnych prob po 30 s
+		self.assertEqual(len(self.records), 3)
+		self.assertEqual(len(reports), 1)
+		self.assertEqual(len(reports[0]["errors"]), 6)
+
 	def test_failed_channels_are_not_retried_without_the_optional_final_pass(self):
 		reports = []
 		self.scan.done = reports.append
@@ -2629,8 +2648,9 @@ class BatchScanTests(unittest.TestCase):
 			self.scan.tick()
 			if self.engine.channel_params_scan is None:
 				break
-		# nieudane strojenie grupy jest raz ponawiane w trakcie skanu (bez opcjonalnej rundy koncowej)
-		self.assertEqual(sorted(sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows), [2, 3])
+		# nieudane strojenie grupy jest raz ponawiane w trakcie skanu; potem caly transponder jest bledem,
+		# bez osobnego strojenia kazdego kanalu (bez opcjonalnej rundy koncowej)
+		self.assertEqual(sorted(sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows), [0, 2])
 		self.assertEqual(len(reports), 1)
 		self.assertEqual(len(reports[0]["errors"]), 2)
 
