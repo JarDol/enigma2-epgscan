@@ -21,6 +21,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +57,7 @@ import java.awt.Window as AwtWindow
 import java.net.URI
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -153,6 +155,8 @@ fun main() {
             var testEvents by remember { mutableStateOf<List<RemoteTestEvent>>(emptyList()) }
             var lastTestBackAt by remember { mutableLongStateOf(0L) }
             val scope = rememberCoroutineScope()
+            fun openMenu() = navigation.openMenu(DesktopMenuItem.visible(config.menuOrder, config.menuHidden))
+            LaunchedEffect(config.appLanguage) { AppLanguage.apply(config.appLanguage) }
             var lastVirtualKey by remember { mutableStateOf<VirtualRemoteKey?>(null) }
             var lastVirtualKeyAt by remember { mutableLongStateOf(0L) }
             SideEffect {
@@ -785,7 +789,7 @@ fun main() {
             LaunchedEffect(playbackBarGeneration) {
                 if (playbackBarGeneration == 0) return@LaunchedEffect
                 playbackBarVisible = true
-                delay(6_000)
+                delay(config.tsBannerSec * 1000L)
                 while (vlcSession?.isPaused == true || tsPendingTarget != null) delay(500)
                 playbackBarVisible = false
             }
@@ -887,7 +891,7 @@ fun main() {
                     NavAction.MULTI_EPG -> unavailable("Multi-EPG")
                     NavAction.EPG_SEARCH -> unavailable("Wyszukiwanie EPG")
                     NavAction.AUDIO -> unavailable("Wybór ścieżki dźwięku")
-                    NavAction.MENU -> navigation.openMenu()
+                    NavAction.MENU -> openMenu()
                     NavAction.SETTINGS -> openSettings()
                     NavAction.RECALL -> recall()
                     NavAction.CH_UP -> zap(true)
@@ -915,9 +919,198 @@ fun main() {
                 }
             }
 
+            // ---------- Harmonogramy ----------
+
+            val zapStore = remember { ZapTimerStore() }
+            var zapPrompt by remember { mutableStateOf<ZapTimer?>(null) }
+
+            fun openZapTimers() {
+                scope.launch {
+                    val days = config.zapHistoryDays
+                    val (timers, history) = withContext(Dispatchers.IO) { zapStore.list() to zapStore.history(days) }
+                    if (timers.isEmpty() && history.isEmpty()) {
+                        status = "Brak zaplanowanych przełączeń — dodasz je z opisu audycji w EPG (EPG na Windows w przygotowaniu)."
+                        return@launch
+                    }
+                    val headers = buildMap {
+                        if (timers.isNotEmpty()) put(0, "PRZYSZŁE WYDARZENIA")
+                        if (history.isNotEmpty()) put(timers.size, "ZREALIZOWANE")
+                    }
+                    quickPick = QuickPick(
+                        title = tr("Przełączenia wg harmonogramu"),
+                        options = timers.map { "${it.channel} — ${it.title}" } + history.map { "${it.timer.channel} — ${it.timer.title}" },
+                        selected = 0,
+                        subtitles = timers.map { formatTimerRange(it.begin, it.end) } +
+                            history.map { "${formatTimerRange(it.timer.begin, it.timer.end)}  •  ${ZapOutcome.label(it.outcome)}" },
+                        headers = headers,
+                    ) { index ->
+                        val timer = timers.getOrNull(index)
+                        val entry = history.getOrNull(index - timers.size)
+                        val title = timer?.let { "${it.channel} — ${it.title}" } ?: entry?.let { "${it.timer.channel} — ${it.timer.title}" }
+                            ?: return@QuickPick
+                        quickPick = QuickPick(
+                            title = title,
+                            options = listOf(if (timer != null) "Usuń przełączenie" else "Usuń z historii", "Wróć do listy"),
+                            selected = 1,
+                            onBack = ::openZapTimers,
+                        ) { choice ->
+                            if (choice != 0) openZapTimers()
+                            else scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    if (timer != null) zapStore.remove(timer) else entry?.let(zapStore::removeHistory)
+                                }
+                                status = if (timer != null) "Usunięto przełączenie: ${timer.title}." else "Usunięto z historii."
+                                openZapTimers()
+                            }
+                        }
+                    }
+                }
+            }
+
+            fun openDecoderTimers() {
+                if (config.host.isBlank()) {
+                    status = "Połącz się z dekoderem: Menu → Ustawienia → Dekoder Enigma2."
+                    return
+                }
+                status = "Pobieranie harmonogramów z dekodera…"
+                scope.launch {
+                    val current = config
+                    val result = withContext(Dispatchers.IO) { runCatching { DecoderClient(current).decoderTimers() } }
+                    val timers = result.getOrElse {
+                        status = "Nie udało się pobrać harmonogramów dekodera: ${it.message}"
+                        return@launch
+                    }
+                    if (timers.isEmpty()) {
+                        status = "Brak harmonogramów na dekoderze."
+                        return@launch
+                    }
+                    val now = Instant.now().epochSecond
+                    val upcoming = timers.filter { it.end > now }
+                    val done = timers.filter { it.end <= now }.sortedByDescending { it.begin }
+                    val all = upcoming + done
+                    fun describe(timer: DecoderTimer) = formatTimerRange(timer.begin, timer.end) +
+                        (if (timer.switchOnly) "  •  przełączenie" else "  •  nagranie") +
+                        (if (timer.disabled) "  •  wyłączony" else "")
+                    status = "Harmonogramy dekodera: ${upcoming.size} przyszłych, ${done.size} zrealizowanych."
+                    quickPick = QuickPick(
+                        title = tr("Harmonogramy dekodera"),
+                        options = all.map { "${it.channel} — ${it.title}" },
+                        selected = 0,
+                        subtitles = all.map(::describe),
+                        headers = buildMap {
+                            if (upcoming.isNotEmpty()) put(0, "PRZYSZŁE")
+                            if (done.isNotEmpty()) put(upcoming.size, "ZREALIZOWANE")
+                        },
+                    ) { index ->
+                        val timer = all[index]
+                        quickPick = QuickPick(
+                            title = "${timer.channel} — ${timer.title}",
+                            options = listOf("Usuń z dekodera", "Wróć do listy"),
+                            selected = 1,
+                            subtitles = listOf(describe(timer), timer.description.ifBlank { null }),
+                            onBack = ::openDecoderTimers,
+                        ) { choice ->
+                            if (choice != 0) openDecoderTimers()
+                            else quickPick = QuickPick(
+                                title = "Usunąć z dekodera?",
+                                options = listOf("Tak — usuń", "Nie"),
+                                selected = 1,
+                                subtitles = listOf("${timer.channel} — ${timer.title}", null),
+                                onBack = ::openDecoderTimers,
+                            ) { confirm ->
+                                if (confirm != 0) openDecoderTimers()
+                                else scope.launch {
+                                    val (ok, message) = withContext(Dispatchers.IO) {
+                                        runCatching { DecoderClient(current).timerDelete(timer) }
+                                            .getOrElse { false to (it.message ?: "błąd połączenia") }
+                                    }
+                                    status = if (ok) "Usunięto z dekodera: ${timer.title}." else "Nie usunięto: $message"
+                                    openDecoderTimers()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            fun fireZap(timer: ZapTimer) {
+                if (quickPick?.tag == timer.key) quickPick = null
+                zapPrompt = null
+                scope.launch { withContext(Dispatchers.IO) { zapStore.complete(timer, ZapOutcome.SWITCHED) } }
+                val channel = channels.firstOrNull { serviceKey(it.ref) == serviceKey(timer.ref) } ?: Channel(0, timer.channel, timer.ref)
+                showChannelList = false
+                startChannel(channel)
+                status = "Przełączono wg harmonogramu: ${timer.channel} — ${timer.title}"
+            }
+
+            fun recordZap(timer: ZapTimer) {
+                if (quickPick?.tag == timer.key) quickPick = null
+                zapPrompt = null
+                val current = config
+                scope.launch {
+                    val (ok, message) = withContext(Dispatchers.IO) {
+                        runCatching { DecoderClient(current).timerAddRecording(timer.ref, timer.title, timer.begin, timer.end, timer.eventId) }
+                            .getOrElse { false to (it.message ?: "błąd połączenia") }
+                    }
+                    withContext(Dispatchers.IO) { zapStore.complete(timer, if (ok) ZapOutcome.RECORDED else ZapOutcome.RECORD_FAILED) }
+                    status = if (ok) "Nagranie zaplanowane na dekoderze: ${timer.title}." else "Nie udało się zaplanować nagrania: $message"
+                }
+            }
+
+            fun zapCountdown(timer: ZapTimer, now: Long): QuickPick {
+                val left = (timer.begin - now).coerceAtLeast(0)
+                return QuickPick(
+                    title = "Przełączenie wg harmonogramu",
+                    options = listOf("Przełącz (%d:%02d)".format(left / 60, left % 60), "Nagraj na dekoderze"),
+                    selected = quickPick?.takeIf { it.tag == timer.key }?.selected ?: 0,
+                    subtitles = listOf("${timer.channel} — ${timer.title}", formatTimerRange(timer.begin, timer.end)),
+                    autoClose = false,
+                    tag = timer.key,
+                    onBack = {
+                        zapPrompt = null
+                        scope.launch { withContext(Dispatchers.IO) { zapStore.complete(timer, ZapOutcome.SKIPPED) } }
+                        status = "Pominięto przełączenie: ${timer.title}."
+                    },
+                ) { if (it == 0) fireZap(timer) else recordZap(timer) }
+            }
+
+            LaunchedEffect(Unit) {
+                while (true) {
+                    delay(1_000)
+                    val now = Instant.now().epochSecond
+                    val timers = withContext(Dispatchers.IO) { zapStore.list() }
+                    val prompt = zapPrompt
+                    if (prompt != null) {
+                        when {
+                            timers.none { it.key == prompt.key } -> {
+                                zapPrompt = null
+                                if (quickPick?.tag == prompt.key) quickPick = null
+                            }
+                            now >= prompt.begin -> fireZap(prompt)
+                            quickPick?.tag == prompt.key -> quickPick = zapCountdown(prompt, now)
+                        }
+                        continue
+                    }
+                    // Audycje, które zaczęły się dawno temu (aplikacja była wyłączona), trafiają do zrealizowanych.
+                    val missed = timers.filter { now - it.begin > 120 }
+                    if (missed.isNotEmpty()) {
+                        withContext(Dispatchers.IO) { missed.forEach { zapStore.complete(it, ZapOutcome.SKIPPED) } }
+                    }
+                    val due = timers.firstOrNull { it.begin - now in -120L..30L } ?: continue
+                    if (now >= due.begin) fireZap(due)
+                    else {
+                        zapPrompt = due
+                        quickPick = zapCountdown(due, now)
+                    }
+                }
+            }
+
             fun runMenuItem(item: DesktopMenuItem) {
                 when (item) {
                     DesktopMenuItem.CHANNEL_LIST -> openChannelList()
+                    DesktopMenuItem.RECORDINGS -> openRecordingsList()
+                    DesktopMenuItem.ZAP_TIMERS -> openZapTimers()
+                    DesktopMenuItem.DECODER_TIMERS -> openDecoderTimers()
                     DesktopMenuItem.SETTINGS -> openSettings()
                     DesktopMenuItem.REMOTE_TEST -> openSettings(SettingsScreen.REMOTE, SettingsScreen.REMOTE_TEST)
                     DesktopMenuItem.IMAGE -> pickVideoScale()
@@ -1064,7 +1257,7 @@ fun main() {
             fun settingsItems(screen: SettingsScreen?): List<SettingItem> = when (screen) {
                 null -> emptyList()
                 SettingsScreen.SECTIONS -> SettingsScreen.sections.map { section ->
-                    SettingItem.Action(section.title, section.description) {
+                    SettingItem.Action(tr(section.title), tr(section.description)) {
                         navigator.push(section, settingsItems(section))
                     }
                 }
@@ -1364,15 +1557,73 @@ fun main() {
                     SettingItem.Toggle("Odwróć ▲ / ▼ przy zmianie kanału", config.invertUpDown) {
                         saveConfig(config.copy(invertUpDown = it))
                     },
+                    SettingItem.Header("Menu"),
+                    SettingItem.Action(
+                        tr("Pozycje i kolejność menu"),
+                        if (config.menuHidden.isEmpty()) "wszystkie widoczne" else "ukryte: ${config.menuHidden.size}",
+                    ) {
+                        navigator.push(SettingsScreen.MENU_ITEMS, settingsItems(SettingsScreen.MENU_ITEMS))
+                    },
                     SettingItem.Header("Czasy okien"),
                     SettingItem.Action("Czas paska kanału (s)", "${config.bannerSec} s") {
                         editNumber("Czas paska kanału (s)", config.bannerSec, 1..30) { config.copy(bannerSec = it) }
+                    },
+                    SettingItem.Action("Czas paska timeshiftu i nagrań (s)", "${config.tsBannerSec} s") {
+                        editNumber("Czas paska timeshiftu i nagrań (s)", config.tsBannerSec, 1..30) { config.copy(tsBannerSec = it) }
                     },
                     SettingItem.Action(
                         "Czas listy kanałów (s, 0 = bez zamykania)",
                         if (config.channelListSec == 0) "bez zamykania" else "${config.channelListSec} s",
                     ) {
                         editNumber("Czas listy kanałów (s)", config.channelListSec, 0..600) { config.copy(channelListSec = it) }
+                    },
+                    SettingItem.Action(
+                        "Czas okien akcji (s, 0 = bez zamykania)",
+                        "menu i okna wyboru: " + if (config.actionDialogSec == 0) "bez zamykania" else "${config.actionDialogSec} s",
+                    ) {
+                        editNumber("Czas okien akcji (s)", config.actionDialogSec, 0..600) { config.copy(actionDialogSec = it) }
+                    },
+                    SettingItem.Action(
+                        "Czas okien potwierdzenia (s, 0 = bez zamykania)",
+                        "np. wyłączenie aplikacji: " + if (config.confirmDialogSec == 0) "bez zamykania" else "${config.confirmDialogSec} s",
+                    ) {
+                        editNumber("Czas okien potwierdzenia (s)", config.confirmDialogSec, 0..600) { config.copy(confirmDialogSec = it) }
+                    },
+                    SettingItem.Action(
+                        "Czas EPG kanału (s, 0 = bez zamykania)",
+                        (if (config.epgChannelSec == 0) "bez zamykania" else "${config.epgChannelSec} s") + " • EPG w przygotowaniu",
+                    ) {
+                        editNumber("Czas EPG kanału (s)", config.epgChannelSec, 0..600) { config.copy(epgChannelSec = it) }
+                    },
+                    SettingItem.Action(
+                        "Czas Multi EPG (s, 0 = bez zamykania)",
+                        (if (config.epgMultiSec == 0) "bez zamykania" else "${config.epgMultiSec} s") + " • EPG w przygotowaniu",
+                    ) {
+                        editNumber("Czas Multi EPG (s)", config.epgMultiSec, 0..600) { config.copy(epgMultiSec = it) }
+                    },
+                    SettingItem.Toggle("Pokazuj okna informacyjne", !config.hideInfoDialogs) {
+                        saveConfig(config.copy(hideInfoDialogs = !it))
+                    },
+                    SettingItem.Action("Czas okien informacyjnych (s)", "${config.infoDialogSec} s") {
+                        editNumber("Czas okien informacyjnych (s)", config.infoDialogSec, 1..600) { config.copy(infoDialogSec = it) }
+                    },
+                    SettingItem.Header("Harmonogram"),
+                    SettingItem.Action(
+                        "Czyść zrealizowane po",
+                        zapHistoryLabel(config.zapHistoryDays) + " • przełączenia wg harmonogramu",
+                    ) {
+                        val days = ZapTimerStore.HISTORY_DAYS
+                        choose("Czyść zrealizowane po", days.map(::zapHistoryLabel), days.indexOf(config.zapHistoryDays)) {
+                            saveConfig(config.copy(zapHistoryDays = days[it]), "Czyść zrealizowane po: ${zapHistoryLabel(days[it])}.")
+                        }
+                    },
+                    SettingItem.Header(tr("Język aplikacji")),
+                    SettingItem.Action(tr("Język aplikacji"), AppLanguage.label(config.appLanguage)) {
+                        val languages = AppLanguage.choices
+                        choose(tr("Język aplikacji"), languages.map(AppLanguage::label), languages.indexOf(config.appLanguage)) {
+                            AppLanguage.apply(languages[it])
+                            saveConfig(config.copy(appLanguage = languages[it]), "${tr("Język aplikacji")}: ${AppLanguage.label(languages[it])}.")
+                        }
                     },
                     SettingItem.Header("Sterowanie"),
                     SettingItem.Action("Przycisk Wróć w oknach", config.backButtonMode.label) {
@@ -1477,6 +1728,36 @@ fun main() {
                             ),
                         )
                     }
+                SettingsScreen.MENU_ITEMS -> {
+                    val order = DesktopMenuItem.inOrder(config.menuOrder)
+                    listOf<SettingItem>(SettingItem.Header("OK — ukryj / pokaż, przesuń. Ustawienia i Wyłącz są zawsze na końcu.")) +
+                        order.mapIndexed { index, item ->
+                            val hidden = item.name in config.menuHidden
+                            SettingItem.Action("${index + 1}. ${tr(item.label)}", if (hidden) "ukryta" else "widoczna") {
+                                choose(
+                                    tr(item.label),
+                                    listOf(if (hidden) "Pokaż pozycję" else "Ukryj pozycję", "Przesuń wyżej", "Przesuń niżej"),
+                                    0,
+                                ) { choice ->
+                                    if (choice == 0) {
+                                        saveConfig(
+                                            config.copy(menuHidden = if (hidden) config.menuHidden - item.name else config.menuHidden + item.name),
+                                            "${tr(item.label)}: ${if (hidden) "widoczna" else "ukryta"} w menu.",
+                                        )
+                                        return@choose
+                                    }
+                                    val target = index + if (choice == 1) -1 else 1
+                                    if (target !in order.indices) {
+                                        status = "Pozycja jest już ${if (choice == 1) "pierwsza" else "ostatnia"}."
+                                        return@choose
+                                    }
+                                    val moved = order.toMutableList().apply { add(target, removeAt(index)) }
+                                    saveConfig(config.copy(menuOrder = moved.map { it.name }))
+                                    navigator.select(target + 1)
+                                }
+                            }
+                        }
+                }
                 SettingsScreen.INFO -> listOf(
                     SettingItem.Header("Aplikacja E2Stream dla Windows"),
                     SettingItem.Action("Wersja", appVersion()) {},
@@ -1578,7 +1859,10 @@ fun main() {
                             quickPick = null
                             pick.onSelect(pick.selected)
                         }
-                        VirtualRemoteKey.BACK, VirtualRemoteKey.LEFT, VirtualRemoteKey.MENU -> quickPick = null
+                        VirtualRemoteKey.BACK, VirtualRemoteKey.LEFT, VirtualRemoteKey.MENU -> {
+                            quickPick = null
+                            pick.onBack?.invoke()
+                        }
                         else -> return false
                     }
                     return true
@@ -1606,7 +1890,7 @@ fun main() {
                         }
                         VirtualRemoteKey.MENU -> {
                             showChannelList = false
-                            navigation.openMenu()
+                            openMenu()
                         }
                         else -> return false
                     }
@@ -1675,7 +1959,7 @@ fun main() {
                     VirtualRemoteKey.CHANNEL_UP -> zap(true)
                     VirtualRemoteKey.CHANNEL_DOWN -> zap(false)
                     VirtualRemoteKey.SETTINGS, VirtualRemoteKey.HOME -> openSettings()
-                    VirtualRemoteKey.MENU -> navigation.openMenu()
+                    VirtualRemoteKey.MENU -> openMenu()
                     VirtualRemoteKey.PLAY_PAUSE -> togglePlaybackPause()
                     VirtualRemoteKey.PLAY -> if (vlcSession?.isPaused == true) togglePlaybackPause()
                     VirtualRemoteKey.PAUSE -> if (vlcSession?.isPaused == false) togglePlaybackPause()
@@ -1723,7 +2007,7 @@ fun main() {
                 RemoteAction.CHANNEL_DOWN -> { zap(false); true }
                 RemoteAction.CHANNEL_LIST -> { openChannelList(); true }
                 RemoteAction.CHANNEL_BANNER -> { runNavAction(NavAction.CHANNEL_BANNER); true }
-                RemoteAction.MENU -> { navigation.openMenu(); true }
+                RemoteAction.MENU -> { openMenu(); true }
                 RemoteAction.SETTINGS -> { openSettings(); true }
                 RemoteAction.RECALL -> { recall(); true }
                 RemoteAction.NONE, null -> false
@@ -1941,7 +2225,7 @@ fun main() {
                         onWindowMode = ::pickWindowMode,
                         onScaleMenu = ::pickVideoScale,
                         onChannels = ::openChannelList,
-                        onMenu = navigation::openMenu,
+                        onMenu = ::openMenu,
                         onBack = { stopPlayback("Odtwarzanie zatrzymane.") },
                         playback = playbackBar,
                         onTogglePause = ::togglePlaybackPause,
@@ -1957,6 +2241,8 @@ fun main() {
                         piconStyle = piconStyle(config),
                         bannerIconScale = config.uiBannerIcon / 100f,
                         showStats = config.showStats,
+                        statusSeconds = config.infoDialogSec,
+                        showStatusMessages = !config.hideInfoDialogs,
                     )
                 },
                 settings = {
@@ -1996,6 +2282,7 @@ fun main() {
             }
             if (showMenu && !navigator.isVisible) {
                 MenuDialog(
+                    items = navigation.menuItems,
                     selected = navigation.menuSelected,
                     colors = colorScheme,
                     onClose = { showMenu = false },
@@ -2004,19 +2291,39 @@ fun main() {
                         runMenuItem(item)
                     },
                 )
+                LaunchedEffect(navigation.menuSelected) {
+                    if (config.actionDialogSec <= 0) return@LaunchedEffect
+                    delay(config.actionDialogSec * 1000L)
+                    showMenu = false
+                }
             }
             quickPick?.takeIf { !navigator.isVisible && !showMenu }?.let { pick ->
-                QuickPickDialog(
-                    pick = pick,
-                    colors = colorScheme,
-                    onClose = { quickPick = null },
-                    onSelect = { index ->
-                        quickPick = null
-                        pick.onSelect(index)
-                    },
-                )
+                key(pick.tag ?: pick.title, pick.options.size, pick.headers.size) {
+                    QuickPickDialog(
+                        pick = pick,
+                        colors = colorScheme,
+                        onClose = {
+                            quickPick = null
+                            pick.onBack?.invoke()
+                        },
+                        onSelect = { index ->
+                            quickPick = null
+                            pick.onSelect(index)
+                        },
+                    )
+                }
+                LaunchedEffect(pick) {
+                    if (!pick.autoClose || config.actionDialogSec <= 0) return@LaunchedEffect
+                    delay(config.actionDialogSec * 1000L)
+                    if (quickPick === pick) quickPick = null
+                }
             }
             if (showExitConfirmation) {
+                LaunchedEffect(Unit) {
+                    if (config.confirmDialogSec <= 0) return@LaunchedEffect
+                    delay(config.confirmDialogSec * 1000L)
+                    cancelExitConfirmation()
+                }
                 DialogWindow(
                     onCloseRequest = ::cancelExitConfirmation,
                     title = "Wyłączyć E2Stream?",
@@ -2051,12 +2358,12 @@ fun main() {
 
 @Composable
 private fun MenuDialog(
+    items: List<DesktopMenuItem>,
     selected: Int,
     colors: androidx.compose.material3.ColorScheme,
     onClose: () -> Unit,
     onSelect: (DesktopMenuItem) -> Unit,
 ) {
-    val items = DesktopMenuItem.entries
     DialogWindow(
         onCloseRequest = onClose,
         title = "E2Stream",
@@ -2068,13 +2375,13 @@ private fun MenuDialog(
             Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Menu", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)
+                        Text(tr("Menu"), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)
                         BackButton(onClick = onClose)
                     }
                     items.forEachIndexed { index, item ->
                         val isSelected = index == selected
                         Text(
-                            item.label,
+                            tr(item.label),
                             modifier = Modifier.fillMaxWidth()
                                 .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
                                 .clickable { onSelect(item) }

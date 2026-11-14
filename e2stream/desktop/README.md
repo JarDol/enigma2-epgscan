@@ -37,6 +37,18 @@ plays it through a local server. Pause, REW/FF, the configurable ◀▶/▲▼ s
 Stop (back to live) and an optional Back-to-live action work as on Android; the
 timeshift bar shows the buffered range and delay.
 
+**Ogólne** also mirrors the Android options for menu entries (show/hide and
+order; Ustawienia and Wyłącz stay last), timeouts of the timeshift/recording
+bar, action and confirmation windows, channel EPG and Multi EPG (the EPG guide
+itself is still to come), information messages (or hide them), cleanup of
+completed scheduled switches after 7/14/28 days, and the application language
+(automatic, Polish, English — English covers section names, menu and hints, as
+on Android). The menu has **Przełączenia wg harmonogramu** (local schedule with
+upcoming and completed entries; 30 s before the start a countdown offers to
+switch now or record on the receiver, Back skips) and **Harmonogramy
+dekodera** (receiver timers with deletion). New scheduled switches are added
+from the programme description in the EPG guide, so adding arrives with it.
+
 Settings follow the Android layout: a list of sections (Dekoder Enigma2,
 Odtwarzanie i obraz, Wygląd, EPG i ikony kanałów, Ogólne, Pilot i klawiatura,
 Informacje i aktualizacje, Logi i zrzuty), each opening a list

@@ -38,10 +38,10 @@ internal class InputModeTracker(private val moveThreshold: Int = 8) {
 internal enum class SettingsScreen(val title: String, val description: String = "") {
     SECTIONS("Ustawienia"),
     DECODER("Dekoder Enigma2", "adres, porty, logowanie OpenWebif, wtyczka EPG Scan, bukiety"),
-    PLAYBACK("Odtwarzanie i obraz", "VLC: przeplot, akceleracja, bufor, skalowanie obrazu, dźwięk"),
+    PLAYBACK("Odtwarzanie i obraz", "VLC: przeplot, akceleracja, bufor, obraz, okno, timeshift, dźwięk"),
     APPEARANCE("Wygląd", "czcionki i ikony: lista kanałów, EPG, pasek kanału"),
     EPG("EPG i ikony kanałów", "pobieranie EPG, ikony z dekodera"),
-    GENERAL("Ogólne", "bukiety, kanał startowy, czasy okien, przycisk Wróć, PIN"),
+    GENERAL("Ogólne", "bukiety, kanał startowy, menu, czasy okien, harmonogram, język, PIN"),
     REMOTE("Pilot i klawiatura", "pilot HID / IR (WinLIRC), mapowanie klawiszy, OK i strzałki, test pilota"),
     INFO("Informacje i aktualizacje", "wersja aplikacji, opis aplikacji i wtyczki EPG Scan"),
     LOGS("Logi i zrzuty", "statystyki, log na dekoder, miejsce zapisu, diagnostyka pilota"),
@@ -50,6 +50,7 @@ internal enum class SettingsScreen(val title: String, val description: String = 
     NAV_BANNER("OK i strzałki — z paskiem kanału"),
     REMOTE_TEST("Test pilota"),
     BOUQUETS("Widoczne bukiety"),
+    MENU_ITEMS("Pozycje i kolejność menu"),
     ;
 
     companion object {

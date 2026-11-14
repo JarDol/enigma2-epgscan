@@ -20,11 +20,32 @@ class DesktopNavigationTest {
     fun arrowsMoveMenuSelectionWithWrapping() {
         val navigation = DesktopNavigation()
         navigation.openMenu()
-        navigation.handleMenuKey(VirtualRemoteKey.UP)
-        navigation.handleMenuKey(VirtualRemoteKey.UP)
+        navigation.handleMenuKey(VirtualRemoteKey.DOWN)
         assertEquals(DesktopMenuItem.EXIT.ordinal, navigation.menuSelected)
         navigation.handleMenuKey(VirtualRemoteKey.DOWN)
         assertEquals(MenuKeyResult(true, DesktopMenuItem.CHANNEL_LIST), navigation.handleMenuKey(VirtualRemoteKey.OK))
+    }
+
+    @Test
+    fun configuredMenuKeepsOrderHidesItemsAndEndsWithSettingsAndExit() {
+        val items = DesktopMenuItem.visible(
+            order = listOf("IMAGE", "UNKNOWN", "CHANNEL_LIST", "IMAGE"),
+            hidden = setOf("REMOTE_TEST", "SETTINGS"),
+        )
+        assertEquals(
+            listOf(
+                DesktopMenuItem.IMAGE, DesktopMenuItem.CHANNEL_LIST, DesktopMenuItem.RECORDINGS,
+                DesktopMenuItem.ZAP_TIMERS, DesktopMenuItem.DECODER_TIMERS, DesktopMenuItem.WINDOW,
+                DesktopMenuItem.SETTINGS, DesktopMenuItem.EXIT,
+            ),
+            items,
+        )
+        val navigation = DesktopNavigation()
+        navigation.openMenu(items)
+        assertEquals(6, navigation.menuSelected)
+        navigation.handleMenuKey(VirtualRemoteKey.DOWN)
+        navigation.handleMenuKey(VirtualRemoteKey.DOWN)
+        assertEquals(MenuKeyResult(true, DesktopMenuItem.IMAGE), navigation.handleMenuKey(VirtualRemoteKey.OK))
     }
 
     @Test

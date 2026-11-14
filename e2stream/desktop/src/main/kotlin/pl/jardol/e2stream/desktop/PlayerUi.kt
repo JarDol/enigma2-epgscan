@@ -99,6 +99,8 @@ internal fun PlayerPage(
     onTogglePause: () -> Unit = { session?.togglePause() },
     onSeek: ((forward: Boolean) -> Unit)? = null,
     onLive: (() -> Unit)? = null,
+    statusSeconds: Int = 7,
+    showStatusMessages: Boolean = true,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     var statusVisible by remember { mutableStateOf(false) }
@@ -118,9 +120,9 @@ internal fun PlayerPage(
             delay(30_000)
         }
     }
-    LaunchedEffect(status, session) {
-        statusVisible = session != null
-        delay(7_000)
+    LaunchedEffect(status, session, showStatusMessages) {
+        statusVisible = session != null && showStatusMessages
+        delay(statusSeconds.coerceAtLeast(1) * 1000L)
         statusVisible = false
     }
     var stats by remember { mutableStateOf<String?>(null) }
@@ -505,6 +507,16 @@ internal data class QuickPick(
     val title: String,
     val options: List<String>,
     val selected: Int,
+    /** Opcjonalny drugi wiersz pod pozycją (np. godziny audycji). */
+    val subtitles: List<String?> = emptyList(),
+    /** Nagłówki sekcji wstawiane przed pozycją o danym indeksie. */
+    val headers: Map<Int, String> = emptyMap(),
+    /** Czy okno zamyka się samo po „Czasie okien akcji”. */
+    val autoClose: Boolean = true,
+    /** Akcja klawisza Wstecz (domyślnie samo zamknięcie). */
+    val onBack: (() -> Unit)? = null,
+    /** Identyfikator okna aktualizowanego w tle (np. odliczanie przełączenia). */
+    val tag: String? = null,
     val onSelect: (Int) -> Unit,
 )
 
@@ -515,10 +527,12 @@ internal fun QuickPickDialog(
     onClose: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
+    val rowsHeight = pick.options.size * 54 + pick.subtitles.count { it != null } * 24 + pick.headers.size * 40
+    val wide = pick.subtitles.isNotEmpty() || pick.headers.isNotEmpty()
     DialogWindow(
         onCloseRequest = onClose,
         title = pick.title,
-        state = rememberDialogState(width = 460.dp, height = (150 + pick.options.size * 54).dp),
+        state = rememberDialogState(width = if (wide) 640.dp else 460.dp, height = (150 + rowsHeight).coerceAtMost(660).dp),
         undecorated = true,
         resizable = false,
     ) {
@@ -529,17 +543,42 @@ internal fun QuickPickDialog(
                         Text(pick.title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)
                         BackButton(onClick = onClose)
                     }
-                    pick.options.forEachIndexed { index, option ->
-                        val isSelected = index == pick.selected
-                        Text(
-                            option,
-                            modifier = Modifier.fillMaxWidth()
-                                .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
-                                .clickable { onSelect(index) }
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            color = if (isSelected) colors.onPrimaryContainer else colors.onSurface,
-                            fontSize = 20.sp,
-                        )
+                    val listState = rememberLazyListState()
+                    val rowOf = remember(pick.headers) {
+                        { index: Int -> index + pick.headers.keys.count { it <= index } }
+                    }
+                    LaunchedEffect(pick.selected) {
+                        if (pick.selected in pick.options.indices) listState.animateScrollToItem((rowOf(pick.selected) - 2).coerceAtLeast(0))
+                    }
+                    LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        pick.options.forEachIndexed { index, option ->
+                            pick.headers[index]?.let { header ->
+                                item(key = "h$index") {
+                                    Text(
+                                        header,
+                                        modifier = Modifier.padding(start = 8.dp, top = 10.dp),
+                                        color = colors.primary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                    )
+                                }
+                            }
+                            item(key = index) {
+                                val isSelected = index == pick.selected
+                                val textColor = if (isSelected) colors.onPrimaryContainer else colors.onSurface
+                                Column(
+                                    Modifier.fillMaxWidth()
+                                        .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
+                                        .clickable { onSelect(index) }
+                                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                                ) {
+                                    Text(option, color = textColor, fontSize = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    pick.subtitles.getOrNull(index)?.let {
+                                        Text(it, color = textColor.copy(alpha = 0.75f), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

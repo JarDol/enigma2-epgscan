@@ -58,7 +58,7 @@ internal val LocalBackButtonVisible = compositionLocalOf { true }
 @Composable
 internal fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier, label: String = "Wróć") {
     if (LocalBackButtonVisible.current) {
-        OutlinedButton(onClick = onClick, modifier = modifier) { Text("◀  $label") }
+        OutlinedButton(onClick = onClick, modifier = modifier) { Text("◀  ${tr(label)}") }
     }
 }
 
@@ -122,12 +122,12 @@ private fun SettingsBody(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (screen == null || screen == SettingsScreen.SECTIONS) "E2Stream" else "Ustawienia",
+                    if (screen == null || screen == SettingsScreen.SECTIONS) "E2Stream" else tr("Ustawienia"),
                     color = colors.onSurfaceVariant,
                     fontSize = 15.sp,
                 )
                 Text(
-                    screen?.title ?: "E2Stream",
+                    screen?.title?.let(::tr) ?: "E2Stream",
                     style = MaterialTheme.typography.headlineMedium,
                     color = colors.primary,
                     fontWeight = FontWeight.Bold,
@@ -144,8 +144,10 @@ private fun SettingsBody(
         }
         Text(status, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(
-            if (screen == SettingsScreen.REMOTE_TEST) "Wstecz dwa razy — wyjście z testu"
-            else "▲ ▼ wybór   •   OK zatwierdź   •   Wstecz poziom wyżej   •   Menu zamknij",
+            tr(
+                if (screen == SettingsScreen.REMOTE_TEST) "Wstecz dwa razy — wyjście z testu"
+                else "▲ ▼ wybór   •   OK zatwierdź   •   Wstecz poziom wyżej   •   Menu zamknij",
+            ),
             color = colors.onSurfaceVariant,
             fontSize = 13.sp,
         )

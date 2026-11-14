@@ -79,6 +79,51 @@ internal fun parseMovieList(json: JSONObject, requestedDir: String): Pair<String
 
 fun serviceKey(ref: String): String = ref.trim().trimEnd(':').uppercase()
 
+data class DecoderTimer(
+    val serviceRef: String,
+    val channel: String,
+    val title: String,
+    val description: String,
+    val begin: Long,
+    val end: Long,
+    val eventId: Int,
+    val switchOnly: Boolean,
+    val disabled: Boolean,
+)
+
+/** Odpowiedź /api/timerlist → timery od najwcześniejszego (bez niepełnych wpisów). */
+internal fun parseTimerList(json: JSONObject): List<DecoderTimer> {
+    val timers = json.optJSONArray("timers") ?: throw IOException("OpenWebif nie zwrócił listy timerów.")
+    fun JSONObject.text(key: String): String =
+        if (isNull(key)) "" else optString(key).takeUnless { it == "None" || it == "null" }.orEmpty()
+    fun JSONObject.flag(key: String): Boolean = when (val value = opt(key)) {
+        is Boolean -> value
+        is Number -> value.toInt() != 0
+        is String -> value == "1" || value.equals("true", true)
+        else -> false
+    }
+    val out = mutableListOf<DecoderTimer>()
+    for (index in 0 until timers.length()) {
+        val item = timers.optJSONObject(index) ?: continue
+        val ref = item.text("serviceref")
+        val begin = item.optLong("begin")
+        val end = item.optLong("end")
+        if (ref.isBlank() || begin <= 0 || end <= begin) continue
+        out += DecoderTimer(
+            serviceRef = ref,
+            channel = OpenWebifText.unescape(item.text("servicename")),
+            title = OpenWebifText.unescape(item.text("name").ifBlank { item.text("description") }),
+            description = OpenWebifText.unescape(item.text("description")),
+            begin = begin,
+            end = end,
+            eventId = item.optInt("eit"),
+            switchOnly = item.flag("justplay"),
+            disabled = item.flag("disabled"),
+        )
+    }
+    return out.sortedBy { it.begin }
+}
+
 class DecoderClient(private val config: DesktopConfig) {
     fun loadBouquets(): DecoderCatalog {
         require(config.host.isNotBlank()) { "Podaj adres dekodera." }
@@ -210,6 +255,40 @@ class DecoderClient(private val config: DesktopConfig) {
             result[serviceKey(ref)] = NowEvent(OpenWebifText.unescape(title), begin, begin + duration)
         }
         return result
+    }
+
+    /** Timery nagrań i przełączeń zapisane bezpośrednio na dekoderze. */
+    fun decoderTimers(): List<DecoderTimer> {
+        validatePort(config.httpPort, "OpenWebif")
+        return parseTimerList(get(config.httpPort, "/api/timerlist"))
+    }
+
+    fun timerDelete(timer: DecoderTimer): Pair<Boolean, String> {
+        validatePort(config.httpPort, "OpenWebif")
+        val eit = if (timer.eventId > 0) "&eit=${timer.eventId}" else ""
+        val json = get(
+            config.httpPort,
+            "/api/timerdelete?sRef=${encode(timer.serviceRef)}&begin=${timer.begin}&end=${timer.end}$eit",
+        )
+        val message = json.optString("message").ifBlank { json.optString("error") }.ifBlank { "Brak potwierdzenia z dekodera" }
+        return json.optBoolean("result") to message
+    }
+
+    /** Nagranie audycji na dekoderze (margines 2 min przed i 5 min po). */
+    fun timerAddRecording(ref: String, title: String, begin: Long, end: Long, eventId: Int = 0): Pair<Boolean, String> {
+        validatePort(config.httpPort, "OpenWebif")
+        if (eventId > 0) {
+            val byEvent = runCatching {
+                val json = get(config.httpPort, "/api/timeraddbyeventid?sRef=${encode(ref)}&eventid=$eventId")
+                json.optBoolean("result") to json.optString("message")
+            }.getOrNull()
+            if (byEvent?.first == true) return byEvent
+        }
+        val json = get(
+            config.httpPort,
+            "/api/timeradd?sRef=${encode(ref)}&begin=${begin - 120}&end=${end + 300}&name=${encode(title)}",
+        )
+        return json.optBoolean("result") to json.optString("message")
     }
 
     private fun validatePort(port: Int, service: String) {

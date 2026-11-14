@@ -11,7 +11,10 @@ mapowania klawiatury i pilota, a także oglądanie nagrań z dysku dekodera (buk
 zapisanej pozycji) i timeshift buforowany na dysku komputera (Ustawienia → Odtwarzanie i obraz → Timeshift).
 Jest to wczesna wersja testowa, jeszcze bez pełnego przewodnika EPG. Tryb okna (okno, zmaksymalizowane, pełny
 ekran zasłaniający pasek zadań) wybiera się w ustawieniach, klawiszem F11 lub przyciskiem odtwarzacza;
-skalowanie obrazu — pozycją „Obraz” w menu.
+skalowanie obrazu — pozycją „Obraz” w menu. W ustawieniach Ogólne są — jak w Androidzie — pozycje i kolejność
+menu, czasy okien (pasek timeshiftu, okna akcji, potwierdzenia, EPG, informacyjne), czyszczenie zrealizowanych
+przełączeń oraz język aplikacji (automatycznie / polski / angielski). Menu zawiera „Przełączenia wg harmonogramu”
+i „Harmonogramy dekodera” (z usuwaniem); nowe przełączenia będzie można dodawać z opisu audycji w przewodniku EPG.
 Uruchamia się w oknie odtwarzacza; ustawienia otwiera się przez menu (klawisz M lub przycisk Menu pilota).
 Prawy przycisk myszy pokazuje i ukrywa przyciski sterowania. Ustawienia mają układ z Androida (lista sekcji,
 a w nich opcje), otwierają się w oknie bez paska tytułu i obejmują m.in. mapowanie OK/strzałek, konfigurację

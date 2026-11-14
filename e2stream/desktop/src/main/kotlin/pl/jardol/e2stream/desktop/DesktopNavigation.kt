@@ -5,13 +5,31 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-internal enum class DesktopMenuItem(val label: String) {
+internal enum class DesktopMenuItem(val label: String, val configurable: Boolean = true) {
     CHANNEL_LIST("Lista kanałów"),
-    SETTINGS("Ustawienia"),
+    RECORDINGS("Nagrania"),
+    ZAP_TIMERS("Przełączenia wg harmonogramu"),
+    DECODER_TIMERS("Harmonogramy dekodera"),
     REMOTE_TEST("Test pilota"),
     IMAGE("Obraz — skalowanie"),
     WINDOW("Okno / pełny ekran"),
-    EXIT("Wyłącz E2Stream"),
+    SETTINGS("Ustawienia", configurable = false),
+    EXIT("Wyłącz E2Stream", configurable = false),
+    ;
+
+    companion object {
+        val configurableItems: List<DesktopMenuItem> get() = entries.filter { it.configurable }
+
+        /** Pozycje konfigurowalne w zapisanej kolejności (nowe dopisane na końcu). */
+        fun inOrder(order: List<String>): List<DesktopMenuItem> {
+            val stored = order.mapNotNull { name -> configurableItems.firstOrNull { it.name == name } }.distinct()
+            return stored + configurableItems.filterNot { it in stored }
+        }
+
+        /** Menu: widoczne pozycje w ustalonej kolejności, Ustawienia i Wyłącz zawsze na końcu. */
+        fun visible(order: List<String>, hidden: Set<String>): List<DesktopMenuItem> =
+            inOrder(order).filterNot { it.name in hidden } + SETTINGS + EXIT
+    }
 }
 
 internal data class MenuKeyResult(val handled: Boolean, val activated: DesktopMenuItem? = null)
@@ -19,10 +37,13 @@ internal data class MenuKeyResult(val handled: Boolean, val activated: DesktopMe
 internal class DesktopNavigation {
     var showMenu by mutableStateOf(false)
     var menuSelected by mutableIntStateOf(0)
+    var menuItems by mutableStateOf(DesktopMenuItem.entries.toList())
+        private set
     var controlsVisible by mutableStateOf(false)
 
-    fun openMenu() {
-        menuSelected = DesktopMenuItem.SETTINGS.ordinal
+    fun openMenu(items: List<DesktopMenuItem> = DesktopMenuItem.entries) {
+        menuItems = items
+        menuSelected = items.indexOf(DesktopMenuItem.SETTINGS).coerceAtLeast(0)
         showMenu = true
     }
 
@@ -32,7 +53,7 @@ internal class DesktopNavigation {
 
     fun handleMenuKey(key: VirtualRemoteKey): MenuKeyResult {
         if (!showMenu) return MenuKeyResult(false)
-        val items = DesktopMenuItem.entries
+        val items = menuItems
         when (key) {
             VirtualRemoteKey.OK -> {
                 showMenu = false

@@ -76,6 +76,17 @@ data class DesktopConfig(
     val tsStepMin: Int = 1,
     val tsBackLive: Boolean = false,
     val windowMode: WindowMode = WindowMode.MAXIMIZED,
+    val tsBannerSec: Int = 6,
+    val actionDialogSec: Int = 30,
+    val confirmDialogSec: Int = 30,
+    val epgChannelSec: Int = 30,
+    val epgMultiSec: Int = 30,
+    val infoDialogSec: Int = 7,
+    val hideInfoDialogs: Boolean = false,
+    val zapHistoryDays: Int = 28,
+    val menuOrder: List<String> = emptyList(),
+    val menuHidden: Set<String> = emptySet(),
+    val appLanguage: String = AppLanguage.SYSTEM,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -137,6 +148,17 @@ data class DesktopConfig(
             setProperty("tsStepMin", tsStepMin.toString())
             setProperty("tsBackLive", tsBackLive.toString())
             setProperty("windowMode", windowMode.name)
+            setProperty("tsBannerSec", tsBannerSec.toString())
+            setProperty("actionDialogSec", actionDialogSec.toString())
+            setProperty("confirmDialogSec", confirmDialogSec.toString())
+            setProperty("epgChannelSec", epgChannelSec.toString())
+            setProperty("epgMultiSec", epgMultiSec.toString())
+            setProperty("infoDialogSec", infoDialogSec.toString())
+            setProperty("hideInfoDialogs", hideInfoDialogs.toString())
+            setProperty("zapHistoryDays", zapHistoryDays.toString())
+            setProperty("menuOrder", menuOrder.joinToString(","))
+            setProperty("menuHidden", JSONArray(menuHidden.sorted()).toString())
+            setProperty("appLanguage", appLanguage)
         }
         Files.newOutputStream(path).use { properties.store(it, "E2Stream settings") }
     }
@@ -245,6 +267,18 @@ data class DesktopConfig(
                 tsBackLive = bool("tsBackLive", defaults.tsBackLive),
                 windowMode = WindowMode.entries.firstOrNull { it.name == properties.getProperty("windowMode") }
                     ?: defaults.windowMode,
+                tsBannerSec = int("tsBannerSec", defaults.tsBannerSec, 1..30),
+                actionDialogSec = int("actionDialogSec", defaults.actionDialogSec, 0..600),
+                confirmDialogSec = int("confirmDialogSec", defaults.confirmDialogSec, 0..600),
+                epgChannelSec = int("epgChannelSec", defaults.epgChannelSec, 0..600),
+                epgMultiSec = int("epgMultiSec", defaults.epgMultiSec, 0..600),
+                infoDialogSec = int("infoDialogSec", defaults.infoDialogSec, 1..600),
+                hideInfoDialogs = bool("hideInfoDialogs", defaults.hideInfoDialogs),
+                zapHistoryDays = int("zapHistoryDays", defaults.zapHistoryDays, 0..28)
+                    .takeIf { it in ZapTimerStore.HISTORY_DAYS } ?: defaults.zapHistoryDays,
+                menuOrder = string("menuOrder", "").split(',').map(String::trim).filter(String::isNotEmpty),
+                menuHidden = parseSet(properties.getProperty("menuHidden")),
+                appLanguage = string("appLanguage", defaults.appLanguage).takeIf(AppLanguage::isValid) ?: defaults.appLanguage,
             )
         }
 

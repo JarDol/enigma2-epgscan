@@ -67,6 +67,17 @@ class DesktopConfigTest {
             tsStepMin = 5,
             tsBackLive = true,
             windowMode = WindowMode.FULLSCREEN,
+            tsBannerSec = 9,
+            actionDialogSec = 0,
+            confirmDialogSec = 45,
+            epgChannelSec = 20,
+            epgMultiSec = 60,
+            infoDialogSec = 3,
+            hideInfoDialogs = true,
+            zapHistoryDays = 7,
+            menuOrder = listOf("IMAGE", "CHANNEL_LIST"),
+            menuHidden = setOf("REMOTE_TEST"),
+            appLanguage = AppLanguage.ENGLISH,
         )
 
         try {

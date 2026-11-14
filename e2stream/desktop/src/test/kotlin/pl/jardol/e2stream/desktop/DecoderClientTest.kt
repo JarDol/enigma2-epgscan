@@ -36,6 +36,31 @@ class DecoderClientTest {
     }
 
     @Test
+    fun parsesTimerListSkipsIncompleteRowsAndReadsFlags() {
+        val json = org.json.JSONObject(
+            """
+            {"timers": [
+              {"serviceref": "1:0:1:B:2:3:0:0:0:0:", "servicename": "TVP 2", "name": "Późny", "description": "None",
+               "begin": 2000, "end": 3000, "eit": 7, "justplay": "1", "disabled": 0},
+              {"serviceref": "", "begin": 1, "end": 2},
+              {"serviceref": "1:0:1:A:2:3:0:0:0:0:", "servicename": "TVP 1", "name": "", "description": "Opis",
+               "begin": 1000, "end": 1500, "justplay": false, "disabled": true}
+            ]}
+            """.trimIndent(),
+        )
+
+        val timers = parseTimerList(json)
+
+        assertEquals(listOf("Opis", "Późny"), timers.map { it.title })
+        assertTrue(timers[0].disabled)
+        assertEquals(false, timers[0].switchOnly)
+        assertTrue(timers[1].switchOnly)
+        assertEquals(7, timers[1].eventId)
+        assertEquals("", timers[1].description)
+        assertFailsWith<IOException> { parseTimerList(org.json.JSONObject("{}")) }
+    }
+
+    @Test
     fun loadsCurrentEpgAndNormalizesServiceReferences() {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         var requestedQuery = ""
