@@ -122,6 +122,16 @@ internal object Updater {
      * aplikację trzeba potem zamknąć, żeby instalator mógł podmienić pliki.
      */
     fun launchInstaller(file: File) {
-        java.awt.Desktop.getDesktop().open(file)
+        // Desktop.open odmawia plików .exe; Start-Process uruchamia instalator jak dwuklik (z pytaniem UAC).
+        val path = file.absolutePath.replace("'", "''")
+        val powershell = runCatching {
+            ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", "Start-Process -FilePath '$path'")
+                .redirectErrorStream(true)
+                .start()
+        }.getOrNull()
+        if (powershell != null && powershell.waitFor(20, java.util.concurrent.TimeUnit.SECONDS) && powershell.exitValue() == 0) return
+        val output = powershell?.let { runCatching { it.inputStream.bufferedReader().readText().trim() }.getOrDefault("") }.orEmpty()
+        AppLog.i("aktualizacja: Start-Process nie uruchomił instalatora ($output) — próba przez Eksplorator")
+        ProcessBuilder("explorer.exe", file.absolutePath).start()
     }
 }

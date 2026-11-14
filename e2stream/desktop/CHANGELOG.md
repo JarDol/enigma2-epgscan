@@ -3,6 +3,10 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.3.2
+
+- Aktualizacja: pobrany instalator nie uruchamiał się („Unsupported URI content”) — teraz uruchamiany przez Windows (Start-Process, z pytaniem UAC), w zapasie przez Eksplorator. Tę wersję trzeba zainstalować ręcznie, kolejne już przez „Sprawdź i zainstaluj aktualizację”
+
 ## 0.3.1
 
 - „Aktywuj okno klawiszem”: Ustawienia → Pilot i klawiatura (także pozycja w Menu) — dowolne klawisze pilota HID, IR (WinLIRC) albo klawiatury, które przywołują okno E2Stream, gdy jest w tle (jak Power, ale bez okna wyłączania); na wierzchu klawisz działa zwykle
