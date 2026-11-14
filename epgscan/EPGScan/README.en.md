@@ -55,6 +55,14 @@ Polish version of this description: [README.md](README.md).
 opkg install /tmp/enigma2-plugin-extensions-epgscan_X.Y.Z_all.ipk && init 4; sleep 2; init 3
 ```
 
+**If Enigma keeps restarting:** copy the IPK to `/tmp` over the network and connect using SSH or Telnet.
+Stopping Enigma interrupts current recordings. Restart it only after installation succeeds:
+
+```
+init 4
+opkg install /tmp/enigma2-plugin-extensions-epgscan_X.Y.Z_all.ipk && init 3
+```
+
 **ZIP archive**:
 
 ```

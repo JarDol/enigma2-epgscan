@@ -51,6 +51,14 @@ i SatWatch działają z dowolną pozycją i dowolnymi bukietami.
 opkg install /tmp/enigma2-plugin-extensions-epgscan_X.Y.Z_all.ipk && init 4; sleep 2; init 3
 ```
 
+**Gdy Enigma uruchamia się w pętli:** skopiuj IPK do `/tmp` przez sieć i połącz się przez SSH lub Telnet.
+Zatrzymanie Enigmy przerwie bieżące nagrania. Uruchom ją ponownie tylko po udanej instalacji:
+
+```
+init 4
+opkg install /tmp/enigma2-plugin-extensions-epgscan_X.Y.Z_all.ipk && init 3
+```
+
 **Archiwum ZIP**:
 
 ```

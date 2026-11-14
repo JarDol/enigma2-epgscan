@@ -7,7 +7,7 @@ import tempfile
 import time
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -92,10 +92,10 @@ common.all_refs = lambda: []
 common.log_dups = lambda *_args: None
 common.export_dups = lambda *_args: None
 common.scale_skins = lambda *_args: None
-common.is_due = lambda: False
+common.is_due = lambda now=None: False
 common.sched_active = lambda: False
 common.next_run = lambda: 0
-common.last_slot = lambda: 0
+common.last_slot = lambda now: 0
 common.fmt_ts = lambda _timestamp: ""
 common.WAKEUP_FILE = os.path.join(tempfile.gettempdir(), "epgscan-wakeup-test")
 common.topup_candidates = lambda: []
@@ -681,6 +681,45 @@ class ChannelParamScanTests(unittest.TestCase):
 			scheduler.check()
 		blocked.assert_called_once_with("standby", False)
 		self.assertEqual(scheduler.waiting, "odbiornik nie jest w czuwaniu")
+
+	def test_scheduled_start_uses_daily_slot_interval_and_resume_time(self):
+		now = 1800000000
+		slot = now - 120
+		for mode, resume, due, previous, expected in (
+				("daily", False, True, 0, slot),
+				("interval", False, True, 0, now),
+				("daily", True, False, now - 3600, now - 3600),
+				("daily", True, False, 0, now)):
+			with self.subTest(mode=mode, resume=resume, previous=previous):
+				scheduler = object.__new__(schedule_module.Scheduler)
+				scheduler.first = False
+				scheduler.resume = resume
+				scheduler.woke = False
+				scheduler.waiting = ""
+				scheduler.session = object()
+				scheduler.t_boot = now - 300
+				engine = Mock(running=False)
+				engine.start.return_value = True
+				with patch.object(common.cfg, "sched_mode", setting(mode), create=True), \
+						patch.object(common.cfg, "last_auto_run", setting(previous), create=True), \
+						patch.object(schedule_module.time, "time", return_value=now + 0.75), \
+						patch.object(schedule_module, "sched_active", return_value=True), \
+						patch.object(schedule_module, "is_due", return_value=due) as is_due, \
+						patch.object(schedule_module, "last_slot", side_effect=lambda timestamp: slot) as last_slot, \
+						patch.object(schedule_module, "get_engine", return_value=engine), \
+						patch.object(schedule_module, "save_cfg") as save, \
+						patch.object(scheduler, "blocked_reason", return_value=""), \
+						patch.object(scheduler, "report"):
+					scheduler.check()
+					is_due.assert_called_once_with(now)
+					if mode == "daily" and not resume:
+						last_slot.assert_called_once_with(now)
+					else:
+						last_slot.assert_not_called()
+					self.assertEqual(common.cfg.last_auto_run.value, previous if resume else expected)
+					self.assertEqual(engine.auto_start_time, expected)
+					engine.start.assert_called_once_with(auto=True, woke=False)
+					save.assert_called_once()
 
 	def test_scheduled_scan_finishes_and_clears_resume_flag(self):
 		with tempfile.TemporaryDirectory() as directory:

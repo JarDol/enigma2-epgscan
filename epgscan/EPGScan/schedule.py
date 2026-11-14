@@ -122,7 +122,8 @@ class Scheduler(object):
 			self.resume = False
 			cfg.auto_in_progress.value = False
 			save_cfg()
-		epg_due = sched_active() and (is_due() or self.resume)
+		now = int(time.time())
+		epg_due = sched_active() and (is_due(now) or self.resume)
 		if not epg_due:
 			self.waiting = ""
 			self.check_topup()
@@ -139,9 +140,9 @@ class Scheduler(object):
 		if self.resume:
 			log("Harmonogram: powtorka przerwanego skanu")
 			self.resume = False
-			scheduled_start = cfg.last_auto_run.value or int(time.time())
+			scheduled_start = cfg.last_auto_run.value or now
 		else:
-			scheduled_start = last_slot() if cfg.sched_mode.value == "daily" else int(time.time())
+			scheduled_start = last_slot(now) if cfg.sched_mode.value == "daily" else now
 			cfg.last_auto_run.value = scheduled_start
 		save_cfg()
 		eng.auto_start_time = scheduled_start
