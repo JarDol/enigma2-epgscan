@@ -2,6 +2,7 @@
 
 ## EPG Scan (wtyczka Enigma2)
 
+- **2.19.1** – serwer dla E2Stream: `/api/info` podaje ustawienie Enigma2 „Include EIT in http streams” (dla opcji EIT w aplikacji); czytelne nazwy profili Androida `device-android-<model>-<znacznik>.json` – dawny `device-<ANDROID_ID>.json` przenoszony raz przy synchronizacji
 - **2.19.0** – wszystkie pliki wtyczki w `/etc/enigma2/epgscan/` (pliki SatWatch z przedrostkiem `satwatch-`) i w katalogu kopii (`satwatch.log` obok `epgscan.log`, raporty w `raporty/`); stare miejsca przenoszone raz przy starcie; wspólne ustawienie „Logi i raporty: usuwaj starsze niż” dla EPG Scan i SatWatch; naprawione zapamiętywanie preferowanego tunera SatWatch
 - **2.18.3** – SatWatch: metoda okna decyzji nie zasłania `dict.update` ekranu (zapobiegawczo)
 - **2.18.2** – szybszy skan PAT/PMT: jedno strojenie na odstęp (ustawienie, domyślnie 1 s), odczyt równolegle na wolnych tunerach; nieudany transponder raz ponawiany całą grupą, bez strojenia kanałów osobno; ponowienie błędów po skanie pojedynczo z odstępem min. 2 s; lista „Aktualizuj teraz” według kanału aktualizacji
