@@ -19,6 +19,10 @@ The app starts in a maximized window rather than exclusive full screen, so
 switching to another app does not minimize it. The title bar and Windows
 taskbar remain available. Use F11 or the player button to toggle between
 maximized and regular window sizes.
+The player opens first, including before a decoder is configured. Press M or
+the mapped Menu remote key to open the menu and choose **Ustawienia** to
+connect to a decoder and select a bouquet. Right-click the player to show or
+hide the mouse controls; their **Menu** button opens the same menu.
 The **Obraz** menu selects fit, fill with cropping, or stretch to fill.
 The selection is saved. The borderless channel list can be closed with Escape,
 Alt+F4 or **Zamknij**.

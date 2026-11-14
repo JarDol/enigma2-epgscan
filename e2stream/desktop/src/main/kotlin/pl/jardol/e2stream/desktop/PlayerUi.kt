@@ -23,6 +23,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -39,6 +40,9 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,6 +52,9 @@ import androidx.compose.ui.window.rememberDialogState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
+import javax.swing.SwingUtilities
 import kotlinx.coroutines.delay
 
 private val clockFormat = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
@@ -63,105 +70,148 @@ internal fun bouquetOffset(bouquets: List<Bouquet>, current: Bouquet?, offset: I
 
 @Composable
 internal fun PlayerPage(
-    channel: Channel,
-    session: VlcSession,
+    channel: Channel?,
+    session: VlcSession?,
     event: NowEvent?,
     status: String,
+    controlsVisible: Boolean,
+    onToggleControls: () -> Unit,
     videoScaleMode: VideoScaleMode,
     isMaximized: Boolean,
     onToggleMaximized: () -> Unit,
     onScaleChange: (VideoScaleMode) -> Unit,
     onChannels: () -> Unit,
-    onSettings: () -> Unit,
+    onMenu: () -> Unit,
     onBack: () -> Unit,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     var bannerVisible by remember { mutableStateOf(true) }
     var bannerGeneration by remember { mutableIntStateOf(0) }
     var scaleMenuExpanded by remember { mutableStateOf(false) }
+    var statusVisible by remember { mutableStateOf(false) }
+    val currentToggleControls by androidx.compose.runtime.rememberUpdatedState(onToggleControls)
+    DisposableEffect(session) {
+        val listener = object : MouseAdapter() {
+            override fun mousePressed(event: MouseEvent) {
+                if (SwingUtilities.isRightMouseButton(event)) currentToggleControls()
+            }
+        }
+        session?.addVideoMouseListener(listener)
+        onDispose { session?.removeVideoMouseListener(listener) }
+    }
     LaunchedEffect(Unit) {
         while (true) {
             now = Instant.now().epochSecond
             delay(30_000)
         }
     }
-    LaunchedEffect(channel.ref, bannerGeneration) {
+    LaunchedEffect(channel?.ref, bannerGeneration) {
         bannerVisible = true
         delay(5_000)
         bannerVisible = false
+    }
+    LaunchedEffect(status, session) {
+        statusVisible = session != null
+        delay(7_000)
+        statusVisible = false
     }
     val currentEvent = event?.takeIf { it.begin <= now && now < it.end }
     val colors = MaterialTheme.colorScheme
     val accent = colors.primary
     val secondary = colors.onSurfaceVariant
-    Column(Modifier.fillMaxSize().background(Color.Black)) {
-        SwingPanel(
-            factory = { session.view },
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            background = Color.Black,
-        )
-        Column(
-            modifier = Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = 24.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            if (bannerVisible) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                        currentToggleControls()
+                    }
+                }
+            }
+        },
+    ) {
+        if (session != null) {
+            SwingPanel(
+                factory = { session.view },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                background = Color.Black,
+            )
+        } else {
+            Box(Modifier.fillMaxWidth().weight(1f).padding(24.dp)) {
+                Text(
+                    "$status\nMenu: M / pilot · przyciski myszy: prawy przycisk",
+                    color = Color.White,
+                )
+            }
+        }
+        if ((channel != null && bannerVisible) || controlsVisible || statusVisible) {
+            Column(
+                modifier = Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = 24.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (channel != null && bannerVisible) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            "${channel.number}   ${channel.name}",
+                            modifier = Modifier.weight(1f),
+                            color = accent,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(time(now), color = secondary, fontSize = 20.sp)
+                    }
                     Text(
-                        "${channel.number}   ${channel.name}",
-                        modifier = Modifier.weight(1f),
-                        color = accent,
-                        fontSize = 20.sp,
+                        currentEvent?.title ?: "Brak danych bieżącej audycji",
+                        color = colors.onSurface,
+                        fontSize = 21.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(time(now), color = secondary, fontSize = 20.sp)
-                }
-                Text(
-                    currentEvent?.title ?: "Brak danych bieżącej audycji",
-                    color = colors.onSurface,
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (currentEvent != null && currentEvent.end > currentEvent.begin) {
-                    val progress = ((now - currentEvent.begin).toFloat() / (currentEvent.end - currentEvent.begin)).coerceIn(0f, 1f)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(time(currentEvent.begin), color = secondary)
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.weight(1f).padding(top = 8.dp).height(6.dp),
-                            color = accent,
-                        )
-                        Text(time(currentEvent.end), color = secondary)
-                    }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onChannels) { Text("Lista kanałów") }
-                OutlinedButton(onClick = { bannerGeneration++ }) { Text("Pasek") }
-                OutlinedButton(onClick = session::togglePause) { Text("Pauza / Wznów") }
-                Box {
-                    OutlinedButton(onClick = { scaleMenuExpanded = true }) { Text("Obraz") }
-                    DropdownMenu(expanded = scaleMenuExpanded, onDismissRequest = { scaleMenuExpanded = false }) {
-                        VideoScaleMode.entries.forEach { mode ->
-                            DropdownMenuItem(
-                                text = { Text("${if (mode == videoScaleMode) "✓ " else ""}${mode.label}") },
-                                onClick = {
-                                    scaleMenuExpanded = false
-                                    onScaleChange(mode)
-                                },
+                    if (currentEvent != null && currentEvent.end > currentEvent.begin) {
+                        val progress = ((now - currentEvent.begin).toFloat() / (currentEvent.end - currentEvent.begin)).coerceIn(0f, 1f)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(time(currentEvent.begin), color = secondary)
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.weight(1f).padding(top = 8.dp).height(6.dp),
+                                color = accent,
                             )
+                            Text(time(currentEvent.end), color = secondary)
                         }
                     }
                 }
-                OutlinedButton(onClick = onToggleMaximized) {
-                    Text(if (isMaximized) "Okno" else "Maksymalizuj")
+                if (statusVisible && !controlsVisible) {
+                    Text(status, color = secondary, maxLines = 2)
                 }
-                OutlinedButton(onClick = onSettings) { Text("Ustawienia") }
-                OutlinedButton(onClick = onBack) { Text("Zatrzymaj") }
-                Text(status, modifier = Modifier.weight(1f).padding(top = 12.dp), color = secondary, maxLines = 1)
+                if (controlsVisible) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onChannels) { Text("Lista kanałów") }
+                    OutlinedButton(onClick = { bannerGeneration++ }, enabled = channel != null) { Text("Pasek") }
+                    OutlinedButton(onClick = { session?.togglePause() }, enabled = session != null) { Text("Pauza / Wznów") }
+                    Box {
+                        OutlinedButton(onClick = { scaleMenuExpanded = true }) { Text("Obraz") }
+                        DropdownMenu(expanded = scaleMenuExpanded, onDismissRequest = { scaleMenuExpanded = false }) {
+                            VideoScaleMode.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text("${if (mode == videoScaleMode) "✓ " else ""}${mode.label}") },
+                                    onClick = {
+                                        scaleMenuExpanded = false
+                                        onScaleChange(mode)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    OutlinedButton(onClick = onToggleMaximized) {
+                        Text(if (isMaximized) "Okno" else "Maksymalizuj")
+                    }
+                    OutlinedButton(onClick = onMenu) { Text("Menu") }
+                    OutlinedButton(onClick = onBack, enabled = session != null) { Text("Zatrzymaj") }
+                    Text(status, modifier = Modifier.weight(1f).padding(top = 12.dp), color = secondary, maxLines = 1)
+                }
             }
         }
     }

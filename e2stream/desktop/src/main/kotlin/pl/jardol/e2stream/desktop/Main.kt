@@ -81,7 +81,8 @@ fun main() {
             var settingsWindow by remember { mutableStateOf<java.awt.Window?>(null) }
             val loadedConfig = remember { runCatching { DesktopConfig.load() } }
             var config by remember { mutableStateOf(loadedConfig.getOrDefault(DesktopConfig())) }
-            var page by remember { mutableStateOf(DesktopPage.CONNECTION) }
+            val navigation = remember { DesktopNavigation() }
+            var page by navigation::page
             var status by remember {
                 mutableStateOf(
                     loadedConfig.exceptionOrNull()?.let { "Nie udało się odczytać ustawień: ${it.message}" }
@@ -95,6 +96,8 @@ fun main() {
             var nowEvents by remember { mutableStateOf<Map<String, NowEvent>>(emptyMap()) }
             var epgError by remember { mutableStateOf<String?>(null) }
             var showChannelList by remember { mutableStateOf(false) }
+            var showMenu by navigation::showMenu
+            val controlsVisible = navigation.controlsVisible
             var channelListSelected by remember { mutableIntStateOf(0) }
             var captureButton by remember { mutableStateOf<VirtualRemoteKey?>(null) }
             var selectedRemoteButton by remember { mutableStateOf(VirtualRemoteKey.OK) }
@@ -250,6 +253,15 @@ fun main() {
                 return true
             }
 
+            fun openChannelList() {
+                if (selectedBouquet == null) {
+                    status = "Połącz się z dekoderem i wybierz bukiet w ustawieniach."
+                    return
+                }
+                channelListSelected = channels.indexOfFirst { it.ref == playingChannel?.ref }.coerceAtLeast(0)
+                showChannelList = true
+            }
+
             fun handleVirtualKey(key: VirtualRemoteKey): Boolean {
                 if (showExitConfirmation) {
                     handleExitConfirmation(key)
@@ -264,11 +276,15 @@ fun main() {
                 lastVirtualKeyAt = now
                 remoteDiagnostics.log { "key=$key page=$page channelList=$showChannelList" }
 
+                if (showMenu) {
+                    return navigation.handleMenuKey(key)
+                }
+
                 if (page != DesktopPage.PLAYER) {
                     return when (key) {
                         VirtualRemoteKey.BACK, VirtualRemoteKey.HOME -> {
                             captureButton = null
-                            page = if (vlcSession == null) DesktopPage.CONNECTION else DesktopPage.PLAYER
+                            page = DesktopPage.PLAYER
                             true
                         }
                         VirtualRemoteKey.UP -> { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Up); true }
@@ -304,7 +320,7 @@ fun main() {
                 when (key) {
                     VirtualRemoteKey.UP, VirtualRemoteKey.CHANNEL_UP -> changeChannel(1)
                     VirtualRemoteKey.DOWN, VirtualRemoteKey.CHANNEL_DOWN -> changeChannel(-1)
-                    VirtualRemoteKey.OK -> showChannelList = true
+                    VirtualRemoteKey.OK -> openChannelList()
                     VirtualRemoteKey.SETTINGS -> page = DesktopPage.CONNECTION
                     VirtualRemoteKey.PLAY_PAUSE -> vlcSession?.togglePause()
                     VirtualRemoteKey.PLAY -> vlcSession?.resume()
@@ -318,7 +334,7 @@ fun main() {
                     VirtualRemoteKey.INFO -> status = "EPG wydarzenia nie jest jeszcze dostępne w wersji Windows."
                     VirtualRemoteKey.SEARCH -> status = "Wyszukiwanie EPG nie jest jeszcze dostępne w wersji Windows."
                     VirtualRemoteKey.AUDIO -> status = "Wybór ścieżki audio nie jest jeszcze dostępny w wersji Windows."
-                    VirtualRemoteKey.MENU -> status = "Menu nie jest jeszcze dostępne w wersji Windows."
+                    VirtualRemoteKey.MENU -> navigation.openMenu()
                     VirtualRemoteKey.LAST_CHANNEL -> status = "Historia kanałów nie jest jeszcze dostępna w wersji Windows."
                     VirtualRemoteKey.REWIND, VirtualRemoteKey.FAST_FORWARD, VirtualRemoteKey.STOP ->
                         status = "Timeshift nie jest jeszcze dostępny w wersji Windows."
@@ -336,7 +352,7 @@ fun main() {
                 onDispose { sessionToClose?.close() }
             }
 
-            DisposableEffect(desktopWindow, settingsWindow, captureButton, bindings, universalBindings, vlcSession, page, channels, playingChannel, showChannelList, showExitConfirmation) {
+            DisposableEffect(desktopWindow, settingsWindow, captureButton, bindings, universalBindings, vlcSession, page, channels, playingChannel, showChannelList, showMenu, showExitConfirmation) {
                 val dispatcher = java.awt.KeyEventDispatcher { event ->
                     val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
                     if (!belongsToApplication(focusedWindow, desktopWindow) ||
@@ -367,6 +383,7 @@ fun main() {
                             remoteDiagnostics.log { "source=keyboard key=$virtualKey page=$page" }
                         }
                         if (virtualKey != null && (page == DesktopPage.PLAYER ||
+                            virtualKey == VirtualRemoteKey.BACK ||
                             page == DesktopPage.REMOTE && virtualKey in setOf(
                                 VirtualRemoteKey.BACK, VirtualRemoteKey.HOME,
                                 VirtualRemoteKey.UP, VirtualRemoteKey.DOWN,
@@ -384,8 +401,11 @@ fun main() {
                                 RemoteAction.CHANNEL_UP -> changeChannel(1)
                                 RemoteAction.CHANNEL_DOWN -> changeChannel(-1)
                                 RemoteAction.CHANNEL_LIST -> {
-                                    channelListSelected = channels.indexOfFirst { it.ref == playingChannel?.ref }.coerceAtLeast(0)
-                                    showChannelList = true
+                                    openChannelList()
+                                    true
+                                }
+                                RemoteAction.MENU -> {
+                                    if (showMenu) showMenu = false else showMenu = true
                                     true
                                 }
                                 RemoteAction.SETTINGS -> { page = DesktopPage.CONNECTION; true }
@@ -473,12 +493,10 @@ fun main() {
                                 page = DesktopPage.CONNECTION
                             }) { Text("Dekoder") }
                             OutlinedButton(onClick = { page = DesktopPage.REMOTE }) { Text("Pilot / klawiatura") }
-                            if (vlcSession != null) {
-                                OutlinedButton(onClick = {
-                                    captureButton = null
-                                    page = DesktopPage.PLAYER
-                                }) { Text("Wróć do oglądania") }
-                            }
+                            OutlinedButton(onClick = {
+                                captureButton = null
+                                page = DesktopPage.PLAYER
+                            }) { Text("Wróć") }
                         }
                         Text(status, style = MaterialTheme.typography.bodyMedium)
                         epgError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -553,76 +571,98 @@ fun main() {
 
             val session = vlcSession
             val channel = playingChannel
-            if (session != null && channel != null) {
-                PlaybackHost(
-                    settingsVisible = page != DesktopPage.PLAYER,
-                    player = {
-                        PlayerPage(
-                            channel = channel,
-                            session = session,
-                            event = nowEvents[serviceKey(channel.ref)],
-                            status = epgError ?: status,
-                            videoScaleMode = config.videoScaleMode,
-                            isMaximized = mainWindowState.placement == WindowPlacement.Maximized,
-                            onToggleMaximized = ::toggleMaximized,
-                            onScaleChange = {
-                                config = config.copy(videoScaleMode = it)
-                                session.setVideoScale(it)
-                                runCatching { config.save() }
-                                    .onFailure { error -> status = "Nie udało się zapisać ustawień: ${error.message}" }
-                            },
-                            onChannels = {
-                                channelListSelected = channels.indexOfFirst { it.ref == playingChannel?.ref }.coerceAtLeast(0)
-                                showChannelList = true
-                            },
-                            onSettings = { page = DesktopPage.CONNECTION },
-                            onBack = {
-                                showChannelList = false
-                                vlcSession = null
-                                playingChannel = null
-                                page = DesktopPage.CONNECTION
-                                status = "Odtwarzanie zatrzymane."
-                            },
-                        )
-                    },
-                    settings = {
-                        DialogWindow(
-                            onCloseRequest = {
-                                captureButton = null
-                                page = DesktopPage.PLAYER
-                            },
-                            title = "E2Stream — ustawienia",
-                            state = rememberDialogState(width = 900.dp, height = 600.dp),
-                            resizable = true,
-                        ) {
-                            val dialog = window
-                            DisposableEffect(dialog) {
-                                settingsWindow = dialog
-                                onDispose { settingsWindow = null }
-                            }
-                            MaterialTheme(colorScheme = colorScheme) { settingsContent() }
-                        }
-                    },
-                )
-                if (showChannelList && page == DesktopPage.PLAYER) {
-                    ChannelListDialog(
-                        bouquet = selectedBouquet,
-                        bouquets = catalog?.bouquets.orEmpty(),
-                        channels = channels,
-                        selected = channelListSelected,
-                        nowEvents = nowEvents,
-                        busy = busy,
-                        onClose = { showChannelList = false },
-                        onSelectedChange = { channelListSelected = it },
-                        onBouquetSelected = ::selectBouquet,
-                        onPlay = {
+            PlaybackHost(
+                settingsVisible = page != DesktopPage.PLAYER,
+                player = {
+                    PlayerPage(
+                        channel = channel,
+                        session = session,
+                        event = channel?.let { nowEvents[serviceKey(it.ref)] },
+                        controlsVisible = controlsVisible,
+                        onToggleControls = navigation::toggleControls,
+                        status = epgError ?: status,
+                        videoScaleMode = config.videoScaleMode,
+                        isMaximized = mainWindowState.placement == WindowPlacement.Maximized,
+                        onToggleMaximized = ::toggleMaximized,
+                        onScaleChange = {
+                            config = config.copy(videoScaleMode = it)
+                            session?.setVideoScale(it)
+                            runCatching { config.save() }
+                                .onFailure { error -> status = "Nie udało się zapisać ustawień: ${error.message}" }
+                        },
+                        onChannels = ::openChannelList,
+                        onMenu = navigation::openMenu,
+                        onBack = {
                             showChannelList = false
-                            startChannel(it)
+                            vlcSession = null
+                            playingChannel = null
+                            page = DesktopPage.PLAYER
+                            status = "Odtwarzanie zatrzymane."
                         },
                     )
+                },
+                settings = {
+                    DialogWindow(
+                        onCloseRequest = {
+                            captureButton = null
+                            page = DesktopPage.PLAYER
+                        },
+                        title = "E2Stream — ustawienia",
+                        state = rememberDialogState(width = 900.dp, height = 600.dp),
+                        resizable = true,
+                    ) {
+                        val dialog = window
+                        DisposableEffect(dialog) {
+                            settingsWindow = dialog
+                            onDispose { settingsWindow = null }
+                        }
+                        MaterialTheme(colorScheme = colorScheme) { settingsContent() }
+                    }
+                },
+            )
+            if (showChannelList && page == DesktopPage.PLAYER) {
+                ChannelListDialog(
+                    bouquet = selectedBouquet,
+                    bouquets = catalog?.bouquets.orEmpty(),
+                    channels = channels,
+                    selected = channelListSelected,
+                    nowEvents = nowEvents,
+                    busy = busy,
+                    onClose = { showChannelList = false },
+                    onSelectedChange = { channelListSelected = it },
+                    onBouquetSelected = ::selectBouquet,
+                    onPlay = {
+                        showChannelList = false
+                        startChannel(it)
+                    },
+                )
+            }
+            if (showMenu && page == DesktopPage.PLAYER) {
+                DialogWindow(
+                    onCloseRequest = { showMenu = false },
+                    title = "E2Stream",
+                    state = rememberDialogState(width = 440.dp, height = 220.dp),
+                    undecorated = true,
+                    resizable = false,
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = colorScheme.surface,
+                        contentColor = colorScheme.onSurface,
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(24.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            Text("E2Stream", style = MaterialTheme.typography.titleLarge)
+                            Button(onClick = {
+                                showMenu = false
+                                page = DesktopPage.CONNECTION
+                            }) { Text("Ustawienia") }
+                            OutlinedButton(onClick = { showMenu = false }) { Text("Zamknij") }
+                        }
+                    }
                 }
-            } else {
-                settingsContent()
             }
             if (showExitConfirmation) {
                 DialogWindow(
@@ -655,8 +695,6 @@ fun main() {
     }
     }
 }
-
-private enum class DesktopPage { CONNECTION, PLAYER, REMOTE }
 
 private fun belongsToApplication(window: AwtWindow?, mainWindow: AwtWindow): Boolean {
     var current = window

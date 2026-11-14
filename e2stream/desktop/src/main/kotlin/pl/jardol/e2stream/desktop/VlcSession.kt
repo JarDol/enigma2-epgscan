@@ -3,6 +3,7 @@ package pl.jardol.e2stream.desktop
 import java.io.IOException
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.awt.event.MouseListener
 import javax.swing.JComponent
 import javax.swing.SwingUtilities
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
@@ -19,6 +20,16 @@ class VlcSession(private val onError: (String) -> Unit) {
 
     val view: JComponent
         get() = component
+
+    fun addVideoMouseListener(listener: MouseListener) {
+        component.addMouseListener(listener)
+        component.videoSurfaceComponent().addMouseListener(listener)
+    }
+
+    fun removeVideoMouseListener(listener: MouseListener) {
+        component.removeMouseListener(listener)
+        component.videoSurfaceComponent().removeMouseListener(listener)
+    }
 
     init {
         if (!NativeDiscovery().discover()) {
