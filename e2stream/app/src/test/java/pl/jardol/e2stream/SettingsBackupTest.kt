@@ -10,6 +10,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.net.ServerSocket
+import kotlin.concurrent.thread
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -118,5 +120,75 @@ class SettingsBackupTest {
         assertEquals(AppLanguage.ENGLISH, prefs.appLanguage)
         assertEquals("vlc", prefs.engine)
         assertEquals(false, context.getSharedPreferences("e2stream", Context.MODE_PRIVATE).contains("futureSetting"))
+    }
+
+    @Test
+    fun additionalDiscoverySubnetIsBackedUpAndRestored() {
+        prefs.discoverySubnet = "192.168.20.0/24"
+        val saved = JSONObject().put("discoverySubnet", SettingsBackup.values(prefs)["discoverySubnet"])
+        prefs.discoverySubnet = ""
+        SyncManager.restore(SyncManager.Profile("device.json", "TV", "TV", 0, JSONObject(), saved))
+        assertEquals("192.168.20.0/24", prefs.discoverySubnet)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsInvalidDiscoverySubnetInBackup() {
+        val saved = JSONObject().put("discoverySubnet", "192.168.20.0/16")
+        SyncManager.restore(SyncManager.Profile("device.json", "TV", "TV", 0, JSONObject(), saved))
+    }
+
+    @Test
+    fun profileRestoreIgnoresLegacyPmtsButKeepsAudioAndLocalCache() {
+        val shared = context.getSharedPreferences("e2stream", Context.MODE_PRIVATE)
+        shared.edit().putString("pmts_10", "local-cache").commit()
+        val data = JSONObject()
+            .put("pmts_10", JSONObject().put("v", "old-profile-pmt").put("t", 1))
+            .put("audio_channel", JSONObject().put("v", "42|pol|aac").put("t", 1))
+        SyncManager.restore(SyncManager.Profile("device.json", "TV", "TV", 0, data, null))
+        assertEquals("local-cache", shared.getString("pmts_10", ""))
+        assertEquals("42|pol|aac", shared.getString("audio_channel", ""))
+    }
+
+    @Test
+    fun oldProfilePmtTimestampDoesNotBlockLaterSharedUpdates() {
+        val server = ServerSocket(0)
+        try {
+            prefs.host = "127.0.0.1"
+            prefs.pluginPort = server.localPort
+            prefs.pluginOk = true
+            val shared = context.getSharedPreferences("e2stream", Context.MODE_PRIVATE)
+            shared.edit().putString("pmts_10", "local-cache").commit()
+            val backup = JSONObject()
+            for ((key, value) in SettingsBackup.values(prefs)) {
+                backup.put(key, if (value is Set<*>) JSONArray(value.toList()) else value)
+            }
+            val state = JSONObject()
+                .put("common", JSONObject().put("data", JSONObject().put("pmts_10",
+                    JSONObject().put("v", "shared").put("t", 150))))
+                .put("device", JSONObject()
+                    .put("device", JSONObject().put("backup", backup))
+                    .put("data", JSONObject().put("pmts_10", JSONObject().put("v", "legacy").put("t", 200))))
+            val responder = thread {
+                server.accept().use { socket ->
+                    val reader = socket.getInputStream().bufferedReader()
+                    while (reader.readLine()?.isNotEmpty() == true) { }
+                    val body = state.toString().toByteArray()
+                    socket.getOutputStream().write(
+                        "HTTP/1.1 200 OK\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray() + body,
+                    )
+                }
+            }
+            val meta = context.getSharedPreferences("e2sync", Context.MODE_PRIVATE)
+            meta.edit().putBoolean("initialized", true).putBoolean("freshBackupDecision", true)
+                .putBoolean("dirty", false).putLong("t_pmts_10", 150).commit()
+            val sync = SyncManager::class.java.getDeclaredMethod("sync", Prefs::class.java)
+            sync.isAccessible = true
+            sync.invoke(SyncManager, prefs)
+            responder.join(3000)
+            assertEquals(150L, meta.getLong("t_pmts_10", 0))
+            assertEquals("local-cache", shared.getString("pmts_10", ""))
+        } finally {
+            server.close()
+        }
     }
 }

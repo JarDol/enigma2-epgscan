@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="receiver_not_found">Nie znaleziono dekodera (port %1$d)</string>
+    <string name="receiver_search_subnet">Dodatkowa podsieć IPv4</string>
+    <string name="receiver_search_subnet_hint">Opcjonalnie, np. 192.168.10.0/24 (zakres /24–/30)</string>
+    <string name="receiver_search_invalid_subnet">Podaj poprawną podsieć IPv4 /24–/30, np. 192.168.10.0/24, lub pozostaw puste pole.</string>
+    <string name="receiver_search_invalid_port">Sprawdź numery portów OpenWebif i EPG Scan (1–65535).</string>
+    <string name="receiver_search_in_progress">Wyszukiwanie już trwa.</string>
+    <string name="receiver_search_warning">Wyszukiwanie sieciowe było niepełne. Szczegóły znajdują się w logu.</string>
+    <string name="receiver_search_devices">Znalezione urządzenia</string>
+    <string name="receiver_search_verified">Potwierdzony dekoder</string>
+    <string name="receiver_search_unverified">Wymaga logowania — Enigma2 niepotwierdzona</string>
+    <string name="receiver_search_unverified_title">Niepotwierdzone urządzenie</string>
+    <string name="receiver_search_confirm">Urządzenie %1$s:%2$d wymaga logowania. Nie udało się potwierdzić, że to dekoder Enigma2. Wybrać je mimo to?</string>
+    <string name="receiver_search_use">Wybierz mimo to</string>
     <string name="receiver_recordings">Nagrania (z dysku dekodera)</string>
     <string name="receiver_visible_bouquets">Widoczne bukiety</string>
     <string name="receiver_start_channel">Kanał startowy — %1$s</string>

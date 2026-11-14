@@ -87,10 +87,14 @@ def display_engine_note(note):
 def translate_choices(element):
 	"""Update display labels only; preserve persisted selection values."""
 	try:
-		current = list(element.choices.choices)
+		raw = element.choices.choices
 		set_choices = element.setChoices
 	except AttributeError:
 		return
+	if isinstance(raw, dict):
+		current = list(raw.items())
+	else:
+		current = [(item[0], item[1]) if isinstance(item, tuple) else (item, item) for item in raw]
 	key = id(element)
 	if key not in _choice_labels or _choice_labels[key][0] is not element:
 		_choice_labels[key] = (element, dict(current))
@@ -101,5 +105,5 @@ def translate_choices(element):
 	choices = [(value, _(original[value])) for value, label in current]
 	if choices != current:
 		value = element.value
-		set_choices(choices, default=value)
+		set_choices(choices, default=getattr(element, "default", value))
 		element.value = value

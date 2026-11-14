@@ -21,12 +21,14 @@ import time
 from enigma import eServiceReference, eServiceCenter
 
 from .common import cfg, log, VERSION, E2
+from .i18n import _
 
 API = 1
 DIR = os.path.join(E2, "epgscan", "clients")
 COMMON = os.path.join(DIR, "common.json")
 
 _server = None      # port nasluchu (twisted)
+_mdns_error = ""
 _lamedb = {"mtime": None, "pids": {}}
 
 # indeksy pamieci podrecznej PID-ow w lamedb (eDVBService::cacheID)
@@ -49,15 +51,21 @@ def _load(path, default=None):
 
 
 def _save(path, data):
+	tmp = path + ".tmp"
 	try:
 		if not os.path.isdir(DIR):
 			os.makedirs(DIR)
-		tmp = path + ".tmp"
 		with open(tmp, "w", encoding="utf-8") as f:
 			json.dump(data, f, ensure_ascii=False, indent=1)
-		os.rename(tmp, path)
+		os.replace(tmp, path)
 	except Exception as e:
+		try:
+			if os.path.exists(tmp):
+				os.unlink(tmp)
+		except OSError as cleanup_error:
+			log("Klienci: nie mozna usunac %s: %s" % (tmp, cleanup_error))
 		log("Klienci: zapis %s nieudany: %s" % (path, e))
+		raise
 
 
 def _safe_id(s):
@@ -233,18 +241,30 @@ DEVICE_ONLY = set([
 	"engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps",
 	"uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon",
 	"bufferMs", "rebufferMs", "cushionSlow", "afrMode", "stallSec", "dropRestart", "watchdog",
-	"showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3",
+	"showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3", "discoverySubnet",
 ])
 
 
 def push(dev_id, body):
 	"""Scala plik odbiornika (nowszy wpis wygrywa) i uzupelnia czesc wspolna."""
+	from .channelparamsstore import _read_json, apply_to_devices
 	dev = body.get("device") or {}
 	data = (dev.get("data") or {})
 	path = _dev_path(dev_id)
-	cur = _load(path, {}) or {}
-	cdata = cur.get("data") or {}
+	cur = _read_json(path)
+	cdata = cur.get("data", {})
+	common = _read_json(COMMON)
+	cd = common.get("data", {})
+	if not isinstance(cdata, dict) or not isinstance(cd, dict):
+		raise ValueError("Nieprawidlowa sekcja data w profilu lub common.json")
+	if any(_is_pmt(k) for k in cdata):
+		message, _conflicts = apply_to_devices({}, [os.path.basename(path)], mode="missing")
+		log("Czyszczenie starych PMT: %s" % message)
+		cur = _read_json(path)
+		cdata = cur.get("data", {})
 	for k, e in data.items():
+		if _is_pmt(k):
+			continue
 		if not isinstance(e, dict):
 			continue
 		old = cdata.get(k)
@@ -255,8 +275,6 @@ def push(dev_id, body):
 	cur["device"]["seen"] = _now_ms()
 	_save(path, cur)
 
-	common = _load(COMMON, {}) or {}
-	cd = common.get("data") or {}
 	changed = False
 	for k, e in list(data.items()) + list((body.get("common_add") or {}).items()):
 		if not isinstance(e, dict):
@@ -393,7 +411,7 @@ def _resource():
 
 
 def _listen():
-	global _server
+	global _server, _mdns_error
 	if not cfg.cli_api.value:
 		return
 	try:
@@ -401,6 +419,14 @@ def _listen():
 		from twisted.web.server import Site
 		_server = reactor.listenTCP(int(cfg.cli_port.value), Site(_resource()))
 		log("Serwer dla klientow (E2Stream): port %d" % int(cfg.cli_port.value))
+		try:
+			from .mdns import publish
+			_mdns_error = ""
+			status = publish(int(cfg.cli_port.value))
+			log(status)
+		except Exception as e:
+			_mdns_error = str(e)
+			log("mDNS: ogloszenie nieudane: %s" % e)
 	except Exception as e:
 		_server = None
 		log("Serwer dla klientow: start nieudany: %s" % e)
@@ -408,15 +434,34 @@ def _listen():
 
 def start():
 	"""Uruchamia serwer (przy starcie Enigma2 i po zmianie ustawien) - po zwolnieniu poprzedniego portu."""
+	def restart(_result=None):
+		try:
+			from .channelparamsstore import apply_to_devices, device_profiles
+			if os.path.isdir(DIR):
+				profiles = device_profiles()
+				if profiles:
+					message, _conflicts = apply_to_devices({}, profiles, mode="missing")
+					if " Usunieto " in message:
+						log("Czyszczenie starych PMT: %s" % message)
+		except Exception as e:
+			log("Czyszczenie starych PMT z profili nieudane: %s" % e)
+		_listen()
 	d = stop()
 	if d is not None:
-		d.addBoth(lambda _r: _listen())
+		d.addBoth(restart)
 	else:
-		_listen()
+		restart()
 
 
 def stop():
-	global _server
+	global _server, _mdns_error
+	try:
+		from .mdns import unpublish
+		unpublish()
+		_mdns_error = ""
+	except Exception as e:
+		_mdns_error = str(e)
+		log("mDNS: wycofanie ogloszenia nieudane: %s" % e)
 	d = None
 	if _server is not None:
 		try:
@@ -431,5 +476,8 @@ def summary():
 	n = len([x for x in devices()])
 	c = (_load(COMMON, {}) or {}).get("data") or {}
 	pmt = len([k for k in c if _is_pmt(k)])
-	return "port %d, odbiornikow: %d, PMT kanalow: %d" % (int(cfg.cli_port.value), n, pmt) if cfg.cli_api.value \
-		else "wylaczony"
+	if not cfg.cli_api.value:
+		return _("wylaczony")
+	from .mdns import status
+	mdns_status = (_("mDNS: blad: %s") % _mdns_error) if _mdns_error else _(status())
+	return _("port %d, odbiornikow: %d, PMT kanalow: %d; %s") % (int(cfg.cli_port.value), n, pmt, mdns_status)

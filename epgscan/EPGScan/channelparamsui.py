@@ -552,7 +552,7 @@ class ChannelParamsScreen(Screen):
 				(_("2. Dopisz braki"), ("common", False)),
 				(_("3. Zastap na klientach"), ("devices", True)),
 				(_("4. Dopisz braki na klientach"), ("devices", False)),
-				(_("5. Popraw nieistniejace na klientach"), ("devices", "repair"))])
+				(_("5. Klienci: popraw i dopisz braki"), ("devices", "repair"))])
 
 	def sync_choice(self, choice):
 		if not choice:
@@ -592,10 +592,10 @@ class ChannelParamsScreen(Screen):
 		if not files:
 			return
 		self.session.openWithCallback(lambda yes: self.apply_devices(yes, files, overwrite), MessageBox,
-			_("%s dane audio i PMT w %d wybranych odbiornikach?\n"
-			"PMT w profilach nie sa uzywane przez E2Stream; aktualne PMT pobiera on z danych wspolnych.\n"
-			"PMT z kolizja SID zostana pominiete. Przed zapisem powstana kopie.") %
-			(_("Poprawic nieistniejace") if overwrite == "repair" else
+			_("%s dane audio w %d wybranych odbiornikach?\n"
+			"Stare wpisy PMT zostana usuniete z profili; E2Stream pobiera PMT z danych wspolnych.\n"
+			"Przed zapisem powstana kopie.") %
+			(_("Poprawic i uzupelnic") if overwrite == "repair" else
 				(_("Zastapic") if overwrite else _("Dopisac braki")), len(files)),
 			MessageBox.TYPE_YESNO, default=False)
 

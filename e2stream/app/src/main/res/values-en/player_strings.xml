@@ -23,9 +23,8 @@
     <string name="player_backup_found">The receiver has saved profiles. You can import a backup or start with default settings.\n\nThe import includes PIN, passwords, plugin token, playback settings and local paths. The selected receiver address will not change.</string>
     <string name="player_backup_legacy">\u0020• older, incomplete backup</string>
     <string name="player_unreachable_retry">Cannot communicate with receiver %1$s; checking again</string>
-    <string name="player_unreachable_detail">Cannot communicate with receiver %1$s.\n\n%2$s\n\nChecking again every 3 seconds.</string>
     <string name="player_wait_receiver">Waiting for receiver %1$s.\n\nChecking again every 3 seconds.</string>
-    <string name="player_cannot_connect">Cannot connect to %1$s.\n\n%2$s\n\nChecking again every 3 seconds.</string>
+    <string name="player_cannot_connect">Cannot connect to %1$s.\n\nChecking again every 3 seconds.</string>
     <string name="player_vlc_retries">VLC could not start the stream after %1$d retries.\nLast problem: %2$s</string>
     <string name="player_resuming">Resuming stream (%1$s)</string>
     <string name="player_connecting">Connecting to %1$s…</string>

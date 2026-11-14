@@ -51,6 +51,7 @@ class SettingsActivity : Activity() {
     private lateinit var items: List<Item>
     private lateinit var store: EpgStore
     private var status = ""
+    @Volatile private var discoveryThread: Thread? = null
 
     // ------------------------------------------------------------ model
 
@@ -91,6 +92,12 @@ class SettingsActivity : Activity() {
                 Item.Header(getString(R.string.setting_receiver)),
         Item.Text(getString(R.string.setting_receiver_ip_address), { p.host }, { p.host = it.trim(); checkPluginQuiet() }, hint = "np. 192.168.1.20"),
         Item.Action(getString(R.string.setting_search_for_receivers_on_the_network)) { discover() },
+        Item.Text(getString(R.string.receiver_search_subnet), { p.discoverySubnet }, { value ->
+            val subnet = value.trim()
+            if (subnet.isNotEmpty() && Discovery.subnetHosts(subnet) == null) {
+                toast(getString(R.string.receiver_search_invalid_subnet))
+            } else p.discoverySubnet = subnet
+        }, hint = getString(R.string.receiver_search_subnet_hint)),
         num(getString(R.string.setting_openwebif_port), { p.httpPort }, { p.httpPort = it }, 1..65535),
         num(getString(R.string.setting_streaming_port), { p.streamPort }, { p.streamPort = it }, 1..65535),
         Item.Toggle(getString(R.string.setting_block_changes_when_the_receiver_is_unreachable), { p.blockOnDisconnect }, { p.blockOnDisconnect = it }),
@@ -493,6 +500,11 @@ class SettingsActivity : Activity() {
         SyncManager.syncAsync() // zmiany od razu na dekoder
     }
 
+    override fun onDestroy() {
+        discoveryThread?.interrupt()
+        super.onDestroy()
+    }
+
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_LONG).show()
 
     private fun refresh() = adapter.notifyDataSetChanged()
@@ -700,21 +712,66 @@ class SettingsActivity : Activity() {
     }
 
     private fun discover() {
+        if (discoveryThread?.isAlive == true) {
+            toast(getString(R.string.receiver_search_in_progress)); return
+        }
+        val subnet = p.discoverySubnet
+        if (subnet.isNotBlank() && Discovery.subnetHosts(subnet) == null) {
+            toast(getString(R.string.receiver_search_invalid_subnet)); return
+        }
+        val httpPort = p.httpPort
+        val pluginPort = p.pluginPort
+        if (httpPort !in 1..65535 || pluginPort !in 1..65535) {
+            toast(getString(R.string.receiver_search_invalid_port)); return
+        }
         toast(getString(R.string.message_searching_for_receivers_on_the_network))
-        Thread {
-            val found = Discovery.scan(p.httpPort) { _, _ -> }
+        val thread = Thread {
+            val result = try {
+                Discovery.scan(applicationContext, httpPort, pluginPort, subnet) { _, _ -> }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return@Thread
+            }
             runOnUiThread {
-                if (isFinishing) return@runOnUiThread
+                discoveryThread = null
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (result.warnings) toast(getString(R.string.receiver_search_warning))
+                val found = result.receivers
                 if (found.isEmpty()) {
-                    toast(getString(R.string.receiver_not_found, p.httpPort)); return@runOnUiThread
+                    toast(getString(R.string.receiver_not_found, httpPort)); return@runOnUiThread
                 }
-                TvDialog.list(this, getString(R.string.message_receivers_found), found.map { TvDialog.Item(it.ip, it.label) }) { w ->
-                    p.host = found[w].ip
-                    markChanged("dekoder = ${found[w].ip} (${found[w].label})")
-                    checkPluginQuiet()
+                val rows = found.map { receiver ->
+                    val state = getString(if (receiver.verified) R.string.receiver_search_verified else R.string.receiver_search_unverified)
+                    val source = if (receiver.viaMdns) "mDNS" else ""
+                    val subtitle = listOf(state, receiver.description, source).filter { it.isNotBlank() }.joinToString("  ·  ")
+                    TvDialog.Item("${receiver.ip}:${receiver.httpPort}", subtitle)
+                }
+                TvDialog.list(this, getString(R.string.receiver_search_devices), rows) { w ->
+                    val receiver = found[w]
+                    if (receiver.verified) selectReceiver(receiver)
+                    else TvDialog.confirm(this, getString(R.string.receiver_search_unverified_title),
+                        getString(R.string.receiver_search_confirm, receiver.ip, receiver.httpPort), listOf(
+                            TvDialog.Btn(getString(R.string.receiver_search_use)) { selectReceiver(receiver) },
+                            TvDialog.Btn(getString(R.string.dialog_cancel)),
+                        ))
                 }
             }
-        }.start()
+        }
+        discoveryThread = thread
+        thread.start()
+    }
+
+    private fun selectReceiver(receiver: FoundReceiver) {
+        if (p.host != receiver.ip || (receiver.pluginPort != null && p.pluginPort != receiver.pluginPort)) {
+            p.pluginOk = false
+            p.pluginVersion = ""
+        }
+        p.host = receiver.ip
+        p.httpPort = receiver.httpPort
+        receiver.pluginPort?.let { p.pluginPort = it }
+        receiver.streamPort?.let { p.streamPort = it }
+        markChanged("dekoder = ${receiver.ip}:${receiver.httpPort} (${receiver.description})")
+        checkPluginQuiet()
     }
 
     private fun chooseBouquets() {

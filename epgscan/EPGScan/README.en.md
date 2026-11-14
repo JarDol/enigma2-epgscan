@@ -245,20 +245,28 @@ An automatic capture runs during the main scheduled EPG run when the selected in
 services scanned afterwards; it follows the **Schedule** conditions (standby,
 recordings and wake-up). EPG top-ups do not trigger it.
 
+Regardless of synchronization, a successful read refreshes that channel in the scanner's local results file;
+other channels and still-available manual audio choices are retained. The overwrite and add-missing modes below
+apply separately to files synchronized with E2Stream, not to the scanner's local results.
+
 Post-scan synchronization, including scheduled scans, is configurable and disabled by default for both targets.
 Common defaults can be overwritten or missing entries added; all `device-*.json` profiles can be overwritten,
 filled, or repaired. Repair also fills missing profile audio entries from `common.json`, including channels not read
-in the current run. Only successful scan results from the current run are synchronized. Fill never changes existing
-entries, even invalid ones; repair keeps a client PID present in the current PMT and does not guess replacements
+in the current run. Only successful scan results from the current run are synchronized. Fill never replaces existing
+audio or PMT values, even invalid ones; repair keeps a client PID present in the current PMT and does not guess replacements
 for unrelated references. Failures are reported and existing files are backed up before changes.
 
 **Info/EPG** in the results screen provides five confirmed operations:
 
 - replace default audio/PMT values in `common.json` or add missing values;
-- replace values on selected E2Stream receivers, add missing values, or repair missing PIDs.
+- replace audio values on selected E2Stream receivers, add missing values, or repair missing PIDs.
 
 Valid PMT data can be sent without a selected audio track; audio is sent only for a confirmed selection.
-PMT data is sent only when its SID is not ambiguous across scanned services. Results are stored in
+PMT data is sent only when its SID is not ambiguous across scanned services. PMTs are synchronized to the shared
+`common.json`, not to client profiles. Obsolete profile PMTs are removed at plugin startup and before updating a
+profile, with a backup before each change. Shared PMTs and the player's local PMT cache are not removed.
+The profile backups can still contain the old PMTs for recovery.
+Results are stored in
 `/etc/enigma2/epgscan/channelparams.json`.
 
 When the receiver enters standby, open EPG Scan windows close without saving pending settings. An active scan
@@ -653,6 +661,13 @@ are in brackets. Every option has a description below the settings list.
 | Plugin information | description bundled with the installed version, available offline |
 | Server for E2Stream | (yes); receiver API, port (8770), optional token |
 | Build client data now | OK – immediately build the EPG/icons/reference package |
+
+When the E2Stream server is enabled, EPG Scan advertises `_epgscan._tcp` using Avahi, including the API port and
+available OpenWebif and streaming ports. `avahi-daemon` must be installed and running on the receiver; the plugin
+does not install it automatically and reports its status in the server summary and log. Cross-VLAN discovery
+requires an mDNS reflector and firewall access to the relevant TCP ports. Without Avahi, E2Stream can search an
+additional subnet or use a manually entered address. After installing and starting Avahi, restart Enigma2 to refresh
+the service status.
 
 ### Notifications, restart and cleanup
 | Setting | Description |

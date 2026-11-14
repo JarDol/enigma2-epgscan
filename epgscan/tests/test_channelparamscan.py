@@ -1363,7 +1363,7 @@ class SyncModeTests(unittest.TestCase):
 		with open(os.path.join(self.directory.name, name), encoding="utf-8") as file:
 			return json.load(file)["data"]
 
-	def test_pmt_without_selected_audio_syncs_all_modes_without_audio_entry(self):
+	def test_pmt_without_audio_syncs_to_common_but_not_devices(self):
 		body = bytes.fromhex("02b012428fc10000e118f0001be118f000")
 		video_pmt = base64.b64encode(body + channelparams._crc32(body).to_bytes(4, "big")).decode("ascii")
 		result = dict(self.result, section=video_pmt, selectedAudioPid=None, selectedConfirmed=False, streams=[])
@@ -1381,14 +1381,14 @@ class SyncModeTests(unittest.TestCase):
 			with self.subTest(target="device", mode=mode):
 				self.write("device-test.json", {})
 				store_module.apply_to_devices(results, ["device-test.json"], mode=mode)
-				self.assertEqual(self.read("device-test.json")["pmts_17039"]["v"], video_pmt)
+				self.assertNotIn("pmts_17039", self.read("device-test.json"))
 				self.assertNotIn(self.key, self.read("device-test.json"))
 		result.update(selectedAudioPid=536, selectedConfirmed=False, streams=self.result["streams"])
 		audio, _, pmts, _ = store_module._sync_payload(results)
 		self.assertEqual(audio, {})
 		self.assertEqual(pmts["pmts_17039"], video_pmt)
 
-	def test_pmt_only_modes_leave_audio_untouched_and_obey_existing_pmt_policy(self):
+	def test_pmt_only_modes_leave_audio_untouched_and_clean_device_pmt(self):
 		result = dict(self.result, selectedAudioPid=None, selectedConfirmed=False, streams=[])
 		results = {self.ref: result}
 		for mode in ("missing", "overwrite"):
@@ -1404,7 +1404,7 @@ class SyncModeTests(unittest.TestCase):
 				store_module.apply_to_devices(results, ["device-test.json"], mode=mode)
 				data = self.read("device-test.json")
 				self.assertEqual(data[self.key]["v"], "792|eng|old")
-				self.assertEqual(data["pmts_17039"]["v"], "broken" if mode == "missing" else PMT_BASE64)
+				self.assertNotIn("pmts_17039", data)
 
 	def test_audio_free_pmt_participates_in_sid_collision_detection(self):
 		changed = bytearray(base64.b64decode(PMT_BASE64))
@@ -1435,8 +1435,8 @@ class SyncModeTests(unittest.TestCase):
 		self.assertFalse(os.path.exists(clients.COMMON))
 		self.write("device-test.json", {})
 		message, conflicts = store_module.apply_to_devices(results, ["device-test.json"])
-		self.assertIn("koliz", message.lower())
-		self.assertEqual(conflicts, ["pmts_17039"])
+		self.assertEqual(message, "Zapisano ustawienia w 0 odbiornikach.")
+		self.assertEqual(conflicts, [])
 		self.assertEqual(self.read("device-test.json"), {})
 
 	def test_invalid_pmt_without_audio_is_reported(self):
@@ -1473,7 +1473,7 @@ class SyncModeTests(unittest.TestCase):
 		self.assertEqual(reports[0]["errors"], [])
 		self.assertEqual(len(reports[0]["sync"]), 2)
 		self.assertEqual(set(self.read("common.json")), {"pmts_17039"})
-		self.assertEqual(set(self.read("device-test.json")), {"pmts_17039"})
+		self.assertEqual(set(self.read("device-test.json")), set())
 
 	def test_automatic_repair_also_fills_audio_from_existing_common(self):
 		self.write("common.json", {"audio_shared": {"v": "123|pol|aac", "t": 1}})
@@ -1543,17 +1543,21 @@ class SyncModeTests(unittest.TestCase):
 		self.assertTrue(self.read("device-overwrite.json")[self.key]["v"].startswith("536|"))
 		self.assertTrue(any(name.startswith("device-invalid.json.bak-") for name in os.listdir(self.directory.name)))
 
-	def test_repair_updates_pmt_with_disappeared_pid_and_adds_missing_audio(self):
+	def test_repair_cleans_legacy_pmt_and_adds_missing_audio(self):
 		old = bytearray(base64.b64decode(PMT_BASE64))
 		offset = old.find(bytes.fromhex("e218"))
 		self.assertGreater(offset, 0)
 		old[offset:offset + 2] = bytes.fromhex("e3e7")
 		old[-4:] = channelparams._crc32(old[:-4]).to_bytes(4, "big")
 		self.write("device-test.json", {"pmts_17039": {"v": base64.b64encode(old).decode("ascii")}})
-		store_module.apply_to_devices(self.results, ["device-test.json"], mode="repair")
+		message, conflicts = store_module.apply_to_devices(self.results, ["device-test.json"], mode="repair")
 		data = self.read("device-test.json")
-		self.assertEqual(data["pmts_17039"]["v"], PMT_BASE64)
+		self.assertNotIn("pmts_17039", data)
 		self.assertTrue(data[self.key]["v"].startswith("536|"))
+		self.assertIn("Usunieto 1 nieuzywanych PMT", message)
+		self.assertEqual(conflicts, [])
+		backup = next(name for name in os.listdir(self.directory.name) if name.startswith("device-test.json.bak-"))
+		self.assertEqual(self.read(backup)["pmts_17039"]["v"], base64.b64encode(old).decode("ascii"))
 
 	def test_repair_fills_missing_audio_from_common_without_overwriting_client(self):
 		self.write("common.json", {

@@ -15,6 +15,7 @@ from .i18n import _
 
 def display_message(message):
 	base, separator, conflicts = message.partition(" Pominiete konflikty: ")
+	base, cleanup_separator, cleanup = base.partition(" Usunieto ")
 	patterns = (
 		(r"^Dodano (\d+) wartosci jako domyslne dla nowych urzadzen\.$",
 			_("Dodano %d wartosci jako domyslne dla nowych urzadzen.")),
@@ -28,6 +29,10 @@ def display_message(message):
 			break
 	else:
 		base = _(base)
+	if cleanup_separator:
+		match = re.match(r"^(\d+) nieuzywanych PMT z profili\.$", cleanup)
+		base += (_(" Usunieto %d nieuzywanych PMT z profili.") % int(match.group(1))
+			if match else cleanup_separator + cleanup)
 	return base + (_(" Pominiete konflikty: %s") % conflicts if separator else "")
 
 
@@ -60,17 +65,6 @@ def _current_pmt(result):
 		return None
 
 
-def _pmt_references_exist(entry, current):
-	try:
-		old = parse_pmt(base64.b64decode(_stored_value(entry), validate=True), current["sid"])
-		current_pids = {stream["pid"] for stream in current["streams"]}
-		old_pids = {stream["pid"] for stream in old["streams"]}
-		pcr = old["pcr_pid"]
-		return old_pids <= current_pids and (pcr in (0x1fff, current["pcr_pid"]) or pcr in current_pids)
-	except Exception:
-		return False
-
-
 def _mode(overwrite, mode, allowed):
 	mode = mode if mode is not None else ("overwrite" if overwrite else "missing")
 	if mode not in allowed:
@@ -82,7 +76,7 @@ def _sync_key(ref):
 	return re.sub(r"[^A-Z0-9]", "_", ref.strip().rstrip(":").upper()).strip("_")
 
 
-def _sync_payload(results):
+def _sync_payload(results, include_pmt=True):
 	audio = {}
 	audio_sources = {}
 	pmts = {}
@@ -94,6 +88,8 @@ def _sync_payload(results):
 			key = "audio_" + _sync_key(result["ref"])
 			audio[key] = _audio_value(stream)
 			audio_sources[key] = result
+		if not include_pmt:
+			continue
 		sid = result.get("sid")
 		section = result.get("section")
 		if not section:
@@ -199,11 +195,7 @@ def device_profiles():
 def apply_to_devices(results, selected_files, overwrite=False, mode=None):
 	from . import clients
 	mode = _mode(overwrite, mode, ("missing", "repair", "overwrite"))
-	audio, audio_sources, pmts, conflicts = _sync_payload(results)
-	if not audio and not pmts:
-		if conflicts:
-			return "PMT pominieto z powodu kolizji SID; niczego nie zapisano.", sorted(conflicts)
-		raise ValueError("Brak prawidlowych PMT lub potwierdzonych wyborow audio do zapisania")
+	audio, audio_sources, _pmts, conflicts = _sync_payload(results, include_pmt=False)
 	allowed = set(device_profiles())
 	targets = list(dict.fromkeys(n for n in selected_files if n in allowed))
 	if not targets:
@@ -224,6 +216,7 @@ def apply_to_devices(results, selected_files, overwrite=False, mode=None):
 	stamp = int(time.time() * 1000)
 	originals = {}
 	updated = {}
+	removed_pmts = 0
 	for name in targets:
 		path = os.path.join(clients.DIR, name)
 		with open(path, "rb") as f:
@@ -234,6 +227,11 @@ def apply_to_devices(results, selected_files, overwrite=False, mode=None):
 		originals[path] = raw
 		entries = data.setdefault("data", {})
 		changed = False
+		for key in list(entries):
+			if key.startswith("pmts_"):
+				del entries[key]
+				removed_pmts += 1
+				changed = True
 		for key, value in common_audio.items():
 			if key not in entries:
 				entries[key] = {"v": value, "t": stamp}
@@ -247,15 +245,6 @@ def apply_to_devices(results, selected_files, overwrite=False, mode=None):
 						not _valid_audio_entry(value, {"streams": current["streams"]})):
 					conflicts.add(key)
 					continue
-				entries[key] = {"v": value, "t": stamp}
-				changed = True
-			elif _stored_value(old) != value:
-				conflicts.add(key)
-		for key, value in pmts.items():
-			old = entries.get(key)
-			sid = int(key.split("_", 1)[1])
-			current = parse_pmt(base64.b64decode(value, validate=True), sid) if mode == "repair" else None
-			if mode == "overwrite" or key not in entries or (mode == "repair" and not _pmt_references_exist(old, current)):
 				entries[key] = {"v": value, "t": stamp}
 				changed = True
 			elif _stored_value(old) != value:
@@ -286,4 +275,7 @@ def apply_to_devices(results, selected_files, overwrite=False, mode=None):
 			raise RuntimeError("Blad zapisu profilu (%s); rollback niepelny: %s" %
 				(e, "; ".join(rollback_errors)))
 		raise
-	return "Zapisano ustawienia w %d odbiornikach." % len(written), sorted(conflicts)
+	message = "Zapisano ustawienia w %d odbiornikach." % len(written)
+	if removed_pmts:
+		message += " Usunieto %d nieuzywanych PMT z profili." % removed_pmts
+	return message, sorted(conflicts)

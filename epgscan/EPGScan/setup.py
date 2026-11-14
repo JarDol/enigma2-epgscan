@@ -304,9 +304,9 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		elif item is cfg.cp_devices_overwrite:
 			txt = "Synchronizacja profili E2Stream jest ustawiana w sekcji skanu parametrow."
 		elif item in (cfg.cp_sync_common, cfg.cp_sync_devices):
-			txt = "Automatyczna synchronizacja po skanie, rowniez z harmonogramu, tylko z kanalow odczytanych " \
-				"w tym przebiegu. Wylaczona domyslnie. Klienci: wszystkie pliki device-*.json. " \
-				"Dopisz braki nie zmienia istniejacych wpisow; popraw nieistniejace zachowuje poprawny PID. " \
+			txt = "Synchronizacja po skanie (takze z harmonogramu), domyslnie wylaczona. Nadpisz: aktualizuje " \
+				"wpisy z udanego skanu. Dopisz braki: zachowuje istniejace. Klienci - popraw nieistniejace: " \
+				"zachowuje poprawny PID i dopisuje braki z common.json. Wspolne: audio i PMT; klienci: audio. " \
 				"Przed zmianami powstaja kopie."
 		elif item is cfg.scope:
 			txt = "Ktore kanaly skanowac z satelity i skanem parametrow. OK - lista bukietow do zaznaczenia (zapis ustawia 'wybrane bukiety'); " \

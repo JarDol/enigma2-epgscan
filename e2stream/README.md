@@ -12,7 +12,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   strumień jest automatycznie otwierany ponownie. To samo, co ręczne „przełącz i wróć”, tylko w ok. 1–2 s.
 * Bukiety i kanały pobierane z OpenWebif (`/api/getservices`), EPG „teraz” (`/api/epgnow`).
 * Strumień: `http://DEKODER:8001/<referencja>` (opcjonalnie z logowaniem Basic).
-* Wyszukiwanie dekoderów w sieci lokalnej (ustawienia → „Szukaj dekoderów w sieci”).
+* Wyszukiwanie dekoderów przez mDNS i w sieci lokalnej (ustawienia → „Szukaj dekoderów w sieci”).
 * Wybór ścieżki dźwięku zapamiętywany osobno dla każdego kanału; lista ścieżek ma wspólny format dla VLC i ExoPlayera.
   Preferowany język akceptuje kody ISO i nazwy (np. `pl`, `pol`, `Polish`) i normalizuje je do jednego kodu.
 * Timeshift zachowuje tę samą ścieżkę audio co strumień na żywo, także przy silniku VLC.
@@ -49,12 +49,27 @@ Identyfikatory ścieżek mogą się zmieniać, a dekoder może udostępniać kil
 
 Podczas timeshiftu z VLC aplikacja próbuje zachować bieżącą ścieżkę przez dopasowanie PID-u w buforze. Jeśli odpowiedniego PID-u nie ma, stosuje zapamiętany wybór dla kanału.
 
+## Wyszukiwanie dekodera
+
+E2Stream szuka usługi `_epgscan._tcp` przez mDNS oraz sprawdza lokalne podsieci IPv4 /24 na ustawionym porcie OpenWebif.
+Opcjonalnie w **Dekoder Enigma2 → Dodatkowa podsieć IPv4** podaj zakres CIDR /24–/30, np. `192.168.10.0/24`;
+adres dekodera nadal można wpisać ręcznie. mDNS może przejść między VLAN-ami, jeśli działa reflektor mDNS;
+router i zapora muszą także przepuszczać zwykłe połączenia do portów OpenWebif, strumienia i API EPG Scan.
+Na dekoderze wymagany jest uruchomiony Avahi oraz włączony serwer E2Stream w EPG Scan. Wykryte porty są przejmowane
+z ogłoszenia, jeśli są w nim dostępne. Wyszukiwanie nie wysyła hasła ani tokenu do sprawdzanych adresów.
+Odpowiedź HTTP 401 nie potwierdza, że urządzenie jest dekoderem: takie pozycje są oznaczone jako niepotwierdzone
+i wymagają świadomego wyboru. Potwierdzenie rozpoznaje odpowiedź API, ale nie jest uwierzytelnieniem kryptograficznym.
+
 ## Synchronizacja z dekoderem
 
 Na dekoderze w `<katalog FTP>/sync/` (domyślnie `/media/hdd/e2stream/sync/`):
 
 * `common.json` — wartości domyślne dla nowych odbiorników i wspólne PMT kanałów,
 * `device-<id>.json` — ustawienia, kopia ustawień i wybrane ścieżki dźwięku każdego odbiornika (z nazwą i modelem).
+
+Przy użyciu API wtyczki aktualna PMT jest przechowywana we wspólnym `common.json`, nie w profilach urządzeń.
+EPG Scan usuwa przestarzałe wpisy PMT z profili z zachowaniem ich kopii; lokalny cache PMT odtwarzacza pozostaje bez zmian.
+Kopie profili mogą nadal zawierać stare PMT na potrzeby odtworzenia danych.
 
 Po nowej instalacji i wybraniu dekodera aplikacja sprawdza wtyczkę EPG Scan i proponuje import znalezionej kopii
 albo pozostanie przy ustawieniach domyślnych. Można wybrać także profil innego odbiornika. Starsze profile

@@ -48,8 +48,8 @@ jobs:
         run: |
           T="e2stream-$VER"
           IS_BETA=false
-          if [ "$GITHUB_REF_NAME" = "beta" ]; then IS_BETA=true; fi
-          git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md || true
+          if [[ "$GITHUB_REF_NAME" = "beta" || "$VER" == *-* ]]; then IS_BETA=true; fi
+          git log -1 --pretty=%B | grep -iv -E '^(Co-authored-by|Claude-Session):' > notes.md || true
           if gh release view "$T" >/dev/null 2>&1; then
             echo "Wydanie $T już istnieje — nie nadpisuję go" >&2
             exit 1

@@ -31,7 +31,7 @@ object SyncManager {
 
     /** Ustawienia synchronizowane (bez adresu dekodera, ścieżek lokalnych i stanu). */
     private val SETTINGS = setOf(
-        "httpPort", "streamPort", "user", "pass", "blockOnDisconnect", "appLanguage",
+        "httpPort", "streamPort", "user", "pass", "blockOnDisconnect", "appLanguage", "discoverySubnet",
         "tunneling", "engine", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps", "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon", "watchdog", "stallSec", "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "dropRestart",
         "audioLang", "preferAc3",
         "logFtp", "ftpUser", "ftpPass", "ftpDir", "saveTs", "tsRingMb", "tsFtp", "cleanTs",
@@ -49,7 +49,7 @@ object SyncManager {
         "engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps",
         "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon",
         "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "stallSec", "dropRestart", "watchdog",
-        "showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3", "blockOnDisconnect", "appLanguage",
+        "showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3", "blockOnDisconnect", "appLanguage", "discoverySubnet",
     )
 
     /** Przy pierwszym uruchomieniu nie nadpisujemy tego, co użytkownik właśnie wpisał. */
@@ -150,6 +150,11 @@ object SyncManager {
         if (k == "appLanguage") {
             require(v is String && AppLanguage.isValid(v)) { "Nieprawidłowy język aplikacji w kopii: $v" }
         }
+        if (k == "discoverySubnet") {
+            require(v is String && (v.isBlank() || Discovery.subnetHosts(v) != null)) {
+                "Nieprawidłowa dodatkowa podsieć IPv4 w kopii"
+            }
+        }
         when (v) {
             is Boolean -> e.putBoolean(k, v)
             is Int -> e.putInt(k, v)
@@ -218,6 +223,7 @@ object SyncManager {
             if (freshDecision) {
                 dData?.let { data ->
                     for (k in data.keys()) {
+                        if (!isDeviceKey(k)) continue
                         val t = data.optJSONObject(k)?.optLong("t") ?: continue
                         metaEd.putLong("t_$k", maxOf(t, meta.getLong("t_$k", 0)))
                     }

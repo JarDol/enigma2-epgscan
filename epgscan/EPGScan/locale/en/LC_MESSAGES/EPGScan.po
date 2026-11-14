@@ -2,6 +2,39 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8\nLanguage: en\n"
 
+msgid "mDNS: blad: %s"
+msgstr "mDNS: error: %s"
+
+msgid "Nie mozna sprawdzic Avahi: %s"
+msgstr "Cannot check Avahi: %s"
+
+msgid "Nieprawidlowy port uslugi mDNS: %d"
+msgstr "Invalid mDNS service port: %d"
+
+msgid "Plik uslugi mDNS istnieje i nie nalezy do EPG Scan: %s"
+msgstr "The mDNS service file exists and does not belong to EPG Scan: %s"
+
+msgid "mDNS: brak Avahi"
+msgstr "mDNS: Avahi is not installed"
+
+msgid "mDNS: Avahi nie dziala"
+msgstr "mDNS: Avahi is not running"
+
+msgid "mDNS: Avahi dziala"
+msgstr "mDNS: Avahi is running"
+
+msgid "mDNS: nieaktywne"
+msgstr "mDNS: inactive"
+
+msgid "port %d, odbiornikow: %d, PMT kanalow: %d; %s"
+msgstr "port %d, receivers: %d, channel PMTs: %d; %s"
+
+msgid " Usunieto %d nieuzywanych PMT z profili."
+msgstr " Removed %d unused PMTs from profiles."
+
+msgid "%s dane audio w %d wybranych odbiornikach?\nStare wpisy PMT zostana usuniete z profili; E2Stream pobiera PMT z danych wspolnych.\nPrzed zapisem powstana kopie."
+msgstr "%s audio data on %d selected receivers?\nOld PMT entries will be removed from profiles; E2Stream uses PMTs from common data.\nBackups will be created before saving."
+
 msgid "%d/%d transponderow, %d bledow%s, czas %d:%02d"
 msgstr "%d/%d transponders, %d errors%s, time %d:%02d"
 
@@ -725,8 +758,8 @@ msgstr "4. Add missing on clients"
 msgid "5 dni"
 msgstr "5 days"
 
-msgid "5. Popraw nieistniejace na klientach"
-msgstr "5. Repair invalid entries on clients"
+msgid "5. Klienci: popraw i dopisz braki"
+msgstr "5. Clients: repair and add missing"
 
 msgid "6 dni"
 msgstr "6 days"
@@ -809,8 +842,8 @@ msgstr "Automatic"
 msgid "Automat Enigma2"
 msgstr "Enigma2 automatic"
 
-msgid "Automatyczna synchronizacja po skanie, rowniez z harmonogramu, tylko z kanalow odczytanych w tym przebiegu. Wylaczona domyslnie. Klienci: wszystkie pliki device-*.json. Dopisz braki nie zmienia istniejacych wpisow; popraw nieistniejace zachowuje poprawny PID. Przed zmianami powstaja kopie."
-msgstr "Automatic synchronization after a scan, including scheduled scans, uses only channels read in the current run. Disabled by default. Clients: all device-*.json files. Add missing does not change existing entries; repair invalid retains a valid PID. Backups are made before changes."
+msgid "Synchronizacja po skanie (takze z harmonogramu), domyslnie wylaczona. Nadpisz: aktualizuje wpisy z udanego skanu. Dopisz braki: zachowuje istniejace. Klienci - popraw nieistniejace: zachowuje poprawny PID i dopisuje braki z common.json. Wspolne: audio i PMT; klienci: audio. Przed zmianami powstaja kopie."
+msgstr "Synchronization after a scan (also scheduled) is disabled by default. Overwrite updates entries from the successful scan. Add missing retains existing entries. Clients - repair invalid retains a valid PID and adds missing entries from common.json. Shared: audio and PMT; clients: audio. Backups are made before changes."
 
 msgid "Avahi (mDNS): pytam o _epgpl._tcp..."
 msgstr "Avahi (mDNS): querying _epgpl._tcp..."
@@ -2105,8 +2138,8 @@ msgstr "Retry failed channels once after scanning"
 msgid "Popraw"
 msgstr "Edit"
 
-msgid "Poprawic nieistniejace"
-msgstr "Repair invalid"
+msgid "Poprawic i uzupelnic"
+msgstr "Repair and add missing"
 
 msgid "Porownaj ponownie"
 msgstr "Compare again"
@@ -3650,8 +3683,8 @@ msgstr "Monday"
 msgid "ponowienie"
 msgstr "retry"
 
-msgid "popraw nieistniejace"
-msgstr "repair invalid entries"
+msgid "popraw nieistniejace i dopisz braki"
+msgstr "repair invalid and add missing"
 
 msgid "porownanie dekoder / serwer"
 msgstr "receiver / server comparison"

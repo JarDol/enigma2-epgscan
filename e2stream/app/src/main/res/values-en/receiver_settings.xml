@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="receiver_not_found">No receiver found (port %1$d)</string>
+    <string name="receiver_search_subnet">Additional IPv4 subnet</string>
+    <string name="receiver_search_subnet_hint">Optional, e.g. 192.168.10.0/24 (range /24–/30)</string>
+    <string name="receiver_search_invalid_subnet">Enter a valid IPv4 subnet /24–/30, e.g. 192.168.10.0/24, or leave it empty.</string>
+    <string name="receiver_search_invalid_port">Check the OpenWebif and EPG Scan ports (1–65535).</string>
+    <string name="receiver_search_in_progress">A search is already in progress.</string>
+    <string name="receiver_search_warning">The network search was incomplete. See the application log for details.</string>
+    <string name="receiver_search_devices">Devices found</string>
+    <string name="receiver_search_verified">Verified receiver</string>
+    <string name="receiver_search_unverified">Authentication required — Enigma2 not verified</string>
+    <string name="receiver_search_unverified_title">Unverified device</string>
+    <string name="receiver_search_confirm">Device %1$s:%2$d requires authentication. It could not be verified as an Enigma2 receiver. Select it anyway?</string>
+    <string name="receiver_search_use">Select anyway</string>
     <string name="receiver_recordings">Recordings (receiver drive)</string>
     <string name="receiver_visible_bouquets">Visible bouquets</string>
     <string name="receiver_start_channel">Startup channel — %1$s</string>

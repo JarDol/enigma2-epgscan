@@ -1,6 +1,12 @@
 #!/bin/sh
 # usuwa skompilowane pliki Pythona (nie nalezace do paczki); konfiguracja zostaje - pelne czyszczenie: epgscan_reset
 D=/usr/lib/enigma2/python/Plugins/Extensions/EPGScan
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    S=/etc/avahi/services/epgscan-e2stream.service
+    if [ -f "$S" ] && grep -Fq '<!-- Managed by EPG Scan -->' "$S"; then
+        rm -f "$S"
+    fi
+fi
 rm -rf $D/__pycache__ $D/satwatch/__pycache__ 2>/dev/null
 rmdir $D/satwatch $D 2>/dev/null
 exit 0

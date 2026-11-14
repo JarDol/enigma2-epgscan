@@ -23,9 +23,8 @@
     <string name="player_backup_found">Na dekoderze są zapisane profile. Możesz wybrać kopię do importu lub zacząć z ustawieniami domyślnymi.\n\nImport obejmuje także PIN, hasła, token wtyczki, ustawienia odtwarzania i lokalne ścieżki. Wybrany adres dekodera pozostanie bez zmian.</string>
     <string name="player_backup_legacy">\u0020• starsza, niepełna kopia</string>
     <string name="player_unreachable_retry">Brak komunikacji z dekoderem %1$s; ponawiam sprawdzanie</string>
-    <string name="player_unreachable_detail">Brak komunikacji z dekoderem %1$s.\n\n%2$s\n\nSprawdzam ponownie co 3 sekundy.</string>
     <string name="player_wait_receiver">Oczekuję na dekoder %1$s.\n\nSprawdzam ponownie co 3 sekundy.</string>
-    <string name="player_cannot_connect">Nie mogę połączyć się z %1$s.\n\n%2$s\n\nSprawdzam ponownie co 3 sekundy.</string>
+    <string name="player_cannot_connect">Nie mogę połączyć się z %1$s.\n\nSprawdzam ponownie co 3 sekundy.</string>
     <string name="player_vlc_retries">VLC nie uruchomił strumienia po %1$d ponowieniach.\nOstatni problem: %2$s</string>
     <string name="player_resuming">Wznawiam strumień (%1$s)</string>
     <string name="player_connecting">Łączenie z %1$s…</string>

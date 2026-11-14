@@ -25,11 +25,13 @@ spec.loader.exec_module(i18n)
 class Selection:
 	def __init__(self):
 		self.value = "selected"
+		self.default = "all"
 		self.choices = types.SimpleNamespace(choices=[
 			("all", "wszystkie bukiety"), ("selected", "wybrane bukiety")])
 
 	def setChoices(self, choices, default=None):
 		self.choices.choices = choices
+		self.default = default
 		self.value = default
 
 
@@ -140,11 +142,54 @@ class LocalizationTests(unittest.TestCase):
 		i18n.configure(lambda: "en")
 		i18n.translate_choices(choice)
 		self.assertEqual(choice.value, "selected")
+		self.assertEqual(choice.default, "all")
 		self.assertEqual(choice.choices.choices[1], ("selected", "selected bouquets"))
 		i18n.configure(lambda: "pl")
 		i18n.translate_choices(choice)
 		self.assertEqual(choice.value, "selected")
+		self.assertEqual(choice.default, "all")
 		self.assertEqual(choice.choices.choices[1], ("selected", "wybrane bukiety"))
+
+	def test_numeric_choices_leave_the_value_and_options_unchanged(self):
+		choice = Selection()
+		choice.value = 4
+		choice.choices.choices = ["1", "4", "10"]
+		i18n.configure(lambda: "en")
+		with patch.object(choice, "setChoices", wraps=choice.setChoices) as set_choices:
+			i18n.translate_choices(choice)
+			set_choices.assert_not_called()
+		self.assertEqual(choice.value, 4)
+		self.assertEqual(choice.choices.choices, ["1", "4", "10"])
+
+	def test_unlabelled_choices_are_translated_without_changing_values(self):
+		choice = Selection()
+		choice.value = "dopisz braki"
+		choice.choices.choices = ["wylaczona", "dopisz braki"]
+		i18n.configure(lambda: "en")
+		i18n.translate_choices(choice)
+		self.assertEqual(choice.value, "dopisz braki")
+		self.assertEqual(choice.choices.choices,
+			[("wylaczona", "disabled"), ("dopisz braki", "add missing entries")])
+		i18n.configure(lambda: "pl")
+		i18n.translate_choices(choice)
+		self.assertEqual(choice.value, "dopisz braki")
+		self.assertEqual(choice.choices.choices,
+			[("wylaczona", "wylaczona"), ("dopisz braki", "dopisz braki")])
+
+	def test_dictionary_choices_keep_original_labels_and_selection(self):
+		choice = Selection()
+		choice.value = "missing"
+		choice.choices.choices = {"off": "wylaczona", "missing": "dopisz braki"}
+		i18n.configure(lambda: "en")
+		i18n.translate_choices(choice)
+		self.assertEqual(choice.value, "missing")
+		self.assertEqual(choice.choices.choices,
+			[("off", "disabled"), ("missing", "add missing entries")])
+		i18n.configure(lambda: "pl")
+		i18n.translate_choices(choice)
+		self.assertEqual(choice.value, "missing")
+		self.assertEqual(choice.choices.choices,
+			[("off", "wylaczona"), ("missing", "dopisz braki")])
 
 	def test_language_change_is_applied_explicitly(self):
 		common = test_actions_ui.common

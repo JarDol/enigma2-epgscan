@@ -1156,7 +1156,7 @@ class PlayerActivity : Activity() {
                 if (!result.reachable) {
                     if (!decoderUnavailable) AppLog.i("dekoder: brak komunikacji (${result.detail})")
                     decoderUnavailable = true
-                    if (prefs.blockOnDisconnect) showConnectionDialog(false, result.detail)
+                    if (prefs.blockOnDisconnect) showConnectionDialog(false)
                     else if (!connectionDialogShown()) showMessage(getString(R.string.player_unreachable_retry, prefs.host), 4000)
                     return@runOnUiThread
                 }
@@ -1180,9 +1180,9 @@ class PlayerActivity : Activity() {
 
     private fun connectionDialogShown() = connectionDialog?.isShowing == true
 
-    private fun showConnectionDialog(startup: Boolean, detail: String) {
+    private fun showConnectionDialog(startup: Boolean) {
         if (connectionDialogShown()) {
-            TvDialog.setMessage(connectionDialog, getString(R.string.player_unreachable_detail, prefs.host, detail))
+            TvDialog.setMessage(connectionDialog, getString(R.string.player_cannot_connect, prefs.host))
             return
         }
         val buttons = mutableListOf(
@@ -1199,7 +1199,7 @@ class PlayerActivity : Activity() {
         connectionDialog = TvDialog.confirm(
             this,
             getString(R.string.message_cannot_communicate_with_receiver),
-            getString(R.string.player_cannot_connect, prefs.host, detail),
+            getString(R.string.player_cannot_connect, prefs.host),
             buttons,
             cancelable = false,
             timeoutSec = 0,
@@ -1272,7 +1272,7 @@ class PlayerActivity : Activity() {
                     AppLog.i("dekoder: brak komunikacji przy starcie (${result.detail})")
                     runOnUiThread {
                         if (generation == startupProbeGeneration && !isFinishing) {
-                            showConnectionDialog(true, result.detail)
+                            showConnectionDialog(true)
                         }
                     }
                     Thread.sleep(3000)

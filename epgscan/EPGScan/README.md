@@ -246,22 +246,30 @@ Automatyczny odczyt odbywa się w głównym przebiegu EPG z harmonogramu, jeśli
 brakujące kanały są skanowane po EPG. Nadrzędne są warunki z **Harmonogramu**
 (czuwanie, nagrania i wybudzanie). Doczytywanie EPG nie uruchamia skanu parametrów.
 
+Niezależnie od synchronizacji udany odczyt odświeża dany kanał w lokalnym pliku wyników skanera;
+wyniki innych kanałów i nadal dostępne ręczne wybory audio są zachowywane. Poniższe tryby nadpisywania
+i dopisywania dotyczą osobno plików synchronizowanych z E2Stream, nie lokalnego pliku skanera.
+
 W ustawieniach skanu można włączyć synchronizację po skanie, także z harmonogramu. Oba cele są domyślnie
 wyłączone: `common.json` można nadpisać lub uzupełnić braki, a wszystkie pliki `device-*.json` nadpisać,
 uzupełnić braki lub poprawić nieistniejące PID-y. W trybie naprawy brakujące wpisy audio profilu są też
 uzupełniane z `common.json`, również dla kanałów nieodczytanych w bieżącym przebiegu.
 Ze skanu synchronizowane są tylko pomyślne wyniki bieżącego przebiegu.
-Uzupełnianie braków nie zmienia żadnych istniejących wpisów, nawet wadliwych; naprawa zachowuje poprawny PID
+Uzupełnianie braków nie zastępuje istniejących wartości audio ani PMT, nawet wadliwych; naprawa zachowuje poprawny PID
 klienta według aktualnej PMT i nie zgaduje zamienników dla innych referencji. Błędy są widoczne w raporcie,
 a przed zmianą istniejącego pliku tworzona jest kopia.
 
 **Info/EPG** w ekranie wyników udostępnia pięć potwierdzanych działań:
 
 - zastąpienie domyślnych wpisów audio/PMT w `common.json` albo dopisanie brakujących,
-- zastąpienie wpisów na wybranych odbiornikach E2Stream, dopisanie brakujących albo poprawienie nieistniejących.
+- zastąpienie wpisów audio na wybranych odbiornikach E2Stream, dopisanie brakujących albo poprawienie nieistniejących.
 
 Prawidłowa PMT może być przekazana także bez wybranej ścieżki audio; wpis audio powstaje tylko dla
 potwierdzonego wyboru. PMT jest przekazywana tylko wtedy, gdy SID nie koliduje z inną zeskanowaną treścią.
+PMT jest synchronizowana tylko do wspólnego `common.json`, nie do profili klientów. Stare wpisy PMT są usuwane
+z profili przy uruchomieniu wtyczki oraz przed zapisem profilu; przed zmianą profilu powstaje jego kopia.
+Nie są usuwane wspólne PMT ani lokalny cache odtwarzacza.
+Kopie profili mogą nadal zawierać stare PMT na potrzeby odtworzenia danych.
 Plik wyników skanu:
 `/etc/enigma2/epgscan/channelparams.json`.
 
@@ -682,6 +690,12 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Dane dla aplikacji po skanach | (tak) paczka EPG (wszystkie bukiety TV), ikon i zamian referencji po pracy z harmonogramu oraz po cyklicznym skanie satelity; *Przygotuj dane teraz* (OK) – od razu |
 | Serwer dla aplikacji E2Stream | (tak) API dla klientów streamingu w sieci lokalnej: bukiety, kanały z PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników; port (8770), token (puste = bez) |
 | Informacje o wtyczce | opis dołączony do zainstalowanej wersji, dostępny bez internetu |
+
+Włączony serwer E2Stream ogłasza `_epgscan._tcp` przez Avahi, wraz z portem API i dostępnymi portami OpenWebif
+oraz strumienia. Wymaga zainstalowanego i uruchomionego `avahi-daemon` na dekoderze; wtyczka nie instaluje go
+automatycznie, a stan pokazuje w podsumowaniu serwera i logu. Między VLAN-ami potrzebny jest reflektor mDNS oraz
+przepuszczenie właściwych połączeń TCP przez zaporę. Bez Avahi można użyć dodatkowej podsieci lub ręcznego adresu
+w E2Stream. Po instalacji i uruchomieniu Avahi zrestartuj Enigma2, aby odświeżyć stan usługi.
 
 ### Powiadomienia, restart, sprzątanie
 | Ustawienie | Opis |

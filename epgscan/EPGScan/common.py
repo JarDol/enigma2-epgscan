@@ -19,7 +19,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.18.0-beta.11"
+VERSION = "2.18.0-beta.12"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
@@ -126,7 +126,7 @@ cfg.cp_sync_common = ConfigSelection(default="off", choices=[
 	("off", "wylaczona"), ("missing", "dopisz braki"), ("overwrite", "nadpisz wszystko")])
 cfg.cp_sync_devices = ConfigSelection(default="off", choices=[
 	("off", "wylaczona"), ("missing", "dopisz braki"),
-	("repair", "popraw nieistniejace"), ("overwrite", "nadpisz wszystko")])
+	("repair", "popraw nieistniejace i dopisz braki"), ("overwrite", "nadpisz wszystko")])
 cfg.cp_common_overwrite = ConfigYesNo(default=False)
 cfg.cp_devices_overwrite = ConfigYesNo(default=False)
 # doczytywanie brakow w ciagu dnia

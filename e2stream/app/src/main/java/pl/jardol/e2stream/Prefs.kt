@@ -24,6 +24,10 @@ class Prefs(ctx: Context) {
         get() = s("host")
         set(v) = putS("host", v)
 
+    var discoverySubnet: String
+        get() = s("discoverySubnet")
+        set(v) = putS("discoverySubnet", v)
+
     /** Port OpenWebif (HTTP). */
     var httpPort: Int
         get() = sp.getInt("httpPort", 80)
