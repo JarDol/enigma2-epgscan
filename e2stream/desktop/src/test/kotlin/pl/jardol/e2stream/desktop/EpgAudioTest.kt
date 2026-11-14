@@ -86,6 +86,21 @@ class EpgAudioTest {
     }
 
     @Test
+    fun dropsShortDescriptionLineRepeatingTheEndOfAnother() {
+        assertEquals(
+            "Tytuł oryginalny: Teleexpress Extra PL, 2026",
+            mergeDescriptions("Tytuł oryginalny: Teleexpress Extra PL, 2026", "PL, 2026"),
+        )
+    }
+
+    @Test
+    fun namesCommonLanguagesInPolishWithoutLocaleData() {
+        assertEquals("Polski", AudioTrackLabels.displayLanguage("Polski"))
+        assertEquals("Angielski", AudioTrackLabels.displayLanguage("eng"))
+        assertEquals("Niemiecki", AudioTrackLabels.displayLanguage("ger"))
+    }
+
+    @Test
     fun keepsDefaultsForRemoteKeysMissingFromSavedBindings() {
         val bindings = UniversalRemoteMap.parse("""{"OK": ["K:13"]}""")
 

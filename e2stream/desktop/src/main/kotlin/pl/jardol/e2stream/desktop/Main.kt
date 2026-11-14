@@ -1270,7 +1270,11 @@ fun main() {
 
             fun toggleMute() = setAppVolume(config.appVolume, !config.appMuted)
 
-            fun showAudioPick() {
+            /**
+             * Wybór ścieżki dźwięku. Z ustawień ([inSettings]) — jako wybór w oknie ustawień, więc „Wróć”
+             * wraca do listy ustawień; z odtwarzacza — jako osobne okno.
+             */
+            fun showAudioPick(inSettings: Boolean = false) {
                 val session = vlcSession
                 if (session == null) {
                     status = "Nic nie jest odtwarzane."
@@ -1283,17 +1287,14 @@ fun main() {
                 }
                 val channel = playingChannel.takeIf { playingRecording == null }
                 val current = session.selectedAudioTrack()
-                quickPick = QuickPick(
-                    title = if (channel != null) "Ścieżka dźwięku (zapamiętywana dla kanału)" else "Ścieżka dźwięku",
-                    options = tracks.map { it.name },
-                    selected = tracks.indexOfFirst { it.id == current }.coerceAtLeast(0),
-                    subtitles = tracks.map { if (it.id == current) "odtwarzana" else null },
-                ) { index ->
+                val title = if (channel != null) "Ścieżka dźwięku (zapamiętywana dla kanału)" else "Ścieżka dźwięku"
+                val selected = tracks.indexOfFirst { it.id == current }.coerceAtLeast(0)
+                val onSelect = select@{ index: Int ->
                     val track = tracks[index]
                     audioApplyJob?.cancel()
                     if (!session.selectAudioTrack(track.id)) {
                         status = "VLC nie przełączył ścieżki dźwięku."
-                        return@QuickPick
+                        return@select
                     }
                     if (channel != null) {
                         audioChoices.set(config.host, channel.ref, track)
@@ -1301,6 +1302,18 @@ fun main() {
                     }
                     status = "Dźwięk: ${track.name}" + if (channel != null) " — zapamiętano dla ${channel.name}." else "."
                 }
+                if (inSettings) {
+                    navigator.openChoice(
+                        SettingsChoice(title, tracks.map { if (it.id == current) "${it.name}  (odtwarzana)" else it.name }, selected, onSelect),
+                    )
+                    return
+                }
+                quickPick = QuickPick(
+                    title = title,
+                    options = tracks.map { it.name },
+                    selected = selected,
+                    subtitles = tracks.map { if (it.id == current) "odtwarzana" else null },
+                ) { index -> onSelect(index) }
             }
 
             // ---------- EPG ----------
@@ -2005,8 +2018,7 @@ fun main() {
                         editNumber("Krok głośności (%)", config.volumeStep, 1..25) { config.copy(volumeStep = it) }
                     },
                     SettingItem.Action("Ścieżka dźwięku teraz", "wybór ścieżki bieżącego kanału (zapamiętywany)") {
-                        navigator.close()
-                        showAudioPick()
+                        showAudioPick(inSettings = true)
                     },
                     SettingItem.Action("Zapomnij zapamiętane ścieżki", "zapamiętane kanały: ${audioChoices.count(config.host)}") {
                         audioChoices.clear(config.host)

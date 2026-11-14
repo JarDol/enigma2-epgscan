@@ -88,10 +88,16 @@ internal fun mergeDescriptions(vararg parts: String): String {
     val lines = parts.flatMap { it.replace("\r\n", "\n").replace('\u008A', '\n').split('\n') }
         .map(String::trim)
         .filter { it.isNotEmpty() && seen.add(it.lowercase()) }
-    // Linia zawarta w innej, dłuższej (krótki opis = początek rozszerzonego) jest zbędna.
+    // Linia zawarta w innej, dłuższej (krótki opis = początek rozszerzonego) jest zbędna; krótkie
+    // linie (np. gatunek) odpadają tylko, gdy kończą inną („… PL, 2026”).
     return lines.filterIndexed { index, line ->
-        line.length < 15 ||
-        lines.withIndex().none { (other, text) -> other != index && text.length > line.length && text.contains(line, ignoreCase = true) }
+        lines.withIndex().none { (other, text) ->
+            other != index && text.length > line.length && if (line.length < 15) {
+                text.endsWith(line, ignoreCase = true)
+            } else {
+                text.contains(line, ignoreCase = true)
+            }
+        }
     }.joinToString("\n")
 }
 

@@ -37,7 +37,8 @@ compose.desktop {
 
         nativeDistributions {
             // jdk.net: TCP keep-alive klienta WinLIRC/LIRC (ExtendedSocketOptions).
-            modules("jdk.net")
+            // jdk.localedata: polskie nazwy języków ścieżek dźwięku (Locale.getDisplayLanguage).
+            modules("jdk.net", "jdk.localedata")
             targetFormats(
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe,

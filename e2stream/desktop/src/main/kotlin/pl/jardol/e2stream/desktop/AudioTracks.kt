@@ -13,6 +13,17 @@ internal data class AudioTrack(val id: Int, val name: String, val language: Stri
 internal object AudioTrackLabels {
     private val polish = Locale("pl")
 
+    /** Polskie nazwy najczęstszych języków DVB — niezależne od danych lokalizacyjnych JRE. */
+    private val polishNames = mapOf(
+        "pl" to "polski", "en" to "angielski", "de" to "niemiecki", "fr" to "francuski", "es" to "hiszpański",
+        "it" to "włoski", "ru" to "rosyjski", "uk" to "ukraiński", "cs" to "czeski", "sk" to "słowacki",
+        "hu" to "węgierski", "nl" to "niderlandzki", "pt" to "portugalski", "sv" to "szwedzki", "da" to "duński",
+        "no" to "norweski", "fi" to "fiński", "tr" to "turecki", "el" to "grecki", "ro" to "rumuński",
+        "bg" to "bułgarski", "hr" to "chorwacki", "sr" to "serbski", "sl" to "słoweński", "lt" to "litewski",
+        "lv" to "łotewski", "et" to "estoński", "be" to "białoruski", "ar" to "arabski", "zh" to "chiński",
+        "ja" to "japoński", "ko" to "koreański", "hi" to "hindi", "he" to "hebrajski",
+    )
+
     private val languageAliases by lazy {
         buildMap {
             for (code in Locale.getISOLanguages()) {
@@ -27,6 +38,7 @@ internal object AudioTrackLabels {
                     ?.lowercase(Locale.ROOT)
                     ?.let { put(it, code) }
             }
+            for ((code, name) in polishNames) putIfAbsent(name, code)
             // Nazwy polskie („[Polski]” w opisie ścieżki VLC) — bez nadpisywania kodów.
             for (code in Locale.getISOLanguages()) {
                 Locale(code).getDisplayLanguage(polish)
@@ -56,7 +68,8 @@ internal object AudioTrackLabels {
         val code = languageCode(value)
         if (code == "?") return "?"
         if (code in original) return "Oryginalna"
-        val name = runCatching { Locale(code).getDisplayLanguage(polish) }.getOrNull().orEmpty()
+        val name = polishNames[code]
+            ?: runCatching { Locale(code).getDisplayLanguage(polish) }.getOrNull().orEmpty()
         return if (name.isBlank() || name.equals(code, ignoreCase = true)) code.uppercase(Locale.ROOT)
         else name.replaceFirstChar { it.titlecase(polish) }
     }
