@@ -3173,7 +3173,7 @@ class PlayerActivity : Activity() {
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
-            if (!recMode && !tsMode && banner.visibility == View.VISIBLE) {
+            if (!recMode && banner.visibility == View.VISIBLE) {
                 val diskUnavailable = prefs.tsDir.isNotBlank() && !TimeshiftBuffer.available(prefs.tsDir)
                 val reason = when {
                     diskUnavailable -> R.string.player_ts_setup_disk_unavailable

@@ -123,7 +123,7 @@ Na nagraniu długie OK otwiera wybór Odtwórz/Usuń; usunięcie wymaga potwierd
 PIN do ustawień może mieć maksymalnie 6 cyfr. Historię przełączeń można czyścić po 7, 14 lub 28 dniach albo zachować bez limitu.
 Pasek timeshiftu pozostaje na ekranie w czasie pauzy, a po wznowieniu znika po czasie ustawionym w Ogólnych.
 
-**Nagrania lokalne z bufora timeshiftu.** Długie OK (bez paska kanału albo w trakcie odtwarzania z bufora) → *Nagraj…*:
+**Nagrania lokalne z bufora timeshiftu.** Długie OK przy schowanym pasku (menu, także w trakcie timeshiftu) → *Nagraj…*:
 *Audycja* (od początku bieżącej audycji w buforze do jej końca wg EPG, +1 min), *Bufor do teraz* (natychmiast) albo
 *Cały bufor do zmiany kanału*. Kawałki bufora nie są kopiowane — przenoszone (zmiana nazwy) do katalogu `nagrania/`
 obok katalogu bufora (ten sam nośnik); po zakończeniu nagrania timeshift zaczyna od nowa, a odtwarzanie z bufora wraca na żywo.
