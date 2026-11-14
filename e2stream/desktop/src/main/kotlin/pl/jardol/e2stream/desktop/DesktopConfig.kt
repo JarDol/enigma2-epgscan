@@ -115,6 +115,8 @@ data class DesktopConfig(
     val lastUpdateCheck: Long = 0,
     /** Najdłuższe nagranie z timeshiftu (godziny, 1–6). */
     val recMaxH: Int = 3,
+    /** Gdy E2Stream jest w tle, dowolny klawisz pilota HID / IR przywołuje okno (pierwsze naciśnięcie). */
+    val activateAnyRemoteKey: Boolean = true,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -209,6 +211,7 @@ data class DesktopConfig(
             setProperty("updateChannel", updateChannel)
             setProperty("lastUpdateCheck", lastUpdateCheck.toString())
             setProperty("recMaxH", recMaxH.toString())
+            setProperty("activateAnyRemoteKey", activateAnyRemoteKey.toString())
     }
 
     companion object {
@@ -239,7 +242,7 @@ data class DesktopConfig(
         )
 
         val hardwareModes = linkedMapOf(
-            "auto" to "automatycznie",
+            "auto" to "automatycznie (programowo)",
             "off" to "wyłączona",
             "d3d11va" to "Direct3D 11 (D3D11VA)",
             "dxva2" to "DirectX VA 2 (DXVA2)",
@@ -353,6 +356,7 @@ data class DesktopConfig(
                     ?: defaults.updateChannel,
                 lastUpdateCheck = properties.getProperty("lastUpdateCheck")?.toLongOrNull() ?: 0,
                 recMaxH = int("recMaxH", defaults.recMaxH, 1..6),
+                activateAnyRemoteKey = bool("activateAnyRemoteKey", defaults.activateAnyRemoteKey),
             )
         }
 

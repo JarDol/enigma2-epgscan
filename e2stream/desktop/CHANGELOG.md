@@ -3,6 +3,13 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.3.3
+
+- Brak obrazu (był sam dźwięk): klatki z VLC w formacie RGBA (w RV32 kanał przezroczystości był pusty i obraz rysował się jako przezroczysty). W logu „obraz: format klatek …” i „obraz: pierwsza klatka …”
+- Przy rysowaniu obrazu w oknie aplikacji „Akceleracja sprzętowa: automatycznie” oznacza teraz dekodowanie programowe; przy D3D11VA / DXVA2, gdy przez 5 s nie przyjdzie żadna klatka, odtwarzacz sam przełącza się na programowe (wpis w logu). W logu „obraz: pierwsza klatka …”
+- „Aktywuj okno dowolnym klawiszem pilota” (domyślnie włączone): gdy E2Stream jest w tle, pierwsze naciśnięcie dowolnego klawisza pilota HID / IR przywołuje okno, potem klawisze działają zwykle
+- „Aktywuj okno klawiszem” nie odbiera już klawisza innym przyciskom (wcześniej przypisanie zabierało np. Power); krótsze nazwy klawiszy HID
+
 ## 0.3.2
 
 - Aktualizacja: pobrany instalator nie uruchamiał się („Unsupported URI content”) — teraz uruchamiany przez Windows (Start-Process, z pytaniem UAC), w zapasie przez Eksplorator. Tę wersję trzeba zainstalować ręcznie, kolejne już przez „Sprawdź i zainstaluj aktualizację”

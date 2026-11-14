@@ -92,7 +92,8 @@ object UniversalRemoteMap {
 
     fun label(id: String): String = when {
         id.startsWith("K:") -> id.substringAfter(':').toIntOrNull()?.let(RemoteKeyMap::keyName) ?: id
-        id.startsWith("H:") -> "Pilot HID · ${id.substringAfterLast(':').chunked(2).joinToString("-")}"
+        id.startsWith("H:") -> "Pilot HID · " + id.substringAfterLast(':').chunked(2).dropLastWhile { it == "00" }
+            .ifEmpty { listOf("00") }.joinToString("-")
         id.startsWith("L:") -> "Pilot IR · ${id.removePrefix("L:").substringBefore(':')} · ${id.substringAfterLast(':')}"
         else -> id
     }
@@ -132,9 +133,14 @@ object UniversalRemoteMap {
         physicalId: String,
     ): Map<VirtualRemoteKey, Set<String>> {
         require(isValidPhysicalId(physicalId)) { "Nieprawidłowy klawisz fizyczny." }
+        // „Aktywuj okno” nie odbiera klawisza innym przyciskom (i odwrotnie) — ten sam klawisz działa w obu rolach.
         return VirtualRemoteKey.entries.associateWith { candidate ->
-            val current = bindings[candidate].orEmpty() - physicalId
-            if (candidate == key) current + physicalId else current
+            val current = bindings[candidate].orEmpty()
+            when {
+                candidate == key -> current + physicalId
+                key == VirtualRemoteKey.ACTIVATE || candidate == VirtualRemoteKey.ACTIVATE -> current
+                else -> current - physicalId
+            }
         }
     }
 

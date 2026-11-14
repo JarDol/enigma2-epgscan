@@ -46,4 +46,18 @@ class UniversalRemoteTest {
         assertEquals(emptySet(), moved[VirtualRemoteKey.POWER])
         assertEquals(VirtualRemoteKey.BACK, UniversalRemoteMap.findKey(moved, id))
     }
+
+    @Test
+    fun activateKeyDoesNotTakeTheKeyFromOtherButtons() {
+        val id = UniversalRemoteMap.hidId("test-device", byteArrayOf(0x20, 0, 0))
+        val power = UniversalRemoteMap.assign(UniversalRemoteMap.defaults, VirtualRemoteKey.POWER, id)
+        val both = UniversalRemoteMap.assign(power, VirtualRemoteKey.ACTIVATE, id)
+        assertEquals(setOf(id), both[VirtualRemoteKey.POWER])
+        assertEquals(setOf(id), both[VirtualRemoteKey.ACTIVATE])
+        assertEquals(VirtualRemoteKey.POWER, UniversalRemoteMap.findKey(both, id))
+        val moved = UniversalRemoteMap.assign(both, VirtualRemoteKey.BACK, id)
+        assertEquals(setOf(id), moved[VirtualRemoteKey.ACTIVATE])
+        assertEquals(emptySet(), moved[VirtualRemoteKey.POWER])
+        assertEquals("Pilot HID · 20", UniversalRemoteMap.label(id))
+    }
 }

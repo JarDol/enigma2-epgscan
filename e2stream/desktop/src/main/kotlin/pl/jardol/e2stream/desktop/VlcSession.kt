@@ -26,11 +26,12 @@ import uk.co.caprica.vlcj.media.TrackType
 internal fun vlcMediaOptions(config: DesktopConfig): List<String> = buildList {
     add(":network-caching=${config.bufferMs.coerceIn(250, 10_000)}")
     add(
+        // Obraz rysuje aplikacja (klatki w pamięci RAM): dekoder sprzętowy musi kopiować klatki z karty graficznej.
+        // „Automatycznie” = programowo — D3D11VA bez okna VLC potrafi nie oddać żadnej klatki (sam dźwięk).
         ":avcodec-hw=" + when (config.vlcHwMode) {
-            "off" -> "none"
             "d3d11va" -> "d3d11va"
             "dxva2" -> "dxva2"
-            else -> "any"
+            else -> "none"
         },
     )
     val languages = config.audioLang.split(',', ';', ' ').map(String::trim).filter(String::isNotEmpty)
@@ -76,17 +77,21 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
     private var next = 0
     @Volatile private var width = 0
     @Volatile private var height = 0
+    /** Liczba odebranych klatek (do wykrycia braku obrazu). */
+    val count = java.util.concurrent.atomic.AtomicLong()
 
     override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat {
         synchronized(this) {
             width = sourceWidth
             height = sourceHeight
-            val info = ImageInfo(sourceWidth, sourceHeight, ColorType.BGRA_8888, ColorAlphaType.OPAQUE)
+            // RGBA: VLC wypełnia kanał alfa (RV32 zostawia czwarty bajt pusty — obraz byłby przezroczysty, czyli czarny).
+            val info = ImageInfo(sourceWidth, sourceHeight, ColorType.RGBA_8888, ColorAlphaType.UNPREMUL)
             // Stare bitmapy mogą być jeszcze rysowane — zwalnia je GC, bez close().
             bitmaps = Array(3) { Bitmap().apply { allocPixels(info) } }
             next = 0
         }
-        return RV32BufferFormat(sourceWidth, sourceHeight)
+        AppLog.i("obraz: format klatek ${sourceWidth}x$sourceHeight RGBA")
+        return BufferFormat("RGBA", sourceWidth, sourceHeight, intArrayOf(sourceWidth * 4), intArrayOf(sourceHeight))
     }
 
     override fun allocatedBuffers(buffers: Array<out ByteBuffer>) = Unit
@@ -102,6 +107,7 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
             Pointer(pixmap.addr).getByteBuffer(0, size).put(source)
             bitmap.notifyPixelsChanged()
             frame.value = bitmap.asComposeImageBitmap()
+            if (count.incrementAndGet() == 1L) AppLog.i("obraz: pierwsza klatka ${width}x$height")
         }
     }
 
@@ -155,6 +161,7 @@ class VlcSession(private val onError: (String) -> Unit) {
             }
             override fun playing(mediaPlayer: MediaPlayer) {
                 mediaPlayer.submit { applyAudioLevel() }
+                checkFrames()
                 SwingUtilities.invokeLater { if (!closed) onPlaying?.invoke() }
             }
             override fun elementaryStreamAdded(mediaPlayer: MediaPlayer, type: TrackType, id: Int) {
@@ -224,9 +231,43 @@ class VlcSession(private val onError: (String) -> Unit) {
         return width * sar / height
     }
 
+    @Volatile private var lastUrl: String? = null
+    @Volatile private var lastOptions: List<String> = emptyList()
+    @Volatile private var softwareFallback = false
+    @Volatile private var playGeneration = 0
+
+    /**
+     * Strumień z obrazem, a po kilku sekundach żadnej klatki przy dekodowaniu sprzętowym — ponowne otwarcie
+     * z dekodowaniem programowym (do końca tej sesji odtwarzacza).
+     */
+    private fun checkFrames() {
+        val generation = playGeneration
+        val before = frames.count.get()
+        val url = lastUrl ?: return
+        if (softwareFallback || lastOptions.none { it.startsWith(":avcodec-hw=") && it != ":avcodec-hw=none" }) return
+        kotlin.concurrent.thread(name = "vlc-kontrola-obrazu", isDaemon = true) {
+            Thread.sleep(5000)
+            if (closed || generation != playGeneration || frames.count.get() != before) return@thread
+            val hasVideo = runCatching { player.video().trackCount() > 0 }.getOrDefault(false)
+            if (!hasVideo) return@thread
+            AppLog.i("obraz: brak klatek przy dekodowaniu sprzętowym — przełączam na programowe")
+            softwareFallback = true
+            val options = lastOptions.map { if (it.startsWith(":avcodec-hw=")) ":avcodec-hw=none" else it }
+            SwingUtilities.invokeLater {
+                if (!closed && generation == playGeneration) {
+                    runCatching { player.media().play(url, *options.toTypedArray()) }
+                    onError("Brak obrazu przy akceleracji sprzętowej — włączono dekodowanie programowe.")
+                }
+            }
+        }
+    }
+
     fun play(url: String, config: DesktopConfig, startMs: Long = 0) {
-        val options = vlcMediaOptions(config) +
+        val options = vlcMediaOptions(config).map { if (softwareFallback && it.startsWith(":avcodec-hw=")) ":avcodec-hw=none" else it } +
             if (startMs > 0) listOf(":start-time=%.1f".format(java.util.Locale.US, startMs / 1000.0)) else emptyList()
+        lastUrl = url
+        lastOptions = options
+        playGeneration++
         val deinterlace = vlcDeinterlaceMode(config.vlcDeint)
         check(!closed) { "Odtwarzacz został zamknięty." }
         player.video().setDeinterlace(deinterlace)

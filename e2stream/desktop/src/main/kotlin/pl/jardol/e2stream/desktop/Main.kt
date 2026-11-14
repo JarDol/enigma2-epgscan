@@ -135,6 +135,10 @@ fun main() {
             val suppressBrowserKeys = remember { AtomicBoolean(false) }
             val globalPowerKeys = remember { AtomicReference<Set<String>>(emptySet()) }
             val globalActivateKeys = remember { AtomicReference<Set<String>>(emptySet()) }
+            val activateAnyKey = remember { AtomicBoolean(true) }
+            /** Klawisz przywołujący okno z tła: przypisany do „Aktywuj okno” albo dowolny klawisz pilota HID / IR. */
+            fun activatesFromBackground(id: String): Boolean =
+                id in globalActivateKeys.get() || (activateAnyKey.get() && (id.startsWith("H:") || id.startsWith("L:")))
             val powerDialogOpen = remember { AtomicBoolean(false) }
             var showExitConfirmation by remember { mutableStateOf(false) }
             val bindings = remember { RemoteKeyMap.defaults + RemoteKeyMap.parse(config.remoteBindings) }
@@ -188,6 +192,7 @@ fun main() {
                 )
                 globalPowerKeys.set(if (captureButton == null) universalBindings[VirtualRemoteKey.POWER].orEmpty() else emptySet())
                 globalActivateKeys.set(if (captureButton == null) universalBindings[VirtualRemoteKey.ACTIVATE].orEmpty() else emptySet())
+                activateAnyKey.set(captureButton == null && config.activateAnyRemoteKey)
                 captureActive.set(captureButton != null)
                 volumeKeyIds.set(
                     if (!config.volumeKeysApp) emptySet()
@@ -2934,10 +2939,15 @@ fun main() {
                 )
                 SettingsScreen.REMOTE -> listOf(
                     SettingItem.Header("Pilot"),
+                    SettingItem.Toggle(
+                        "Aktywuj okno dowolnym klawiszem pilota",
+                        config.activateAnyRemoteKey,
+                        "gdy E2Stream jest w tle, pierwsze naciśnięcie klawisza pilota HID / IR przywołuje okno; potem klawisze działają zwykle",
+                    ) { saveConfig(config.copy(activateAnyRemoteKey = it)) },
                     (remoteKeyItem(VirtualRemoteKey.ACTIVATE) as SettingItem.Action).let { item ->
                         SettingItem.Action(
                             "Aktywuj okno klawiszem",
-                            "działa globalnie, gdy E2Stream jest w tle (jak Power) • ${item.summary}",
+                            "dodatkowe klawisze (np. klawiatury albo pilota-klawiatury); nie zmienia ich zwykłej funkcji • ${item.summary}",
                             item.onClick,
                         )
                     },
@@ -3623,7 +3633,7 @@ fun main() {
                         onDiagnostic = hidDiagnosticDispatcher::submit,
                         suppressBrowserKeys = { suppressBrowserKeys.get() },
                         // „Aktywuj okno” działa globalnie tylko w tle; na wierzchu klawisz ma zwykłe znaczenie.
-                        isPowerKey = { it in globalPowerKeys.get() || (it in globalActivateKeys.get() && !isForegroundApplication()) },
+                        isPowerKey = { it in globalPowerKeys.get() || (!isForegroundApplication() && activatesFromBackground(it)) },
                         onPower = { id -> if (id in globalPowerKeys.get()) currentRequestPower.value() else requestActivate() },
                         interceptKey = intercept@{ physicalId, down ->
                             val volumeKey = physicalId in setOf("K:173", "K:174", "K:175")
@@ -3675,7 +3685,7 @@ fun main() {
                             currentRequestPower.value()
                             return@lirc
                         }
-                        if (event.repeat == 0 && id in globalActivateKeys.get() && !isForegroundApplication()) {
+                        if (event.repeat == 0 && !isForegroundApplication() && activatesFromBackground(id)) {
                             remoteDiagnostics.log { "source=lirc $id activate" }
                             requestActivate()
                             return@lirc
