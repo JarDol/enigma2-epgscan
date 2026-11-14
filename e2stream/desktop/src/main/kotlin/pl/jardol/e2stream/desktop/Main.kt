@@ -134,6 +134,7 @@ fun main() {
             }
             val suppressBrowserKeys = remember { AtomicBoolean(false) }
             val globalPowerKeys = remember { AtomicReference<Set<String>>(emptySet()) }
+            val globalActivateKeys = remember { AtomicReference<Set<String>>(emptySet()) }
             val powerDialogOpen = remember { AtomicBoolean(false) }
             var showExitConfirmation by remember { mutableStateOf(false) }
             val bindings = remember { RemoteKeyMap.defaults + RemoteKeyMap.parse(config.remoteBindings) }
@@ -186,6 +187,7 @@ fun main() {
                     captureButton != null || universalBindings.values.any { keys -> keys.any { it.startsWith("H:") } },
                 )
                 globalPowerKeys.set(if (captureButton == null) universalBindings[VirtualRemoteKey.POWER].orEmpty() else emptySet())
+                globalActivateKeys.set(if (captureButton == null) universalBindings[VirtualRemoteKey.ACTIVATE].orEmpty() else emptySet())
                 captureActive.set(captureButton != null)
                 volumeKeyIds.set(
                     if (!config.volumeKeysApp) emptySet()
@@ -232,6 +234,16 @@ fun main() {
                             if (!confirmationShown) powerDialogOpen.set(false)
                         }
                     }
+                }
+            }
+            /** Klawisz „Aktywuj okno”: gdy E2Stream jest w tle — przywołanie okna odtwarzacza na wierzch. */
+            val requestActivate = {
+                SwingUtilities.invokeLater {
+                    if (isRemoteTestOpen()) recordTest("Aktywuj okno (globalnie)", "przechwycony", VirtualRemoteKey.ACTIVATE)
+                    val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+                    val appActive = isForegroundApplication() && belongsToApplication(focused, desktopWindow)
+                    remoteDiagnostics.log { "activate=request active=$appActive" }
+                    if (!appActive && !activateWindow(desktopWindow)) status = "Nie udało się przełączyć na okno E2Stream."
                 }
             }
             fun cancelExitConfirmation() {
@@ -2234,6 +2246,7 @@ fun main() {
                     DesktopMenuItem.EPG_SEARCH -> openEpgSearch()
                     DesktopMenuItem.AUDIO -> showAudioPick()
                     DesktopMenuItem.RECORD -> pickRecording()
+                    DesktopMenuItem.ACTIVATE_KEYS -> openSettings(SettingsScreen.REMOTE)
                     DesktopMenuItem.EXIT -> {
                         powerDialogOpen.set(true)
                         showExitConfirmation = true
@@ -2921,6 +2934,13 @@ fun main() {
                 )
                 SettingsScreen.REMOTE -> listOf(
                     SettingItem.Header("Pilot"),
+                    (remoteKeyItem(VirtualRemoteKey.ACTIVATE) as SettingItem.Action).let { item ->
+                        SettingItem.Action(
+                            "Aktywuj okno klawiszem",
+                            "działa globalnie, gdy E2Stream jest w tle (jak Power) • ${item.summary}",
+                            item.onClick,
+                        )
+                    },
                     SettingItem.Action("Klawisze pilota", "przypisz klawisze pilota i klawiatury do przycisków") {
                         navigator.push(SettingsScreen.REMOTE_KEYS, settingsItems(SettingsScreen.REMOTE_KEYS))
                     },
@@ -3602,8 +3622,9 @@ fun main() {
                         },
                         onDiagnostic = hidDiagnosticDispatcher::submit,
                         suppressBrowserKeys = { suppressBrowserKeys.get() },
-                        isPowerKey = { it in globalPowerKeys.get() },
-                        onPower = { currentRequestPower.value() },
+                        // „Aktywuj okno” działa globalnie tylko w tle; na wierzchu klawisz ma zwykłe znaczenie.
+                        isPowerKey = { it in globalPowerKeys.get() || (it in globalActivateKeys.get() && !isForegroundApplication()) },
+                        onPower = { id -> if (id in globalPowerKeys.get()) currentRequestPower.value() else requestActivate() },
                         interceptKey = intercept@{ physicalId, down ->
                             val volumeKey = physicalId in setOf("K:173", "K:174", "K:175")
                             val swallow = (captureActive.get() && volumeKey) || physicalId in volumeKeyIds.get()
@@ -3652,6 +3673,11 @@ fun main() {
                         if (event.repeat == 0 && id in globalPowerKeys.get()) {
                             remoteDiagnostics.log { "source=lirc $id power" }
                             currentRequestPower.value()
+                            return@lirc
+                        }
+                        if (event.repeat == 0 && id in globalActivateKeys.get() && !isForegroundApplication()) {
+                            remoteDiagnostics.log { "source=lirc $id activate" }
+                            requestActivate()
                             return@lirc
                         }
                         EventQueue.invokeLater {

@@ -36,7 +36,8 @@ internal class RawHidInput(
     private val onDiagnostic: (String) -> Unit,
     private val suppressBrowserKeys: () -> Boolean,
     private val isPowerKey: (String) -> Boolean = { false },
-    private val onPower: () -> Unit = {},
+    /** Klawisz globalny (Power albo „Aktywuj okno”) — z identyfikatorem klawisza. */
+    private val onPower: (String) -> Unit = {},
     /** Zwraca true, gdy klawisz ma być obsłużony przez program i nie trafić do Windows (np. głośność). */
     private val interceptKey: (physicalId: String, down: Boolean) -> Boolean = { _, _ -> false },
 ) : AutoCloseable {
@@ -62,7 +63,7 @@ internal class RawHidInput(
         if (isPower && (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
             pressedPowerKeys.add(data.vkCode)
         ) {
-            onPower()
+            onPower(physicalId)
         }
         val intercepted = code >= 0 && !isPower && isForegroundApplication() &&
             interceptKey(physicalId, message == WM_KEYDOWN || message == WM_SYSKEYDOWN)
@@ -267,7 +268,7 @@ internal class RawHidInput(
             val newPowerPress = powerPresses.update(deviceHandle, isPower)
             when (hidInputRoute(isPower, !isPower && isForegroundApplication() && isApplicationFocused())) {
                 HidInputRoute.POWER -> {
-                    if (newPowerPress) onPower()
+                    if (newPowerPress) onPower(id)
                     continue
                 }
                 HidInputRoute.IGNORE -> continue

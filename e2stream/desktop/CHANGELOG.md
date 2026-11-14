@@ -3,6 +3,10 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.3.1
+
+- „Aktywuj okno klawiszem”: Ustawienia → Pilot i klawiatura (także pozycja w Menu) — dowolne klawisze pilota HID, IR (WinLIRC) albo klawiatury, które przywołują okno E2Stream, gdy jest w tle (jak Power, ale bez okna wyłączania); na wierzchu klawisz działa zwykle
+
 ## 0.3.0
 
 - Obraz rysowany w oknie aplikacji (VLC oddaje klatki), a paski, menu, EPG, listy i ustawienia są warstwami w tym samym oknie — skalują się razem z oknem, nie wychodzą poza nie i nie zabierają fokusu (koniec z chowaniem okna po Wstecz). Pasek kanału i przyciski myszy leżą na obrazie, obraz nie zmienia rozmiaru

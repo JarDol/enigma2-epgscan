@@ -46,6 +46,7 @@ enum class VirtualRemoteKey(val label: String) {
     DIGIT_7("7"),
     DIGIT_8("8"),
     DIGIT_9("9"),
+    ACTIVATE("Aktywuj okno E2Stream"),
 }
 
 object UniversalRemoteMap {

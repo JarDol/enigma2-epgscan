@@ -18,6 +18,7 @@ internal enum class DesktopMenuItem(val label: String, val configurable: Boolean
     EPG_SEARCH("Szukaj w EPG"),
     AUDIO("Ścieżka dźwięku"),
     RECORD("Nagraj z timeshiftu"),
+    ACTIVATE_KEYS("Aktywuj okno klawiszem"),
     SETTINGS("Ustawienia", configurable = false),
     EXIT("Wyłącz E2Stream", configurable = false),
     ;
