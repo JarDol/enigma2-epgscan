@@ -145,31 +145,44 @@ _keep_saved(cfg.logdir)
 
 
 def shared_logdir():
-    """Log i historia raportow SatWatch: katalog kopii i logow EPG Scan + /satwatch (np. /media/hdd/epgscan/satwatch)."""
-    import os
-    from ..common import backup_dir
-    return os.path.join(backup_dir(), "satwatch")
+    """Log i raporty SatWatch razem z EPG Scan: katalog kopii (np. /media/hdd/epgscan) albo /tmp,
+    gdy log EPG Scan jest ustawiony w /tmp."""
+    from ..common import backup_dir, cfg as epg_cfg
+    try:
+        if epg_cfg.log_place.value == "tmp":
+            return "/tmp"
+    except Exception:
+        pass
+    return backup_dir().rstrip("/")
 
 
 def apply_logdir():
     core.LOG_PREF = shared_logdir()
+    try:
+        from ..common import cfg as epg_cfg
+        core.KEEP_DAYS = int(epg_cfg.log_days.value)
+    except Exception:
+        pass
 
 
 def migrate_old_logdir():
-    """Do 2.18: osobne ustawienie katalogu logu SatWatch (np. /media/hdd/satwatch) - zawartosc przenoszona
-    raz do katalogu EPG Scan; stare ustawienie wraca do domyslnego."""
+    """Do 2.19: osobny katalog logu SatWatch (ustawienie, np. /media/hdd/satwatch), /etc/enigma2/satwatch
+    i /etc/enigma2/epgscan/satwatch (2.19.0-beta.1) - log i raporty przenoszone raz do katalogu EPG Scan."""
     import os
     old = cfg.logdir.value
-    new = core.out_dir()
-    if not old or old == core.DATA_DIR or not os.path.isdir(old) or os.path.abspath(old) == os.path.abspath(new):
-        return 0
-    if new != core.LOG_PREF:
-        return 0     # dysk jeszcze niezamontowany - sprobuje przy nastepnym starcie
-    n = core.migrate_out_dir(old, new, move=True)
-    scanner.log("Katalog logu: %s -> %s (przeniesiono %d plikow)" % (old, new, n))
-    cfg.logdir.value = core.DATA_DIR
-    cfg.logdir.save()
-    configfile.save()
+    target = core.out_dir()
+    sources = [old if old and old != core.DATA_DIR else "",
+               os.path.join(shared_logdir(), "satwatch"),
+               "/etc/enigma2/satwatch", os.path.join(core.DATA_DIR, "satwatch")]
+    if target != core.LOG_PREF:
+        sources = sources[2:]      # dysk niezamontowany: tylko pamiec wewnetrzna, reszta przy nastepnym starcie
+    n = core.migrate_legacy(sources, target)
+    if n:
+        scanner.log("Katalog logu: przeniesiono %d plikow do %s" % (n, target))
+    if old and old != core.DATA_DIR and target == core.LOG_PREF:
+        cfg.logdir.value = core.DATA_DIR
+        cfg.logdir.save()
+        configfile.save()
     return n
 
 
@@ -574,7 +587,7 @@ class SatWatchMain(Screen):
             a, lambda: self.menuDone((a, a)))()
 
     def statusText(self):
-        st = core.load_json(core.DATA_DIR + "/state.json", {})
+        st = core.load_json(core.data_file("state.json"), {})
         s = _("Sprawdzenie: %s") % st.get("last_check", "-")
         if runner.next_check:
             s += _(" | następne %s") % time.strftime("%d.%m %H:%M", time.localtime(runner.next_check))

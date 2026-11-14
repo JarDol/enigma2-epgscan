@@ -367,7 +367,7 @@ busy – watching, fast channel change (FCC) or streaming. A second cable to inp
 After the scan, services no longer found on a scanned transponder can be removed from `lamedb` (with protection
 against a "suspicious" transponder where less than half of the channels were found). With removal off, the report
 still lists them, and bouquet channels pointing to them go to replacement or decision like lost channels
-(list: `/etc/enigma2/epgscan/satwatch/nieaktualne.json`).
+(list: `/etc/enigma2/epgscan/satwatch-nieaktualne.json`).
 
 ### 8.2 Bouquet repair
 
@@ -484,7 +484,8 @@ Configure backups and the log in *Ustawienia → Updates, backups, log, E2Stream
 - **EPG backup after a scan** to the backup directory (default `/media/hdd/epgscan/`), keeping the last N.
 - **Restore at start-up when the EPG is empty** – automatically or after asking (two measurements a minute apart).
 - **Yellow – *Kopie EPG*** on the main screen: restore a chosen backup or back up now.
-- **Log** `epgscan.log` in the backup directory (or in `/tmp`); a few previous runs in `epgscan.log.1`, `.2`…
+- **Log** `epgscan.log` in the backup directory (or in `/tmp`); previous runs in `epgscan.log.1`, `.2`… – deleted
+  after the *Logi i raporty* period (shared with SatWatch).
 - **Disk cleanup** (off by default): every N minutes deletes, from the selected directories, timeshift files older than
   N hours (files in use are skipped) and keeps the N newest Enigma2 crash logs (counted across all directories).
   Directories are chosen from a list: storage devices, the timeshift and crash-log directories from the Enigma2
@@ -555,7 +556,7 @@ item ticks/unticks it, green saves, red cancels.
 
 **Info/EPG** on the main screen:
 
-- **SatWatch** – latest report, history (last 30), log,
+- **SatWatch** – latest report, history (recent days per the *Logi i raporty* setting), log,
 - **Channel parameter scan – latest report** – PAT/PMT results, errors, skipped channels and full synchronization details and conflicts,
 - **EPG statistics** – number of events, channels with EPG, coverage in days, duplicates,
 - **Channels – EPG coverage** (shortest first), **Duplicates** – overlapping events,
@@ -600,7 +601,6 @@ are in brackets. Every option has a description below the settings list.
 | Channels from bouquets (OK – list) | TV bouquets, below them radio bouquets marked *(radio)*; ticked ones are watched, new bouquets at once (all except Last Scanned) |
 | Snapshot and bouquet report on each check | (yes) |
 | Reload transponders after update | without a GUI restart (no) |
-| Log and report history directory | internal memory / disk / USB (internal memory) |
 | On-screen notification | never / only on changes / always (only on changes) |
 | Number of satellites.xml backups | (5) |
 | Verify SSL certificate | (yes) |
@@ -669,7 +669,8 @@ are in brackets. Every option has a description below the settings list.
 |---|---|
 | EPG backup after scan, directory, number of backups | (yes, `/media/hdd/epgscan/`, 3) |
 | Restore EPG at start-up when empty | off / ask / automatically (automatically) |
-| Write log | in the backup directory / in `/tmp` (in the backup directory) |
+| Write log | in the backup directory / in `/tmp` (in the backup directory); also applies to the SatWatch log and reports |
+| Logs and reports: delete older than | 7 / 14 / 30 / 90 days (30) – shared by EPG Scan and SatWatch |
 | Automatic update | (no); checks daily and installs/restarts only in safe standby |
 | Automatic update channel | stable-only (default) or beta and stable; also filters the manual *Update now* list |
 | Update now | OK – lists releases with a ZIP asset from the selected channel (including older ones); installation requires confirmation |
@@ -704,10 +705,10 @@ the service status.
 | `/etc/enigma2/epgscan/tuners-epg.json`, `tuners-params.json` | latest tuner usage reports |
 | `/etc/enigma2/epgscan/sources/` | copies of XMLTV source lists, your own lists (`wlasne/`), the "EPG PL (dekoder)" source |
 | `/etc/enigma2/epgscan/tps.json`, `xmltv.json`, `wakeup` | transponder state, sources, wake-up |
-| `/etc/enigma2/epgscan/satwatch/` | SatWatch state, bouquet snapshot, backups of bouquets and `satellites.xml`; log when no disk |
+| `/etc/enigma2/epgscan/satwatch-*` | SatWatch state (`satwatch-state.json`, `satwatch-snapshot.json`, …), bouquet backups (`satwatch-bouquet_backup/`) and `satellites.xml` backups (`satwatch-backup/`); log and reports when no disk |
 | `/etc/enigma2/satellites.xml` | only when SatWatch has updated transponders |
 | `/media/hdd/epgscan/` | EPG backups, log, `lokalne/` (downloaded listings, channel map, reports) |
-| `/media/hdd/epgscan/satwatch/` | SatWatch log and report history (EPG Scan backup and log directory + `satwatch`) |
+| `/media/hdd/epgscan/satwatch.log`, `raporty/satwatch-*.txt` | SatWatch log and reports next to the EPG Scan log |
 
 The plugin does **not change**: bouquets (except repairs by SatWatch, always with a backup), tuner settings, the
 system file `/etc/tuxbox/satellites.xml`, cron. It changes the EIT setting in Menu → EPG only according to the
@@ -737,8 +738,8 @@ watch: [chapter 8.4](#84-tuner-setup--what-to-set-in-the-system-and-what-in-the-
 
 **A channel disappeared from a bouquet after a change on the satellite.** Menu → *Kanały* → *SatWatch* → *Kanały do decyzji*.
 
-**Where are the logs?** Info/EPG → *Log EPG Scan* and *SatWatch – log*; files in `/media/hdd/epgscan/` and
-`/media/hdd/epgscan/satwatch/`.
+**Where are the logs?** Info/EPG → *Log EPG Scan* and *SatWatch – log*; `epgscan.log` and `satwatch.log` in
+`/media/hdd/epgscan/`, SatWatch reports in `/media/hdd/epgscan/raporty/`.
 
 **Is the interface available in English?** Choose English under **Settings → Updates and plugin
 information**. Logs, older reports, some technical details and external data may remain in their

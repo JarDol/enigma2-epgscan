@@ -14,7 +14,7 @@ from Components.config import getConfigListEntry, NoSave, ConfigSelection
 from Components.SelectionList import SelectionList, SelectionEntryComponent
 from enigma import eTimer, eEPGCache
 
-from .common import S, cfg, log, VERSION, profile_default, profile_text, log_path, log_count, save_cfg, list_bouquets, selected_bouquets, epg_path, copy_backup, list_backups, \
+from .common import S, cfg, log, VERSION, profile_default, profile_text, log_path, save_cfg, list_bouquets, selected_bouquets, epg_path, copy_backup, list_backups, \
 	SCHED_DAYS, DAYS, next_run, fmt_ts, keys_skin, init_keys, set_keys, apply_clear_choices, single_flush_supported
 from .i18n import _, translate_choices
 
@@ -23,7 +23,7 @@ def all_items():
 	return [cfg.scope, cfg.max_parallel, cfg.reserve, cfg.min_time, cfg.idle_time, cfg.max_time, cfg.clear_mode,
 		cfg.skip_empty, cfg.skip_recheck, cfg.eit_mode, cfg.sat_import, cfg.eit_force_off, cfg.sched_mode, cfg.sched_time, cfg.sched_interval, cfg.sched_when,
 		cfg.sched_skip_rec, cfg.sched_wakeup, cfg.sched_deep_after, cfg.notify, cfg.backup, cfg.backup_dir,
-		cfg.backup_keep, cfg.restore, cfg.log_place, cfg.xmltv, cfg.xmltv_mode, cfg.xmltv_copies, cfg.epgpl_grab, cfg.xmltv_bouquets, cfg.xmltv_gaps,
+		cfg.backup_keep, cfg.restore, cfg.log_place, cfg.log_days, cfg.xmltv, cfg.xmltv_mode, cfg.xmltv_copies, cfg.epgpl_grab, cfg.xmltv_bouquets, cfg.xmltv_gaps,
 		cfg.p_channelparams,
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
@@ -235,6 +235,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			if cfg.backup.value:
 				lst += [e("Katalog kopii (OK = wybierz)", cfg.backup_dir), e("Liczba zachowanych kopii", cfg.backup_keep)]
 			lst += [e("Odtwarzanie EPG po starcie, gdy puste", cfg.restore), e("Zapisuj log", cfg.log_place),
+				e("Logi i raporty: usuwaj starsze niz", cfg.log_days),
 				e("Serwer dla aplikacji E2Stream", cfg.cli_api)]
 			if cfg.cli_api.value:
 				lst += [e("  Port", cfg.cli_port), e("  Token (puste = bez, siec lokalna)", cfg.cli_token),
@@ -504,8 +505,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			txt = _("Katalog kopii EPG (OK = wybor). Powinien lezec na dysku lub USB - nie w pamieci odbiornika. " \
 				"Teraz: %s") % cfg.backup_dir.value
 		elif item is cfg.backup_keep:
-			txt = _("Ile ostatnich kopii EPG trzymac. Tyle samo (min. 2) jest zachowywanych logow skanu. " \
-				"Kopii teraz: %d") % len(list_backups())
+			txt = _("Ile ostatnich kopii EPG trzymac. Kopii teraz: %d") % len(list_backups())
 		elif item is cfg.restore:
 			txt = _("Kilka minut po starcie Enigma2 sprawdza EPG; gdy jest w nim mniej niz 30%% zdarzen " \
 				"z ostatniego skanu, wczytuje najnowsza kopie. Kopii: %d") % len(list_backups())
@@ -516,8 +516,11 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"Na czas importu EIT jest wylaczane, potem wraca do poprzedniego stanu. " \
 				"Zrodla wybierasz zoltym przyciskiem - wybrano %d.") % n
 		elif item is cfg.log_place:
-			txt = _("Log: %s (zachowywanych logow: %d - tyle, ile kopii EPG, min. 2). W katalogu kopii log przetrwa " \
-				"restart dekodera i wybudzenie z glebokiego czuwania.") % (log_path(), log_count())
+			txt = _("Log: %s. Log EPG Scan i SatWatch oraz raporty SatWatch (podkatalog raporty) sa w tym samym " \
+				"katalogu. W katalogu kopii przetrwaja restart dekodera i wybudzenie z glebokiego czuwania.") % log_path()
+		elif item is cfg.log_days:
+			txt = _("Wspolne dla EPG Scan i SatWatch: poprzednie logi (epgscan.log.N, satwatch.log.N) i raporty SatWatch " \
+				"starsze niz tyle dni sa usuwane po kazdym przebiegu i przy starcie. Biezacy log i najnowszy raport zostaja zawsze.")
 		elif item is cfg.max_parallel:
 			txt = "Wspolne ustawienie skanu EPG i parametrow. Gorna granica wlasnych skanow naraz. Nowy tuner jest zajmowany tylko wtedy, gdy po tym zostanie " \
 				"rezerwa wolnych - liczone sa wszystkie zajete (ogladanie, nagrania, streamy, PiP). Np. 8 tunerow, " \

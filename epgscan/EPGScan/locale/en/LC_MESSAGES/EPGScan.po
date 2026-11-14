@@ -1388,8 +1388,8 @@ msgstr "How many days ahead to download (plus the previous day for the current n
 msgid "Ile kopii satellites.xml sprzed aktualizacji trzymać. Przywracanie: Kanały -> SatWatch -> Przywróć kopię satellites.xml."
 msgstr "How many pre-update satellites.xml backups to keep. Restore: Channels -> SatWatch -> Restore satellites.xml backup."
 
-msgid "Ile ostatnich kopii EPG trzymac. Tyle samo (min. 2) jest zachowywanych logow skanu. Kopii teraz: %d"
-msgstr "Number of recent EPG backups to keep. The same number of scan logs is retained (at least 2). Current backups: %d"
+msgid "Ile ostatnich kopii EPG trzymac. Kopii teraz: %d"
+msgstr "Number of recent EPG backups to keep. Current backups: %d"
 
 msgid "Ile stron naraz z danego serwisu (serwisy pobierane rownolegle) i ile lacznie ze wszystkich. Wiecej = szybciej, ale wieksze ryzyko blokady (onet odpowiada wtedy 429 - strony sa ponawiane na koncu, wolniej)."
 msgstr "How many pages to fetch concurrently from each service (services run in parallel) and in total. More is faster but increases the risk of blocking; onet responds with 429 and failed pages are retried more slowly at the end."
@@ -1625,8 +1625,8 @@ msgstr "EPG Scan log (newest first)"
 msgid "Log jest pusty."
 msgstr "The log is empty."
 
-msgid "Log: %s (zachowywanych logow: %d - tyle, ile kopii EPG, min. 2). W katalogu kopii log przetrwa restart dekodera i wybudzenie z glebokiego czuwania."
-msgstr "Log: %s (retained logs: %d, matching EPG backups, minimum 2). A log in the backup directory survives receiver restart and wake from deep standby."
+msgid "Log: %s. Log EPG Scan i SatWatch oraz raporty SatWatch (podkatalog raporty) sa w tym samym katalogu. W katalogu kopii przetrwaja restart dekodera i wybudzenie z glebokiego czuwania."
+msgstr "Log: %s. EPG Scan and SatWatch logs and SatWatch reports (raporty subdirectory) are in the same directory. In the backup directory they survive a receiver restart and wake from deep standby."
 
 msgid "Maks. czas na transponderze [s]"
 msgstr "Maximum time per transponder [s]"
@@ -2876,8 +2876,8 @@ msgstr "Only download guide on server"
 msgid "Typ:          %s%s"
 msgstr "Type:         %s%s"
 
-msgid "UWAGA: brak danych satelity w lokalnym pliku - odtworz satellites.xml (np. z %s/backup)."
-msgstr "WARNING: satellite data missing from the local file - restore satellites.xml (e.g. from %s/backup)."
+msgid "UWAGA: brak danych satelity w lokalnym pliku - odtworz satellites.xml (np. z %s)."
+msgstr "WARNING: satellite data missing from the local file - restore satellites.xml (e.g. from %s)."
 
 msgid "UWAGA: brak list zrodel XMLTV - zostana doinstalowane przy skanie (lub w ustawieniach)"
 msgstr "WARNING: XMLTV source lists are missing; they will be installed during the scan (or in settings)"
@@ -3152,8 +3152,8 @@ msgstr "File update scope"
 msgid "Zakres bukietow dla skanu kanalow"
 msgstr "Bouquet scope for channel scan"
 
-msgid "Zaktualizowano %s (kopia w %s/backup)."
-msgstr "Updated %s (backup in %s/backup)."
+msgid "Zaktualizowano %s (kopia w %s)."
+msgstr "Updated %s (backup in %s)."
 
 msgid "Zalecane: drugi kabel na wejscie B i dwie grupy:"
 msgstr "Recommended: a second cable to input B and two groups:"
@@ -4205,3 +4205,18 @@ msgstr "1.5 s"
 
 msgid "Brak wydan dla wybranego kanalu aktualizacji."
 msgstr "No releases for the selected update channel."
+
+msgid "Logi i raporty: usuwaj starsze niz"
+msgstr "Logs and reports: delete older than"
+
+msgid "Wspolne dla EPG Scan i SatWatch: poprzednie logi (epgscan.log.N, satwatch.log.N) i raporty SatWatch starsze niz tyle dni sa usuwane po kazdym przebiegu i przy starcie. Biezacy log i najnowszy raport zostaja zawsze."
+msgstr "Shared by EPG Scan and SatWatch: previous logs (epgscan.log.N, satwatch.log.N) and SatWatch reports older than this many days are deleted after each run and at startup. The current log and the newest report are always kept."
+
+msgid "14 dni"
+msgstr "14 days"
+
+msgid "30 dni"
+msgstr "30 days"
+
+msgid "90 dni"
+msgstr "90 days"

@@ -378,7 +378,7 @@ i podział tunerów na dwie grupy – jedna do oglądania, druga (z preferowanym
 Po skanie: serwisy, których już nie ma na zeskanowanym transponderze, mogą być usuwane z `lamedb`
 (z zabezpieczeniem przed „podejrzanym” transponderem, na którym znaleziono mniej niż połowę kanałów).
 Przy wyłączonym usuwaniu raport i tak wypisuje serwisy, których skan nie znalazł, a kanały z bukietów
-wskazujące na nie trafiają do podmiany albo decyzji – tak jak zgubione (lista: `/etc/enigma2/epgscan/satwatch/nieaktualne.json`).
+wskazujące na nie trafiają do podmiany albo decyzji – tak jak zgubione (lista: `/etc/enigma2/epgscan/satwatch-nieaktualne.json`).
 
 ### 8.2 Naprawa bukietów
 
@@ -505,7 +505,8 @@ Kopie i log konfiguruje się w *Ustawienia → Aktualizacje*; sprzątanie dysku 
 - **Kopia EPG po skanie** do katalogu kopii (domyślnie `/media/hdd/epgscan/`), zachowywanych N ostatnich.
 - **Odtwarzanie po starcie, gdy EPG puste** – automatycznie albo z pytaniem (dwa pomiary w odstępie minuty).
 - **Żółty – Kopie EPG** na ekranie głównym: odtworzenie wybranej kopii albo kopia teraz.
-- **Log** `epgscan.log` w katalogu kopii (albo w `/tmp`); kilka poprzednich przebiegów w `epgscan.log.1`, `.2`…
+- **Log** `epgscan.log` w katalogu kopii (albo w `/tmp`); poprzednie przebiegi w `epgscan.log.1`, `.2`… – usuwane
+  po czasie z ustawienia *Logi i raporty* (wspólnego z SatWatch).
 - **Sprzątanie dysku** (domyślnie wyłączone): co N minut usuwa z zaznaczonych katalogów pliki timeshift starsze
   niż N godzin (pomija używane) i zostawia N najnowszych crash logów Enigma2 (łącznie ze wszystkich katalogów).
   Katalogi wybiera się z listy: nośniki, katalog timeshift i crash logów z ustawień Enigma2 oraz własne.
@@ -580,7 +581,7 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 
 **Info/EPG** na ekranie głównym:
 
-- **SatWatch** – ostatni raport, historia (30 ostatnich), log,
+- **SatWatch** – ostatni raport, historia (z ostatnich dni wg ustawienia *Logi i raporty*), log,
 - **Skan parametrów kanałów – ostatni raport** – wyniki PAT/PMT, błędy, pominięte kanały oraz pełne szczegóły synchronizacji i konfliktów,
 - **Statystyka EPG** – liczba audycji, kanały z EPG, zasięg w dniach, duble,
 - **Kanały – zasięg EPG** (od najkrótszego), **Duble** – nakładające się audycje,
@@ -631,7 +632,6 @@ ustawienia. Wartości domyślne w nawiasach.
 | Kanały z bukietów (OK – lista) | lista bukietów TV, a pod nimi radiowe z dopiskiem *(radio)*; pilnowane są zaznaczone, nowe bukiety od razu (wszystkie oprócz Last Scanned) |
 | Zrzut i raport bukietów przy sprawdzaniu | (tak) |
 | Przeładuj transpondery po aktualizacji | bez restartu GUI (nie) |
-| Katalog logu i historii raportów | pamięć wewnętrzna / dysk / USB (pamięć wewnętrzna) |
 | Powiadomienie na ekranie | nigdy / tylko przy zmianach / zawsze (tylko przy zmianach) |
 | Liczba kopii satellites.xml | (5) |
 | Weryfikacja certyfikatu SSL | (tak) |
@@ -702,7 +702,8 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 |---|---|
 | Kopia EPG po skanie, katalog, liczba kopii | (tak, `/media/hdd/epgscan/`, 3) |
 | Odtwarzanie EPG po starcie, gdy puste | wyłączone / zapytaj / automatycznie (automatycznie) |
-| Zapisuj log | w katalogu kopii / w `/tmp` (w katalogu kopii) |
+| Zapisuj log | w katalogu kopii / w `/tmp` (w katalogu kopii); dotyczy też logu i raportów SatWatch |
+| Logi i raporty: usuwaj starsze niż | 7 / 14 / 30 / 90 dni (30) – wspólne dla EPG Scan i SatWatch |
 | Aktualizacja automatyczna | (nie); sprawdza raz na dobę, instaluje i restartuje tylko w bezpiecznym czuwaniu |
 | Kanał aktualizacji automatycznych | stabilne (domyślnie) albo beta i stabilne; dotyczy też ręcznej listy *Aktualizuj teraz* |
 | Aktualizuj teraz | OK – lista wydań z ZIP-em z wybranego kanału (także starszych); instalacja wymaga potwierdzenia |
@@ -734,10 +735,10 @@ w E2Stream. Po instalacji i uruchomieniu Avahi zrestartuj Enigma2, aby odśwież
 | `/etc/enigma2/epgscan/wskazania.txt`, `aliases.txt` | ręczne wskazania stacji, własne dopasowania (te same nazwy co na serwerze) |
 | `/etc/enigma2/epgscan/sources/` | kopie list źródeł XMLTV, własne listy (`wlasne/`), źródło „EPG PL (dekoder)” |
 | `/etc/enigma2/epgscan/tps.json`, `xmltv.json`, `wakeup` | stan transponderów, źródeł, wybudzania |
-| `/etc/enigma2/epgscan/satwatch/` | stan SatWatch, zrzut bukietów, kopie bukietów i `satellites.xml`; log, gdy brak dysku |
+| `/etc/enigma2/epgscan/satwatch-*` | stan SatWatch (`satwatch-state.json`, `satwatch-snapshot.json`, …), kopie bukietów (`satwatch-bouquet_backup/`) i `satellites.xml` (`satwatch-backup/`); log i raporty, gdy brak dysku |
 | `/etc/enigma2/satellites.xml` | tylko gdy SatWatch zaktualizował transpondery |
 | `/media/hdd/epgscan/` | kopie EPG, log, `lokalne/` (pobrany program, mapa kanałów, raporty) |
-| `/media/hdd/epgscan/satwatch/` | log i historia raportów SatWatch (katalog kopii i logów EPG Scan + `satwatch`) |
+| `/media/hdd/epgscan/satwatch.log`, `raporty/satwatch-*.txt` | log i raporty SatWatch obok logu EPG Scan |
 | `/etc/enigma2/epgscan/clients/` | dane aplikacji E2Stream: `common.json` (domyślne dla nowych odbiorników, wspólne PMT kanałów), `device-<id>.json` (każdy odbiornik) |
 | `/etc/enigma2/epgscan/channelparams.json` | wyniki skanu PAT/PMT i potwierdzone wybory audio |
 | `/etc/enigma2/epgscan/tuners-epg.json`, `tuners-params.json` | ostatnie raporty wykorzystania tunerów |
@@ -770,8 +771,8 @@ oglądania: [rozdział 8.4](#84-konfiguracja-tunerów--co-ustawić-w-systemie-a-
 
 **Kanał zniknął z bukietu po zmianie na satelicie.** Menu → Kanały → SatWatch → *Kanały do decyzji*.
 
-**Gdzie są logi?** Info/EPG → *Log EPG Scan* i *SatWatch – log*; pliki w `/media/hdd/epgscan/`
-i `/media/hdd/epgscan/satwatch/`.
+**Gdzie są logi?** Info/EPG → *Log EPG Scan* i *SatWatch – log*; pliki `epgscan.log` i `satwatch.log`
+w `/media/hdd/epgscan/`, raporty SatWatch w `/media/hdd/epgscan/raporty/`.
 
 ## Wsparcie
 

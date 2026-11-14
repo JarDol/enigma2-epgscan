@@ -15,7 +15,7 @@ from Components.ScrollLabel import ScrollLabel
 from Components.config import getConfigListEntry, ConfigSelection, ConfigYesNo, NoSave
 
 from .common import cfg, log, save_cfg, VERSION, keys_skin, init_keys, set_keys, hints_skin, init_hints, CLEAR_CHOICES, \
-	profile_default, profile_text, log_path, backup_dir, SRV_CHOICES, SW_CHOICES, SATWATCH_DATA_DIR
+	profile_default, profile_text, log_path, backup_dir, SRV_CHOICES, SW_CHOICES
 from .i18n import _, language
 
 
@@ -473,7 +473,7 @@ def reports_menu(session, engine, sel=0):
 
 
 def satwatch_reports(session, k, back=None):
-	"""Raporty SatWatch: ostatni, historia (ostatnie 30), log."""
+	"""Raporty SatWatch: ostatni, historia (raporty/satwatch-*.txt), log."""
 	try:
 		from .satwatch import core as swcore
 		from .satwatch import scanner as swscan
@@ -485,18 +485,15 @@ def satwatch_reports(session, k, back=None):
 	elif k == "swlog":
 		session.openWithCallback(back or _noop, EPGScanText, "SatWatch - log", swscan.log_path(), tail=400)
 	else:
-		rdir = os.path.join(swcore.out_dir(), "reports")
-		try:
-			files = sorted((f for f in os.listdir(rdir) if f.startswith("report-")), reverse=True)
-		except Exception:
-			files = []
+		rdir = swcore.reports_dir()
+		files = swcore.report_files(rdir)
 		if not files:
 			session.openWithCallback(back or _noop, MessageBox, _("Brak zapisanych raportow SatWatch (%s).") % rdir, MessageBox.TYPE_INFO, timeout=6)
 			return
 
 		def label(f):
 			try:
-				t = time.strptime(f[7:22], "%Y%m%d-%H%M%S")
+				t = time.strptime(swcore.report_stamp(f), "%Y%m%d-%H%M%S")
 				first = ""
 				with open(os.path.join(rdir, f), encoding="utf-8", errors="ignore") as fh:
 					for ln in fh:
@@ -511,7 +508,7 @@ def satwatch_reports(session, k, back=None):
 		def pick(c, sel=0):
 			if not c:
 				return (back or _noop)()
-			session.openWithCallback(lambda *a: hist(_index(lst, c)), EPGScanText, _("SatWatch - raport %s") % c[1][7:22],
+			session.openWithCallback(lambda *a: hist(_index(lst, c)), EPGScanText, _("SatWatch - raport %s") % swcore.report_stamp(c[1]),
 				os.path.join(rdir, c[1]))
 
 		def hist(sel=0):
@@ -825,7 +822,6 @@ def channels_menu(session, sel=0):
 
 
 SATWATCH_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/SatWatch"
-SATWATCH_REPORT = os.path.join(SATWATCH_DATA_DIR, "last_report.txt")
 
 
 def satwatch_installed():

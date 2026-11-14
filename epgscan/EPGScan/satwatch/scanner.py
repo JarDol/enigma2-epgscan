@@ -23,9 +23,10 @@ GAP = 3                 # przerwa miedzy TP [s] (Unicable nie lubi strojenia ser
 POLL = 2                # kontrola rezerwy w trakcie skanu [s]
 MAX_PREEMPT = 5         # ile razy TP moze byc oddany uzytkownikowi, zanim go pominiemy
 
-LOG = None     # None = core.out_dir()/satwatch.log (katalog EPG Scan + /satwatch lub /etc/enigma2/epgscan/satwatch)
+LOG = None     # None = core.out_dir()/satwatch.log (katalog kopii EPG Scan, bez dysku /etc/enigma2/epgscan)
 LOG_MAX = 200 * 1024    # po przekroczeniu: satwatch.log -> .1 -> .2 ... (rotacja)
-LOG_KEEP = 4            # ile starszych plikow zachowac (lacznie max ok. 1 MB)
+LOG_KEEP = 20           # najwiecej starszych plikow na dysku (dodatkowo usuwane starsze niz ustawienie EPG Scan)
+LOG_KEEP_FLASH = 4      # w pamieci wewnetrznej (bez dysku) - lacznie ok. 1 MB
 
 
 def log_path():
@@ -35,11 +36,16 @@ def log_path():
 
 def rotate_log(path):
     import os
-    for i in range(LOG_KEEP, 0, -1):
+    keep = LOG_KEEP_FLASH if os.path.dirname(path) == core.DATA_DIR else LOG_KEEP
+    for i in range(keep, 0, -1):
         src = path if i == 1 else "%s.%d" % (path, i - 1)
         dst = "%s.%d" % (path, i)
         if os.path.exists(src):
             os.rename(src, dst)
+    for extra in range(keep + 1, LOG_KEEP + 30):
+        if os.path.exists("%s.%d" % (path, extra)):
+            os.remove("%s.%d" % (path, extra))
+    core.prune_old(["%s.%d" % (path, i) for i in range(1, keep + 1)], keep_newest=0)
 
 
 def log(msg):

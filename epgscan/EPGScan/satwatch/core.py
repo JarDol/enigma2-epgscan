@@ -35,8 +35,17 @@ VERSION = "0.4.2"
 
 DEFAULT_URL = "https://raw.githubusercontent.com/OpenPLi/tuxbox-xml/master/xml/satellites.xml"
 E2DIR = "/etc/enigma2"
-DATA_DIR = "/etc/enigma2/epgscan/satwatch"   # od EPG Scan 2.19 (wczesniej /etc/enigma2/satwatch)
-LOG_PREF = ""   # katalog logu i historii raportow: katalog kopii EPG Scan + /satwatch; "" = DATA_DIR
+DATA_DIR = "/etc/enigma2/epgscan"   # pliki SatWatch z przedrostkiem satwatch- (do 2.18: /etc/enigma2/satwatch)
+PREFIX = "satwatch-"
+LOG_PREF = ""   # katalog logu i raportow: katalog kopii EPG Scan (np. /media/hdd/epgscan); "" = DATA_DIR
+REPORTS = "raporty"                 # podkatalog raportow (wspolny z EPG Scan), pliki satwatch-RRRRMMDD-GGMMSS.txt
+KEEP_DAYS = 30                      # logi i raporty starsze sa usuwane (ustawienie EPG Scan)
+LAST_REPORT = PREFIX + "last_report.txt"
+
+
+def data_file(name):
+    """Plik stanu SatWatch w katalogu EPG Scan: satwatch-<nazwa>."""
+    return os.path.join(DATA_DIR, PREFIX + name)
 TARGET = "/etc/enigma2/satellites.xml"
 DEFAULT_IGNORE = "Last Scanned"
 SYSTEM = "/etc/tuxbox/satellites.xml"
@@ -293,7 +302,7 @@ def build_output_xml(local_root, remote_root, remote_sats, positions, mode, sour
 
 
 def backup_and_write(content, backups=5):
-    bdir = os.path.join(DATA_DIR, "backup")
+    bdir = data_file("backup")
     ensure_dir(bdir)
     src = local_xml_path()
     if os.path.exists(src):
@@ -309,14 +318,14 @@ def backup_and_write(content, backups=5):
 
 
 def list_backups():
-    bdir = os.path.join(DATA_DIR, "backup")
+    bdir = data_file("backup")
     if not os.path.isdir(bdir):
         return []
     return sorted((f for f in os.listdir(bdir) if f.startswith("satellites.xml.")), reverse=True)
 
 
 def restore_backup(name):
-    src = os.path.join(DATA_DIR, "backup", name)
+    src = os.path.join(data_file("backup"), name)
     with open(src, "rb") as f:
         atomic_write(TARGET, f.read())
 
@@ -330,7 +339,7 @@ def download(url, state, verify=True, timeout=60):
     Zwraca (bytes, changed). Jesli serwer odpowie 304, zwraca kopie z cache.
     state: dict (etag, url) - aktualizowany na miejscu.
     """
-    cache = os.path.join(DATA_DIR, "remote_satellites.xml")
+    cache = data_file("remote_satellites.xml")
     headers = {"User-Agent": "SatWatch/%s (Enigma2)" % VERSION}
     if state.get("url") == url and state.get("etag") and os.path.exists(cache):
         headers["If-None-Match"] = state["etag"]
@@ -591,7 +600,7 @@ def str_key(s):
 
 
 def stale_kept_path():
-    return os.path.join(DATA_DIR, "nieaktualne.json")
+    return data_file("nieaktualne.json")
 
 
 def stale_kept():
@@ -635,7 +644,7 @@ def take_snapshot(e2dir=None):
 
 
 def snapshot_path():
-    return os.path.join(DATA_DIR, "snapshot.json")
+    return data_file("snapshot.json")
 
 
 def save_snapshot(snap):
@@ -1087,7 +1096,7 @@ def apply_bouquet_replacements(repl, ignore=None, e2dir=None, keep=10):
         if changed:
             to_write.append((path, fname, "\n".join(lines)))
     if to_write:
-        bdir = os.path.join(DATA_DIR, "bouquet_backup")
+        bdir = data_file("bouquet_backup")
         tdir = os.path.join(bdir, time.strftime("%Y%m%d-%H%M%S"))
         ensure_dir(tdir)
         for path, fname, content in to_write:
@@ -1146,7 +1155,7 @@ def remove_from_bouquets(key, ignore=None, e2dir=None, keep=10):
         if changed:
             to_write.append((path, fname, "\n".join(out)))
     if to_write:
-        bdir = os.path.join(DATA_DIR, "bouquet_backup")
+        bdir = data_file("bouquet_backup")
         tdir = os.path.join(bdir, time.strftime("%Y%m%d-%H%M%S"))
         ensure_dir(tdir)
         for path, fname, content in to_write:
@@ -1185,7 +1194,7 @@ def resolve_decision(ks, action, cand=None, ignore_text=None):
 
 
 def list_bouquet_backups():
-    bdir = os.path.join(DATA_DIR, "bouquet_backup")
+    bdir = data_file("bouquet_backup")
     if not os.path.isdir(bdir):
         return []
     return sorted((d for d in os.listdir(bdir) if os.path.isdir(os.path.join(bdir, d))), reverse=True)
@@ -1194,7 +1203,7 @@ def list_bouquet_backups():
 def restore_bouquet_backup(name, e2dir=None):
     """Przywraca pliki bukietow z kopii (sprzed podmiany). Zwraca liczbe plikow."""
     e2dir = e2dir or E2DIR
-    src = os.path.join(DATA_DIR, "bouquet_backup", name)
+    src = os.path.join(data_file("bouquet_backup"), name)
     n = 0
     for f in os.listdir(src):
         with open(os.path.join(src, f), "rb") as fh:
@@ -1401,7 +1410,7 @@ def scan_failed_update(results, max_attempts=3, keep_aborted=True):
     TP spoza tego skanu zostaja bez zmian.
     keep_aborted=False (pelny skan): przerwane TP nie trafiaja do ponowien
     (pelny skan ma wlasne wznawianie)."""
-    state_path = os.path.join(DATA_DIR, "state.json")
+    state_path = data_file("state.json")
     state = load_json(state_path, {})
     prev = dict((tuple(x["id"]), x) for x in state.get("pending_failed", []))
     for r in results:
@@ -1428,7 +1437,7 @@ def scan_failed_update(results, max_attempts=3, keep_aborted=True):
 
 def resume_save(kind, results, hours=24):
     """Zapamietuje TP niezeskanowane z braku tunera - do wznowienia, gdy tunery beda wolne."""
-    state_path = os.path.join(DATA_DIR, "state.json")
+    state_path = data_file("state.json")
     state = load_json(state_path, {})
     tps = [dict((k, v) for k, v in r.items() if k not in ("ok", "status", "found", "tuner"))
            for r in results if str(r.get("status", "")).startswith("przerwano - ")]
@@ -1443,7 +1452,7 @@ def resume_save(kind, results, hours=24):
 
 def resume_add(kind, tps, hours=24):
     """Dopisuje TP do wznowienia w tle (gdy tunery beda wolne) - bez blokowania przebiegu EPG Scan."""
-    state_path = os.path.join(DATA_DIR, "state.json")
+    state_path = data_file("state.json")
     state = load_json(state_path, {})
     old = state.get("resume") or {}
     if old.get("tps") and time.time() <= old.get("until", 0):
@@ -1457,7 +1466,7 @@ def resume_add(kind, tps, hours=24):
 
 def resume_take():
     """Zwraca (kind, tps) do wznowienia albo None; czysci zapis."""
-    state_path = os.path.join(DATA_DIR, "state.json")
+    state_path = data_file("state.json")
     state = load_json(state_path, {})
     r = state.pop("resume", None)
     save_json(state_path, state)
@@ -1467,14 +1476,14 @@ def resume_take():
 
 
 def resume_pending():
-    r = load_json(os.path.join(DATA_DIR, "state.json"), {}).get("resume")
+    r = load_json(data_file("state.json"), {}).get("resume")
     if r and r.get("tps") and time.time() <= r.get("until", 0):
         return r
     return None
 
 
 def pending_failed_tps():
-    state = load_json(os.path.join(DATA_DIR, "state.json"), {})
+    state = load_json(data_file("state.json"), {})
     return [x["tp"] for x in state.get("pending_failed", [])]
 
 
@@ -1617,64 +1626,123 @@ def dir_usable(path):
 
 
 def out_dir():
-    """Katalog logu i historii raportow: wybrany, a gdy niedostepny - DATA_DIR."""
+    """Katalog logu i raportow: katalog kopii EPG Scan, a gdy niedostepny - DATA_DIR."""
     if LOG_PREF and os.path.abspath(LOG_PREF) != os.path.abspath(DATA_DIR) and dir_usable(LOG_PREF):
         return LOG_PREF
     return DATA_DIR
 
 
-def migrate_out_dir(old, new, move=False):
-    """Po zmianie katalogu: kopiuje (move=True: przenosi) log i historie raportow."""
-    n = 0
-    if not old or not new or os.path.abspath(old) == os.path.abspath(new) or not dir_usable(new):
+def reports_dir():
+    return os.path.join(out_dir(), REPORTS)
+
+
+def report_files(rdir=None):
+    """Raporty SatWatch w katalogu raportow, od najnowszego."""
+    rdir = rdir or reports_dir()
+    try:
+        return sorted((f for f in os.listdir(rdir) if f.startswith(PREFIX) and f.endswith(".txt")), reverse=True)
+    except Exception:
+        return []
+
+
+def report_stamp(name):
+    """satwatch-20261114-174500.txt -> "20261114-174500"."""
+    return name[len(PREFIX):len(PREFIX) + 15]
+
+
+def prune_old(paths, days=None, keep_newest=1):
+    """Usuwa pliki starsze niz days dni (ustawienie EPG Scan); najnowszy plik zostaje zawsze."""
+    days = KEEP_DAYS if days is None else days
+    if not days or days <= 0:
         return 0
-    for f in os.listdir(old) if os.path.isdir(old) else []:
-        if f.startswith("satwatch.log") or f == "last_report.txt":
-            if not os.path.exists(os.path.join(new, f)):
-                (shutil.move if move else shutil.copy2)(os.path.join(old, f), os.path.join(new, f))
-                n += 1
-    src = os.path.join(old, "reports")
-    if os.path.isdir(src):
-        dst = os.path.join(new, "reports")
-        ensure_dir(dst)
-        for f in os.listdir(src):
-            if not os.path.exists(os.path.join(dst, f)):
-                (shutil.move if move else shutil.copy2)(os.path.join(src, f), os.path.join(dst, f))
-                n += 1
-    if move:
-        for d in (src, old):
+    limit = time.time() - days * 86400
+    items = []
+    for p in paths:
+        try:
+            items.append((os.path.getmtime(p), p))
+        except OSError:
+            pass
+    items.sort(reverse=True)
+    n = 0
+    for mtime, p in items[keep_newest:]:
+        if mtime < limit:
             try:
-                os.rmdir(d)      # tylko pusty katalog
+                os.remove(p)
+                n += 1
             except OSError:
                 pass
+    return n
+
+
+def prune_reports(days=None):
+    rdir = reports_dir()
+    return prune_old([os.path.join(rdir, f) for f in report_files(rdir)], days)
+
+
+def migrate_legacy(sources, new=None):
+    """Do 2.19: log i raporty SatWatch ze starych katalogow (np. /media/hdd/satwatch, /etc/enigma2/satwatch,
+    /media/hdd/epgscan/satwatch) przenoszone do katalogu EPG Scan: satwatch.log*, satwatch-last_report.txt,
+    raporty/satwatch-*.txt. Puste stare katalogi sa usuwane. Nic nie jest nadpisywane."""
+    new = new or out_dir()
+    n = 0
+    for old in sources:
+        if not old or not os.path.isdir(old) or os.path.abspath(old) == os.path.abspath(new):
+            continue
+        for f in os.listdir(old):
+            target = None
+            if f.startswith("satwatch.log"):
+                target = os.path.join(new, f)
+            elif f == "last_report.txt":
+                target = os.path.join(new, LAST_REPORT)
+            if target and not os.path.exists(target):
+                ensure_dir(new)
+                shutil.move(os.path.join(old, f), target)
+                n += 1
+        src = os.path.join(old, "reports")
+        if os.path.isdir(src):
+            dst = os.path.join(new, REPORTS)
+            ensure_dir(dst)
+            for f in os.listdir(src):
+                name = PREFIX + f[len("report-"):] if f.startswith("report-") else f
+                if not os.path.exists(os.path.join(dst, name)):
+                    shutil.move(os.path.join(src, f), os.path.join(dst, name))
+                    n += 1
+            try:
+                os.rmdir(src)
+            except OSError:
+                pass
+        try:
+            os.rmdir(old)        # tylko pusty katalog
+        except OSError:
+            pass
     return n
 
 
 def save_report(text):
     if not text.endswith("\n"):
         text += "\n"
-    # last_report.txt zawsze w DATA_DIR (czyta go wtyczka), kopia + historia w out_dir()
-    atomic_write(os.path.join(ensure_dir(DATA_DIR) or DATA_DIR, "last_report.txt"), text)
     od = out_dir()
-    rdir = os.path.join(od, "reports")
-    ensure_dir(rdir)
+    ensure_dir(od)
+    atomic_write(os.path.join(od, LAST_REPORT), text)
     if od != DATA_DIR:
-        atomic_write(os.path.join(od, "last_report.txt"), text)
-    atomic_write(os.path.join(rdir, "report-%s.txt" % time.strftime("%Y%m%d-%H%M%S")), text)
-    files = sorted(os.listdir(rdir))
-    for f in files[:-30]:
         try:
-            os.remove(os.path.join(rdir, f))
+            os.remove(os.path.join(DATA_DIR, LAST_REPORT))   # stary z czasu bez dysku
         except OSError:
             pass
+    rdir = reports_dir()
+    ensure_dir(rdir)
+    atomic_write(os.path.join(rdir, "%s%s.txt" % (PREFIX, time.strftime("%Y%m%d-%H%M%S"))), text)
+    prune_reports()
 
 
 def read_last_report():
-    try:
-        with open(os.path.join(DATA_DIR, "last_report.txt"), "rb") as f:
-            return f.read().decode("utf-8", "replace")
-    except Exception:
-        return ""
+    for d in (out_dir(), DATA_DIR):
+        try:
+            with open(os.path.join(d, LAST_REPORT), "rb") as f:
+                return f.read().decode("utf-8", "replace")
+        except Exception:
+            pass
+    return ""
 
 
 # --------------------------------------------------------------------------
@@ -1690,7 +1758,7 @@ def run_check(opts):
                  bq_changed (pliki bukietow zmienione - trzeba przeladowac)
     """
     ensure_dir(DATA_DIR)
-    state_path = os.path.join(DATA_DIR, "state.json")
+    state_path = data_file("state.json")
     state = load_json(state_path, {})
     tol = int(opts.get("tol_mhz", 3)) * 1000
     positions = opts.get("positions") or [130]
@@ -1796,12 +1864,12 @@ def run_check(opts):
                                        "full" if restore_full else opts.get("mode", "positions"), opts["url"])
             backup_and_write(content, int(opts.get("backups", 5)))
             updated = True
-            R.append(_("Zaktualizowano %s (kopia w %s/backup).") % (TARGET, DATA_DIR))
+            R.append(_("Zaktualizowano %s (kopia w %s).") % (TARGET, data_file("backup")))
             R.append("")
     elif total:
         R.append(_("Tryb 'tylko raport' - satellites.xml nie zostal zmieniony."))
         if restore_full or no_local:
-            R.append(_("UWAGA: brak danych satelity w lokalnym pliku - odtworz satellites.xml (np. z %s/backup).") % DATA_DIR)
+            R.append(_("UWAGA: brak danych satelity w lokalnym pliku - odtworz satellites.xml (np. z %s).") % data_file("backup"))
         R.append("")
 
     # bukiety: porownanie z ostatnim zrzutem (np. po recznym skanie), podmiany, nowy zrzut

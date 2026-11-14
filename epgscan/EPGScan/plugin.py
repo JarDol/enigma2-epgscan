@@ -250,9 +250,10 @@ def sessionstart(reason, session=None, **kwargs):
 			from .common import log
 			log("Watchdog czuwania: start nieudany: %s" % e)
 		try:
-			from .common import apply_clear_choices, apply_eit_policy, migrate_v2
+			from .common import apply_clear_choices, apply_eit_policy, migrate_v2, prune_logs
 			apply_clear_choices()
 			migrate_v2()
+			prune_logs()
 			from .localmap import migrate_files
 			migrate_files()
 			apply_eit_policy()

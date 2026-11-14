@@ -73,7 +73,10 @@ class SatWatchLocalizationTests(unittest.TestCase):
         enigma = module("enigma", eTimer=Timer, eComponentScan=Mock, eDVBFrontendParametersSatellite=Mock,
                         getDesktop=Mock(), eDVBDB=Mock(), eServiceReference=Mock)
         common = module(PACKAGE + ".common", EPGChoiceBox=object, keys_skin=lambda *a: "",
-                        init_keys=lambda *a: None, set_keys=lambda *a, **k: None, scale_skins=lambda *a: None)
+                        init_keys=lambda *a: None, set_keys=lambda *a, **k: None, scale_skins=lambda *a: None,
+                        backup_dir=lambda: cls.backup, cfg=types.SimpleNamespace(
+                            log_place=types.SimpleNamespace(value="backup"), log_days=types.SimpleNamespace(value="30")))
+        cls.backup = "/media/hdd/epgscan/"
         cls.modules = {
             PACKAGE: package,
             PACKAGE + ".common": common,
@@ -214,24 +217,45 @@ class SatWatchLocalizationTests(unittest.TestCase):
         self.assertEqual(element.value, "5")
         self.assertEqual(element.default, "auto")
 
-    def test_old_satwatch_log_directory_is_moved_once(self):
+    def test_old_satwatch_log_directories_are_moved_once(self):
         import tempfile, os
         with tempfile.TemporaryDirectory() as root:
-            old = os.path.join(root, "satwatch")
+            old = os.path.join(root, "satwatch")            # dawne osobne ustawienie katalogu logu
             os.makedirs(os.path.join(old, "reports"))
-            for name in ("satwatch.log", "last_report.txt", os.path.join("reports", "report-1.txt")):
+            for name in ("satwatch.log", "satwatch.log.1", "last_report.txt", os.path.join("reports", "report-20261101-120000.txt")):
                 with open(os.path.join(old, name), "w") as f:
                     f.write("x")
-            new = os.path.join(root, "epgscan", "satwatch")
+            new = os.path.join(root, "epgscan")
             cfg = self.sw.cfg
             cfg.logdir.value = old
             cfg.logdir.save = lambda: None
-            with patch.object(self.core, "LOG_PREF", new):
-                self.assertEqual(self.sw.migrate_old_logdir(), 3)
-            self.assertTrue(os.path.exists(os.path.join(new, "satwatch.log")))
-            self.assertTrue(os.path.exists(os.path.join(new, "reports", "report-1.txt")))
+            with patch.object(self.core, "LOG_PREF", new), patch.object(self.sw, "shared_logdir", return_value=new):
+                self.assertEqual(self.sw.migrate_old_logdir(), 4)
+                self.assertEqual(self.core.report_files(), ["satwatch-20261101-120000.txt"])
+                self.assertEqual(self.core.read_last_report(), "x")
+            self.assertTrue(os.path.exists(os.path.join(new, "satwatch.log.1")))
+            self.assertTrue(os.path.exists(os.path.join(new, "satwatch-last_report.txt")))
+            self.assertTrue(os.path.exists(os.path.join(new, "raporty", "satwatch-20261101-120000.txt")))
             self.assertFalse(os.path.exists(old))
             self.assertEqual(cfg.logdir.value, self.core.DATA_DIR)
+
+    def test_reports_are_saved_flat_and_pruned_by_age(self):
+        import tempfile, os, time as _t
+        with tempfile.TemporaryDirectory() as root:
+            with patch.object(self.core, "LOG_PREF", root), patch.object(self.core, "DATA_DIR", os.path.join(root, "etc")), \
+                    patch.object(self.core, "KEEP_DAYS", 7):
+                rdir = os.path.join(root, "raporty")
+                os.makedirs(rdir)
+                old = os.path.join(rdir, "satwatch-20200101-000000.txt")
+                with open(old, "w") as f:
+                    f.write("old")
+                os.utime(old, (_t.time() - 30 * 86400,) * 2)
+                self.core.save_report("nowy")
+                self.assertFalse(os.path.exists(old))
+                self.assertEqual(len(self.core.report_files()), 1)
+                self.assertEqual(self.core.read_last_report(), "nowy\n")
+                self.assertTrue(os.path.exists(os.path.join(root, "satwatch-last_report.txt")))
+                self.assertEqual(self.core.data_file("state.json"), os.path.join(root, "etc", "satwatch-state.json"))
 
     def test_report_history_parser_finds_meaningful_english_line(self):
         diff = {"added": [], "removed": [], "changed": [], "shifted": []}

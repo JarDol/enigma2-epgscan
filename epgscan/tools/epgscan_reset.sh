@@ -25,7 +25,7 @@ BDIR=${BDIR%/}
 if [ "$(basename "$BDIR")" = "epgscan" ]; then add $BDIR; else add $BDIR/epg-*.dat $BDIR/epgscan.log* $BDIR/lokalne; fi
 [ -n "$SWLOG" ] && [ "$(basename "$SWLOG")" = "satwatch" ] && add $SWLOG
 add /media/hdd/satwatch /media/usb/satwatch /media/mmc/satwatch /media/hdd/satwatch_sim_backup
-# od 2.19 wszystko w $E2/epgscan (wyzej) i w katalogu kopii ($BDIR/satwatch razem z $BDIR)
+# od 2.19 wszystko w $E2/epgscan (satwatch-*) i w katalogu kopii ($BDIR: satwatch.log, raporty/)
 add /tmp/epgscan.log /tmp/epgscan_xmltv
 # satellites.xml zapisany przez SatWatch (Enigma wroci do systemowego /etc/tuxbox/satellites.xml)
 SATX=""

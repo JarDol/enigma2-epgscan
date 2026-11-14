@@ -19,7 +19,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.19.0-beta.1"
+VERSION = "2.19.0-beta.2"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 DATA_DIR = os.path.join(E2, "epgscan")          # wszystkie pliki wtyczki w pamieci wewnetrznej
@@ -28,15 +28,16 @@ TP_STATS = os.path.join(DATA_DIR, "tps.json")
 WAKEUP_FILE = os.path.join(DATA_DIR, "wakeup")
 XMLTV_STATE_FILE = os.path.join(DATA_DIR, "xmltv.json")
 PLUGIN_SOURCES_DIR = os.path.join(DATA_DIR, "sources")
-SATWATCH_DATA_DIR = os.path.join(DATA_DIR, "satwatch")
-# 2.19: stare miejsca w /etc/enigma2 -> /etc/enigma2/epgscan (przenoszone raz, przy starcie)
+SATWATCH_FILES = ("state.json", "snapshot.json", "nieaktualne.json", "remote_satellites.xml", "backup", "bouquet_backup")
+# 2.19: stare miejsca w /etc/enigma2 -> /etc/enigma2/epgscan (przenoszone raz, przy starcie); pliki SatWatch
+# z przedrostkiem satwatch- (z /etc/enigma2/satwatch i z /etc/enigma2/epgscan/satwatch z 2.19.0-beta.1)
 OLD_PATHS = [
 	(os.path.join(E2, "epgscan_tps.json"), TP_STATS),
 	(os.path.join(E2, "epgscan_wakeup"), WAKEUP_FILE),
 	(os.path.join(E2, "epgscan_xmltv.json"), XMLTV_STATE_FILE),
 	(os.path.join(E2, "epgscan_sources"), PLUGIN_SOURCES_DIR),
-	(os.path.join(E2, "satwatch"), SATWATCH_DATA_DIR),
-]
+] + [(os.path.join(old, name), os.path.join(DATA_DIR, "satwatch-" + name))
+	for old in (os.path.join(DATA_DIR, "satwatch"), os.path.join(E2, "satwatch")) for name in SATWATCH_FILES]
 RADIO_TYPES = {2, 10}
 DAYS = ["Poniedzialek", "Wtorek", "Sroda", "Czwartek", "Piatek", "Sobota", "Niedziela"]
 
@@ -210,6 +211,7 @@ cfg.epgpl_grab = ConfigSelection(default="ready", choices=[     # serwer epgpl p
 cfg.log_place = ConfigSelection(default="backup", choices=[
 	("backup", "w katalogu kopii EPG"),
 	("tmp", "w /tmp (znika przy restarcie dekodera)")])
+cfg.log_days = ConfigSelection(default="30", choices=[(str(x), "%d dni" % x) for x in (7, 14, 30, 90)])   # logi i raporty (EPG Scan, SatWatch)
 cfg.last_events = ConfigInteger(default=0)
 cfg.last_summary = ConfigText(default="")
 cfg.last_fetch = ConfigText(default="")       # ostatnie pobranie programu (dekoder) - ekran glowny
@@ -343,17 +345,60 @@ def log_path():
 	return LOG
 
 
-def log_count():
+LOG_ROTATE_MAX = 60   # najwiecej starszych plikow epgscan.log.N (dodatkowo usuwane starsze niz ustawienie)
+
+
+def log_days():
 	try:
-		return max(2, int(cfg.backup_keep.value))
+		return int(cfg.log_days.value)
 	except Exception:
-		return 2
+		return 30
+
+
+def prune_files(paths, days, keep_newest=0):
+	"""Usuwa pliki starsze niz days dni (najnowsze keep_newest zostaja zawsze)."""
+	limit = time.time() - days * 86400
+	items = []
+	for p in paths:
+		try:
+			items.append((os.path.getmtime(p), p))
+		except OSError:
+			pass
+	items.sort(reverse=True)
+	n = 0
+	for mtime, p in items[keep_newest:]:
+		if mtime < limit:
+			try:
+				os.remove(p)
+				n += 1
+			except OSError:
+				pass
+	return n
+
+
+def prune_logs():
+	"""Logi i raporty EPG Scan i SatWatch starsze niz ustawienie 'Logi i raporty' (katalog logu i raporty/)."""
+	d = os.path.dirname(log_path())
+	n = 0
+	try:
+		names = os.listdir(d)
+	except Exception:
+		return 0
+	rotated = [os.path.join(d, f) for f in names if re.match(r"^(epgscan|satwatch)\.log\.\d+$", f)]
+	n += prune_files(rotated, log_days())
+	rdir = os.path.join(d, "raporty")
+	try:
+		reports = [os.path.join(rdir, f) for f in os.listdir(rdir) if f.endswith(".txt")]
+	except Exception:
+		reports = []
+	n += prune_files(reports, log_days(), keep_newest=1)
+	return n
 
 
 def rotate_logs():
-	"""epgscan.log -> .1 -> .2 ...; zostaje tyle logow, ile kopii EPG (min. 2)."""
+	"""epgscan.log -> .1 -> .2 ... przy kazdym przebiegu; starsze niz ustawienie 'Logi i raporty' sa usuwane."""
 	p = log_path()
-	n = log_count()
+	n = LOG_ROTATE_MAX
 	try:
 		for i in range(n - 1, 0, -1):
 			src = p if i == 1 else "%s.%d" % (p, i - 1)
@@ -362,6 +407,10 @@ def rotate_logs():
 		for extra in range(n, n + 10):
 			if os.path.exists("%s.%d" % (p, extra)):
 				os.remove("%s.%d" % (p, extra))
+	except Exception:
+		pass
+	try:
+		prune_logs()
 	except Exception:
 		pass
 
