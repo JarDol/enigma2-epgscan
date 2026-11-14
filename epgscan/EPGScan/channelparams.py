@@ -33,16 +33,38 @@ class SectionReader:
 			os.close(fd)
 			raise
 		self.fd = fd
+		self.table_id = table_id
+		self.buffer = bytearray()
+
+	def _take_section(self):
+		if len(self.buffer) < 3:
+			return None
+		length = ((self.buffer[1] & 0x0f) << 8) | self.buffer[2]
+		if self.buffer[0] != self.table_id or length > 1021:
+			raise ValueError("Invalid DVB section in demux buffer")
+		end = 3 + length
+		if len(self.buffer) < end:
+			return None
+		section = bytes(self.buffer[:end])
+		del self.buffer[:end]
+		return section
 
 	def read(self):
 		if self.fd is None:
 			raise ValueError("DVB section reader is closed")
+		section = self._take_section()
+		if section is not None:
+			return section
 		try:
-			return os.read(self.fd, 4096)
+			data = os.read(self.fd, 4096)
 		except OSError as e:
 			if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
 				return None
 			raise
+		if not data:
+			raise OSError("DVB demux closed while reading")
+		self.buffer.extend(data)
+		return self._take_section()
 
 	def close(self):
 		if self.fd is not None:
@@ -74,17 +96,26 @@ def _section(data, table_id, minimum):
 	return data
 
 
-def parse_pat(data, service_id):
-	"""Return the PMT PID for a service from one complete PAT section."""
+def parse_pat_entries(data):
+	"""Return the service-to-PMT mappings from one complete PAT section."""
 	data = _section(data, 0x00, 12)
 	end = len(data) - 4
 	if (end - 8) % 4:
 		raise ValueError("Invalid PAT entries")
+	entries = {}
 	for offset in range(8, end, 4):
 		sid = (data[offset] << 8) | data[offset + 1]
-		if sid == service_id:
-			return ((data[offset + 2] & 0x1f) << 8) | data[offset + 3]
-	return None
+		if sid:
+			pid = ((data[offset + 2] & 0x1f) << 8) | data[offset + 3]
+			if sid in entries and entries[sid] != pid:
+				raise ValueError("Conflicting PAT entries for service")
+			entries[sid] = pid
+	return entries
+
+
+def parse_pat(data, service_id):
+	"""Return the PMT PID for a service from one complete PAT section."""
+	return parse_pat_entries(data).get(service_id)
 
 
 def _descriptors(data):

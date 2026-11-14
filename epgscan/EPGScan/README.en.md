@@ -196,8 +196,9 @@ the importer skips the conflicting entry and logs a warning rather than risk rep
 ### Channel parameters (PAT/PMT)
 
 This is a separate task: it does not replace the EPG scan and does not clear or modify the EPG database. It scans
-each unique DVB service in the selected bouquets, grouped by transponder. The scan keeps a tuner reserved for each
-group and tunes its channels in sequence before releasing the tuner for another group. EPG Scan's parallel limit
+each unique DVB service in the selected bouquets, grouped by transport stream. One tuned service provides PAT
+and PMTs for the group; after 20 seconds from starting capture or a failure only missing channels are checked individually.
+EPG Scan's parallel limit
 and free-tuner reserve are respected; at least two tuners are kept free (one on receivers with fewer than three
 tuners). With six tuners and a reserve of two, up to four groups can run at once; with eight, up to six. Transponder
 grouping can be disabled, at the cost of more retunes. If watching, streaming or a recording needs a tuner, the scan
@@ -223,10 +224,15 @@ track without closing the screen, **OK** confirms it, and **Red** returns and re
 active before preview. **Info/EPG** shows full PAT/PMT and stream data. Audio preferences can come from
 Enigma2's automatic-audio settings or a manually ordered list (for example `pol,eng`). If PAT/PMT scanning
 does not identify audio tracks, the picker uses the audio list supplied by the current Enigma2 service.
+The first audio track is accepted as the default; an existing manual PID is retained if it is still present,
+otherwise the selection falls back to the first track.
 Track selection is saved immediately.
 
 The **Channel parameters (PAT/PMT)** settings group selects language preferences, bouquets, parallel limit,
-tuner reserve, transponder grouping and an interval of 1/2/4/7 days. An automatic scan runs only after a completed
+tuner reserve, transponder grouping and an interval of 1/2/4/7 days. An optional single extra attempt for failed
+channels runs after the entire scan, including scheduled scans; without it there are no post-scan retries.
+Missing transport-stream data is first checked individually as a separate fallback.
+An automatic scan runs only after a completed
 main EPG schedule run, when the selected interval has elapsed; it follows the **Schedule** conditions (standby,
 recordings and wake-up). EPG top-ups do not trigger it.
 
@@ -580,7 +586,8 @@ are in brackets. Every option has a description below the settings list.
 | Audio language preferences | Enigma2 automatic-audio settings / custom order (Enigma2) |
 | Channels from bouquets | same selected bouquets as the satellite scan |
 | Max parallel scans / free-tuner reserve | shared with *Satelita – EPG* |
-| Group channels by transponder | recommended; one tuner tunes channels in a TP group in sequence |
+| Group channels by transponder | recommended; read group PAT/PMTs from one tune, then missing channels individually |
+| Retry failed channels once after scan | optional extra attempt after the entire scan (no) |
 | Scan channels every | 1 / 2 / 4 / 7 days; scan follows the main EPG schedule |
 
 ### *Program z internetu* (internet listings)

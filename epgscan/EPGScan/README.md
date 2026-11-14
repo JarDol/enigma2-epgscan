@@ -197,8 +197,9 @@ zamiast ryzykować zastąpienie istniejącej audycji.
 ### Skan parametrów kanałów (PAT/PMT)
 
 To osobne zadanie; nie zastępuje skanu EPG i nie czyści ani nie zmienia bazy EPG. Obejmuje każdy unikalny kanał
-DVB w wybranych bukietach, grupując je po transponderach. Skan trzyma tuner dla grupy i przełącza kolejno kanały
-z tego samego transpondera, zanim zwolni tuner dla następnej grupy. Limit równoległości i rezerwa wolnych tunerów
+DVB w wybranych bukietach, grupując je według strumienia transportowego. Jeden dostrojony kanał udostępnia PAT
+i PMT kanałów z grupy; po 20 sekundach od rozpoczęcia odczytu lub błędzie tylko brakujące kanały są sprawdzane osobno.
+Limit równoległości i rezerwa wolnych tunerów
 EPG Scan są respektowane; skaner zostawia co najmniej dwa wolne tunery (na dekoderach z mniej niż trzema tunerami
 zostawia jeden). Przy sześciu tunerach i rezerwie dwóch może pracować do czterech grup naraz, a przy ośmiu – do
 sześciu. Grupowanie po transponderze można wyłączyć, kosztem dodatkowych strojeń. Gdy oglądanie, streaming lub
@@ -225,11 +226,16 @@ zaznaczoną ścieżkę bez zamykania okna, **OK** zatwierdza wybór, a **Czerwon
 aktywną przed podglądem.
 **Info/EPG** pokazuje pełne dane PAT/PMT i strumieni. Preferencje języków można pobierać z ustawień
 automatycznego audio Enigma2 albo ustawić własną kolejność (np. `pol,eng`). Gdy skan PAT/PMT nie rozpozna
-ścieżek, okno wyboru korzysta z listy audio udostępnionej przez bieżącą usługę Enigma2. Wybór ścieżki jest
+ścieżek, okno wyboru korzysta z listy audio udostępnionej przez bieżącą usługę Enigma2. Domyślna jest pierwsza
+ścieżka audio i jest uznawana za prawidłowy wybór; wcześniejszy ręczny wybór jest zachowywany, jeśli jego PID
+nadal występuje, a w przeciwnym razie wraca wybór pierwszej ścieżki. Wybór ścieżki jest
 zapisywany od razu; zamknięcie głównego okna nie pyta o zapis.
 
 W ustawieniach **Skan parametrów kanałów (PAT/PMT)** wybiera się języki, bukiety, limit równoległości,
-rezerwę tunerów, grupowanie po transponderze i odstęp 1/2/4/7 dni. Automatyczny skan uruchamia się dopiero po
+rezerwę tunerów, grupowanie po transponderze i odstęp 1/2/4/7 dni. Opcjonalnie po całym skanie (także
+automatycznym) wykonywana jest dokładnie jedna dodatkowa próba tylko kanałów z błędem; bez tej opcji
+nie ma ponowień błędów po skanie. Odrębnie brakujące dane z transpondera są najpierw sprawdzane indywidualnie.
+Automatyczny skan uruchamia się dopiero po
 głównym przebiegu EPG z harmonogramu, jeśli minął ustawiony odstęp; nadrzędne są warunki z **Harmonogramu**
 (czuwanie, nagrania i wybudzanie). Doczytywanie EPG nie uruchamia skanu parametrów.
 
@@ -601,7 +607,8 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Preferencje języków | automatyczne audio Enigma2 / własna kolejność (Enigma2) |
 | Kanały z bukietów | te same wybrane bukiety co w skanie satelitarnym |
 | Maks. równoległych skanów / rezerwa wolnych tunerów | wspólne ustawienia z *Satelita – EPG* |
-| Grupowanie kanałów po transponderze | zalecane; jeden tuner przełącza kolejno kanały tej samej grupy |
+| Grupowanie kanałów po transponderze | zalecane; PAT/PMT grupy z jednego dostrojenia, brakujące kanały osobno |
+| Ponów raz błędne kanały po skanie | opcjonalna dodatkowa próba po całym skanie (nie) |
 | Skanuj kanały co | 1 / 2 / 4 / 7 dni; skan po głównym przebiegu harmonogramu EPG |
 
 ### Program z internetu

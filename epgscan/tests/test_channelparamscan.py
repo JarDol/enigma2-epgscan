@@ -52,7 +52,7 @@ common.TUNE_GAP = 2
 common.TUNE_TIMEOUT = 30
 common.channel_params_bouquet_channels = lambda _files: []
 common.cfg = types.SimpleNamespace(cp_language_source=setting("manual"), cp_languages=setting("pol"),
-	cp_group_tp=setting(True), cp_interval=setting("7"), cp_last_run=setting(0), cp_auto_in_progress=setting(False),
+	cp_group_tp=setting(True), cp_retry_failed=setting(False), cp_interval=setting("7"), cp_last_run=setting(0), cp_auto_in_progress=setting(False),
 	cp_common_overwrite=setting(False), cp_devices_overwrite=setting(False),
 	map_sort=setting("bq"), scope=types.SimpleNamespace(value="all",
 		choices=types.SimpleNamespace(choices=[("all", "wszystkie"), ("selected", "wybrane"), ("tps", "transpondery")])),
@@ -731,7 +731,7 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertEqual(len(started), 2)
 		self.assertTrue(all(job.state == "strojenie" for job in started))
 
-	def test_successful_channel_recommends_only_unique_preferred_audio_and_keeps_raw_pmt(self):
+	def test_successful_channel_defaults_to_first_audio_and_keeps_raw_pmt(self):
 		section = base64.b64decode(PMT_BASE64)
 		pmt = channelparams.parse_pmt(section, 17039)
 		engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None)
@@ -744,7 +744,8 @@ class ChannelParamScanTests(unittest.TestCase):
 		result = scan.results[job.ref]
 		self.assertEqual(result["preferredAudioPid"], 536)
 		self.assertEqual(result["selectedAudioPid"], 536)
-		self.assertFalse(result["selectedConfirmed"])
+		self.assertTrue(result["selectedConfirmed"])
+		self.assertEqual(result["selectionSource"], "default")
 		self.assertEqual(__import__("base64").b64decode(result["section"]), section)
 		self.assertEqual(job.state, "gotowe")
 
@@ -762,7 +763,7 @@ class ChannelParamScanTests(unittest.TestCase):
 					getStreamingData=lambda: {"adapter": 0, "demux": 2, "pids": pids}))
 				job.tuned_at = 100
 				job.state = "odczyt strumienia"
-				scan._retry_or_fail = Mock()
+				scan._handle_failure = Mock()
 				scan._complete_channel = Mock()
 				pat_reader = Mock(read=Mock(return_value=pat))
 				pmt_reader = Mock(read=Mock(return_value=pmt))
@@ -776,7 +777,7 @@ class ChannelParamScanTests(unittest.TestCase):
 					[(0, 2, 0, 0), (0, 2, 307, 2)])
 				self.assertEqual(scan.results[job.ref]["pmtPid"], 307)
 				self.assertEqual(scan.results[job.ref]["section"], PMT_BASE64)
-				scan._retry_or_fail.assert_not_called()
+				scan._handle_failure.assert_not_called()
 				scan._complete_channel.assert_called_once_with(job)
 
 	def test_scanner_waits_for_stream_metadata_before_retrying_tune(self):
@@ -787,13 +788,13 @@ class ChannelParamScanTests(unittest.TestCase):
 		job.rec = types.SimpleNamespace(stream=lambda: stream)
 		job.tuned_at = 100
 		job.state = "odczyt strumienia"
-		scan._retry_or_fail = Mock()
+		scan._handle_failure = Mock()
 		with patch.object(scanner_module.time, "time", return_value=101), \
 				patch.object(channelparams, "SectionReader") as reader:
 			scan._begin_capture(job)
 			self.assertEqual(job.state, "odczyt strumienia")
 			scan._begin_capture(job)
-		scan._retry_or_fail.assert_not_called()
+		scan._handle_failure.assert_not_called()
 		reader.assert_called_once_with(0, 1, 0, 0)
 		self.assertEqual(job.state, "zbieranie PAT/PMT")
 
@@ -808,7 +809,7 @@ class ChannelParamScanTests(unittest.TestCase):
 		job.rec = types.SimpleNamespace(stream=lambda: types.SimpleNamespace(
 			getStreamingData=lambda: {"adapter": 0, "demux": 2}))
 		job.tuned_at = 100
-		scan._retry_or_fail = Mock()
+		scan._handle_failure = Mock()
 		scan._complete_channel = Mock()
 		pat_reader = Mock(read=Mock(side_effect=[pat(17007), pat(17039)]))
 		pmt_reader = Mock(read=Mock(return_value=base64.b64decode(PMT_BASE64)))
@@ -820,7 +821,7 @@ class ChannelParamScanTests(unittest.TestCase):
 			self.assertEqual(scan.results, {})
 			scan._poll_capture(job)
 		self.assertEqual(scan.results[job.ref]["pmtPid"], 307)
-		scan._retry_or_fail.assert_not_called()
+		scan._handle_failure.assert_not_called()
 
 	def test_missing_stream_metadata_eventually_reports_an_error(self):
 		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
@@ -828,10 +829,10 @@ class ChannelParamScanTests(unittest.TestCase):
 		job = scanner_module.ChannelJob({"ref": "1:0:1:428F:1:1:13E:0:0:0:", "name": "test"})
 		job.rec = types.SimpleNamespace(stream=lambda: None)
 		job.tuned_at = 100
-		scan._retry_or_fail = Mock()
+		scan._handle_failure = Mock()
 		with patch.object(scanner_module.time, "time", return_value=110):
 			scan._begin_capture(job)
-		self.assertIn("Enigma2 nie udostepnila danych strumienia", scan._retry_or_fail.call_args.args[1])
+		self.assertIn("Enigma2 nie udostepnila danych strumienia", scan._handle_failure.call_args.args[1])
 
 	def test_retry_discards_the_previous_pat_before_reading_again(self):
 		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
@@ -865,7 +866,7 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertTrue(scan.results[ref]["selectedConfirmed"])
 		self.assertEqual((scan.results[ref]["selectionSource"], scan.results[ref]["selectedAt"]), ("manual", 123))
 
-	def test_removed_manual_pid_does_not_confirm_a_new_audio_pid(self):
+	def test_removed_manual_pid_falls_back_to_first_audio(self):
 		pmt = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
 		ref = "1:0:1:428f:1:1:13e:0:0:0:"
 		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
@@ -876,7 +877,51 @@ class ChannelParamScanTests(unittest.TestCase):
 		scan._save_channel(job, pmt)
 
 		self.assertEqual(scan.results[ref]["selectedAudioPid"], 536)
-		self.assertFalse(scan.results[ref]["selectedConfirmed"])
+		self.assertTrue(scan.results[ref]["selectedConfirmed"])
+		self.assertEqual(scan.results[ref]["selectionSource"], "default")
+
+	def test_first_audio_is_default_even_when_a_later_track_matches_language(self):
+		pmt = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
+		pmt["streams"][1]["languages"] = ["eng"]
+		pmt["streams"][2]["languages"] = ["pol"]
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
+			scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+		job = types.SimpleNamespace(ref="1:0:1:428F:1:1:13E:0:0:0:", name="test", pmt_pid=307,
+			pat_section=b"pat", state="")
+		scan._save_channel(job, pmt)
+		self.assertEqual(scan.results[job.ref]["selectedAudioPid"], 536)
+		self.assertEqual(scan.results[job.ref]["preferredAudioPid"], 792)
+		self.assertTrue(scan.results[job.ref]["selectedConfirmed"])
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.filter = "pending"
+		self.assertFalse(screen._matches_filter(scan.results[job.ref]))
+		audio, _sources, pmts, conflicts = store_module._sync_payload(scan.results)
+		self.assertEqual(len(audio), 1)
+		self.assertIn("pmts_17039", pmts)
+		self.assertEqual(conflicts, set())
+
+	def test_automatic_default_follows_first_audio_when_order_changes(self):
+		pmt = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
+		pmt["streams"][1], pmt["streams"][2] = pmt["streams"][2], pmt["streams"][1]
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
+			scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+		job = types.SimpleNamespace(ref="1:0:1:428F:1:1:13E:0:0:0:", name="test", pmt_pid=307,
+			pat_section=b"pat", state="")
+		scan.results[job.ref] = {"selectedAudioPid": 536, "selectedConfirmed": True, "selectionSource": "default"}
+		scan._save_channel(job, pmt)
+		self.assertEqual(scan.results[job.ref]["selectedAudioPid"], 792)
+		self.assertEqual(scan.results[job.ref]["selectionSource"], "default")
+
+	def test_no_audio_is_not_reported_as_a_confirmed_selection(self):
+		pmt = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
+		pmt["streams"] = [stream for stream in pmt["streams"] if stream["kind"] != "audio"]
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
+			scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+		job = types.SimpleNamespace(ref="1:0:1:428F:1:1:13E:0:0:0:", name="test", pmt_pid=307,
+			pat_section=b"pat", state="")
+		scan._save_channel(job, pmt)
+		self.assertIsNone(scan.results[job.ref]["selectedAudioPid"])
+		self.assertFalse(scan.results[job.ref]["selectedConfirmed"])
 
 	def test_language_preference_is_read_from_enigma_when_configured(self):
 		common.cfg.cp_language_source.value = "enigma"
@@ -1139,22 +1184,22 @@ class ChannelParamScanTests(unittest.TestCase):
 			self.assertEqual(data["last_scan"]["scanned"], 0)
 			self.assertEqual(data["last_scan"]["unsupported"], [row])
 
-	def test_retry_requeues_failed_job_and_cancel_releases_active_service(self):
+	def test_failed_job_is_reported_and_cancel_releases_active_service(self):
 		engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None)
 		engine.release = lambda job: engine.active.remove(job) if job in engine.active else None
 		scan = scanner_module.ChannelParamsScan(engine)
 		job = types.SimpleNamespace(
-			pat_reader=None, pmt_reader=None, rec=None, state="", retries=0, not_before=0, name="test", group=None)
+			pat_reader=None, pmt_reader=None, rec=None, state="", not_before=0, name="test", ref="ref", group=None)
 		scan.active.append(job)
 		engine.active.append(job)
 
-		scan._retry_or_fail(job, "timeout")
+		scan._handle_failure(job, "timeout")
 
 		self.assertEqual(scan.active, [])
 		self.assertEqual(engine.active, [])
-		self.assertEqual(job.retries, 1)
-		self.assertEqual(job.state, "czeka (ponownie)")
-		self.assertEqual(scan.queue, [job])
+		self.assertEqual(job.state, "BLAD: timeout")
+		self.assertEqual(scan.queue, [])
+		self.assertEqual(scan.errors[0]["ref"], "ref")
 
 		scan.active.append(job)
 		engine.active.append(job)
@@ -1212,6 +1257,345 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertEqual([release[0] for release in available], ["2.3.0-beta.1", "2.2.0"])
 		self.assertTrue(available[0][2])
 		self.assertFalse(available[1][2])
+
+
+class BatchScanTests(unittest.TestCase):
+	def setUp(self):
+		self.now = 100
+		self.sections = {}
+		self.readers = []
+		self.records = []
+		self.released = []
+		self.rows = [{"ref": "1:0:1:%X:1:1:13E:0:0:0:" % sid, "name": str(sid), "supported": True}
+			for sid in (1, 2)]
+		self.engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None, total_tuners=4, reserve=1,
+			timer_hold=0, max_parallel=2, scan_usage=lambda: None, upcoming_recordings=lambda: 0,
+			eff_reserve=lambda: 1, free_tuners=lambda: 4, on_busy_tp=lambda _job: False, notify=lambda: None)
+
+		def release(job):
+			if job.rec is not None:
+				self.released.append(job.rec)
+				job.rec = None
+			if job in self.engine.active:
+				self.engine.active.remove(job)
+		self.engine.release = release
+
+		def record(ref):
+			rec = types.SimpleNamespace(ref=ref, prepareStreaming=lambda: None, start=lambda: None,
+				stream=lambda: types.SimpleNamespace(getStreamingData=lambda: {"adapter": 0, "demux": 2}))
+			self.records.append(rec)
+			return rec
+		self.navigation = types.SimpleNamespace(record_event=[], recordService=record)
+
+		def reader(_adapter, _demux, pid, _table):
+			item = Mock()
+			item.read.side_effect = lambda: self.sections.get(pid, []).pop(0) if self.sections.get(pid) else None
+			item.pid = pid
+			self.readers.append(item)
+			return item
+		patches = [
+			patch.object(scanner_module, "load_results", return_value={"results": {}}),
+			patch.object(scanner_module, "channel_params_bouquet_channels", side_effect=lambda _files: self.rows),
+			patch.object(scanner_module, "tp_params", return_value=(11000, 0, 192)),
+			patch.object(scanner_module, "tp_key", side_effect=lambda ref: tuple(int(x, 16) for x in ref.split(":")[4:7])),
+			patch.object(scanner_module.time, "time", side_effect=lambda: self.now),
+			patch.object(channelparams, "SectionReader", side_effect=reader),
+			patch.object(sys.modules["NavigationInstance"], "instance", self.navigation),
+			patch.object(common.cfg.cp_retry_failed, "value", False),
+			patch.object(scanner_module, "save_results"),
+		]
+		for item in patches:
+			item.start()
+			self.addCleanup(item.stop)
+		self.scan = scanner_module.ChannelParamsScan(self.engine)
+		self.addCleanup(self.scan.cancel)
+
+	def pat(self, entries, tsid=1, number=0, last=0):
+		payload = b"".join(sid.to_bytes(2, "big") + (0xe000 | pid).to_bytes(2, "big")
+			for sid, pid in entries)
+		length = 9 + len(payload)
+		body = bytes([0, 0xb0 | (length >> 8), length & 255]) + tsid.to_bytes(2, "big") + \
+			bytes([0xc1, number, last]) + payload
+		return body + channelparams._crc32(body).to_bytes(4, "big")
+
+	def pmt(self, sid):
+		body = bytearray(base64.b64decode(PMT_BASE64)[:-4])
+		body[3:5] = sid.to_bytes(2, "big")
+		return bytes(body) + channelparams._crc32(body).to_bytes(4, "big")
+
+	def tune(self):
+		self.scan.rec_event(self.records[-1], enigma.iRecordableService.evTunedIn)
+		self.scan.tick()
+
+	def test_one_reservation_collects_multiple_pat_sections_and_shared_pmt_pid(self):
+		self.sections = {0: [self.pat([(1, 307)], number=0, last=1),
+			self.pat([(2, 307)], number=1, last=1)], 307: [self.pmt(2), self.pmt(1), self.pmt(2)]}
+		self.assertTrue(self.scan.start())
+		self.tune()
+		for _ in range(3):
+			self.scan.tick()
+		self.assertEqual(len(self.records), 1)
+		self.assertEqual(self.scan.scanned_refs, {row["ref"] for row in self.rows})
+		self.assertEqual([self.scan.results[row["ref"]]["sid"] for row in self.rows], [1, 2])
+		self.assertEqual([base64.b64decode(self.scan.results[row["ref"]]["pat"]) for row in self.rows],
+			[self.pat([(1, 307)], number=0, last=1), self.pat([(2, 307)], number=1, last=1)])
+		self.assertEqual([reader.pid for reader in self.readers], [0, 307])
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+		self.assertEqual(len(self.released), 1)
+
+	def test_twenty_three_transport_streams_need_only_twenty_three_tunes(self):
+		self.rows = [{"ref": "1:0:1:%X:%X:1:13E:0:0:0:" % (sid, tsid),
+			"name": "service %d" % sid, "supported": True}
+			for tsid in range(1, 24) for sid in (2 * tsid - 1, 2 * tsid)]
+		started = {}
+		tune_times = []
+
+		def record(ref):
+			tsid = int(ref.split(":")[4], 16)
+			started[tsid] = self.now
+			tune_times.append(self.now)
+			rec = types.SimpleNamespace(ref=ref, prepareStreaming=lambda: None, start=lambda: None,
+				stream=lambda: types.SimpleNamespace(getStreamingData=lambda: {"adapter": 0, "demux": tsid}))
+			self.records.append(rec)
+			return rec
+
+		def reader(_adapter, demux, pid, _table):
+			sids = (2 * demux - 1, 2 * demux)
+			section = self.pat([(sids[0], 307), (sids[1], 308)], tsid=demux) if pid == 0 \
+				else self.pmt(sids[pid - 307])
+			item = Mock()
+			item.read.side_effect = lambda: section if pid == 0 or self.now - started[demux] >= 3 else None
+			self.readers.append(item)
+			return item
+
+		self.navigation.recordService = record
+		reports = []
+		self.scan.done = reports.append
+		max_active = 0
+		with patch.object(channelparams, "SectionReader", side_effect=reader):
+			self.scan.start()
+			for _ in range(400):
+				for job in list(self.scan.active):
+					if job.state == "strojenie":
+						self.scan.rec_event(job.rec, enigma.iRecordableService.evTunedIn)
+				self.now += 0.25
+				self.scan.tick()
+				max_active = max(max_active, len(self.scan.active))
+				if self.engine.channel_params_scan is None:
+					break
+		self.assertEqual(len(self.records), 23)
+		self.assertEqual(len(self.released), 23)
+		self.assertEqual(max_active, 2)
+		self.assertTrue(all(b - a >= common.TUNE_GAP for a, b in zip(tune_times, tune_times[1:])))
+		self.assertEqual(reports[0]["scanned"], 46)
+		self.assertEqual(reports[0]["errors"], [])
+		self.assertEqual(self.engine.active, [])
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+
+	def test_missing_pat_or_pmt_falls_back_only_for_missing_service(self):
+		for missing in ("pat", "pmt"):
+			with self.subTest(missing=missing):
+				self.sections = {0: [self.pat([(1, 307)] if missing == "pat" else [(1, 307), (2, 308)])],
+					307: [self.pmt(1)]}
+				self.scan.start()
+				self.tune()
+				self.scan.tick()
+				self.assertEqual(self.scan.scanned_refs, {self.rows[0]["ref"]})
+				self.now += scanner_module.BATCH_DATA_WAIT
+				self.scan.tick()
+				self.assertEqual(len(self.records), 2)
+				self.assertEqual(self.records[-1].ref, self.rows[1]["ref"])
+				self.assertEqual(len(self.released), 1)
+				self.sections = {0: [self.pat([(2, 308)])], 308: [self.pmt(2)]}
+				self.tune()
+				self.scan.tick()
+				self.assertEqual(self.scan.scanned_refs, {row["ref"] for row in self.rows})
+				self.assertEqual(len(self.records), 2)
+				self.scan.cancel()
+				self.records.clear()
+				self.released.clear()
+				self.readers.clear()
+				self.engine.phase = ""
+				self.now += common.TUNE_GAP
+				self.scan = scanner_module.ChannelParamsScan(self.engine)
+
+	def test_different_tsid_same_frequency_is_not_grouped(self):
+		self.rows[1]["ref"] = "1:0:1:2:2:1:13E:0:0:0:"
+		self.scan.start()
+		self.assertEqual(len(self.scan.groups), 2)
+		self.assertEqual(len(self.scan.groups[0].pending), 0)
+
+	def test_wrong_pat_tsid_and_wrong_pmt_sid_never_mark_success(self):
+		self.sections = {0: [self.pat([(1, 307), (2, 308)], tsid=2)],
+			307: [self.pmt(2)], 308: [self.pmt(1)]}
+		self.scan.start()
+		self.tune()
+		self.scan.tick()
+		self.assertEqual(len(self.readers), 1)
+		self.sections[0] = [self.pat([(1, 307), (2, 308)])]
+		self.scan.tick()
+		self.assertEqual(self.scan.scanned_refs, set())
+		self.now += scanner_module.BATCH_DATA_WAIT + 1
+		self.scan.tick()
+		self.assertEqual(len(self.records), 2)
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+
+	def test_filter_failure_and_cancel_release_resources(self):
+		self.sections = {0: [self.pat([(1, 307), (2, 308)])]}
+		self.scan.start()
+		self.tune()
+		self.scan.tick()
+		self.assertEqual(len(self.readers), 3)
+		self.scan.cancel()
+		self.assertEqual(len(self.released), 1)
+		self.assertEqual(self.engine.active, [])
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+		self.assertEqual(self.navigation.record_event, [])
+
+	def test_failed_pmt_filter_preserves_other_results_then_falls_back(self):
+		self.rows.append({"ref": "1:0:1:3:1:1:13E:0:0:0:", "name": "3", "supported": True})
+		self.sections = {0: [self.pat([(1, 307), (2, 308), (3, 309)])],
+			307: [self.pmt(1)], 309: [self.pmt(3)]}
+		self.scan.start()
+		self.tune()
+		factory = channelparams.SectionReader.side_effect
+		def fail_second(adapter, demux, pid, table):
+			if pid == 308:
+				raise OSError("no demux filter")
+			return factory(adapter, demux, pid, table)
+		channelparams.SectionReader.side_effect = fail_second
+		self.scan.tick()
+		self.assertEqual(self.scan.scanned_refs, {self.rows[0]["ref"]})
+		self.assertEqual(len(self.released), 0)
+		self.now += 0.25
+		self.scan.tick()
+		self.assertEqual(self.scan.scanned_refs, {self.rows[0]["ref"], self.rows[2]["ref"]})
+		self.now += scanner_module.BATCH_DATA_WAIT
+		self.scan.tick()
+		self.assertEqual(self.records[-1].ref, self.rows[1]["ref"])
+		self.assertEqual(len(self.released), 1)
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+		self.assertTrue(self.scan.active[0].individual)
+
+	def test_limited_filters_rotate_past_missing_pmts(self):
+		self.rows = [{"ref": "1:0:1:%X:1:1:13E:0:0:0:" % sid, "name": str(sid), "supported": True}
+			for sid in range(1, 7)]
+		self.sections = {0: [self.pat([(sid, 300 + sid) for sid in range(1, 7)])],
+			305: [self.pmt(5)], 306: [self.pmt(6)]}
+		self.scan.start()
+		self.tune()
+		for _ in range(12):
+			self.scan.tick()
+			if self.scan.active:
+				self.assertLessEqual(len(self.scan.active[0].batch_readers), scanner_module.BATCH_MAX_PMT_FILTERS)
+			self.now += 0.5
+		self.assertEqual(self.scan.scanned_refs, {self.rows[4]["ref"], self.rows[5]["ref"]})
+		self.assertEqual(len(self.records), 1)
+		self.assertLess(self.now - 100, scanner_module.BATCH_DATA_WAIT)
+
+	def test_tuner_reserve_yields_partial_batch_without_rescanning_success(self):
+		free = [4]
+		self.engine.free_tuners = lambda: free[0]
+		self.engine.eff_reserve = lambda: 2
+		self.sections = {0: [self.pat([(1, 307)])], 307: [self.pmt(1)]}
+		self.scan.start()
+		self.tune()
+		self.scan.tick()
+		self.assertEqual(self.scan.scanned_refs, {self.rows[0]["ref"]})
+		free[0] = 1
+		self.scan.tick()
+		self.assertEqual([job.ref for job in self.scan.queue], [self.rows[1]["ref"]])
+		self.assertEqual(self.engine.active, [])
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+		free[0] = 4
+		self.now += common.NO_TUNER_WAIT + 1
+		self.scan.tick()
+		self.assertEqual(self.records[-1].ref, self.rows[1]["ref"])
+
+	def test_initial_tune_respects_existing_engine_tune_gap(self):
+		self.engine.last_tune = self.now
+		self.scan = scanner_module.ChannelParamsScan(self.engine)
+		self.scan.start()
+		self.assertEqual(self.records, [])
+		self.now += common.TUNE_GAP
+		self.scan.tick()
+		self.assertEqual(len(self.records), 1)
+
+	def test_scheduled_final_retry_removes_only_successful_channel_error(self):
+		common.cfg.cp_retry_failed.value = True
+		self.engine.running = False
+		self.engine.maybe_deep_standby = lambda: None
+		reports = []
+		with patch.object(scanner_module, "save_cfg"), \
+				patch.object(common.cfg.cp_auto_in_progress, "value", False), \
+				patch.object(common.cfg.cp_last_run, "value", 0):
+			self.assertTrue(scanner_module.start_scheduled(self.engine, done=reports.append))
+			scan = self.engine.channel_params_scan
+			for _ in range(400):
+				for job in list(scan.active):
+					if scan.final_retry_started and job.ref == self.rows[0]["ref"]:
+						if job.state == "strojenie":
+							self.sections = {0: [self.pat([(1, 307)])], 307: [self.pmt(1)]}
+							scan.rec_event(job.rec, enigma.iRecordableService.evTunedIn)
+					elif job.state == "strojenie":
+						scan.rec_event(job.rec, enigma.iRecordableService.evTuneFailed)
+				self.now += 1
+				scan.tick()
+				if self.engine.channel_params_scan is None:
+					break
+			self.assertFalse(common.cfg.cp_auto_in_progress.value)
+			self.assertEqual(len(reports), 1)
+			self.assertEqual(reports[0]["scanned"], 1)
+			self.assertEqual([row["ref"] for row in reports[0]["errors"]], [self.rows[1]["ref"]])
+
+	def test_final_retry_runs_once_only_after_all_initial_jobs(self):
+		common.cfg.cp_retry_failed.value = True
+		reports = []
+		self.scan.done = reports.append
+		self.scan.start()
+		initial_counts = None
+		for _ in range(40):
+			for job in list(self.scan.active):
+				self.scan.rec_event(job.rec, enigma.iRecordableService.evTuneFailed)
+			self.now += 31
+			self.scan.tick()
+			if self.scan.final_retry_started and initial_counts is None:
+				initial_counts = [sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows]
+			if self.engine.channel_params_scan is None:
+				break
+		self.assertEqual(sorted(initial_counts), [1, 2])
+		self.assertEqual(sorted(sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows), [2, 3])
+		self.assertEqual(len(reports), 1)
+		self.assertEqual(len(reports[0]["errors"]), 2)
+
+	def test_failed_channels_are_not_retried_without_the_optional_final_pass(self):
+		reports = []
+		self.scan.done = reports.append
+		self.scan.start()
+		for _ in range(20):
+			for job in list(self.scan.active):
+				self.scan.rec_event(job.rec, enigma.iRecordableService.evTuneFailed)
+			self.now += common.TUNE_GAP
+			self.scan.tick()
+			if self.engine.channel_params_scan is None:
+				break
+		self.assertEqual(sorted(sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows), [1, 2])
+		self.assertEqual(len(reports), 1)
+		self.assertEqual(len(reports[0]["errors"]), 2)
+
+	def test_failed_scan_preserves_previous_result_and_reports_error(self):
+		self.rows = self.rows[:1]
+		old = {"name": "old result", "selectedAudioPid": 123}
+		self.scan.results[self.rows[0]["ref"]] = old
+		reports = []
+		self.scan.done = reports.append
+		self.scan.start()
+		self.scan.rec_event(self.records[0], enigma.iRecordableService.evTuneFailed)
+		self.now += common.TUNE_GAP
+		self.scan.tick()
+		self.assertIs(self.scan.results[self.rows[0]["ref"]], old)
+		self.assertEqual(reports[0]["scanned"], 0)
+		self.assertEqual([row["ref"] for row in reports[0]["errors"]], [self.rows[0]["ref"]])
 
 
 if __name__ == "__main__":

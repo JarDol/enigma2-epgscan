@@ -27,7 +27,7 @@ def all_items():
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
 		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto, cfg.upd_channel,
-		cfg.cp_language_source, cfg.cp_languages, cfg.cp_group_tp, cfg.cp_interval, cfg.cp_last_run, cfg.cp_auto_in_progress,
+		cfg.cp_language_source, cfg.cp_languages, cfg.cp_group_tp, cfg.cp_retry_failed, cfg.cp_interval, cfg.cp_last_run, cfg.cp_auto_in_progress,
 		cfg.cp_common_overwrite, cfg.cp_devices_overwrite,
 		cfg.topup, cfg.topup_mode, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
 
@@ -184,6 +184,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			lst += [e("Kanaly z bukietow (jak Satelita - EPG)", cfg.scope),
 				e("Maks. rownoleglych skanow", cfg.max_parallel), e("Rezerwa wolnych tunerow", cfg.reserve),
 				e("Grupowanie kanalow po transponderze", cfg.cp_group_tp),
+				e("Ponow raz bledne kanaly po skanie", cfg.cp_retry_failed),
 				e("Skanuj kanaly co", cfg.cp_interval)]
 		elif sec == "net":
 			lst.append(e("Program z internetu (XMLTV)", cfg.xmltv))
@@ -304,8 +305,10 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			txt = "Odbiornik wstanie z glebokiego czuwania ok. 2 min przed skanem. Po skanie wroci do glebokiego " \
 				"czuwania, jesli nikt go nie uzywa i nie ma nagrania w ciagu 15 min."
 		elif item is cfg.cp_group_tp:
-			txt = "Zalecane: Tak. Skaner grupuje uslugi z tego samego transpondera i utrzymuje dla nich tuner, co ogranicza " \
-				"ponowne strojenia i przyspiesza skan. Nie: kazdy kanal jest osobna grupa."
+			txt = "Tak: jeden dostrojony kanal zbiera PAT i PMT calej grupy; brakujace kanaly sa sprawdzane osobno. " \
+				"Nie: kazdy kanal jest osobna grupa."
+		elif item is cfg.cp_retry_failed:
+			txt = "Po zakonczeniu calego skanu wykonaj jedna dodatkowa probe tylko dla kanalow z bledem, takze w harmonogramie."
 		elif item is cfg.cp_interval:
 			from .channelparamscan import scan_due
 			txt = "Skan PAT/PMT uruchamia sie po zakonczonym przebiegu z glownego harmonogramu, nie czesciej niz co %s dni. " \

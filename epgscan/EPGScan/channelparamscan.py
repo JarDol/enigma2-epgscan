@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Per-service PAT/PMT scanner, using the existing Enigma2 recording-service tuner path."""
+"""PAT/PMT scanner using the existing Enigma2 recording-service tuner path."""
 
 import base64
 import json
@@ -11,10 +11,14 @@ from enigma import eServiceReference, eTimer, iRecordableService
 import NavigationInstance
 
 from . import channelparams
-from .common import CHANNEL_PARAMS_FILE, MAX_RETRIES, NO_TUNER_WAIT, TUNE_GAP, TUNE_TIMEOUT, \
+from .common import CHANNEL_PARAMS_FILE, NO_TUNER_WAIT, TUNE_GAP, TUNE_TIMEOUT, \
 	channel_params_bouquet_channels, cfg, configured_tuners, frontend_of, log, same_tp, selected_bouquets, service_name, tp_key, tp_params, save_cfg
 
 STREAM_DATA_WAIT = 5
+BATCH_DATA_WAIT = 20
+BATCH_MAX_PMT_FILTERS = 4
+BATCH_PMT_SLICE = 2
+BATCH_SECTIONS_PER_TICK = 4
 
 
 def load_results():
@@ -74,7 +78,6 @@ class ChannelJob(object):
 		self.tuner_no = -1
 		self.tuner = "-"
 		self.shared = False
-		self.retries = 0
 		self.not_before = 0
 		self.state = "czeka"
 		self.t0 = 0
@@ -92,6 +95,12 @@ class ChannelJob(object):
 		self.pmt_reader = None
 		self.pat_section = None
 		self.pmt_section = None
+		self.individual = False
+		self.batch_members = []
+		self.batch_readers = {}
+		self.batch_waiting = []
+		self.batch_started = {}
+		self.batch_filter_errors = {}
 
 
 class TransponderGroup(object):
@@ -122,6 +131,8 @@ def group_channel_jobs(jobs, group_by_transponder=True):
 
 
 def same_transponder(job, group):
+	if job.tp_key is not None and group.tp_key is not None and job.tp_key != group.tp_key:
+		return False
 	if job.tp is not None and group.tp is not None:
 		return same_tp(job.tp, group.tp)
 	return job.tp_key is not None and job.tp_key == group.tp_key
@@ -147,9 +158,11 @@ class ChannelParamsScan(object):
 		self.last_scan = data.get("last_scan", {})
 		self.scanned_refs = set()
 		self.errors = []
+		self.failed_jobs = []
+		self.final_retry_started = False
 		self.unsupported = []
 		self.started = 0
-		self.last_tune = 0
+		self.last_tune = getattr(engine, "last_tune", 0)
 		self.last_notify = 0
 		self.cancelled = False
 		self.timer = eTimer()
@@ -223,6 +236,11 @@ class ChannelParamsScan(object):
 			break
 
 	def _close_readers(self, job):
+		for pid in list(getattr(job, "batch_readers", {})):
+			self._close_batch_reader(job, pid)
+		if hasattr(job, "batch_waiting"):
+			job.batch_waiting = []
+			job.batch_filter_errors = {}
 		for attr in ("pat_reader", "pmt_reader"):
 			reader = getattr(job, attr)
 			setattr(job, attr, None)
@@ -231,6 +249,14 @@ class ChannelParamsScan(object):
 					reader.close()
 				except OSError as e:
 					log("Skan parametrow: zamkniecie filtra %s (%s): %s" % (job.name, attr, e))
+
+	def _close_batch_reader(self, job, pid):
+		reader = job.batch_readers.pop(pid)
+		job.batch_started.pop(pid, None)
+		try:
+			reader.close()
+		except OSError as e:
+			log("Skan parametrow: zamkniecie filtra PMT %d (%s): %s" % (pid, job.name, e))
 
 	def _release(self, job):
 		self._close_readers(job)
@@ -278,24 +304,24 @@ class ChannelParamsScan(object):
 			self._release(job)
 			group.done = True
 
-	def _retry_or_fail(self, job, reason):
+	def _handle_failure(self, job, reason):
+		if getattr(job, "batch_members", None):
+			self._fallback_batch(job, reason)
+			return
 		group = job.group
 		self._release(job)
-		job.retries += 1
-		if job.retries < MAX_RETRIES:
-			job.state = "czeka (ponownie)"
-			job.not_before = time.time() + 10 * job.retries
-			if group:
-				group.pending.append(job)
-			self.queue.append(job)
-			log("Skan parametrow: %s - %s; ponowna proba" % (job.name, reason))
-		else:
-			job.state = "BLAD: " + reason
-			self.errors.append({"ref": job.ref, "name": job.name, "error": reason})
-			log("Skan parametrow: BLAD %s: %s" % (job.name, reason))
-			self._finish_group_if_idle(group)
+		job.state = "BLAD: " + reason
+		self.errors.append({"ref": job.ref, "name": job.name, "error": reason})
+		self.failed_jobs.append(job)
+		log("Skan parametrow: BLAD %s: %s" % (job.name, reason))
+		self._finish_group_if_idle(group)
 
 	def _start(self, job, shared):
+		job.batch_members = []
+		if not job.individual and job.group:
+			members = [member for member in job.group.pending if not member.individual]
+			if members:
+				job.batch_members = [job] + members
 		try:
 			rec = NavigationInstance.instance.recordService(eServiceReference(job.ref))
 		except Exception as e:
@@ -342,22 +368,31 @@ class ChannelParamsScan(object):
 			job.pat_section = None
 			job.pmt_section = None
 			job.pmt_pid = -1
+			for member in job.batch_members:
+				member.pat_section = None
+				member.pmt_section = None
+				member.pmt_pid = -1
 			job.pat_reader = channelparams.SectionReader(job.adapter, job.demux, 0, 0x00)
 			job.state = "zbieranie PAT/PMT"
 			job.tuned_at = time.time()
 			job.capture_started_at = job.tuned_at
 		except Exception as e:
-			self._retry_or_fail(job, "odczyt PID/demux: %s" % e)
+			self._handle_failure(job, "odczyt PID/demux: %s" % e)
 
 	def _poll_capture(self, job):
+		if job.batch_members:
+			self._poll_batch(job)
+			return
 		if time.time() - job.tuned_at > 20:
-			self._retry_or_fail(job, "timeout odczytu PAT/PMT")
+			self._handle_failure(job, "timeout odczytu PAT/PMT")
 			return
 		try:
 			if job.pat_section is None:
 				section = job.pat_reader.read()
 				if section:
 					sid = int(job.ref.split(":")[3], 16)
+					if len(section) < 5 or (section[3] << 8 | section[4]) != int(job.ref.split(":")[4], 16):
+						return
 					pmt_pid = channelparams.parse_pat(section, sid)
 					if pmt_pid is not None:
 						job.pmt_pid = pmt_pid
@@ -367,26 +402,133 @@ class ChannelParamsScan(object):
 				section = job.pmt_reader.read()
 				if section:
 					sid = int(job.ref.split(":")[3], 16)
+					if len(section) >= 5 and (section[3] << 8 | section[4]) != sid:
+						return
 					pmt = channelparams.parse_pmt(section, sid)
 					self._save_channel(job, pmt)
 					self._complete_channel(job)
-		except (ValueError, KeyError, TypeError, OSError) as e:
-			self._retry_or_fail(job, "odczyt PAT/PMT: %s" % e)
+		except (ValueError, KeyError, TypeError, OSError, IndexError) as e:
+			self._handle_failure(job, "odczyt PAT/PMT: %s" % e)
+
+	def _fallback_batch(self, anchor, reason):
+		members = list(anchor.batch_members)
+		anchor.batch_members = []
+		group = anchor.group
+		self._release(anchor)
+		for member in members:
+			if member.ref in self.scanned_refs:
+				member.state = "gotowe"
+				continue
+			member.individual = True
+			member.state = "czeka (osobno)"
+			if member not in group.pending:
+				group.pending.insert(0, member)
+			if member not in self.queue:
+				self.queue.insert(0, member)
+		log("Skan parametrow: partia %s - %s; brakujace kanaly osobno" % (anchor.name, reason))
+		self._finish_group_if_idle(group)
+
+	def _poll_batch(self, anchor):
+		if time.time() - anchor.capture_started_at >= BATCH_DATA_WAIT:
+			self._fallback_batch(anchor, "timeout PAT/PMT")
+			return
+		try:
+			for _ in range(BATCH_SECTIONS_PER_TICK):
+				section = anchor.pat_reader.read()
+				if not section:
+					break
+				entries = channelparams.parse_pat_entries(section)
+				tsid = (section[3] << 8) | section[4]
+				for member in anchor.batch_members:
+					if member.ref in self.scanned_refs:
+						continue
+					fields = member.ref.split(":")
+					sid = int(fields[3], 16)
+					if int(fields[4], 16) != tsid or sid not in entries:
+						continue
+					pid = entries[sid]
+					if member.pat_section is not None and member.pmt_pid != pid:
+						raise ValueError("zmieniony PID PMT")
+					member.pat_section = section
+					member.pmt_pid = pid
+					member.capture_started_at = anchor.capture_started_at
+					if pid not in anchor.batch_readers and pid not in anchor.batch_waiting:
+						anchor.batch_waiting.append(pid)
+			while anchor.batch_waiting and len(anchor.batch_readers) < BATCH_MAX_PMT_FILTERS:
+				pid = anchor.batch_waiting.pop(0)
+				try:
+					anchor.batch_readers[pid] = channelparams.SectionReader(anchor.adapter, anchor.demux, pid, 0x02)
+					anchor.batch_started[pid] = time.time()
+				except OSError as e:
+					anchor.batch_waiting.append(pid)
+					message = str(e)
+					if anchor.batch_filter_errors.get(pid) != message:
+						log("Skan parametrow: filtr PMT %d (%s): %s" % (pid, anchor.name, message))
+						anchor.batch_filter_errors[pid] = message
+					break
+			for pid, reader in list(anchor.batch_readers.items()):
+				try:
+					for _ in range(BATCH_SECTIONS_PER_TICK):
+						section = reader.read()
+						if not section:
+							break
+						if len(section) < 5:
+							raise ValueError("Niepelna sekcja PMT")
+						sid = (section[3] << 8) | section[4]
+						matches = [member for member in anchor.batch_members
+							if member.ref not in self.scanned_refs and member.pmt_pid == pid
+							and int(member.ref.split(":")[3], 16) == sid]
+						if not matches:
+							continue
+						pmt = channelparams.parse_pmt(section, sid)
+						for member in matches:
+							self._save_channel(member, pmt)
+							if member is anchor:
+								anchor.state = "zbieranie PAT/PMT"
+							if member in anchor.group.pending:
+								anchor.group.pending.remove(member)
+							if member in self.queue:
+								self.queue.remove(member)
+				except (ValueError, OSError) as e:
+					message = str(e)
+					if anchor.batch_filter_errors.get(pid) != message:
+						log("Skan parametrow: odczyt PMT %d (%s): %s" % (pid, anchor.name, message))
+						anchor.batch_filter_errors[pid] = message
+					self._close_batch_reader(anchor, pid)
+					if pid not in anchor.batch_waiting:
+						anchor.batch_waiting.append(pid)
+					continue
+				unresolved = any(member.ref not in self.scanned_refs and member.pmt_pid == pid
+					for member in anchor.batch_members)
+				if not unresolved or (anchor.batch_waiting and time.time() - anchor.batch_started[pid] >= BATCH_PMT_SLICE):
+					self._close_batch_reader(anchor, pid)
+					if unresolved:
+						anchor.batch_waiting.append(pid)
+			if all(member.ref in self.scanned_refs for member in anchor.batch_members):
+				anchor.state = "gotowe"
+				anchor.batch_members = []
+				group = anchor.group
+				self._release(anchor)
+				self._finish_group_if_idle(group)
+		except (ValueError, KeyError, TypeError, OSError, IndexError) as e:
+			self._fallback_batch(anchor, "odczyt PAT/PMT: %s" % e)
 
 	def _save_channel(self, job, pmt):
 		streams = pmt["streams"]
 		selected = channelparams.choose_audio(streams, preferred_languages())
 		old = self.results.get(job.ref, {})
 		old_pid = old.get("selectedAudioPid")
-		old_available = old_pid is not None and any(
-			s["pid"] == old_pid for s in streams if s["kind"] == "audio")
-		selected_pid = old_pid if old_available else (selected["pid"] if selected else None)
+		old_source = old.get("selectionSource")
+		old_available = old_source != "default" and (old.get("selectedConfirmed", False) or old_source == "manual") \
+			and old_pid is not None and any(s["pid"] == old_pid for s in streams if s["kind"] == "audio")
+		first_audio = next((stream for stream in streams if stream["kind"] == "audio"), None)
+		selected_pid = old_pid if old_available else (first_audio["pid"] if first_audio else None)
 		self.results[job.ref] = {
 			"ref": job.ref, "name": job.name, "sid": pmt["sid"], "pmtPid": job.pmt_pid,
 			"pcrPid": pmt["pcr_pid"], "streams": streams, "section": base64.b64encode(pmt["section"]).decode("ascii"),
 			"pat": base64.b64encode(job.pat_section).decode("ascii"),
 			"preferredAudioPid": selected["pid"] if selected else None, "selectedAudioPid": selected_pid,
-			"selectedConfirmed": bool(old.get("selectedConfirmed", False)) and old_available,
+			"selectedConfirmed": selected_pid is not None,
 			"scannedAt": int(time.time()),
 			"readDuration": round(max(0, time.time() - getattr(job, "capture_started_at", 0)), 2)
 				if getattr(job, "capture_started_at", 0) else 0,
@@ -395,6 +537,8 @@ class ChannelParamsScan(object):
 			for field in ("selectionSource", "selectedAt"):
 				if field in old:
 					self.results[job.ref][field] = old[field]
+		elif selected_pid is not None:
+			self.results[job.ref]["selectionSource"] = "default"
 		self.scanned_refs.add(job.ref)
 		job.state = "gotowe"
 
@@ -449,13 +593,18 @@ class ChannelParamsScan(object):
 	def _yield_group(self, group, now):
 		current = group.current
 		if current:
+			members = list(current.batch_members)
+			current.batch_members = []
 			self._release(current)
-			current.state = "czeka na tuner"
-			current.tuner_no = -1
-			current.tuner = "-"
-			current.not_before = now + NO_TUNER_WAIT
-			group.pending.insert(0, current)
-			self.queue.insert(0, current)
+			if not members or current.ref not in self.scanned_refs:
+				current.state = "czeka na tuner"
+				current.tuner_no = -1
+				current.tuner = "-"
+				current.not_before = now + NO_TUNER_WAIT
+				group.pending.insert(0, current)
+				self.queue.insert(0, current)
+			else:
+				current.state = "gotowe"
 		if group.reservation:
 			self._release(group.reservation)
 		group.not_before = now + NO_TUNER_WAIT
@@ -466,9 +615,9 @@ class ChannelParamsScan(object):
 		now = time.time()
 		for job in list(self.active):
 			if job.state == "BLAD: brak dostrojenia":
-				self._retry_or_fail(job, "brak dostrojenia")
+				self._handle_failure(job, "brak dostrojenia")
 			elif job.state == "strojenie" and now - job.t0 > TUNE_TIMEOUT:
-				self._retry_or_fail(job, "timeout strojenia")
+				self._handle_failure(job, "timeout strojenia")
 			elif job.state == "odczyt strumienia":
 				self._begin_capture(job)
 			elif job.state == "zbieranie PAT/PMT":
@@ -515,7 +664,19 @@ class ChannelParamsScan(object):
 				group.pending.remove(job)
 				self.queue.remove(job)
 				if not self._start(job, shared):
-					self._retry_or_fail(job, "nie mozna zarezerwowac serwisu")
+					self._handle_failure(job, "nie mozna zarezerwowac serwisu")
+		if not self.queue and not self.active and not self.final_retry_started:
+			self.final_retry_started = True
+			if cfg.cp_retry_failed.value and self.failed_jobs:
+				for job in self.failed_jobs:
+					job.individual = True
+					job.not_before = 0
+					job.state = "czeka (ostatnia proba)"
+					job.group.done = False
+					job.group.pending.append(job)
+					self.queue.append(job)
+				self.errors = []
+				self.failed_jobs = []
 		if not self.queue and not self.active:
 			for group in self.groups:
 				self._finish_group_if_idle(group)
