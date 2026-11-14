@@ -52,6 +52,7 @@ class ScanEngine(object):
 		self.t_start = 0
 		self.t_end = 0
 		self.last_tune = 0
+		self.last_release_mono = None
 		self.last_usage = 0
 		self.note = ""
 		self.changes = ""
@@ -458,6 +459,7 @@ class ScanEngine(object):
 				NavigationInstance.instance.stopRecordService(job.rec)
 			except Exception:
 				pass
+			self.last_release_mono = time.monotonic()
 			job.rec = None
 		if job in self.active:
 			self.active.remove(job)

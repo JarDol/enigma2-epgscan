@@ -53,6 +53,9 @@ msgstr "Data covers the independent PAT/PMT phase. EPG tunes borrowed: %d; see E
 msgid "Niezalezna faza PAT/PMT nie rozpoczela sie. Pozyczenia dostrojen EPG: %d; szczegoly w statystyce EPG."
 msgstr "The independent PAT/PMT phase did not start. EPG tunes borrowed: %d; see EPG statistics for details."
 
+msgid "Po bledzie rownoleglego strojenia ponawiano z odstepem."
+msgstr "After a parallel tuning failure, tuning was retried with a delay."
+
 msgid "Brak probek wykorzystania tunerow."
 msgstr "No tuner usage samples."
 

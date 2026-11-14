@@ -27,6 +27,7 @@ class TunerTrace(object):
 		self.started = started
 		self.epg_borrowed = epg_borrowed
 		self.independent = independent
+		self.parallel_fallback = False
 		self.samples = 0
 		self.min_free = None
 		self.max_free = None
@@ -123,6 +124,7 @@ class TunerTrace(object):
 		if self.epg_borrowed is not None:
 			report["epg_borrowed"] = self.epg_borrowed
 			report["independent"] = self.independent
+			report["parallel_fallback"] = self.parallel_fallback
 		return report
 
 
@@ -206,6 +208,8 @@ def format_trace(report):
 		else:
 			lines.append(_("Niezalezna faza PAT/PMT nie rozpoczela sie. Pozyczenia dostrojen EPG: %d; szczegoly w statystyce EPG.") %
 				report["epg_borrowed"])
+		if report.get("parallel_fallback"):
+			lines.append(_("Po bledzie rownoleglego strojenia ponawiano z odstepem."))
 	if not report.get("samples"):
 		lines.append(_("Brak probek wykorzystania tunerow."))
 		if report.get("save_error"):

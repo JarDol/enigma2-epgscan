@@ -206,8 +206,12 @@ bez wpływu na czas EPG; filtry PMT są ograniczone i rotowane. Osobny skan ma l
 20 sekund na grupę, po którym lub po błędzie tylko brakujące kanały są sprawdzane osobno.
 Limit równoległości i rezerwa wolnych tunerów
 EPG Scan są wspólnymi ustawieniami; samodzielny skan zostawia co najmniej dwa wolne tunery (przy dwóch
-tunerach co najmniej jeden, przy jednym może użyć ustawionej rezerwy zero). Przy sześciu tunerach i rezerwie dwóch może pracować do czterech grup naraz, a przy ośmiu – do
-sześciu. Grupowanie po transponderze można wyłączyć, kosztem dodatkowych strojeń. Gdy oglądanie, streaming lub
+tunerach co najmniej jeden, przy jednym może użyć ustawionej rezerwy zero). Planista próbuje rozpocząć równolegle
+wszystkie gotowe grupy mieszczące się w limicie i aktualnej rezerwie: przy ośmiu wolnych tunerach i rezerwie dwóch
+do sześciu, a przy sześciu wolnych i rezerwie dwóch do czterech. Po zwolnieniu usługi odczekuje dwie sekundy
+przed kolejnym strojeniem. Jeśli Enigma2 zgłosi błąd podczas nakładających się strojeń, skan przechodzi
+na odstępy dwusekundowe i ponawia nieudany odczyt; informacja o tym jest w raporcie tunerów.
+Grupowanie po transponderze można wyłączyć, kosztem dodatkowych strojeń. Gdy oglądanie, streaming lub
 nagranie potrzebuje tunera, skaner zwalnia grupę i wznawia ją później. IPTV i nierozpoznane typy są jawnie wymieniane
 jako nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
 

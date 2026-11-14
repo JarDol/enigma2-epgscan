@@ -157,6 +157,8 @@ class ChannelJob(object):
 		self.pat_section = None
 		self.pmt_section = None
 		self.individual = False
+		self.parallel_tune = False
+		self.parallel_retry = False
 		self.batch_members = []
 		self.batch_readers = {}
 		self.batch_waiting = []
@@ -224,6 +226,9 @@ class ChannelParamsScan(object):
 		self.unsupported = []
 		self.started = 0
 		self.last_tune = getattr(engine, "last_tune", 0)
+		self.tune_not_before = 0.0
+		self.yield_not_before = 0.0
+		self.serial_tuning = False
 		self.last_notify = 0
 		self.cancelled = False
 		self.borrowed = {}
@@ -250,6 +255,13 @@ class ChannelParamsScan(object):
 		if not self.prepared:
 			self.prepare()
 		self.last_tune = max(self.last_tune, getattr(self.engine, "last_tune", 0))
+		mono = time.monotonic()
+		if self.last_tune:
+			remaining = max(0.0, min(TUNE_GAP, self.last_tune + TUNE_GAP - time.time()))
+			self.tune_not_before = max(self.tune_not_before, mono + remaining)
+		last_release = getattr(self.engine, "last_release_mono", None)
+		if last_release is not None:
+			self.tune_not_before = max(self.tune_not_before, last_release + TUNE_GAP)
 		self.queue = [job for job in self.queue if job.ref not in self.scanned_refs]
 		for group in self.groups:
 			group.pending = [job for job in group.pending if job.ref not in self.scanned_refs]
@@ -422,6 +434,8 @@ class ChannelParamsScan(object):
 
 	def _release(self, job):
 		self._close_readers(job)
+		if job.rec is not None:
+			self.tune_not_before = max(self.tune_not_before, time.monotonic() + TUNE_GAP)
 		self.engine.release(job)
 		if job in self.active:
 			self.active.remove(job)
@@ -481,6 +495,35 @@ class ChannelParamsScan(object):
 		self.failed_jobs.append(job)
 		log("Skan parametrow: BLAD %s: %s" % (job.name, reason))
 		self._finish_group_if_idle(group)
+
+	def _handle_tuning_failure(self, job, reason):
+		if not job.parallel_tune or job.parallel_retry or job.group is None:
+			self._handle_failure(job, reason)
+			return
+		self.serial_tuning = True
+		if self.tuner_trace is not None:
+			self.tuner_trace.parallel_fallback = True
+		self.tune_not_before = max(self.tune_not_before, time.monotonic() + TUNE_GAP)
+		log("Skan parametrow: blad rownoleglego strojenia %s (%s); ponawiam z odstepem" %
+			(job.name, reason))
+		if job.batch_members:
+			for member in job.batch_members:
+				member.parallel_retry = True
+				member.parallel_tune = False
+			self._fallback_batch(job, reason)
+			return
+		group = job.group
+		self._release(job)
+		job.parallel_retry = True
+		job.parallel_tune = False
+		job.tuner_no = -1
+		job.tuner = "-"
+		job.state = "czeka (ostatnia proba)"
+		group.done = False
+		if job not in group.pending:
+			group.pending.insert(0, job)
+		if job not in self.queue:
+			self.queue.insert(0, job)
 
 	def _start(self, job, shared):
 		job.batch_members = []
@@ -850,15 +893,21 @@ class ChannelParamsScan(object):
 		return [item for item in self.groups if not item.done and not item.current and item.pending
 			and item.not_before <= now and item.pending[0].not_before <= now]
 
+	def _unreported_tuners(self, groups):
+		used = getattr(self.engine, "used", ())
+		return sum(1 for group in groups
+			if not any(job is not None and not job.shared and job.tuner_no in used
+				for job in (group.current, group.reservation)))
+
 	def tick(self):
 		if self.cancelled:
 			return
 		now = time.time()
 		for job in list(self.active):
 			if job.state == "BLAD: brak dostrojenia":
-				self._handle_failure(job, "brak dostrojenia")
+				self._handle_tuning_failure(job, "brak dostrojenia")
 			elif job.state == "strojenie" and now - job.t0 > TUNE_TIMEOUT:
-				self._handle_failure(job, "timeout strojenia")
+				self._handle_tuning_failure(job, "timeout strojenia")
 			elif job.state == "odczyt strumienia":
 				self._begin_capture(job)
 			elif job.state == "zbieranie PAT/PMT":
@@ -866,48 +915,72 @@ class ChannelParamsScan(object):
 
 		engine = self.engine
 		engine.scan_usage()
+		previous_hold = engine.timer_hold
 		engine.timer_hold = engine.upcoming_recordings()
+		own_groups = [group for group in self.groups if group_owns_tuner(group)]
+		unreported = self._unreported_tuners(own_groups)
 		deficit = engine.eff_reserve() - engine.free_tuners()
+		increased_hold = max(0, engine.timer_hold - previous_hold)
+		if increased_hold and unreported:
+			# Pending allocations may not yet be reflected in the frontend mask.
+			deficit = max(deficit, min(increased_hold, deficit + unreported))
+		if time.monotonic() < self.yield_not_before:
+			# Allow the mask to catch up, but still react to newly added timers.
+			deficit = min(deficit, increased_hold)
 		if deficit > 0:
-			own_groups = []
-			for group in self.groups:
-				job = group.current or group.reservation
-				if job and group_owns_tuner(group):
-					own_groups.append(group)
 			own_groups.sort(key=lambda group: group.started_at, reverse=True)
 			for group in own_groups[:deficit]:
 				job = group.current or group.reservation
 				log("Skan parametrow: zwalniam tuner dla rezerwy lub timera: %s" % job.name)
 				self._yield_group(group, now)
+			if own_groups:
+				self.yield_not_before = time.monotonic() + TUNE_GAP
 
-		own_groups = len([group for group in self.groups if group_owns_tuner(group)])
-		if now - self.last_tune >= TUNE_GAP:
-			job = None
-			group = None
-			shared = False
+		own_groups = [group for group in self.groups if group_owns_tuner(group)]
+		if time.monotonic() >= self.tune_not_before:
 			ready_groups = self._ready_groups(now)
 			new_groups = [item for item in ready_groups if item.reservation is None]
 			continuing_groups = [item for item in ready_groups if item.reservation is not None]
+			available = max(0, engine.free_tuners() - engine.eff_reserve() -
+				self._unreported_tuners(own_groups))
+			own_count = len(own_groups)
 			for candidate_group in new_groups + continuing_groups:
-				candidate = candidate_group.pending[0]
+				if time.monotonic() < self.tune_not_before:
+					break
+				job = candidate_group.pending[0]
+				shared = False
 				if candidate_group.reservation:
-					group, job, shared = candidate_group, candidate, True
-					break
-				if engine.on_busy_tp(candidate):
-					group, job, shared = candidate_group, candidate, True
-					break
-				if not engine.timer_hold and own_groups < engine.max_parallel \
-						and engine.free_tuners() - engine.eff_reserve() > 0:
-					group, job = candidate_group, candidate
-					break
-			if job is not None:
-				group.pending.remove(job)
+					shared = True
+				elif engine.on_busy_tp(job):
+					shared = True
+				elif engine.timer_hold or own_count >= engine.max_parallel or available <= 0:
+					continue
+				candidate_group.pending.remove(job)
 				self.queue.remove(job)
+				job.parallel_tune = False
+				if not shared and not self.serial_tuning:
+					tuning = [item for item in self.active if item.state == "strojenie" and not item.shared]
+					if tuning:
+						job.parallel_tune = True
+						for item in tuning:
+							item.parallel_tune = True
 				started = self._start(job, shared)
 				if self.tuner_trace is not None:
 					self.tuner_trace.note_start(shared, started)
 				if not started:
-					self._handle_failure(job, "nie mozna zarezerwowac serwisu")
+					self._handle_tuning_failure(job, "nie mozna zarezerwowac serwisu")
+					self.tune_not_before = max(self.tune_not_before, time.monotonic() + TUNE_GAP)
+					break
+				if job.state == "BLAD: brak dostrojenia":
+					self._handle_tuning_failure(job, "brak dostrojenia")
+					self.tune_not_before = max(self.tune_not_before, time.monotonic() + TUNE_GAP)
+					break
+				if not shared:
+					own_count += 1
+					available -= 1
+				if self.serial_tuning:
+					self.tune_not_before = max(self.tune_not_before, time.monotonic() + TUNE_GAP)
+					break
 		if not self.queue and not self.active and not self.final_retry_started:
 			self.final_retry_started = True
 			if cfg.cp_retry_failed.value and self.failed_jobs:
@@ -926,7 +999,7 @@ class ChannelParamsScan(object):
 		if self.tuner_trace is not None:
 			self.tuner_trace.sample(engine, now, len(self.queue), len(self._ready_groups(now)),
 				len([group for group in self.groups if group_owns_tuner(group)]),
-				False, now - self.last_tune < TUNE_GAP)
+				False, time.monotonic() < self.tune_not_before)
 		if not self.queue and not self.active and not self.reservations:
 			return self._finish()
 		if now - self.last_notify >= 1:

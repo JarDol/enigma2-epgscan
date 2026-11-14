@@ -648,22 +648,15 @@ class ChannelParamScanTests(unittest.TestCase):
 		scan._start = start
 		scan.last_tune = 0
 		scan.tick()
-		self.assertEqual(started, [("tp-one-a", False)])
+		self.assertEqual(started, [("tp-one-a", False), ("tp-two-a", False)])
 
-		scan.last_tune = 0
 		scan._complete_channel(jobs[0])
-		scan.tick()
-		self.assertEqual(started[-1], ("tp-two-a", False))
-
-		scan.last_tune = 0
-		scan._complete_channel(jobs[1])
 		scan.tick()
 		self.assertEqual(started[-1], ("tp-one-b", True))
 
-		scan._complete_channel(jobs[2])
-		scan.last_tune = 0
+		scan._complete_channel(jobs[1])
 		scan.tick()
-		self.assertNotEqual(started[-1][0], "tp-three-a")
+		self.assertEqual(started[-1], ("tp-two-b", True))
 
 	def test_tuner_reserve_shortage_releases_transponder_and_delays_resume(self):
 		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=4,
@@ -719,32 +712,230 @@ class ChannelParamScanTests(unittest.TestCase):
 		scan._start.assert_not_called()
 		self.assertEqual(scan.queue, [next_job])
 
-	def test_eight_tuners_and_two_reserved_allow_six_transponder_groups(self):
-		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=6,
+	def test_timer_blocks_independent_starts_but_allows_shared_transponder(self):
+		engine = types.SimpleNamespace(active=[], used={0}, timer_hold=0, max_parallel=6,
+			scan_usage=lambda: None, upcoming_recordings=lambda: 1, eff_reserve=lambda: 3,
+			free_tuners=lambda: 7, on_busy_tp=lambda job: job.ref == "shared", notify=lambda: None)
+		scan = scanner_module.ChannelParamsScan(engine)
+		jobs = [scanner_module.ChannelJob({"ref": ref, "name": ref}) for ref in ("shared", "new")]
+		jobs[0].tp, jobs[1].tp = (11000, 0, 192), (12000, 0, 192)
+		scan.groups = scanner_module.group_channel_jobs(jobs)
+		scan.queue = list(jobs)
+		started = []
+
+		def start(job, shared):
+			started.append((job.ref, shared))
+			job.shared = shared
+			job.group.current = job
+			scan.active.append(job)
+			return True
+
+		scan._start = start
+		scan.tick()
+		self.assertEqual(started, [("shared", True)])
+		self.assertEqual(scan.queue, [jobs[1]])
+
+	def test_upcoming_timer_reclaims_an_unreported_frontend(self):
+		upcoming = [0]
+		engine = types.SimpleNamespace(active=[], used={0, 1}, timer_hold=0, max_parallel=6,
+			scan_usage=lambda: None, upcoming_recordings=lambda: upcoming[0],
+			free_tuners=lambda: 6, on_busy_tp=lambda _job: False, notify=lambda: None)
+		engine.eff_reserve = lambda: 2 + engine.timer_hold
+		released = []
+
+		def release(job):
+			released.append(job)
+			engine.active.remove(job)
+			job.rec = None
+
+		engine.release = release
+		scan = scanner_module.ChannelParamsScan(engine)
+		jobs = [scanner_module.ChannelJob({"ref": str(i), "name": str(i)}) for i in range(5)]
+		for i, job in enumerate(jobs):
+			job.tp = (11000 + i * 1000, 0, 192)
+		scan.groups = scanner_module.group_channel_jobs(jobs)
+		scan.queue = list(jobs)
+
+		def start(job, shared):
+			job.rec = object()
+			job.shared = shared
+			job.state = "strojenie"
+			job.t0 = time.time()
+			job.group.current = job
+			scan.active.append(job)
+			engine.active.append(job)
+			return True
+
+		scan._start = start
+		scan.tick()
+		self.assertEqual(len(scan.active), 4)
+		upcoming[0] = 1
+		scan.tick()
+		self.assertEqual(len(released), 1)
+		self.assertEqual(len(scan.active), 3)
+		self.assertEqual(len(scan.queue), 2)
+
+	def test_timer_does_not_repeatedly_yield_while_frontend_mask_is_stale(self):
+		upcoming = [0]
+		engine = types.SimpleNamespace(active=[], used={0, 1}, timer_hold=0, max_parallel=6,
+			scan_usage=lambda: None, upcoming_recordings=lambda: upcoming[0],
+			on_busy_tp=lambda _job: False, notify=lambda: None)
+		engine.free_tuners = lambda: 8 - len(engine.used)
+		engine.eff_reserve = lambda: 2 + engine.timer_hold
+		released = []
+
+		def release(job):
+			released.append(job.rec.number)
+			engine.active.remove(job)
+			job.rec = None
+
+		engine.release = release
+		scan = scanner_module.ChannelParamsScan(engine)
+		jobs = [scanner_module.ChannelJob({"ref": str(i), "name": str(i)}) for i in range(5)]
+		for i, job in enumerate(jobs):
+			job.tp = (11000 + i * 1000, 0, 192)
+		scan.groups = scanner_module.group_channel_jobs(jobs)
+		scan.queue = list(jobs)
+
+		def start(job, shared):
+			job.rec = types.SimpleNamespace(number=2 + int(job.ref))
+			job.shared = shared
+			job.state = "strojenie"
+			job.t0 = time.time()
+			job.group.current = job
+			scan.active.append(job)
+			engine.active.append(job)
+			return True
+
+		scan._start = start
+		scan.tick()
+		self.assertEqual(len(scan.active), 4)
+		engine.used.update({2, 3, 4, 5})
+		scan.tick()
+		self.assertEqual(released, [])
+		upcoming[0] = 1
+		scan.tick()
+		self.assertEqual(len(released), 1)
+		scan.tick()
+		self.assertEqual(len(released), 1)
+		upcoming[0] = 2
+		scan.tick()
+		self.assertEqual(len(released), 2)
+		scan.tick()
+		self.assertEqual(len(released), 2)
+		engine.used.difference_update(released)
+		scan.tick()
+		self.assertEqual(len(scan.active), 2)
+
+	def test_parallel_start_uses_available_tuners_without_consuming_reserve(self):
+		for used, expected in ((set(), 6), ({0, 1}, 4)):
+			with self.subTest(initially_used=used):
+				engine = types.SimpleNamespace(active=[], used=set(used), timer_hold=0, max_parallel=6,
+					scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 2,
+					on_busy_tp=lambda _job: False, notify=lambda: None)
+				engine.free_tuners = lambda: 8 - len(engine.used)
+				scan = scanner_module.ChannelParamsScan(engine)
+				jobs = [scanner_module.ChannelJob({"ref": "tp-%d" % i, "name": "TP %d" % i})
+					for i in range(8)]
+				for i, job in enumerate(jobs):
+					job.tp = (11000 + i * 1000, 0, 192)
+				scan.groups = scanner_module.group_channel_jobs(jobs)
+				scan.queue = list(jobs)
+				started = []
+
+				def start(job, shared):
+					started.append((job, shared))
+					job.state = "strojenie"
+					job.t0 = time.time()
+					job.group.current = job
+					scan.active.append(job)
+					engine.active.append(job)
+					return True
+
+				scan._start = start
+				scan.tick()
+				self.assertEqual(len(started), expected)
+				self.assertTrue(all(not shared for _job, shared in started))
+				# Enigma2 has not reported the newly reserved frontends yet.
+				scan.tick()
+				self.assertEqual(len(started), expected)
+
+	def test_released_tuner_is_not_immediately_reused(self):
+		now = [100.0]
+		engine = types.SimpleNamespace(active=[], used={0}, timer_hold=0, max_parallel=6,
+			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 2,
+			on_busy_tp=lambda _job: False, notify=lambda: None)
+		engine.free_tuners = lambda: 8 - len(engine.used)
+		scan = scanner_module.ChannelParamsScan(engine)
+		old = scanner_module.ChannelJob({"ref": "old", "name": "old"})
+		new = scanner_module.ChannelJob({"ref": "new", "name": "new"})
+		old.tp, new.tp = (11000, 0, 192), (12000, 0, 192)
+		scan.groups = scanner_module.group_channel_jobs([old, new])
+		old.group.pending.remove(old)
+		old.group.current = old
+		old.rec = object()
+		old.tuner_no = 0
+		scan.active.append(old)
+		engine.active.append(old)
+		scan.queue = [new]
+
+		def release(job):
+			engine.used.discard(job.tuner_no)
+			engine.active.remove(job)
+			job.rec = None
+
+		engine.release = release
+		def start(job, _shared):
+			job.state = "strojenie"
+			job.t0 = now[0]
+			job.group.current = job
+			scan.active.append(job)
+			engine.active.append(job)
+			return True
+
+		scan._start = Mock(side_effect=start)
+		with patch.object(scanner_module.time, "time", side_effect=lambda: now[0]), \
+				patch.object(scanner_module.time, "monotonic", side_effect=lambda: now[0]):
+			scan._release(old)
+			scan.tick()
+			scan._start.assert_not_called()
+			now[0] += common.TUNE_GAP
+			scan.tick()
+		scan._start.assert_called_once_with(new, False)
+
+	def test_serial_fallback_keeps_the_interval_between_tune_starts(self):
+		now = [100.0]
+		engine = types.SimpleNamespace(active=[], used=set(), timer_hold=0, max_parallel=6,
 			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 2,
 			free_tuners=lambda: 8, on_busy_tp=lambda _job: False, notify=lambda: None)
 		scan = scanner_module.ChannelParamsScan(engine)
-		jobs = [scanner_module.ChannelJob({"ref": "tp-%d" % i, "name": "TP %d" % i}) for i in range(6)]
+		scan.serial_tuning = True
+		jobs = [scanner_module.ChannelJob({"ref": str(i), "name": str(i)}) for i in range(3)]
 		for i, job in enumerate(jobs):
 			job.tp = (11000 + i * 1000, 0, 192)
 		scan.groups = scanner_module.group_channel_jobs(jobs)
 		scan.queue = list(jobs)
 		started = []
 
-		def start(job, shared):
+		def start(job, _shared):
 			started.append(job)
-			job.state = "scanning"
+			job.state = "strojenie"
+			job.t0 = now[0]
 			job.group.current = job
 			scan.active.append(job)
 			return True
 
 		scan._start = start
-		for _ in jobs:
-			scan.last_tune = 0
+		with patch.object(scanner_module.time, "time", side_effect=lambda: now[0]), \
+				patch.object(scanner_module.time, "monotonic", side_effect=lambda: now[0]):
 			scan.tick()
-
-		self.assertEqual(len(started), 6)
-		self.assertEqual(len(scan.active), 6)
+			self.assertEqual(len(started), 1)
+			now[0] += 1
+			scan.tick()
+			self.assertEqual(len(started), 1)
+			now[0] += 1
+			scan.tick()
+			self.assertEqual(len(started), 2)
 
 	def test_scanner_can_start_a_second_tune_while_first_is_still_tuning(self):
 		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=2,
@@ -1708,6 +1899,7 @@ class BatchScanTests(unittest.TestCase):
 			patch.object(scanner_module, "tp_params", return_value=(11000, 0, 192)),
 			patch.object(scanner_module, "tp_key", side_effect=lambda ref: tuple(int(x, 16) for x in ref.split(":")[4:7])),
 			patch.object(scanner_module.time, "time", side_effect=lambda: self.now),
+			patch.object(scanner_module.time, "monotonic", side_effect=lambda: self.now),
 			patch.object(channelparams, "SectionReader", side_effect=reader),
 			patch.object(sys.modules["NavigationInstance"], "instance", self.navigation),
 			patch.object(common.cfg.cp_retry_failed, "value", False),
@@ -2046,22 +2238,37 @@ class BatchScanTests(unittest.TestCase):
 		self.assertEqual(self.released, [])
 		reports = []
 		self.scan.done = reports.append
-		self.assertTrue(self.scan.start())
-		self.assertEqual(self.records[0].ref, self.rows[1]["ref"])
-		self.assertEqual({job.ref for job in self.scan.queue} | {self.scan.active[0].ref},
-			{row["ref"] for row in self.rows[1:]})
-		self.assertEqual(self.scan.results[self.rows[2]["ref"]], {"old": True})
-		for _ in range(50):
-			for current in list(self.scan.active):
-				if current.state == "strojenie":
-					fields = current.ref.split(":")
-					sid, tsid = int(fields[3], 16), int(fields[4], 16)
-					self.sections = {0: [self.pat([(sid, 307)], tsid=tsid)], 307: [self.pmt(sid)]}
-					self.scan.rec_event(current.rec, enigma.iRecordableService.evTunedIn)
-			self.now += 1
-			self.scan.tick()
-			if reports:
-				break
+
+		def record(ref):
+			tsid = int(ref.split(":")[4], 16)
+			rec = types.SimpleNamespace(ref=ref, prepareStreaming=lambda: None, start=lambda: None,
+				stream=lambda: types.SimpleNamespace(getStreamingData=lambda: {"adapter": 0, "demux": tsid}))
+			self.records.append(rec)
+			return rec
+
+		def reader(_adapter, demux, pid, _table):
+			sid = 2 if demux == 1 else demux
+			section = self.pat([(sid, 307)], tsid=demux) if pid == 0 else self.pmt(sid)
+			item = Mock()
+			item.read.return_value = section
+			self.readers.append(item)
+			return item
+
+		self.navigation.recordService = record
+		with patch.object(channelparams, "SectionReader", side_effect=reader):
+			self.assertTrue(self.scan.start())
+			self.assertEqual(self.records[0].ref, self.rows[1]["ref"])
+			self.assertEqual({job.ref for job in self.scan.queue} | {job.ref for job in self.scan.active},
+				{row["ref"] for row in self.rows[1:]})
+			self.assertEqual(self.scan.results[self.rows[2]["ref"]], {"old": True})
+			for _ in range(50):
+				for current in list(self.scan.active):
+					if current.state == "strojenie":
+						self.scan.rec_event(current.rec, enigma.iRecordableService.evTunedIn)
+				self.now += 1
+				self.scan.tick()
+				if reports:
+					break
 		self.assertEqual(len(self.records), 3)
 		self.assertEqual(reports[0]["scanned"], 4)
 		self.assertEqual(reports[0]["errors"], [])
@@ -2199,6 +2406,176 @@ class BatchScanTests(unittest.TestCase):
 		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
 		self.assertEqual(len(self.released), 1)
 
+	def test_parallel_scan_accounts_for_pending_frontends_and_reuses_after_release(self):
+		for initially_used, expected in ((set(), 6), ({0, 1}, 4)):
+			with self.subTest(initially_used=initially_used):
+				self.now = 100
+				self.records.clear()
+				self.released.clear()
+				self.engine.active.clear()
+				self.engine.phase = ""
+				self.engine.last_tune = 0
+				self.engine.total_tuners = 8
+				self.engine.reserve = 2
+				self.engine.max_parallel = 6
+				self.engine.used = set(initially_used)
+				self.engine.eff_reserve = lambda: 2
+				self.engine.free_tuners = lambda: 8 - len(self.engine.used)
+				self.rows = [{"ref": "1:0:1:%X:%X:1:13E:0:0:0:" % (sid, sid),
+					"name": str(sid), "supported": True} for sid in range(1, 9)]
+				allocated = set(initially_used)
+
+				def record(ref):
+					number = next(no for no in range(8) if no not in allocated)
+					allocated.add(number)
+					rec = types.SimpleNamespace(ref=ref, number=number, prepareStreaming=lambda: None,
+						start=lambda: None, stream=lambda: types.SimpleNamespace(
+							getStreamingData=lambda: {"adapter": 0, "demux": number}))
+					self.records.append(rec)
+					return rec
+
+				def release(job):
+					if job.rec is not None:
+						allocated.remove(job.rec.number)
+						self.engine.used.discard(job.rec.number)
+						self.released.append(job.rec)
+						job.rec = None
+					if job in self.engine.active:
+						self.engine.active.remove(job)
+
+				self.navigation.recordService = record
+				self.engine.release = release
+				self.scan = scanner_module.ChannelParamsScan(self.engine)
+				try:
+					with patch.object(scanner_module, "frontend_of", side_effect=lambda rec: (rec.number, None)):
+						self.assertTrue(self.scan.start())
+						self.assertEqual(len(self.records), expected)
+						self.assertEqual(len(self.scan.active), expected)
+						self.assertEqual(self.scan.tuner_trace.max_own, expected)
+						self.assertEqual(self.scan.tuner_trace.attempts["independent"], expected)
+						self.now += 0.25
+						self.scan.tick()
+						self.assertEqual(len(self.records), expected)
+						self.engine.used.update(rec.number for rec in self.records)
+						for job in list(self.scan.active):
+							self.scan.rec_event(job.rec, enigma.iRecordableService.evTunedIn)
+						self.now += 0.25
+						self.scan.tick()
+						victim = self.scan.active[0]
+						self.scan._release(victim)
+						victim.group.done = True
+						self.now += 1
+						self.scan.tick()
+						self.assertEqual(len(self.records), expected)
+						self.now += 1
+						self.scan.tick()
+						self.assertEqual(len(self.records), expected + 1)
+						self.assertEqual(len(allocated), 6)
+				finally:
+					self.scan.cancel()
+
+	def test_parallel_tune_failure_retries_once_with_safe_spacing(self):
+		self.rows = [{"ref": "1:0:1:%X:%X:1:13E:0:0:0:" % (sid, sid),
+			"name": str(sid), "supported": True} for sid in range(1, 4)]
+		with patch.object(scanner_module, "log") as log:
+			self.assertTrue(self.scan.start())
+			self.assertEqual(len(self.scan.active), 2)
+			failed = self.scan.active[0]
+			self.scan.rec_event(failed.rec, enigma.iRecordableService.evTuneFailed)
+			self.scan.tick()
+			self.assertIn(failed, self.scan.queue)
+			self.assertEqual(self.scan.errors, [])
+			self.assertEqual(len(self.records), 2)
+			self.now += common.TUNE_GAP
+			self.scan.tick()
+			self.assertEqual(len(self.records), 3)
+			self.assertIn(failed, self.scan.active)
+			self.scan.rec_event(failed.rec, enigma.iRecordableService.evTuneFailed)
+			self.scan.tick()
+			self.assertNotIn(failed, self.scan.queue)
+			self.assertTrue(any(row["ref"] == failed.ref for row in self.scan.errors))
+			self.assertTrue(any("rownoleg" in str(call.args[0]).lower() for call in log.call_args_list))
+			self.scan.cancel()
+			report = tunerreport_module.load_trace("params")
+			self.assertTrue(report["parallel_fallback"])
+			with patch.object(tunerreport_module, "_", lambda value: value):
+				self.assertIn("Po bledzie rownoleglego strojenia", tunerreport_module.format_trace(report))
+
+	def test_parallel_batch_tune_failure_requeues_all_uncaptured_channels(self):
+		self.rows.append({"ref": "1:0:1:3:3:1:13E:0:0:0:", "name": "3", "supported": True})
+		self.assertTrue(self.scan.start())
+		self.assertEqual(len(self.scan.active), 2)
+		failed = self.scan.active[0]
+		self.assertEqual({job.ref for job in failed.batch_members}, {row["ref"] for row in self.rows[:2]})
+		self.scan.rec_event(failed.rec, enigma.iRecordableService.evTuneFailed)
+		self.scan.tick()
+		self.assertEqual({job.ref for job in self.scan.queue}, {row["ref"] for row in self.rows[:2]})
+		self.assertTrue(all(job.individual for job in self.scan.queue))
+		self.assertTrue(self.scan.serial_tuning)
+		self.assertEqual(self.scan.errors, [])
+		self.now += common.TUNE_GAP
+		self.scan.tick()
+		self.assertEqual(len(self.records), 3)
+		self.assertEqual(len(self.scan.queue), 1)
+
+	def test_parallel_reservation_failure_is_retried_with_spacing(self):
+		self.rows = [{"ref": "1:0:1:%X:%X:1:13E:0:0:0:" % (sid, sid),
+			"name": str(sid), "supported": True} for sid in range(1, 4)]
+		record = self.navigation.recordService
+		attempts = []
+
+		def fail_second(ref):
+			attempts.append(ref)
+			return None if len(attempts) == 2 else record(ref)
+
+		self.navigation.recordService = fail_second
+		self.assertTrue(self.scan.start())
+		self.assertEqual(len(attempts), 2)
+		self.assertEqual(len(self.scan.queue), 2)
+		self.assertTrue(self.scan.serial_tuning)
+		self.assertEqual(self.scan.errors, [])
+		self.now += common.TUNE_GAP
+		self.scan.tick()
+		self.assertEqual(len(attempts), 3)
+		self.assertEqual(attempts[1], attempts[2])
+
+	def test_synchronous_parallel_tune_failure_is_retried_with_spacing(self):
+		self.rows = [{"ref": "1:0:1:%X:%X:1:13E:0:0:0:" % (sid, sid),
+			"name": str(sid), "supported": True} for sid in range(1, 4)]
+		record = self.navigation.recordService
+
+		def fail_second(ref):
+			rec = record(ref)
+			if len(self.records) == 2:
+				rec.start = lambda: self.scan.rec_event(rec, enigma.iRecordableService.evTuneFailed)
+			return rec
+
+		self.navigation.recordService = fail_second
+		self.assertTrue(self.scan.start())
+		self.assertEqual(len(self.records), 2)
+		self.assertEqual(len(self.scan.active), 1)
+		self.assertTrue(self.scan.serial_tuning)
+		self.assertEqual(self.scan.errors, [])
+		self.now += common.TUNE_GAP
+		self.scan.tick()
+		self.assertEqual(len(self.records), 3)
+		self.assertEqual(self.records[1].ref, self.records[2].ref)
+
+	def test_parallel_tune_timeouts_are_retried_with_spacing(self):
+		self.rows = [{"ref": "1:0:1:%X:%X:1:13E:0:0:0:" % (sid, sid),
+			"name": str(sid), "supported": True} for sid in range(1, 4)]
+		self.assertTrue(self.scan.start())
+		self.assertEqual(len(self.scan.active), 2)
+		self.now += common.TUNE_TIMEOUT + 1
+		self.scan.tick()
+		self.assertTrue(self.scan.serial_tuning)
+		self.assertEqual(len(self.scan.queue), 3)
+		self.assertEqual(self.scan.errors, [])
+		self.assertEqual(len(self.records), 2)
+		self.now += common.TUNE_GAP
+		self.scan.tick()
+		self.assertEqual(len(self.records), 3)
+
 	def test_twenty_three_transport_streams_need_only_twenty_three_tunes(self):
 		self.rows = [{"ref": "1:0:1:%X:%X:1:13E:0:0:0:" % (sid, tsid),
 			"name": "service %d" % sid, "supported": True}
@@ -2242,7 +2619,7 @@ class BatchScanTests(unittest.TestCase):
 		self.assertEqual(len(self.records), 23)
 		self.assertEqual(len(self.released), 23)
 		self.assertEqual(max_active, 2)
-		self.assertTrue(all(b - a >= common.TUNE_GAP for a, b in zip(tune_times, tune_times[1:])))
+		self.assertEqual(tune_times[0], tune_times[1])
 		self.assertEqual(reports[0]["scanned"], 46)
 		self.assertEqual(reports[0]["errors"], [])
 		trace = reports[0]["tuners"]
@@ -2264,6 +2641,9 @@ class BatchScanTests(unittest.TestCase):
 				self.scan.tick()
 				self.assertEqual(self.scan.scanned_refs, {self.rows[0]["ref"]})
 				self.now += scanner_module.BATCH_DATA_WAIT
+				self.scan.tick()
+				self.assertEqual(len(self.records), 1)
+				self.now += common.TUNE_GAP
 				self.scan.tick()
 				self.assertEqual(len(self.records), 2)
 				self.assertEqual(self.records[-1].ref, self.rows[1]["ref"])
@@ -2298,6 +2678,9 @@ class BatchScanTests(unittest.TestCase):
 		self.scan.tick()
 		self.assertEqual(self.scan.scanned_refs, set())
 		self.now += scanner_module.BATCH_DATA_WAIT + 1
+		self.scan.tick()
+		self.assertEqual(len(self.records), 1)
+		self.now += common.TUNE_GAP
 		self.scan.tick()
 		self.assertEqual(len(self.records), 2)
 		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
@@ -2340,7 +2723,7 @@ class BatchScanTests(unittest.TestCase):
 		self.assertEqual(report["tuners"], [2])
 		self.assertEqual(report["max_own"], 2)
 		self.assertEqual(report["attempts"]["independent"], 2)
-		self.assertGreater(report["seconds"]["gap"], 0)
+		self.assertNotIn("gap", report["seconds"])
 		self.assertEqual(scanner_module.save_results.call_args[0][0]["last_scan"], previous)
 		self.scan.cancel()
 		self.assertEqual(tunerreport_module.load_trace("params"), report)
@@ -2387,6 +2770,9 @@ class BatchScanTests(unittest.TestCase):
 		self.assertEqual(self.scan.scanned_refs, {self.rows[0]["ref"], self.rows[2]["ref"]})
 		self.now += scanner_module.BATCH_DATA_WAIT
 		self.scan.tick()
+		self.assertEqual(len(self.records), 1)
+		self.now += common.TUNE_GAP
+		self.scan.tick()
 		self.assertEqual(self.records[-1].ref, self.rows[1]["ref"])
 		self.assertEqual(len(self.released), 1)
 		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
@@ -2431,6 +2817,24 @@ class BatchScanTests(unittest.TestCase):
 		self.engine.last_tune = self.now
 		self.scan = scanner_module.ChannelParamsScan(self.engine)
 		self.scan.start()
+		self.assertEqual(self.records, [])
+		self.now += common.TUNE_GAP
+		self.scan.tick()
+		self.assertEqual(len(self.records), 1)
+
+	def test_initial_tune_waits_after_epg_releases_a_service(self):
+		module = self.real_engine_module()
+		engine = module.ScanEngine.__new__(module.ScanEngine)
+		engine.active = []
+		job = types.SimpleNamespace(rec=object())
+		engine.active.append(job)
+		self.navigation.stopRecordService = Mock()
+		engine.release(job)
+		self.assertEqual(engine.last_release_mono, self.now)
+
+		self.engine.last_release_mono = engine.last_release_mono
+		self.scan = scanner_module.ChannelParamsScan(self.engine)
+		self.assertTrue(self.scan.start())
 		self.assertEqual(self.records, [])
 		self.now += common.TUNE_GAP
 		self.scan.tick()

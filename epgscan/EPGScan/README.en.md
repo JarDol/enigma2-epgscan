@@ -208,8 +208,12 @@ affecting EPG duration; PMT filters are limited and rotated. A standalone group 
 a 20-second limit, after which or on failure only missing channels are checked individually.
 EPG Scan's parallel limit
 and free-tuner reserve are shared; a standalone scan keeps at least two tuners free (at least one on a
-two-tuner receiver; a single-tuner receiver can use a zero reserve). With six tuners and a reserve of two, up to four groups can run at once; with eight, up to six. Transponder
-grouping can be disabled, at the cost of more retunes. If watching, streaming or a recording needs a tuner, the scan
+two-tuner receiver; a single-tuner receiver can use a zero reserve). The scheduler tries to start all ready groups
+in parallel within the configured limit and current reserve: with eight free tuners and a reserve of two, up to six
+groups; with six free and a reserve of two, up to four. It waits two seconds after releasing a service before
+starting another tune. If Enigma2 reports a failure during overlapping tunes, the scan switches to two-second
+intervals and retries the failed read; the tuner report records this fallback.
+Transponder grouping can be disabled, at the cost of more retunes. If watching, streaming or a recording needs a tuner, the scan
 releases a group and resumes it later. IPTV and unknown service types are reported as unsupported; tuning and
 table-read errors are included in the report.
 
