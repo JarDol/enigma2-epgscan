@@ -75,4 +75,27 @@
     <string name="player_backup_plugin_missing">The EPG Scan plugin was not found or is not responding on the selected receiver.</string>
     <string name="player_no_epg_description">No EPG description</string>
     <string name="player_recordings">Recordings</string>
+    <string name="player_local_recordings">Local recordings</string>
+    <string name="player_localrec_title">Record</string>
+    <string name="player_localrec_menu">Record…</string>
+    <string name="player_localrec_stop_menu">Stop recording: %1$s</string>
+    <string name="player_localrec_running_title">Recording in progress</string>
+    <string name="player_localrec_stop">Stop recording</string>
+    <string name="player_localrec_internal_consent">The timeshift buffer is in device storage, so recordings will be stored there too (they wear the flash memory). Allow recordings in device storage?</string>
+    <string name="player_localrec_allow">Allow</string>
+    <string name="player_localrec_limit_reached">Recordings already use %2$s of %3$s – the limit is %1$d%% of the storage capacity (the rest is for timeshift). Delete older recordings or change the limit in settings.</string>
+    <string name="player_localrec_event">Programme: %1$s (%2$s–%3$s)</string>
+    <string name="player_localrec_buffer_now">Buffer until now (%1$s)</string>
+    <string name="player_localrec_buffer_until_zap">Whole buffer until channel change</string>
+    <string name="player_localrec_failed">Could not start recording (%1$s)</string>
+    <string name="player_localrec_started">● Recording: %1$s</string>
+    <string name="player_localrec_empty">Recording empty – nothing saved</string>
+    <string name="player_localrec_saved">Recording saved: %1$s (%2$s)%3$s</string>
+    <string name="player_localrec_reason_event_end">" – end of programme"</string>
+    <string name="player_localrec_reason_zap">" – channel change"</string>
+    <string name="player_localrec_reason_time">" – %1$d h limit"</string>
+    <string name="player_localrec_reason_space">" – %1$d%% storage limit"</string>
+    <string name="player_localrec_reason_disk_full">" – storage full"</string>
+    <string name="player_localrec_cannot_delete_running">This recording cannot be deleted – it is still being written</string>
+    <string name="player_localrec_delete_failed">Could not delete the recording files</string>
 </resources>

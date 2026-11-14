@@ -17,6 +17,7 @@ internal object SettingsBackup {
         "preferAc3" to p.preferAc3, "tsMin" to p.tsMin, "tsStepSec" to p.tsStepSec,
         "tsStepMin" to p.tsStepMin, "tsBackLive" to p.tsBackLive, "tsDelay" to p.tsDelay,
         "tsInternalOk" to p.tsInternalOk, "tsDir" to p.tsDir, "storageDir" to p.storageDir,
+        "recMaxHours" to p.recMaxHours, "recMaxPct" to p.recMaxPct, "recInternalOk" to p.recInternalOk,
         "uiListFont" to p.uiListFont, "uiListIcon" to p.uiListIcon, "uiEpgFont" to p.uiEpgFont,
         "uiBannerFont" to p.uiBannerFont, "uiBannerIcon" to p.uiBannerIcon,
         "epgDaily" to p.epgDaily, "epgHour" to p.epgHour, "epgDays" to p.epgDays,

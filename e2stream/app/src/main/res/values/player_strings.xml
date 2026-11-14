@@ -75,4 +75,27 @@
     <string name="player_backup_plugin_missing">Nie znaleziono wtyczki EPG Scan lub nie odpowiada ona na wybranym dekoderze.</string>
     <string name="player_no_epg_description">Brak opisu w EPG</string>
     <string name="player_recordings">Nagrania</string>
+    <string name="player_local_recordings">Nagrania lokalne</string>
+    <string name="player_localrec_title">Nagraj</string>
+    <string name="player_localrec_menu">Nagraj…</string>
+    <string name="player_localrec_stop_menu">Zatrzymaj nagrywanie: %1$s</string>
+    <string name="player_localrec_running_title">Trwa nagrywanie</string>
+    <string name="player_localrec_stop">Zatrzymaj nagrywanie</string>
+    <string name="player_localrec_internal_consent">Bufor timeshiftu jest w pamięci urządzenia, więc nagrania też trafią do pamięci urządzenia (zużywają pamięć flash). Zezwolić na nagrania w pamięci urządzenia?</string>
+    <string name="player_localrec_allow">Zezwól</string>
+    <string name="player_localrec_limit_reached">Nagrania zajmują już %2$s z %3$s – limit to %1$d%% pojemności nośnika (reszta dla timeshiftu). Usuń starsze nagrania albo zmień limit w ustawieniach.</string>
+    <string name="player_localrec_event">Audycja: %1$s (%2$s–%3$s)</string>
+    <string name="player_localrec_buffer_now">Bufor do teraz (%1$s)</string>
+    <string name="player_localrec_buffer_until_zap">Cały bufor do zmiany kanału</string>
+    <string name="player_localrec_failed">Nie udało się rozpocząć nagrania (%1$s)</string>
+    <string name="player_localrec_started">● Nagrywanie: %1$s</string>
+    <string name="player_localrec_empty">Nagranie puste – nic nie zapisano</string>
+    <string name="player_localrec_saved">Zapisano nagranie: %1$s (%2$s)%3$s</string>
+    <string name="player_localrec_reason_event_end">" – koniec audycji"</string>
+    <string name="player_localrec_reason_zap">" – zmiana kanału"</string>
+    <string name="player_localrec_reason_time">" – limit %1$d h"</string>
+    <string name="player_localrec_reason_space">" – limit %1$d%% nośnika"</string>
+    <string name="player_localrec_reason_disk_full">" – brak miejsca na nośniku"</string>
+    <string name="player_localrec_cannot_delete_running">Tego nagrania nie można usunąć – trwa zapis</string>
+    <string name="player_localrec_delete_failed">Nie udało się usunąć plików nagrania</string>
 </resources>

@@ -143,6 +143,18 @@ class SettingsActivity : Activity() {
         Item.Action(getString(R.string.setting_timeshift), { tsValue() }) { chooseTs() },
         Item.Action(getString(R.string.setting_timeshift_buffer_location), { tsPlace() }) { chooseTsDir() },
         Item.Action(getString(R.string.setting_automatic_timeshift), { tsDelayName(p.tsDelay) }) { chooseTsDelay() },
+        Item.Action(getString(R.string.setting_rec_max_hours), { "${p.recMaxHours} h" }) {
+            val o = (1..6).toList()
+            TvDialog.single(this, getString(R.string.setting_rec_max_hours), o.map { "$it h" }, o.indexOf(p.recMaxHours).coerceAtLeast(0)) { w ->
+                p.recMaxHours = o[w]; markChanged("nagrania lokalne: limit nagrania = ${o[w]} h"); items = buildItems(); refresh()
+            }
+        },
+        Item.Action(getString(R.string.setting_rec_max_pct), { "${p.recMaxPct}%" }) {
+            val o = listOf(30, 50, 60, 70, 80, 90)
+            TvDialog.single(this, getString(R.string.setting_rec_max_pct), o.map { "$it%" }, o.indexOf(p.recMaxPct).coerceAtLeast(0)) { w ->
+                p.recMaxPct = o[w]; markChanged("nagrania lokalne: limit miejsca = ${o[w]}%"); items = buildItems(); refresh()
+            }
+        },
         Item.Action(getString(R.string.setting_seek_seconds), { "${p.tsStepSec} s" }) {
             val o = listOf(5, 10, 15, 30)
             TvDialog.single(this, getString(R.string.message_seek), o.map { "$it s" }, o.indexOf(p.tsStepSec).coerceAtLeast(0)) { w -> p.tsStepSec = o[w]; markChanged("timeshift: krok ◀ ▶ = ${o[w]} s"); items = buildItems(); refresh() }
@@ -805,7 +817,10 @@ class SettingsActivity : Activity() {
     private fun chooseBouquets() {
         toast(getString(R.string.message_loading_bouquets))
         Thread {
-            val list = try { OpenWebif(p).bouquets() + Bouquet(getString(R.string.receiver_recordings), REC_BOUQUET) } catch (e: Exception) { null }
+            val list = try {
+                OpenWebif(p).bouquets() + Bouquet(getString(R.string.receiver_recordings), REC_BOUQUET) +
+                    Bouquet(getString(R.string.player_local_recordings), REC_LOCAL_BOUQUET)
+            } catch (e: Exception) { null }
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
                 if (list.isNullOrEmpty()) { toast(getString(R.string.message_could_not_load_bouquets_from_the_receiver)); return@runOnUiThread }

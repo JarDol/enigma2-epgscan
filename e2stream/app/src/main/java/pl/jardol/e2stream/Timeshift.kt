@@ -63,6 +63,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
 
     /** Nowy kanał / koniec: wszystko od zera; stare pliki kasowane w tle (bez czekania). */
     fun reset() = synchronized(lock) {
+        if (pin != null) finishPin()          // nagranie trwało — kawałki zachowane, nie skasowane
         try { out?.close() } catch (_: Exception) {}
         out = null
         segs.clear()
@@ -152,7 +153,74 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         val s = segs.removeAt(0)
         trimmed = true
         val f = s.file
+        val p = pin
+        if (p != null && s.start + s.len > p.from) {           // kawałek nagrania: przeniesiony, nie usunięty
+            p.take(f, s.len)
+            return
+        }
         Thread({ f.delete() }, "timeshift-usun").start()      // usuwanie dużego pliku nie wstrzymuje zapisu
+    }
+
+    // ------------------------------------------------------------ nagrania lokalne (przypięte kawałki)
+
+    /**
+     * Nagranie z bufora: kawałki od bajtu [from] nie są kasowane — przy wypadnięciu z okna trafiają
+     * (zmiana nazwy, ten sam nośnik) do katalogu nagrania [dir] jako part-00001.ts, part-00002.ts…
+     */
+    class Pin(val dir: File, val from: Long, val fromWall: Long) {
+        var parts = 0
+            private set
+        var bytes = 0L
+            private set
+
+        fun take(f: File, len: Long) {
+            parts++
+            val dst = File(dir, String.format(java.util.Locale.US, "part-%05d.ts", parts))
+            if (!f.renameTo(dst)) {
+                try { f.copyTo(dst, overwrite = true); f.delete() } catch (e: Exception) { AppLog.i("nagranie: przeniesienie ${f.name} nieudane ($e)") }
+            }
+            bytes += len
+        }
+    }
+
+    @Volatile var pin: Pin? = null
+        private set
+
+    /** Początek nagrania: przypięcie kawałków od bajtu [from] (najstarszy dostępny, gdy wcześniejszy). */
+    fun startPin(dir: File, from: Long): Pin? = synchronized(lock) {
+        if (pin != null || failed != null) return null
+        dir.mkdirs()
+        val start = maxOf(from, segs.firstOrNull()?.start ?: total)
+        Pin(dir, start, wallAt(start)).also { pin = it }
+    }
+
+    /** Bajty nagrania razem z kawałkami jeszcze w buforze. */
+    fun pinnedBytes(): Long = synchronized(lock) {
+        val p = pin ?: return 0
+        p.bytes + segs.filter { it.start + it.len > p.from }.sumOf { it.len }
+    }
+
+    /**
+     * Koniec nagrania: kawałki z bufora od początku nagrania przeniesione do jego katalogu, bufor zaczyna od nowa
+     * (pusty). Zwraca nagranie albo null, gdy żadne nie trwało.
+     */
+    fun finishPin(): Pin? = synchronized(lock) {
+        val p = pin ?: return null
+        try { out?.close() } catch (_: Exception) {}
+        out = null
+        pendLen = 0
+        for (s in segs) {
+            if (s.start + s.len > p.from && s.len > 0) p.take(s.file, s.len) else s.file.delete()
+        }
+        segs.clear()
+        pin = null
+        total = 0
+        failed = null
+        shrunk = false
+        trimmed = false
+        session = newSession()
+        lock.notifyAll()
+        p
     }
 
     val oldestOffset: Long get() = synchronized(lock) { segs.firstOrNull()?.start ?: 0 }

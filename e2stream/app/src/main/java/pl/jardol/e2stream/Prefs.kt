@@ -137,6 +137,21 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("tsInternalOk", false)
         set(v) = sp.edit().putBoolean("tsInternalOk", v).apply()
 
+    /** Nagrania lokalne z bufora timeshiftu: najdłuższe pojedyncze nagranie (h). */
+    var recMaxHours: Int
+        get() = sp.getInt("recMaxHours", 3).coerceIn(1, 6)
+        set(v) = putI("recMaxHours", v)
+
+    /** Nagrania lokalne: najwyżej tyle % pojemności nośnika (reszta dla bufora timeshiftu). */
+    var recMaxPct: Int
+        get() = sp.getInt("recMaxPct", 70).coerceIn(10, 95)
+        set(v) = putI("recMaxPct", v)
+
+    /** Zgoda na nagrania lokalne w pamięci urządzenia (gdy timeshift jest w pamięci wewnętrznej). */
+    var recInternalOk: Boolean
+        get() = sp.getBoolean("recInternalOk", false)
+        set(v) = putB("recInternalOk", v)
+
     /** Timeshift: katalog nośnika (pusty = pamięć urządzenia). */
     var tsDir: String
         get() = s("tsDir")
