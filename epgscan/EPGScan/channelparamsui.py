@@ -59,12 +59,14 @@ class ChannelParamsScreen(Screen):
 		self.preview_ref = None
 		self.pending_result = None
 		self.pending_ref = None
+		self.pending_retry = False
 		self.zap_attempts = 0
 		self.filter = "all"
 		self.sort = cfg.map_sort.value
 		self.dirty = False
 		self.original_results = {}
 		self.view_refs = []
+		self.view_errors = {}
 		self.preview_timer = eTimer()
 		self.preview_timer.callback.append(self.channel_ready)
 		self.engine = None
@@ -84,8 +86,10 @@ class ChannelParamsScreen(Screen):
 
 	def refresh(self):
 		selected_ref = None
+		selected_error = False
 		try:
 			selected_ref = self.current() and self.current().get("ref")
+			selected_error = self.current_error() is not None
 		except Exception:
 			pass
 		try:
@@ -93,6 +97,8 @@ class ChannelParamsScreen(Screen):
 		except Exception as e:
 			self.results = {}
 			self.channel_refs = []
+			self.view_refs = []
+			self.view_errors = {}
 			self["list"].setList(["Nie mozna odczytac wynikow: %s" % e])
 			self["head"].setText("Plik wynikow skanu jest uszkodzony lub niedostepny: %s" % e)
 			return
@@ -112,6 +118,7 @@ class ChannelParamsScreen(Screen):
 			self.channel_refs = sorted(self.results, key=lambda ref: (
 				order.get(ref, len(order)), self.results[ref].get("name", ref).lower()))
 		self.view_refs = []
+		self.view_errors = {}
 		rows = []
 		for ref in self.channel_refs:
 			result = self.results[ref]
@@ -126,11 +133,14 @@ class ChannelParamsScreen(Screen):
 			rows.append("%s %s   PID %s   %s" % (mark, result.get("name", ref), pid or "-", language))
 			self.view_refs.append(ref)
 		if self.filter in ("all", "errors"):
-			rows.extend("BLAD   %s: %s" % (row.get("name", row.get("ref", "")), row.get("error", "blad"))
-				for row in self.last_scan.get("errors", []))
+			for row in self.last_scan.get("errors", []):
+				self.view_errors[len(rows)] = row
+				rows.append("BLAD   %s: %s" % (row.get("name", row.get("ref", "")), row.get("error", "blad")))
+				self.view_refs.append(row.get("ref"))
 		if self.filter == "all":
-			rows.extend("POMINIETY   %s: %s" % (row.get("name", ""), row.get("error", "nieobslugiwany typ"))
-				for row in self.last_scan.get("unsupported", []))
+			for row in self.last_scan.get("unsupported", []):
+				rows.append("POMINIETY   %s: %s" % (row.get("name", ""), row.get("error", "nieobslugiwany typ")))
+				self.view_refs.append(None)
 		self["list"].setList(rows or ["Brak wynikow dla wybranego filtra."])
 		run = self.last_scan
 		if self.engine and self.engine.phase == "channelparams":
@@ -154,9 +164,11 @@ class ChannelParamsScreen(Screen):
 		set_keys(self, red="Zamknij", green="Odswiez", yellow="Pokaz: %s" % filter_names.get(self.filter, self.filter),
 			blue="Bukiety: %s" % scope_name)
 		self.show_info()
-		if selected_ref and selected_ref in self.view_refs:
+		if selected_ref:
 			try:
-				self["list"].moveToIndex(self.view_refs.index(selected_ref))
+				index = next(i for i, ref in enumerate(self.view_refs)
+					if ref == selected_ref and (i in self.view_errors) == selected_error)
+				self["list"].moveToIndex(index)
 			except Exception:
 				pass
 
@@ -174,10 +186,27 @@ class ChannelParamsScreen(Screen):
 	def current(self):
 		i = self["list"].getSelectedIndex()
 		if 0 <= i < len(self.view_refs):
-			return self.results[self.view_refs[i]]
+			ref = self.view_refs[i]
+			if ref in self.results:
+				return self.results[ref]
+			error = self.view_errors.get(i)
+			if ref and error:
+				return {"ref": ref, "name": error.get("name") or ref, "streams": []}
 		return None
 
+	def current_error(self):
+		if not getattr(self, "view_errors", None):
+			return None
+		return self.view_errors.get(self["list"].getSelectedIndex())
+
 	def show_info(self):
+		error = self.current_error()
+		if error:
+			action = "OK: ponow odczyt PAT/PMT i wybierz audio." if error.get("ref") else \
+				"Brak referencji kanalu; nie mozna ponowic odczytu."
+			self["info"].setText("BLAD %s: %s\n%s" %
+				(error.get("name", ""), error.get("error", "blad"), action))
+			return
 		result = self.current()
 		if not result:
 			self["info"].setText("OK: przelacz kanal i wybierz sciezke audio. Menu: sortowanie/skan kanalow. "
@@ -199,6 +228,9 @@ class ChannelParamsScreen(Screen):
 	def choose_audio(self):
 		result = self.current()
 		if not result:
+			if self.current_error():
+				self.session.open(MessageBox, "Brak referencji kanalu. Nie mozna ponowic odczytu.",
+					MessageBox.TYPE_ERROR, timeout=7)
 			return
 		if self.engine.running and self.engine.phase != "channelparams":
 			self.session.open(MessageBox, "Nie mozna przelaczyc kanalu podczas innego skanu EPG.", MessageBox.TYPE_INFO, timeout=5)
@@ -213,6 +245,7 @@ class ChannelParamsScreen(Screen):
 				self.orig = nav.getCurrentlyPlayingServiceReference()
 			self.pending_result = result
 			self.pending_ref = result["ref"]
+			self.pending_retry = self.current_error() is not None
 			self.zap_attempts = 0
 			if not self._currently_on(self.pending_ref):
 				nav.playService(eServiceReference(self.pending_ref))
@@ -242,6 +275,9 @@ class ChannelParamsScreen(Screen):
 				return
 			self["preview"].setText("Enigma2 nie przelaczyla kanalu. Sprobuj ponownie lub wybierz inny kanal.")
 			return
+		if getattr(self, "pending_retry", False):
+			self._start_single_scan(result)
+			return
 		live_streams, current_pid = self._live_audio_tracks()
 		scanned = [s for s in result.get("streams", []) if s.get("kind") == "audio"]
 		if scanned or live_streams:
@@ -257,19 +293,21 @@ class ChannelParamsScreen(Screen):
 			self.pending_result = result
 			self.open_audio_picker(result, [s for s in streams if s.get("kind") == "audio"], current_pid)
 			return
+		self._start_single_scan(result)
+
+	def _start_single_scan(self, result):
 		if self.engine.running:
-			self.session.open(MessageBox, "Skan jest zajety. Nie odczytano jeszcze sciezek dla tego kanalu.",
-				MessageBox.TYPE_INFO, timeout=6)
+			self._single_scan_failed(result, "Skan jest zajety")
 			return
-		from .channelparamscan import start_manual
-		self["preview"].setText("Brak danych audio. Odczyt PAT/PMT dla %s..." % result.get("name", "kanalu"))
+		self["preview"].setText("Odczyt PAT/PMT dla %s..." % result.get("name", "kanalu"))
 		try:
-			if not start_manual(self.engine, done=lambda report: self.single_scan_done(report, result), refs=[result["ref"]]):
-				self.session.open(MessageBox, "Nie udalo sie rozpoczac odczytu PAT/PMT dla tego kanalu.",
-					MessageBox.TYPE_ERROR, timeout=7)
+			started = start_manual(self.engine, done=lambda report: self.single_scan_done(report, result), refs=[result["ref"]])
 		except Exception as e:
 			log("Odczyt audio/PAT/PMT dla %s nieudany: %s" % (result.get("name", ""), e))
-			self.session.open(MessageBox, "Nie udalo sie odczytac sciezek audio: %s" % e, MessageBox.TYPE_ERROR, timeout=8)
+			self._single_scan_failed(result, str(e))
+			return
+		if not started:
+			self._single_scan_failed(result, "Nie udalo sie rozpoczac skanu; sprawdz bukiety lub status skanera")
 
 	def _live_audio_tracks(self):
 		try:
@@ -292,10 +330,28 @@ class ChannelParamsScreen(Screen):
 			log("Nie mozna odczytac sciezek z aktualnej uslugi Enigma2: %s" % e)
 			return [], None
 
-	def single_scan_done(self, _report, result):
+	def single_scan_done(self, report, result):
 		if self.pending_result is not result:
 			return
 		self.refresh()
+		failures = [row for row in report.get("errors", [])
+			if not row.get("ref") or row.get("ref") == result["ref"]]
+		failures += [row for row in report.get("unsupported", []) if row.get("ref") == result["ref"]]
+		if failures:
+			reason = failures[0].get("error", "kanal nie jest obslugiwany")
+			self._single_scan_failed(result, reason)
+			return
+		self._show_audio_after_single_scan(result)
+
+	def _single_scan_failed(self, result, reason):
+		self["preview"].setText("Nie udalo sie ponownie odczytac PAT/PMT: %s" % reason)
+		self.session.openWithCallback(lambda *_: self._show_audio_after_single_scan(result), MessageBox,
+			"Nie udalo sie odczytac PAT/PMT: %s.\nMozesz sprawdzic audio z Enigma2 lub poprzedniego wyniku, "
+			"ale PMT nie zostala ponownie odczytana." % reason, MessageBox.TYPE_ERROR)
+
+	def _show_audio_after_single_scan(self, result):
+		if self.pending_result is not result:
+			return
 		result = self.results.get(result["ref"], result)
 		live_streams, current_pid = self._live_audio_tracks()
 		if live_streams:
@@ -544,6 +600,8 @@ class ChannelParamsScreen(Screen):
 
 	def cleanup(self):
 		self.preview_timer.stop()
+		self.pending_result = None
+		self.pending_ref = None
 		self.restore()
 		if self.engine and self.refresh in self.engine.listeners:
 			self.engine.listeners.remove(self.refresh)

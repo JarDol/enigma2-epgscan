@@ -213,8 +213,11 @@ uruchomić sam skan z ekranu wyników przez **Menu**.
 
 Wyniki otworzysz przez **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. **OK** przełącza na wybrany
 kanał i otwiera dostępne ścieżki audio; jeśli skan nie ma danych, wtyczka próbuje odczytać PAT/PMT dla tego
-kanału. **Zielony** odświeża, **Żółty** filtruje, **Niebieski** wybiera bukiety, **Menu** udostępnia sortowanie
-i skan kanałów, a **Info/EPG** otwiera synchronizację danych.
+kanału. **OK** na kanale z błędem ponawia jego odczyt, zachowując pozostałe błędy z poprzedniego skanu.
+Jeśli ponowny odczyt się nie powiedzie, wtyczka pokaże przyczynę i pozwoli sprawdzić dostępne ścieżki z Enigma2
+lub wcześniejszego wyniku, ale nie oznacza to odczytania PMT. **Zielony** odświeża, **Żółty** filtruje,
+**Niebieski** wybiera bukiety, **Menu** udostępnia sortowanie i skan kanałów, a **Info/EPG** otwiera
+synchronizację danych.
 
 W oknie ścieżek audio: **Czerwony** wraca, **Zielony** wybiera ścieżkę aktywną według Enigma2, **Żółty** i
 **Niebieski** wybierają pierwszą lub drugą preferencję użytkownika. Strzałki **Góra/Dół** odsłuchują

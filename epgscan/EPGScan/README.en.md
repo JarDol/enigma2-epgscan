@@ -212,8 +212,10 @@ results screen.
 
 Review results from **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. **OK** tunes to a channel and opens
 its available audio tracks; if scan data is missing, the plugin attempts a PAT/PMT read for that channel.
-**Green** refreshes, **Yellow** filters, **Blue** selects bouquets, **Menu** offers sorting and channel scanning,
-and **Info/EPG** opens data synchronization.
+**OK** on a failed channel retries its read while preserving other errors from the previous scan. If it fails
+again, the plugin reports the reason and lets you inspect available audio from Enigma2 or an earlier result,
+but this does not mean PMT was read. **Green** refreshes, **Yellow** filters, **Blue** selects bouquets,
+**Menu** offers sorting and channel scanning, and **Info/EPG** opens data synchronization.
 
 In the audio-track screen, **Red** returns, **Green** selects the track active according to Enigma2,
 **Yellow/Blue** choose the first/second user language preference. **Up/Down** auditions the highlighted

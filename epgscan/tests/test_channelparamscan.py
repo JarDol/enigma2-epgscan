@@ -274,6 +274,157 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertEqual(opened[0][1][0]["source"], "enigma")
 		self.assertEqual(opened[0][2], 563)
 
+	def test_error_row_retries_selected_channel_even_when_live_audio_is_available(self):
+		class FakeList(object):
+			def __init__(self):
+				self.index = 0
+
+			def setList(self, rows):
+				self.rows = rows
+
+			def getSelectedIndex(self):
+				return self.index
+
+			def moveToIndex(self, index):
+				self.index = index
+
+		ref = "1:0:1:3ABD:514:13E:820000:0:0:0:"
+		error = {"ref": ref, "name": "TVP 1 HD", "error": "brak PID PMT"}
+		data = {"results": {}, "last_scan": {"errors": [error]}}
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen["list"] = FakeList()
+		for name in ("head", "info", "preview"):
+			screen[name] = types.SimpleNamespace(setText=Mock())
+		screen.engine = types.SimpleNamespace(running=False, phase="")
+		screen.session = Mock()
+		screen.filter = "errors"
+		screen.view_refs = []
+		screen.orig = None
+		screen.preview_timer = FakeTimer()
+		navigation = types.SimpleNamespace(
+			RecordTimer=types.SimpleNamespace(isRecording=lambda: False),
+			getCurrentlyPlayingServiceReference=lambda: "original",
+			playService=Mock())
+		with patch.object(channelparamsui, "load_results", return_value=data), \
+				patch.object(channelparamsui, "set_keys"), \
+				patch.object(sys.modules["NavigationInstance"], "instance", navigation), \
+				patch.object(channelparamsui, "start_manual", return_value=True) as start, \
+				patch.object(screen, "_currently_on", side_effect=[False, True]), \
+				patch.object(screen, "_live_audio_tracks", return_value=(
+					[{"kind": "audio", "pid": 424, "languages": ["pol"]}], 424)), \
+				patch.object(screen, "open_audio_picker") as picker:
+			screen.refresh()
+			self.assertEqual(screen.current()["ref"], ref)
+			screen.choose_audio()
+			screen.channel_ready()
+
+		self.assertEqual(start.call_args.kwargs["refs"], [ref])
+		picker.assert_not_called()
+		self.assertEqual(navigation.playService.call_args.args[0], ref)
+
+	def test_error_selection_stays_on_error_and_nonchannel_errors_are_reported(self):
+		class FakeList(object):
+			def __init__(self):
+				self.index = 0
+
+			def setList(self, _rows):
+				self.index = 0
+
+			def getSelectedIndex(self):
+				return self.index
+
+			def moveToIndex(self, index):
+				self.index = index
+
+		ref = "1:0:1:3ABD:514:13E:820000:0:0:0:"
+		result = {"ref": ref, "name": "TVP 1 HD", "streams": []}
+		data = {"results": {ref: result}, "last_scan": {"errors": [
+			{"ref": ref, "name": "TVP 1 HD", "error": "blad odczytu"},
+			{"name": "wyniki", "error": "blad zapisu"}],
+			"unsupported": [{"ref": "iptv", "name": "IPTV"}]}}
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen["list"] = FakeList()
+		for name in ("head", "info", "preview"):
+			screen[name] = types.SimpleNamespace(setText=Mock())
+		screen.engine = None
+		screen.session = Mock()
+		screen.filter = "all"
+		screen.view_refs = []
+		with patch.object(channelparamsui, "load_results", return_value=data), \
+				patch.object(channelparamsui, "set_keys"):
+			screen.refresh()
+			screen["list"].index = 1
+			self.assertEqual(screen.current()["ref"], ref)
+			self.assertEqual(screen.current_error()["error"], "blad odczytu")
+			screen.refresh()
+			self.assertEqual(screen["list"].index, 1)
+			screen["list"].index = 2
+			screen.choose_audio()
+			self.assertIn("Brak referencji", screen.session.open.call_args.args[1])
+			screen["list"].index = 3
+			self.assertIsNone(screen.current())
+			self.assertIsNone(screen.current_error())
+
+	def test_single_channel_scan_failure_is_reported_before_live_audio_picker(self):
+		ref = "1:0:1:3ABD:514:13E:820000:0:0:0:"
+		result = {"ref": ref, "name": "TVP 1 HD", "streams": []}
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.pending_result = result
+		screen.results = {}
+		screen.refresh = Mock()
+		screen.session = Mock()
+		screen["preview"] = types.SimpleNamespace(setText=Mock())
+		screen._live_audio_tracks = lambda: ([{"kind": "audio", "pid": 424, "languages": ["pol"]}], 424)
+		screen.open_audio_picker = Mock()
+
+		screen.single_scan_done({"errors": [{"ref": ref, "error": "brak danych demuksera"}]}, result)
+
+		screen.session.openWithCallback.assert_called_once()
+		message_args = screen.session.openWithCallback.call_args.args
+		self.assertIn("brak danych demuksera", message_args[2])
+		self.assertIn("PMT", message_args[2])
+		screen.open_audio_picker.assert_not_called()
+		message_args[0](None)
+		self.assertEqual(screen.open_audio_picker.call_args.args[1][0]["pid"], 424)
+		self.assertEqual(screen.open_audio_picker.call_args.args[1][0]["source"], "enigma")
+
+	def test_error_channel_can_show_live_audio_when_retry_cannot_start(self):
+		result = {"ref": "service:chosen", "name": "Chosen", "streams": []}
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.pending_result = result
+		screen.pending_ref = result["ref"]
+		screen.pending_retry = True
+		screen.results = {}
+		screen.engine = types.SimpleNamespace(running=True)
+		screen.session = Mock()
+		screen["preview"] = types.SimpleNamespace(setText=Mock())
+		screen._currently_on = lambda _ref: True
+		screen._live_audio_tracks = lambda: ([{"kind": "audio", "pid": 424, "languages": ["pol"]}], 424)
+		screen.open_audio_picker = Mock()
+
+		screen.channel_ready()
+
+		message_args = screen.session.openWithCallback.call_args.args
+		self.assertIn("PMT", message_args[2])
+		message_args[0](None)
+		self.assertEqual(screen.open_audio_picker.call_args.args[1][0]["pid"], 424)
+
+	def test_closed_screen_ignores_single_channel_scan_callback(self):
+		result = {"ref": "service:chosen", "name": "Chosen"}
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.pending_result = result
+		screen.pending_ref = result["ref"]
+		screen.preview_timer = FakeTimer()
+		screen.restore = Mock()
+		screen.engine = None
+		screen.session = Mock()
+
+		screen.cleanup()
+		screen.single_scan_done({"errors": [{"ref": result["ref"], "error": "failed"}]}, result)
+
+		screen.session.openWithCallback.assert_not_called()
+		self.assertIsNone(screen.pending_result)
+
 	def test_audio_picker_auditions_highlight_and_restores_track_on_cancel(self):
 		class FakeList(object):
 			def getSelectedIndex(self):
@@ -597,6 +748,106 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertEqual(__import__("base64").b64decode(result["section"]), section)
 		self.assertEqual(job.state, "gotowe")
 
+	def test_scanner_uses_pat_pmt_pid_when_enigma_pid_list_is_missing_or_ambiguous(self):
+		body = bytes.fromhex("00b0110001c100000000e010428fe133")
+		pat = body + channelparams._crc32(body).to_bytes(4, "big")
+		pmt = base64.b64decode(PMT_BASE64)
+		for pids in ([], [(307, "pmt"), (308, "pmt")], [(999, "pmt")]):
+			with self.subTest(pids=pids):
+				with patch.object(scanner_module, "load_results", return_value={"results": {}}):
+					scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+				job = scanner_module.ChannelJob({
+					"ref": "1:0:1:428F:1:1:13E:0:0:0:", "name": "test"})
+				job.rec = types.SimpleNamespace(stream=lambda: types.SimpleNamespace(
+					getStreamingData=lambda: {"adapter": 0, "demux": 2, "pids": pids}))
+				job.tuned_at = 100
+				job.state = "odczyt strumienia"
+				scan._retry_or_fail = Mock()
+				scan._complete_channel = Mock()
+				pat_reader = Mock(read=Mock(return_value=pat))
+				pmt_reader = Mock(read=Mock(return_value=pmt))
+				with patch.object(scanner_module.time, "time", return_value=101), \
+						patch.object(channelparams, "SectionReader",
+							side_effect=[pat_reader, pmt_reader]) as readers:
+					scan._begin_capture(job)
+					scan._poll_capture(job)
+
+				self.assertEqual([call.args for call in readers.call_args_list],
+					[(0, 2, 0, 0), (0, 2, 307, 2)])
+				self.assertEqual(scan.results[job.ref]["pmtPid"], 307)
+				self.assertEqual(scan.results[job.ref]["section"], PMT_BASE64)
+				scan._retry_or_fail.assert_not_called()
+				scan._complete_channel.assert_called_once_with(job)
+
+	def test_scanner_waits_for_stream_metadata_before_retrying_tune(self):
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
+			scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+		job = scanner_module.ChannelJob({"ref": "1:0:1:428F:1:1:13E:0:0:0:", "name": "test"})
+		stream = types.SimpleNamespace(getStreamingData=Mock(side_effect=[None, {"adapter": 0, "demux": 1}]))
+		job.rec = types.SimpleNamespace(stream=lambda: stream)
+		job.tuned_at = 100
+		job.state = "odczyt strumienia"
+		scan._retry_or_fail = Mock()
+		with patch.object(scanner_module.time, "time", return_value=101), \
+				patch.object(channelparams, "SectionReader") as reader:
+			scan._begin_capture(job)
+			self.assertEqual(job.state, "odczyt strumienia")
+			scan._begin_capture(job)
+		scan._retry_or_fail.assert_not_called()
+		reader.assert_called_once_with(0, 1, 0, 0)
+		self.assertEqual(job.state, "zbieranie PAT/PMT")
+
+	def test_pat_sections_without_the_service_are_skipped_until_its_pid_is_found(self):
+		def pat(service):
+			body = bytes.fromhex("00b0110001c100000000e010") + service.to_bytes(2, "big") + bytes.fromhex("e133")
+			return body + channelparams._crc32(body).to_bytes(4, "big")
+
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
+			scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+		job = scanner_module.ChannelJob({"ref": "1:0:1:428F:1:1:13E:0:0:0:", "name": "test"})
+		job.rec = types.SimpleNamespace(stream=lambda: types.SimpleNamespace(
+			getStreamingData=lambda: {"adapter": 0, "demux": 2}))
+		job.tuned_at = 100
+		scan._retry_or_fail = Mock()
+		scan._complete_channel = Mock()
+		pat_reader = Mock(read=Mock(side_effect=[pat(17007), pat(17039)]))
+		pmt_reader = Mock(read=Mock(return_value=base64.b64decode(PMT_BASE64)))
+		with patch.object(scanner_module.time, "time", return_value=101), \
+				patch.object(channelparams, "SectionReader", side_effect=[pat_reader, pmt_reader]) as readers:
+			scan._begin_capture(job)
+			scan._poll_capture(job)
+			self.assertEqual(readers.call_count, 1)
+			self.assertEqual(scan.results, {})
+			scan._poll_capture(job)
+		self.assertEqual(scan.results[job.ref]["pmtPid"], 307)
+		scan._retry_or_fail.assert_not_called()
+
+	def test_missing_stream_metadata_eventually_reports_an_error(self):
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
+			scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+		job = scanner_module.ChannelJob({"ref": "1:0:1:428F:1:1:13E:0:0:0:", "name": "test"})
+		job.rec = types.SimpleNamespace(stream=lambda: None)
+		job.tuned_at = 100
+		scan._retry_or_fail = Mock()
+		with patch.object(scanner_module.time, "time", return_value=110):
+			scan._begin_capture(job)
+		self.assertIn("Enigma2 nie udostepnila danych strumienia", scan._retry_or_fail.call_args.args[1])
+
+	def test_retry_discards_the_previous_pat_before_reading_again(self):
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
+			scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+		job = scanner_module.ChannelJob({"ref": "1:0:1:428F:1:1:13E:0:0:0:", "name": "test"})
+		job.rec = types.SimpleNamespace(stream=lambda: types.SimpleNamespace(
+			getStreamingData=lambda: {"adapter": 0, "demux": 2}))
+		job.tuned_at = 100
+		job.pat_section = b"old pat"
+		job.pmt_pid = 500
+		with patch.object(scanner_module.time, "time", return_value=101), \
+				patch.object(channelparams, "SectionReader"):
+			scan._begin_capture(job)
+		self.assertIsNone(job.pat_section)
+		self.assertEqual(job.pmt_pid, -1)
+
 	def test_previous_manual_audio_is_preserved_when_pid_is_still_available(self):
 		section = base64.b64decode(PMT_BASE64)
 		pmt = channelparams.parse_pmt(section, 17039)
@@ -604,13 +855,28 @@ class ChannelParamScanTests(unittest.TestCase):
 		engine = types.SimpleNamespace(active=[], phase="", channel_params_scan=None, timer_hold=0, max_parallel=1,
 			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 0, free_tuners=lambda: 1)
 		scan = scanner_module.ChannelParamsScan(engine)
-		scan.results[ref] = {"selectedAudioPid": 792, "selectedConfirmed": True}
+		scan.results[ref] = {"selectedAudioPid": 792, "selectedConfirmed": True,
+			"selectionSource": "manual", "selectedAt": 123}
 		job = types.SimpleNamespace(ref=ref, name="test", pmt_pid=307, pat_section=b"pat", state="")
 
 		scan._save_channel(job, pmt)
 
 		self.assertEqual(scan.results[ref]["selectedAudioPid"], 792)
 		self.assertTrue(scan.results[ref]["selectedConfirmed"])
+		self.assertEqual((scan.results[ref]["selectionSource"], scan.results[ref]["selectedAt"]), ("manual", 123))
+
+	def test_removed_manual_pid_does_not_confirm_a_new_audio_pid(self):
+		pmt = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
+		ref = "1:0:1:428f:1:1:13e:0:0:0:"
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
+			scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+		scan.results[ref] = {"selectedAudioPid": 999, "selectedConfirmed": True}
+		job = types.SimpleNamespace(ref=ref, name="test", pmt_pid=307, pat_section=b"pat", state="")
+
+		scan._save_channel(job, pmt)
+
+		self.assertEqual(scan.results[ref]["selectedAudioPid"], 536)
+		self.assertFalse(scan.results[ref]["selectedConfirmed"])
 
 	def test_language_preference_is_read_from_enigma_when_configured(self):
 		common.cfg.cp_language_source.value = "enigma"
@@ -649,6 +915,32 @@ class ChannelParamScanTests(unittest.TestCase):
 		report = save.call_args[0][0]["last_scan"]
 		self.assertEqual(report["scanned"], 1)
 		self.assertEqual(report["read_average"], 2)
+
+	def test_single_channel_retry_preserves_other_last_scan_errors(self):
+		ref = "1:0:1:428F:1:1:13E:0:0:0:"
+		other_ref = "1:0:1:9999:1:1:13E:0:0:0:"
+		previous = {"scanned": 141, "duration": 644, "errors": [
+			{"ref": ref, "name": "TVP 1 HD", "error": "old error"},
+			{"ref": other_ref, "name": "Other", "error": "other error"}]}
+		for succeeds in (True, False):
+			with self.subTest(succeeds=succeeds):
+				initial = {"results": {}, "last_scan": previous}
+				with patch.object(scanner_module, "load_results", return_value=initial):
+					scan = scanner_module.ChannelParamsScan(
+						types.SimpleNamespace(channel_params_scan=object()), refs=[ref])
+				scan.started = 100
+				scan.scanned_refs = {ref} if succeeds else set()
+				if succeeds:
+					scan.results[ref] = {"streams": []}
+				else:
+					scan.errors = [{"ref": ref, "name": "TVP 1 HD", "error": "new error"}]
+				with patch.object(scanner_module, "save_results") as save:
+					scan._finish()
+				saved_report = save.call_args.args[0]["last_scan"]
+				self.assertEqual((saved_report["scanned"], saved_report["duration"]), (141, 644))
+				self.assertIn(previous["errors"][1], saved_report["errors"])
+				self.assertEqual([error["error"] for error in saved_report["errors"] if error.get("ref") == ref],
+					[] if succeeds else ["new error"])
 
 	def test_channel_scan_does_not_run_without_main_schedule(self):
 		scheduler = object.__new__(schedule_module.Scheduler)

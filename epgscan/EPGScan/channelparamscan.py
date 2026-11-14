@@ -14,6 +14,8 @@ from . import channelparams
 from .common import CHANNEL_PARAMS_FILE, MAX_RETRIES, NO_TUNER_WAIT, TUNE_GAP, TUNE_TIMEOUT, \
 	channel_params_bouquet_channels, cfg, configured_tuners, frontend_of, log, same_tp, selected_bouquets, service_name, tp_key, tp_params, save_cfg
 
+STREAM_DATA_WAIT = 5
+
 
 def load_results():
 	try:
@@ -140,7 +142,9 @@ class ChannelParamsScan(object):
 		self.active = []
 		self.groups = []
 		self.reservations = []
-		self.results = load_results().get("results", {})
+		data = load_results()
+		self.results = data.get("results", {})
+		self.last_scan = data.get("last_scan", {})
 		self.scanned_refs = set()
 		self.errors = []
 		self.unsupported = []
@@ -326,15 +330,19 @@ class ChannelParamsScan(object):
 			stream = job.rec.stream()
 			data = stream and stream.getStreamingData()
 			if not isinstance(data, dict) or not data:
+				if time.time() - job.tuned_at < STREAM_DATA_WAIT:
+					return
 				raise ValueError("Enigma2 nie udostepnila danych strumienia")
+			if data.get("adapter") is None or data.get("demux") is None:
+				if time.time() - job.tuned_at < STREAM_DATA_WAIT:
+					return
+				raise ValueError("Enigma2 nie udostepnila adaptera/demuksera")
 			job.adapter = int(data["adapter"])
 			job.demux = int(data["demux"])
-			pmt_pids = [int(pid) for pid, kind in data.get("pids", []) if kind == "pmt"]
-			if len(pmt_pids) != 1:
-				raise ValueError("Brak jednoznacznego PID PMT w danych Enigma2")
-			job.pmt_pid = pmt_pids[0]
+			job.pat_section = None
+			job.pmt_section = None
+			job.pmt_pid = -1
 			job.pat_reader = channelparams.SectionReader(job.adapter, job.demux, 0, 0x00)
-			job.pmt_reader = channelparams.SectionReader(job.adapter, job.demux, job.pmt_pid, 0x02)
 			job.state = "zbieranie PAT/PMT"
 			job.tuned_at = time.time()
 			job.capture_started_at = job.tuned_at
@@ -352,8 +360,8 @@ class ChannelParamsScan(object):
 					sid = int(job.ref.split(":")[3], 16)
 					pmt_pid = channelparams.parse_pat(section, sid)
 					if pmt_pid is not None:
-						if pmt_pid != job.pmt_pid:
-							raise ValueError("PID PMT z PAT rozni sie od danych Enigma2")
+						job.pmt_pid = pmt_pid
+						job.pmt_reader = channelparams.SectionReader(job.adapter, job.demux, pmt_pid, 0x02)
 						job.pat_section = section
 			if job.pat_section is not None and job.pmt_section is None:
 				section = job.pmt_reader.read()
@@ -369,19 +377,24 @@ class ChannelParamsScan(object):
 		streams = pmt["streams"]
 		selected = channelparams.choose_audio(streams, preferred_languages())
 		old = self.results.get(job.ref, {})
-		selected_pid = old.get("selectedAudioPid")
-		if selected_pid not in [s["pid"] for s in streams if s["kind"] == "audio"]:
-			selected_pid = selected["pid"] if selected else None
+		old_pid = old.get("selectedAudioPid")
+		old_available = old_pid is not None and any(
+			s["pid"] == old_pid for s in streams if s["kind"] == "audio")
+		selected_pid = old_pid if old_available else (selected["pid"] if selected else None)
 		self.results[job.ref] = {
 			"ref": job.ref, "name": job.name, "sid": pmt["sid"], "pmtPid": job.pmt_pid,
 			"pcrPid": pmt["pcr_pid"], "streams": streams, "section": base64.b64encode(pmt["section"]).decode("ascii"),
 			"pat": base64.b64encode(job.pat_section).decode("ascii"),
 			"preferredAudioPid": selected["pid"] if selected else None, "selectedAudioPid": selected_pid,
-			"selectedConfirmed": bool(old.get("selectedConfirmed", False)) and selected_pid is not None,
+			"selectedConfirmed": bool(old.get("selectedConfirmed", False)) and old_available,
 			"scannedAt": int(time.time()),
 			"readDuration": round(max(0, time.time() - getattr(job, "capture_started_at", 0)), 2)
 				if getattr(job, "capture_started_at", 0) else 0,
 		}
+		if old_available:
+			for field in ("selectionSource", "selectedAt"):
+				if field in old:
+					self.results[job.ref][field] = old[field]
 		self.scanned_refs.add(job.ref)
 		job.state = "gotowe"
 
@@ -407,10 +420,19 @@ class ChannelParamsScan(object):
 			"read_average": round(sum(read_times) / len(read_times), 2) if read_times else 0,
 			"read_max": round(max(read_times), 2) if read_times else 0,
 			"errors": self.errors, "unsupported": self.unsupported}
-		data = {
-			"updated": int(time.time()), "results": self.results,
-			"last_scan": report,
-		}
+		last_scan = report
+		if self.refs is not None and self.last_scan:
+			last_scan = dict(self.last_scan)
+			retry_errors = {row["ref"]: row for row in self.errors if row.get("ref")}
+			errors = []
+			for row in self.last_scan.get("errors", []):
+				ref = row.get("ref")
+				if ref in self.scanned_refs:
+					continue
+				errors.append(retry_errors.pop(ref, row))
+			errors.extend(retry_errors.values())
+			last_scan["errors"] = errors
+		data = {"updated": int(time.time()), "results": self.results, "last_scan": last_scan}
 		try:
 			save_results(data)
 		except Exception as e:
