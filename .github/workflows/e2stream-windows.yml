@@ -2,17 +2,24 @@ name: E2Stream Windows — wersja testowa
 
 # Wersja: packageVersion w e2stream/desktop/build.gradle.kts.
 # Opis wydania: sekcja "## <wersja>" w e2stream/desktop/CHANGELOG.md.
-# Nowe wydanie = podbić packageVersion + dopisać sekcję w CHANGELOG i wypchnąć.
+# Nowe wydanie = podbić packageVersion + dopisać sekcję w CHANGELOG i wypchnąć na windows/0.1.0-test.
+# "[stable]" w opisie commita (albo stable przy ręcznym uruchomieniu) = wydanie stabilne e2stream-windows-X.Y.Z,
+# bez tego wersja testowa e2stream-windows-X.Y.Z-test. Inne gałęzie windows/* = tylko testy i instalator, bez wydania.
 
 on:
   push:
-    branches: [ 'windows/0.1.0-test' ]
+    branches: [ 'windows/**' ]
     paths:
       - 'e2stream/desktop/**'
       - 'e2stream/gradle/**'
       - 'e2stream/gradlew*'
       - '.github/workflows/e2stream-windows.yml'
   workflow_dispatch:
+    inputs:
+      stable:
+        description: 'Wydanie stabilne (bez -test)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -32,14 +39,20 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          STABLE_INPUT: ${{ inputs.stable }}
         run: |
           $gradle = Get-Content e2stream/desktop/build.gradle.kts -Raw
           if ($gradle -notmatch 'packageVersion\s*=\s*"(\d+\.\d+\.\d+)"') { throw "Brak packageVersion w e2stream/desktop/build.gradle.kts." }
           $version = $Matches[1]
-          $tag = "e2stream-windows-$version-test"
+          $stable = ($env:STABLE_INPUT -eq 'true') -or ("$env:COMMIT_MESSAGE" -match '\[stable\]')
+          $publish = "$env:GITHUB_REF" -eq 'refs/heads/windows/0.1.0-test'
+          $tag = if ($stable) { "e2stream-windows-$version" } else { "e2stream-windows-$version-test" }
+          "stable=$($stable.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          "publish=$($publish.ToString().ToLower())" >> $env:GITHUB_OUTPUT
 
           gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" --silent *> $null
-          if ($LASTEXITCODE -eq 0) {
+          if ($LASTEXITCODE -eq 0 -and $publish) {
             throw "Wydanie $tag już istnieje. Podbij packageVersion w e2stream/desktop/build.gradle.kts i dopisz sekcję '## <nowa wersja>' w e2stream/desktop/CHANGELOG.md."
           }
           $global:LASTEXITCODE = 0
@@ -80,20 +93,33 @@ jobs:
           .\e2stream\gradlew.bat -p e2stream\desktop --no-daemon test packageReleaseExe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Publikacja wersji testowej
+      - name: Instalator jako artefakt (gałęzie robocze)
+        if: steps.ver.outputs.publish != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: E2Stream-${{ steps.ver.outputs.version }}-check
+          path: e2stream/desktop/build/compose/binaries/main-release/exe/*.exe
+          retention-days: 3
+
+      - name: Publikacja wydania
+        if: steps.ver.outputs.publish == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.ver.outputs.version }}
           TAG: ${{ steps.ver.outputs.tag }}
+          STABLE: ${{ steps.ver.outputs.stable }}
         run: |
           $exe = @(Get-ChildItem e2stream/desktop/build/compose/binaries/main-release/exe/*.exe)
           if ($exe.Count -ne 1) { throw "Oczekiwano jednego instalatora EXE; znaleziono $($exe.Count)." }
-          $asset = Join-Path $env:RUNNER_TEMP "E2Stream-$env:VERSION-test.exe"
+          $suffix = if ($env:STABLE -eq 'true') { '' } else { '-test' }
+          $asset = Join-Path $env:RUNNER_TEMP "E2Stream-$env:VERSION$suffix.exe"
           Copy-Item $exe[0].FullName $asset
+          $title = if ($env:STABLE -eq 'true') { "E2Stream Windows $env:VERSION" } else { "E2Stream Windows $env:VERSION — wersja testowa" }
+          $kind = if ($env:STABLE -eq 'true') { @() } else { @('--prerelease') }
           gh release create $env:TAG $asset `
             --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA `
-            --title "E2Stream Windows $env:VERSION — wersja testowa" `
+            --title $title `
             --notes-file (Join-Path $env:RUNNER_TEMP notes.md) `
-            --prerelease --latest=false
+            --latest=false @kind
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

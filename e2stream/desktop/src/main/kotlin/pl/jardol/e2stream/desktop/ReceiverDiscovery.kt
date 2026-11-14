@@ -11,7 +11,14 @@ import java.util.Collections
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-data class FoundReceiver(val ip: String, val label: String)
+data class FoundReceiver(
+    val ip: String,
+    val label: String,
+    val pluginPort: Int? = null,
+    val httpPort: Int? = null,
+    val streamPort: Int? = null,
+    val viaMdns: Boolean = false,
+)
 
 /** Szuka dekoderów Enigma2 w sieciach /24 lokalnych interfejsów (port OpenWebif + /api/about). */
 object ReceiverDiscovery {
@@ -33,14 +40,32 @@ object ReceiverDiscovery {
         return prefixes.toList()
     }
 
+    /** mDNS (wtyczka EPG Scan, także poza siecią /24) i przeszukanie sieci /24 lokalnych interfejsów. */
     fun scan(port: Int, pluginPort: Int): List<FoundReceiver> {
         val ips = localPrefixes().flatMap { prefix -> (1..254).map { prefix + it } }
         val found = Collections.synchronizedList(mutableListOf<FoundReceiver>())
         val pool = Executors.newFixedThreadPool(48)
+        val mdns = pool.submit<List<MdnsDiscovery.Service>> { runCatching { MdnsDiscovery.find() }.getOrDefault(emptyList()) }
         ips.forEach { ip -> pool.execute { probe(ip, port, pluginPort)?.let(found::add) } }
         pool.shutdown()
         pool.awaitTermination(60, TimeUnit.SECONDS)
-        return found.sortedBy { it.ip.substringAfterLast('.').toIntOrNull() ?: 0 }
+        val announced = runCatching { mdns.get(1, TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        if (announced.isNotEmpty()) AppLog.i("mDNS: ${announced.joinToString { "${it.ip}:${it.port}" }}")
+        val merged = linkedMapOf<String, FoundReceiver>()
+        found.forEach { merged[it.ip] = it }
+        for (service in announced) {
+            val scanned = merged[service.ip]
+            val plugin = pluginVersion(service.ip, service.port)?.let { "EPG Scan $it" } ?: "EPG Scan"
+            merged[service.ip] = FoundReceiver(
+                ip = service.ip,
+                label = (scanned?.label ?: plugin) + "  · mDNS",
+                pluginPort = service.port,
+                httpPort = service.webifPort,
+                streamPort = service.streamPort,
+                viaMdns = true,
+            )
+        }
+        return merged.values.sortedBy { it.ip.substringAfterLast('.').toIntOrNull() ?: 0 }
     }
 
     private fun probe(ip: String, port: Int, pluginPort: Int): FoundReceiver? {

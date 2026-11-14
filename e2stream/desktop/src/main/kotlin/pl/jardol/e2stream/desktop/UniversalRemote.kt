@@ -34,6 +34,8 @@ enum class VirtualRemoteKey(val label: String) {
     VOLUME_UP("Głośność +"),
     VOLUME_DOWN("Głośność −"),
     MUTE("Wycisz"),
+    DELETE("Usuń znak (pola tekstowe)"),
+    VOICE("Mikrofon / dyktowanie"),
     DIGIT_0("0"),
     DIGIT_1("1"),
     DIGIT_2("2"),

@@ -29,7 +29,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -249,6 +255,7 @@ private fun ChoiceOverlay(navigator: SettingsNavigator, choice: SettingsChoice) 
                 Text(choice.title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)
                 BackButton(onClick = navigator::closeChoice)
             }
+            choice.body?.let { Text(it, color = colors.onSurface, fontSize = 16.sp) }
             LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 itemsIndexed(choice.options) { index, option ->
                     val isSelected = index == navigator.choiceSelected
@@ -272,15 +279,27 @@ private fun EditorOverlay(navigator: SettingsNavigator, editor: SettingsEditor) 
     val colors = MaterialTheme.colorScheme
     val focusRequester = remember(editor) { FocusRequester() }
     LaunchedEffect(editor) { focusRequester.requestFocus() }
+    // Tekst wpisany pilotem lub klawiaturą ekranową — kursor na końcu.
+    var field by remember(editor) {
+        mutableStateOf(TextFieldValue(navigator.editorText, TextRange(navigator.editorText.length)))
+    }
+    if (field.text != navigator.editorText) {
+        field = TextFieldValue(navigator.editorText, TextRange(navigator.editorText.length))
+    }
+    val layout = navigator.oskLayout()
     OverlayScrim {
         Column(
-            Modifier.width(620.dp).background(colors.surface, RoundedCornerShape(20.dp)).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            Modifier.width(if (editor.digitsOnly) 560.dp else 900.dp)
+                .background(colors.surface, RoundedCornerShape(20.dp)).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(editor.title, style = MaterialTheme.typography.titleLarge, color = colors.primary)
             OutlinedTextField(
-                value = navigator.editorText,
-                onValueChange = navigator::updateEditorText,
+                value = field,
+                onValueChange = { value ->
+                    field = value
+                    navigator.updateEditorText(value.text)
+                },
                 singleLine = true,
                 placeholder = if (editor.hint.isNotBlank()) ({ Text(editor.hint) }) else null,
                 visualTransformation = if (editor.secret) PasswordVisualTransformation() else VisualTransformation.None,
@@ -288,15 +307,54 @@ private fun EditorOverlay(navigator: SettingsNavigator, editor: SettingsEditor) 
                 modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) false
                     else when (event.key) {
-                        Key.Enter, Key.NumPadEnter -> { navigator.commitEditor(); true }
+                        Key.Enter, Key.NumPadEnter -> {
+                            layout.getOrNull(navigator.oskRow)?.getOrNull(navigator.oskCol)?.let(navigator::oskPress)
+                                ?: navigator.commitEditor()
+                            true
+                        }
                         Key.Escape -> { navigator.cancelEditor(); true }
                         else -> false
                     }
                 },
             )
             navigator.editorError?.let { Text(it, color = colors.error) }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                layout.forEachIndexed { rowIndex, keys ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        keys.forEachIndexed { colIndex, key ->
+                            val selected = rowIndex == navigator.oskRow && colIndex == navigator.oskCol
+                            Box(
+                                Modifier.weight(key.weight).height(if (editor.digitsOnly) 52.dp else 44.dp)
+                                    .background(
+                                        if (selected) colors.primary else colors.surfaceVariant,
+                                        RoundedCornerShape(8.dp),
+                                    )
+                                    .clickable {
+                                        navigator.oskSelect(rowIndex, colIndex)
+                                        navigator.oskPress(key)
+                                        focusRequester.requestFocus()
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    key.label,
+                                    color = if (selected) colors.onPrimary else colors.onSurfaceVariant,
+                                    fontSize = 19.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Text(
+                "Strzałki + OK – klawiatura ekranowa  •  cyfry pilota wpisują  •  Kanał − usuwa znak  •  " +
+                    "Kanał + spacja  •  Wstecz anuluj" + if (editor.digitsOnly) "" else "  •  🎤 Dyktuj = dyktowanie Windows (Win+H)",
+                color = colors.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
             if (editor.hint.isNotBlank()) Text(editor.hint, color = colors.onSurfaceVariant, fontSize = 14.sp)
-            Text("Enter / OK zapisz   •   Esc / Wstecz anuluj", color = colors.onSurfaceVariant, fontSize = 13.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = navigator::commitEditor) { Text("Zapisz") }
                 BackButton(onClick = navigator::cancelEditor, label = "Anuluj")

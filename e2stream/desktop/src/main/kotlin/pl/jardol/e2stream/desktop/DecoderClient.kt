@@ -393,6 +393,20 @@ class DecoderClient(private val config: DesktopConfig) {
         return get(config.pluginPort, "/api/sync/state?id=${encode(deviceId)}", plugin = true, timeoutMs = 20_000)
     }
 
+    /** Profile wszystkich odbiorników zapisane na dekoderze (kopie ustawień). */
+    internal fun syncDevices(): org.json.JSONArray {
+        validatePort(config.pluginPort, "EPG Scan")
+        return get(config.pluginPort, "/api/sync/devices", plugin = true, timeoutMs = 20_000).optJSONArray("devices")
+            ?: org.json.JSONArray()
+    }
+
+    /** /api/info wtyczki EPG Scan (m.in. stream_eit — „Include EIT in http streams” w Enigma2). */
+    internal fun pluginInfo(): JSONObject {
+        require(config.host.isNotBlank()) { "Podaj adres dekodera." }
+        validatePort(config.pluginPort, "EPG Scan")
+        return get(config.pluginPort, "/api/info", plugin = true, timeoutMs = 4000)
+    }
+
     /** Wysyła plik odbiornika; wtyczka scala go (nowszy wpis wygrywa) i uzupełnia część wspólną. */
     internal fun syncPush(deviceId: String, body: JSONObject): JSONObject {
         validatePort(config.pluginPort, "EPG Scan")

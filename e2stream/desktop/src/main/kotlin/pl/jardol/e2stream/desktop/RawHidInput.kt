@@ -30,6 +30,8 @@ internal fun isForegroundApplication(): Boolean {
 internal class RawHidInput(
     private val isApplicationFocused: () -> Boolean,
     private val onKey: (id: String, label: String) -> Unit,
+    /** Puszczenie przycisku (raport z samymi zerami albo inny przycisk tego samego urządzenia). */
+    private val onRelease: (id: String) -> Unit = {},
     private val onError: (String) -> Unit,
     private val onDiagnostic: (String) -> Unit,
     private val suppressBrowserKeys: () -> Boolean,
@@ -47,6 +49,8 @@ internal class RawHidInput(
     private val usageRegistry = HidUsageRegistry(::registerUsages)
     private val pressedPowerKeys = mutableSetOf<Int>()
     private val powerPresses = PowerPressTracker()
+    /** Ostatnio naciśnięty przycisk każdego urządzenia — do zgłoszenia puszczenia. */
+    private val pressedKeys = mutableMapOf<Long, String>()
     private val windowProc = WinUser.WindowProc(::windowProc)
     private val keyboardProc = WinUser.LowLevelKeyboardProc { code, wParam, data ->
         val message = wParam.toInt()
@@ -205,6 +209,7 @@ internal class RawHidInput(
                 try {
                     val handle = lParam.toLong()
                     deviceInfoCache.remove(handle)
+                    pressedKeys.remove(handle)?.let(onRelease)
                     powerPresses.remove(handle)
                     if (wParam.toInt() == GIDC_ARRIVAL) {
                         deviceUsage(WinNT.HANDLE(Pointer.createConstant(handle)))?.let {
@@ -252,9 +257,12 @@ internal class RawHidInput(
             data.read(reportOffset + 1, payload, 0, payload.size)
             if (payload.isEmpty() || payload.all { it == 0.toByte() }) {
                 powerPresses.update(deviceHandle, false)
+                pressedKeys.remove(deviceHandle)?.let(onRelease)
                 continue
             }
             val id = UniversalRemoteMap.hidId(deviceInfo.path, payload)
+            val previous = pressedKeys.put(deviceHandle, id)
+            if (previous != null && previous != id) onRelease(previous)
             val isPower = isPowerKey(id)
             val newPowerPress = powerPresses.update(deviceHandle, isPower)
             when (hidInputRoute(isPower, !isPower && isForegroundApplication() && isApplicationFocused())) {

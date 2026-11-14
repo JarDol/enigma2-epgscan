@@ -81,6 +81,8 @@ internal data class SettingsChoice(
     val title: String,
     val options: List<String>,
     val selected: Int,
+    /** Dłuższy opis nad listą. */
+    val body: String? = null,
     val onSelect: (Int) -> Unit,
 )
 
@@ -126,6 +128,17 @@ internal class SettingsNavigator {
     var editorText by mutableStateOf("")
     var editorError by mutableStateOf<String?>(null)
         private set
+    /** Klawiatura ekranowa okna edycji: zaznaczony klawisz i wielkie litery. */
+    var oskRow by mutableStateOf(0)
+        private set
+    var oskCol by mutableStateOf(0)
+        private set
+    var oskShift by mutableStateOf(false)
+        private set
+    /** Dyktowanie Windows (Win+H) do pola edycji — ustawiane przez okno główne. */
+    var onVoice: () -> Unit = {}
+
+    fun oskLayout(): List<List<OskKey>> = OnScreenKeyboard.layout(editor?.digitsOnly == true, oskShift)
 
     val isOpen: Boolean get() = stack.isNotEmpty()
     val isVisible: Boolean get() = isOpen || editor != null
@@ -174,6 +187,33 @@ internal class SettingsNavigator {
         editor = value
         editorText = value.initial
         editorError = null
+        oskShift = false
+        val (row, col) = OnScreenKeyboard.start(OnScreenKeyboard.layout(value.digitsOnly, false))
+        oskRow = row
+        oskCol = col
+    }
+
+    fun oskMove(dRow: Int, dCol: Int) {
+        val (row, col) = OnScreenKeyboard.move(oskLayout(), oskRow, oskCol, dRow, dCol)
+        oskRow = row
+        oskCol = col
+    }
+
+    fun oskSelect(row: Int, col: Int) {
+        oskRow = row
+        oskCol = col
+    }
+
+    fun oskPress(key: OskKey) {
+        when (key.action) {
+            OskAction.CHAR -> updateEditorText(editorText + key.text)
+            OskAction.SPACE -> updateEditorText("$editorText ")
+            OskAction.BACKSPACE -> updateEditorText(editorText.dropLast(1))
+            OskAction.CLEAR -> updateEditorText("")
+            OskAction.SHIFT -> oskShift = !oskShift
+            OskAction.VOICE -> onVoice()
+            OskAction.DONE -> commitEditor()
+        }
     }
 
     fun updateEditorText(value: String) {
@@ -210,7 +250,14 @@ internal class SettingsNavigator {
     fun handleKey(key: VirtualRemoteKey, items: List<SettingItem>): Boolean {
         editor?.let {
             when (key) {
-                VirtualRemoteKey.OK -> commitEditor()
+                VirtualRemoteKey.OK -> oskLayout().getOrNull(oskRow)?.getOrNull(oskCol)?.let(::oskPress) ?: commitEditor()
+                VirtualRemoteKey.UP -> oskMove(-1, 0)
+                VirtualRemoteKey.DOWN -> oskMove(1, 0)
+                VirtualRemoteKey.LEFT -> oskMove(0, -1)
+                VirtualRemoteKey.RIGHT -> oskMove(0, 1)
+                VirtualRemoteKey.DELETE, VirtualRemoteKey.CHANNEL_DOWN -> updateEditorText(editorText.dropLast(1))
+                VirtualRemoteKey.CHANNEL_UP -> updateEditorText("$editorText ")
+                VirtualRemoteKey.VOICE, VirtualRemoteKey.SEARCH -> onVoice()
                 VirtualRemoteKey.BACK, VirtualRemoteKey.HOME -> cancelEditor()
                 else -> digitOf(key)?.let { digit -> updateEditorText(editorText + digit) } ?: return false
             }

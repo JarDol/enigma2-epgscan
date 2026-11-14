@@ -3,6 +3,21 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.2.0
+
+Pierwsza wersja stabilna.
+
+- Pasek kanału jak w Androidzie: większa ikona kanału, bieżąca audycja z postępem i czasem do końca, następna audycja
+- EPG z EIT strumienia (teraz/następne, jak w Androidzie): Ustawienia → EPG i ikony kanałów → „EIT ze strumienia” (sprawdza ustawienie Enigma2 przez EPG Scan) i „Podmieniaj EPG po odebraniu EIT”
+- Długie OK: na obrazie otwiera Menu, przy widocznym pasku kanału — timeshift (jak w Androidzie)
+- Wybór kanału cyframi pilota (OK zatwierdza od razu)
+- Klawiatura ekranowa w polach tekstowych (strzałki + OK), cyfry z pilota, Kanał − usuwa znak, Kanał + spacja, dyktowanie Windows (Win+H); nowe klawisze do przypisania: „Usuń znak” i „Mikrofon / dyktowanie” (na obrazie otwiera wyszukiwanie EPG z dyktowaniem)
+- Wyszukiwanie dekoderów także przez mDNS (wtyczka EPG Scan) — z portami wtyczki, OpenWebif i strumienia
+- Po wybraniu dekodera pytanie o import kopii ustawień z innego odbiornika (Android albo Windows); własna kopia zapisywana na dekoderze przez EPG Scan
+- Klawisze dawnej mapy (I, G, S…) uruchamiają EPG, Multi EPG i wyszukiwanie zamiast komunikatu „niedostępne”
+- Rutynowe komunikaty (kanały w bukiecie, łączenie) tylko w logu — bez paska pod obrazem
+- „Ścieżki dźwiękowe wspólne” (dawniej „Ścieżki wspólne z Androidem”)
+
 ## 0.1.8
 
 - Ustawienia w układzie Androida (sekcje i listy opcji, okno bez paska tytułu, obsługa pilotem, klawiaturą i myszą); test pilota i mapowanie OK/strzałek

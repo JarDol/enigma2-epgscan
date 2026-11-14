@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -108,6 +110,12 @@ internal fun PlayerPage(
     onVolume: (Int) -> Unit = {},
     onMute: () -> Unit = {},
     onAudio: () -> Unit = {},
+    /** Następna audycja (pasek kanału jak w Androidzie). */
+    next: NowEvent? = null,
+    /** Okno główne — pasek jest wtedy osobnym oknem nad obrazem (obraz nie zmienia rozmiaru). */
+    owner: java.awt.Window? = null,
+    /** Ukryj paski (np. otwarte ustawienia). */
+    barsHidden: Boolean = false,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     var statusVisible by remember { mutableStateOf(false) }
@@ -174,9 +182,14 @@ internal fun PlayerPage(
                 )
             }
         }
-        if ((channel != null && bannerVisible) || controlsVisible || statusVisible || stats != null || playback != null) {
+        if (!barsHidden &&
+            ((channel != null && bannerVisible) || controlsVisible || statusVisible || stats != null || playback != null)
+        ) {
+            BottomOverlay(owner) {
             Column(
-                modifier = Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = 24.dp, vertical = 10.dp),
+                modifier = Modifier.fillMaxWidth()
+                    .background(colors.surface.copy(alpha = if (owner != null) 0.94f else 1f), RoundedCornerShape(if (owner != null) 16.dp else 0.dp))
+                    .padding(horizontal = 24.dp, vertical = if (owner != null) 16.dp else 10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (playback != null) {
@@ -205,45 +218,16 @@ internal fun PlayerPage(
                     Text(playback.hint, color = secondary, fontSize = 13.sp, maxLines = 1)
                 }
                 if (channel != null && bannerVisible && playback == null) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (piconStyle != PiconStyle.OFF) {
-                            ChannelIcon(picon, piconStyle == PiconStyle.WITH_LOGO, 72.dp * bannerIconScale, 44.dp * bannerIconScale)
-                        }
-                        Text(
-                            "${channel.number}   ${channel.name}",
-                            modifier = Modifier.weight(1f),
-                            color = accent,
-                            fontSize = 20.sp * bannerFontScale,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(time(now), color = secondary, fontSize = 20.sp * bannerFontScale)
-                    }
-                    Text(
-                        currentEvent?.title ?: "Brak danych bieżącej audycji",
-                        color = colors.onSurface,
-                        fontSize = 21.sp * bannerFontScale,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    ChannelBanner(
+                        channel = channel,
+                        current = currentEvent,
+                        next = next?.takeIf { it.begin >= (currentEvent?.end ?: now) || it.begin > now },
+                        now = now,
+                        fontScale = bannerFontScale,
+                        picon = picon,
+                        piconStyle = piconStyle,
+                        iconScale = bannerIconScale,
                     )
-                    if (currentEvent != null && currentEvent.end > currentEvent.begin) {
-                        val progress = ((now - currentEvent.begin).toFloat() / (currentEvent.end - currentEvent.begin)).coerceIn(0f, 1f)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(time(currentEvent.begin), color = secondary, fontSize = 14.sp * bannerFontScale)
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier.weight(1f).padding(top = 8.dp).height(6.dp),
-                                color = accent,
-                            )
-                            Text(time(currentEvent.end), color = secondary, fontSize = 14.sp * bannerFontScale)
-                        }
-                    }
                 }
                 stats?.let { Text(it, color = secondary, fontSize = 13.sp, maxLines = 1) }
                 if (statusVisible && !controlsVisible) {
@@ -269,6 +253,144 @@ internal fun PlayerPage(
                     OutlinedButton(onClick = onBack, enabled = session != null) { Text("Zatrzymaj") }
                     Text(status, modifier = Modifier.weight(1f).padding(top = 12.dp), color = secondary, maxLines = 1)
                 }
+            }
+            }
+        }
+    }
+}
+
+/**
+ * Pasek nad obrazem: obraz VLC jest osobnym oknem systemowym i przykrywa elementy Compose, więc pasek to
+ * przezroczyste okno bez fokusu przy dolnej krawędzi okna głównego (wysokość dopasowana do treści).
+ * Bez [owner] — zwykły pasek pod obrazem.
+ */
+@Composable
+private fun BottomOverlay(owner: java.awt.Window?, content: @Composable () -> Unit) {
+    if (owner == null) {
+        content()
+        return
+    }
+    var bounds by remember { mutableStateOf(owner.bounds) }
+    DisposableEffect(owner) {
+        val listener = object : java.awt.event.ComponentAdapter() {
+            override fun componentMoved(e: java.awt.event.ComponentEvent) { bounds = owner.bounds }
+            override fun componentResized(e: java.awt.event.ComponentEvent) { bounds = owner.bounds }
+        }
+        owner.addComponentListener(listener)
+        bounds = owner.bounds
+        onDispose { owner.removeComponentListener(listener) }
+    }
+    var contentHeight by remember { mutableIntStateOf(0) }
+    val insets = owner.insets
+    val margin = 24
+    val width = (bounds.width - insets.left - insets.right - 2 * margin).coerceAtLeast(320)
+    val height = if (contentHeight > 0) contentHeight else 200
+    val x = bounds.x + insets.left + margin
+    val y = bounds.y + bounds.height - insets.bottom - margin - height
+    val state = rememberDialogState(
+        position = androidx.compose.ui.window.WindowPosition(x.dp, y.dp),
+        size = androidx.compose.ui.unit.DpSize(width.dp, height.dp),
+    )
+    LaunchedEffect(x, y, width, height) {
+        state.position = androidx.compose.ui.window.WindowPosition(x.dp, y.dp)
+        state.size = androidx.compose.ui.unit.DpSize(width.dp, height.dp)
+    }
+    val colors = MaterialTheme.colorScheme
+    DialogWindow(
+        onCloseRequest = {},
+        title = "E2Stream — pasek",
+        state = state,
+        undecorated = true,
+        transparent = true,
+        resizable = false,
+        focusable = false,
+    ) {
+        MaterialTheme(colorScheme = colors) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                Box(
+                    Modifier.fillMaxWidth()
+                        .wrapContentHeight(align = Alignment.Top, unbounded = true)
+                        .onSizeChanged { size ->
+                            val measured = with(density) { size.height.toDp().value.toInt() } + 1
+                            if (measured != contentHeight) contentHeight = measured
+                        },
+                ) { content() }
+            }
+        }
+    }
+}
+
+/** Pasek kanału jak w Androidzie: ikona kanału, nazwa i zegar, bieżąca audycja z postępem i następna audycja. */
+@Composable
+private fun ChannelBanner(
+    channel: Channel,
+    current: NowEvent?,
+    next: NowEvent?,
+    now: Long,
+    fontScale: Float,
+    picon: ImageBitmap?,
+    piconStyle: PiconStyle,
+    iconScale: Float,
+) {
+    val colors = MaterialTheme.colorScheme
+    val accent = colors.primary
+    val secondary = colors.onSurfaceVariant
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (piconStyle != PiconStyle.OFF) {
+            ChannelIcon(picon, piconStyle == PiconStyle.WITH_LOGO, 150.dp * iconScale, 90.dp * iconScale)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${channel.number}   ${channel.name}",
+                    modifier = Modifier.weight(1f),
+                    color = accent,
+                    fontSize = 22.sp * fontScale,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(time(now), color = secondary, fontSize = 22.sp * fontScale)
+            }
+            Text(
+                current?.title ?: "Brak danych bieżącej audycji",
+                color = colors.onSurface,
+                fontSize = 26.sp * fontScale,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (current != null && current.end > current.begin) {
+                val progress = ((now - current.begin).toFloat() / (current.end - current.begin)).coerceIn(0f, 1f)
+                val left = ((current.end - now + 59) / 60).coerceAtLeast(0)
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(time(current.begin), color = secondary, fontSize = 18.sp * fontScale)
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.weight(1f).height(8.dp),
+                        color = accent,
+                    )
+                    Text("${time(current.end)}   (−$left min)", color = secondary, fontSize = 18.sp * fontScale)
+                }
+            }
+            if (next != null) {
+                Text(
+                    "Następnie  ${time(next.begin)}  ${next.title}",
+                    modifier = Modifier.padding(top = 2.dp),
+                    color = secondary,
+                    fontSize = 18.sp * fontScale,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

@@ -277,6 +277,8 @@ internal class TimeshiftRecorder(
     private val url: String,
     private val authorization: String?,
     private val buffer: TimeshiftBuffer,
+    /** Podgląd danych ze strumienia (np. EIT) — w wątku zapisu. */
+    private val tap: ((ByteArray, Int, Int) -> Unit)? = null,
 ) : Closeable {
     @Volatile private var running = true
     @Volatile private var connection: HttpURLConnection? = null
@@ -303,6 +305,7 @@ internal class TimeshiftRecorder(
                         val count = input.read(bytes)
                         if (count < 0) break
                         buffer.write(bytes, 0, count)
+                        tap?.let { runCatching { it(bytes, 0, count) } }
                         failures = 0
                     }
                 }
@@ -413,8 +416,9 @@ internal class TimeshiftSession(
     val buffer: TimeshiftBuffer,
     sourceUrl: String,
     authorization: String?,
+    tap: ((ByteArray, Int, Int) -> Unit)? = null,
 ) : Closeable {
-    private val recorder = TimeshiftRecorder(sourceUrl, authorization, buffer)
+    private val recorder = TimeshiftRecorder(sourceUrl, authorization, buffer, tap)
     private val server = TimeshiftServer(buffer)
     private var generation = 0
 

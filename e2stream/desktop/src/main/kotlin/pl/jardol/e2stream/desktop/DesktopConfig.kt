@@ -96,10 +96,20 @@ data class DesktopConfig(
     val lastEpgFetch: Long = 0,
     val epgPackIdentity: String = "",
     val epgPackCheckAt: Long = 0,
+    /** EIT „teraz/następne” ze strumienia dekodera (Enigma2: Include EIT in http streams). */
+    val eitStream: Boolean = false,
+    /** Podmiana EPG danymi z EIT — zapis w EPG kanału do następnej aktualizacji z dekodera. */
+    val eitReplace: Boolean = true,
+    /** Czy po wybraniu dekodera zapadła już decyzja o imporcie kopii ustawień (jak w Androidzie). */
+    val backupDecision: Boolean = false,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
-        val properties = Properties().apply {
+        Files.newOutputStream(path).use { toProperties().store(it, "E2Stream settings") }
+    }
+
+    /** Ustawienia jako właściwości (te same nazwy co w pliku). */
+    fun toProperties(): Properties = Properties().apply {
             setProperty("host", host)
             setProperty("httpPort", httpPort.toString())
             setProperty("streamPort", streamPort.toString())
@@ -176,8 +186,9 @@ data class DesktopConfig(
             setProperty("lastEpgFetch", lastEpgFetch.toString())
             setProperty("epgPackIdentity", epgPackIdentity)
             setProperty("epgPackCheckAt", epgPackCheckAt.toString())
-        }
-        Files.newOutputStream(path).use { properties.store(it, "E2Stream settings") }
+            setProperty("eitStream", eitStream.toString())
+            setProperty("eitReplace", eitReplace.toString())
+            setProperty("backupDecision", backupDecision.toString())
     }
 
     companion object {
@@ -218,6 +229,10 @@ data class DesktopConfig(
             if (!Files.exists(path)) return DesktopConfig()
             val properties = Properties()
             Files.newInputStream(path).use(properties::load)
+            return fromProperties(properties)
+        }
+
+        fun fromProperties(properties: Properties): DesktopConfig {
             val defaults = DesktopConfig()
             fun string(name: String, default: String) = properties.getProperty(name, default)
             fun int(name: String, default: Int, range: IntRange) =
@@ -306,6 +321,10 @@ data class DesktopConfig(
                 lastEpgFetch = properties.getProperty("lastEpgFetch")?.toLongOrNull() ?: 0,
                 epgPackIdentity = string("epgPackIdentity", ""),
                 epgPackCheckAt = properties.getProperty("epgPackCheckAt")?.toLongOrNull() ?: 0,
+                eitStream = bool("eitStream", defaults.eitStream),
+                eitReplace = bool("eitReplace", defaults.eitReplace),
+                // Starsze wersje: dekoder już skonfigurowany — bez pytania o kopię.
+                backupDecision = bool("backupDecision", properties.getProperty("host").orEmpty().isNotBlank()),
             )
         }
 

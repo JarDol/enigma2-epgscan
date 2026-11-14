@@ -134,7 +134,10 @@ Test releases are built by `.github/workflows/e2stream-windows.yml` on every pus
 one, raise `packageVersion` in `build.gradle.kts` and add a `## X.Y.Z` section to
 [`CHANGELOG.md`](CHANGELOG.md); it becomes the release notes of `e2stream-windows-X.Y.Z-test`.
 The build stops right away if that release already exists or the section is missing.
-Add `[skip ci]` to commits that should not produce a release.
+Put `[stable]` in the commit message (or run the workflow manually with *stable*) to publish a
+stable release `e2stream-windows-X.Y.Z` instead of a test one. Pushes to other `windows/*` branches
+only build and test (the installer is kept as a workflow artifact). Add `[skip ci]` to commits that
+should not produce a release.
 
 The app tries the EPG Scan client API first and falls back to OpenWebif. Decoder
 settings and key bindings are stored in `%APPDATA%/E2Stream/settings.properties`.

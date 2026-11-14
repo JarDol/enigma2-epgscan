@@ -285,11 +285,18 @@ internal fun syncAudioChoices(config: DesktopConfig, choices: AudioChoices, appV
     val client = DecoderClient(config)
     val deviceId = syncDeviceId()
     val state = client.syncState(deviceId)
-    val device = audioEntries(state.optJSONObject("device")?.optJSONObject("data"))
+    val stored = state.optJSONObject("device")
+    val device = audioEntries(stored?.optJSONObject("data"))
     val common = audioEntries(state.optJSONObject("common")?.optJSONObject("data"))
-    val plan = planAudioSync(choices.entries(config.host), device, common, choices.clearedAt(config.host))
+    val plan = if (config.audioSync) {
+        planAudioSync(choices.entries(config.host), device, common, choices.clearedAt(config.host))
+    } else AudioSyncPlan(emptyMap(), emptyMap())
     choices.putAll(config.host, plan.apply)
-    if (plan.push.isNotEmpty() || state.optJSONObject("device") == null) {
+    // Kopia ustawień w profilu (jak w Androidzie) — do przeniesienia na inny komputer albo z/do Androida.
+    val backup = SettingsBackup.backup(config)
+    val storedBackup = stored?.optJSONObject("device")?.optJSONObject("backup")
+    val backupChanged = storedBackup == null || !storedBackup.similar(backup)
+    if (plan.push.isNotEmpty() || stored == null || backupChanged) {
         val data = org.json.JSONObject()
         for ((key, entry) in plan.push) {
             data.put("audio_$key", org.json.JSONObject().put("v", entry.value).put("t", entry.time))
@@ -300,7 +307,9 @@ internal fun syncAudioChoices(config: DesktopConfig, choices: AudioChoices, appV
             .put("model", "Windows ${System.getProperty("os.version").orEmpty()}".trim())
             .put("app", "E2Stream Windows $appVersion")
             .put("updated", System.currentTimeMillis())
+            .put("backup", backup)
         client.syncPush(deviceId, org.json.JSONObject().put("device", org.json.JSONObject().put("device", info).put("data", data)))
     }
-    return "przyjęto ${plan.apply.size}, wysłano ${plan.push.size}"
+    val audio = if (config.audioSync) "przyjęto ${plan.apply.size}, wysłano ${plan.push.size}" else "ścieżki wyłączone"
+    return audio + if (backupChanged) ", kopia ustawień zapisana" else ""
 }

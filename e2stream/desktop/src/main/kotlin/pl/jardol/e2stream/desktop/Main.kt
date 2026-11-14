@@ -305,6 +305,11 @@ fun main() {
                 }
             }
 
+            /** Rutynowa informacja — tylko do logu, bez paska komunikatu pod obrazem. */
+            fun logInfo(message: String) {
+                scope.launch(Dispatchers.IO) { AppLog.i(message) }
+            }
+
             fun saveConfig(updated: DesktopConfig, message: String? = null) {
                 config = updated
                 runCatching { updated.save() }
@@ -405,7 +410,16 @@ fun main() {
                 return if (catalog == null || REC_BOUQUET in config.hiddenBouquets) tv else tv + RECORDINGS_BOUQUET
             }
 
+            // EIT ze strumienia: tunel do VLC (bez timeshiftu) i wersja danych do odświeżenia paska.
+            var streamTap by remember { mutableStateOf<StreamTap?>(null) }
+            var eitVersion by remember { mutableIntStateOf(0) }
+            var eitJob by remember { mutableStateOf<Job?>(null) }
+
             fun closeTimeshift() {
+                streamTap?.let { tap ->
+                    streamTap = null
+                    scope.launch(Dispatchers.IO) { runCatching { tap.close() } }
+                }
                 val ts = timeshift ?: return
                 timeshift = null
                 tsPendingTarget = null
@@ -472,6 +486,53 @@ fun main() {
                 return session
             }
 
+            /** Nowa wersja EIT teraz/następne; krótka zwłoka, bo „teraz” i „następne” przychodzą osobno. */
+            fun onStreamEit(channel: Channel, now: EitEvent?, next: EitEvent?) {
+                if (playingChannel?.ref != channel.ref) return
+                eitJob?.cancel()
+                eitJob = scope.launch {
+                    delay(800)
+                    if (playingChannel?.ref != channel.ref) return@launch
+                    val events = listOfNotNull(now, next)
+                    val persist = config.eitReplace
+                    val changes = withContext(Dispatchers.IO) { epgRepo.applyEit(channel.ref, channel.name, events, persist) }
+                    for ((old, new) in changes) {
+                        logInfo(
+                            "EIT: ${channel.name} – " + if (old == null) "nowa audycja ${new.title} ${EpgTime.range(new.begin, new.end)}"
+                            else "zmiana: ${old.title} ${EpgTime.range(old.begin, old.end)} → ${new.title} ${EpgTime.range(new.begin, new.end)}",
+                        )
+                    }
+                    now?.let { event ->
+                        nowEvents = nowEvents + (serviceKey(channel.ref) to NowEvent(event.title, event.begin, event.end))
+                    }
+                    eitVersion++
+                }
+            }
+
+            // Pasek kanału: bieżąca i następna audycja z EPG aplikacji (z EIT), jak w Androidzie.
+            var bannerNowNext by remember { mutableStateOf<Pair<NowEvent?, NowEvent?>>(null to null) }
+            LaunchedEffect(playingChannel?.ref, bannerGeneration, eitVersion, epgRefresh) {
+                val channel = playingChannel
+                if (channel == null) {
+                    bannerNowNext = null to null
+                    return@LaunchedEffect
+                }
+                val current = config
+                fun EpgEvent.asNow() = NowEvent(title, begin, end)
+                val local = withContext(Dispatchers.IO) { epgRepo.nowNext(channel.ref) }
+                bannerNowNext = local.first?.asNow() to local.second?.asNow()
+                if (local.first != null && local.second != null) return@LaunchedEffect
+                // Brak w zapisanym EPG — EPG kanału z dekodera (w tle).
+                val loaded = withContext(Dispatchers.IO) {
+                    runCatching { epgRepo.load(DecoderClient(current), channel.ref) }.getOrNull()
+                } ?: return@LaunchedEffect
+                if (playingChannel?.ref != channel.ref) return@LaunchedEffect
+                val nowS = System.currentTimeMillis() / 1000
+                val cur = loaded.firstOrNull { it.begin <= nowS && nowS < it.end }
+                val next = loaded.firstOrNull { it.begin >= (cur?.end ?: nowS) }
+                bannerNowNext = cur?.asNow() to next?.asNow()
+            }
+
             fun startChannel(channel: Channel) {
                 saveRecordingPosition()
                 playingRecording = null
@@ -479,21 +540,36 @@ fun main() {
                 try {
                     val session = sessionOrNew()
                     val url = DecoderClient(config).streamUrl(channel)
+                    val sid = serviceSid(channel.ref)
+                    val eit = if (!config.eitStream || sid <= 0) null else EitReader(sid) { now, next ->
+                        EventQueue.invokeLater { onStreamEit(channel, now, next) }
+                    }
                     val ts = if (config.tsMin <= 0) null else runCatching {
                         TimeshiftSession(
                             TimeshiftBuffer(TimeshiftBuffer.dirFor(config), config.tsMin),
                             url,
                             TimeshiftSession.basicAuth(config),
+                            eit?.let { reader -> reader::feed },
                         )
                     }.onFailure { AppLog.i("timeshift: nie udało się uruchomić (${it.message})") }.getOrNull()
                     timeshift = ts
-                    session.play(ts?.liveUrl() ?: url, config)
+                    val tap = if (ts != null || eit == null) null else runCatching {
+                        StreamTap(url, TimeshiftSession.basicAuth(config), eit::feed)
+                    }.onFailure { AppLog.i("EIT: tunel strumienia nie działa (${it.message})") }.getOrNull()
+                    streamTap = tap
+                    session.play(ts?.liveUrl() ?: tap?.url ?: url, config)
+                    if (eit != null) scope.launch {
+                        delay(15_000)
+                        if (playingChannel?.ref == channel.ref && eit.eitPackets == 0L) {
+                            logInfo("EIT: dekoder nie wysyła EIT w strumieniu (Enigma2: Include EIT in http streams wyłączone?)")
+                        }
+                    }
                     val current = playingChannel
                     if (current != null && current.ref != channel.ref) previousChannel = current
                     playingChannel = channel
                     if (selectedBouquet?.ref != REC_BOUQUET && channels.any { it.ref == channel.ref }) playList = channels
                     captureButton = null
-                    status = "Otwieranie strumienia: ${channel.name}"
+                    logInfo("Otwieranie strumienia: ${channel.name}")
                     saveConfig(
                         config.copy(
                             lastBouquetRef = selectedBouquet?.ref?.takeIf { it != REC_BOUQUET } ?: config.lastBouquetRef,
@@ -600,7 +676,7 @@ fun main() {
                     channels = withContext(Dispatchers.IO) {
                         DecoderClient(config).loadChannels(bouquet, currentCatalog.usesPlugin)
                     }
-                    status = "Kanały w bukiecie „${bouquet.name}”: ${channels.size}."
+                    logInfo("Kanały w bukiecie „${bouquet.name}”: ${channels.size}.")
                     true
                 } catch (e: CancellationException) {
                     throw e
@@ -635,7 +711,7 @@ fun main() {
                     if (result == null) return@launch
                     catalog = result
                     pluginStatus = if (result.usesPlugin) "jest — połączono przez EPG Scan" else "brak — połączono przez OpenWebif"
-                    status = "Połączono przez ${if (result.usesPlugin) "EPG Scan" else "OpenWebif"}; bukiety: ${result.bouquets.size}."
+                    logInfo("Połączono przez ${if (result.usesPlugin) "EPG Scan" else "OpenWebif"}; bukiety: ${result.bouquets.size}.")
                     val visible = visibleBouquets()
                     val startFromSettings = autoStart && !config.resumeLast && config.startChannelRef.isNotBlank()
                     val preferredBouquet = if (startFromSettings) config.startBouquetRef else config.lastBouquetRef
@@ -704,7 +780,7 @@ fun main() {
                     if (manual) status = "Synchronizacja ścieżek wymaga połączenia przez wtyczkę EPG Scan."
                     return
                 }
-                if (audioSyncBusy) return
+                if (audioSyncBusy || !config.backupDecision) return
                 audioSyncBusy = true
                 val current = config
                 scope.launch {
@@ -736,7 +812,13 @@ fun main() {
             }
 
             LaunchedEffect(catalog) {
-                if (catalog?.usesPlugin == true && config.audioSync) syncAudio(manual = false)
+                if (catalog?.usesPlugin == true) syncAudio(manual = false)
+            }
+            // Kopia ustawień na dekoderze po zmianach (z opóźnieniem — kilka zmian to jeden zapis).
+            val backupKey = remember(config) { runCatching { SettingsBackup.backup(config).toString() }.getOrDefault("") }
+            LaunchedEffect(backupKey) {
+                delay(30_000)
+                if (catalog?.usesPlugin == true) syncAudio(manual = false)
             }
 
             var epgLastAttempt by remember { mutableLongStateOf(0L) }
@@ -807,7 +889,89 @@ fun main() {
             }
 
             LaunchedEffect(Unit) {
-                if (config.host.isNotBlank()) connect(autoStart = true)
+                if (config.host.isNotBlank() && config.backupDecision) connect(autoStart = true)
+            }
+
+            // ---------- Kopia ustawień przy pierwszej konfiguracji (jak w Androidzie) ----------
+            var backupCheckRunning by remember { mutableStateOf(false) }
+            fun finishBackupDecision(updated: DesktopConfig = config, message: String? = null) {
+                saveConfig(updated.copy(backupDecision = true), message)
+                connect(autoStart = true)
+            }
+            fun showChoice(choice: SettingsChoice) {
+                if (!navigator.isOpen) navigator.open(SettingsScreen.DECODER)
+                navigator.openChoice(choice)
+            }
+            fun checkInitialBackup() {
+                if (backupCheckRunning || config.backupDecision || config.host.isBlank()) return
+                backupCheckRunning = true
+                val current = config
+                status = "Sprawdzam kopie ustawień na dekoderze…"
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            parseDeviceProfiles(DecoderClient(current).syncDevices())
+                                .filter { it.backup != null && it.file != "device-${syncDeviceId()}.json" }
+                        }
+                    }
+                    backupCheckRunning = false
+                    if (config.host != current.host || config.backupDecision) return@launch
+                    result.onFailure { error ->
+                        AppLog.i("kopia ustawień: błąd pobierania: ${error.message}")
+                        showChoice(
+                            SettingsChoice(
+                                "Kopia ustawień",
+                                listOf("Ponów", "Kontynuuj bez kopii"),
+                                0,
+                                body = "Nie udało się sprawdzić kopii ustawień (wymaga wtyczki EPG Scan): " +
+                                    "${error.message ?: "brak odpowiedzi"}.\n\nMożesz ponowić próbę lub kontynuować bez kopii.",
+                            ) { if (it == 0) checkInitialBackup() else finishBackupDecision() },
+                        )
+                    }.onSuccess { profiles ->
+                        if (profiles.isEmpty()) {
+                            AppLog.i("kopia ustawień: brak profili na dekoderze")
+                            finishBackupDecision()
+                            return@onSuccess
+                        }
+                        AppLog.i("kopia ustawień: znaleziono ${profiles.size} profili")
+                        val stamp = DateTimeFormatter.ofPattern("dd.MM HH:mm")
+                        val labels = profiles.map { profile ->
+                            val kind = if (profile.isWindows) "Windows" else "Android"
+                            val time = Instant.ofEpochMilli(profile.updated).atZone(java.time.ZoneId.systemDefault()).format(stamp)
+                            "${profile.name.ifBlank { profile.model }}  •  $kind, $time"
+                        }
+                        showChoice(
+                            SettingsChoice(
+                                "Znaleziono kopie ustawień",
+                                labels + "Nie importuj — ustawienia domyślne",
+                                0,
+                                body = "Na dekoderze są zapisane profile innych odbiorników. Możesz przenieść ustawienia z jednego z nich " +
+                                    "albo zacząć od domyślnych. Import obejmuje też PIN, hasła i token wtyczki; adres dekodera pozostaje bez zmian." +
+                                    " Z Androida przenoszone są ustawienia wspólne (porty, logowanie, czasy, wygląd, timeshift, EPG).",
+                            ) { index ->
+                                val profile = profiles.getOrNull(index)
+                                val backup = profile?.backup
+                                if (profile == null || backup == null) {
+                                    finishBackupDecision()
+                                } else {
+                                    val restored = SettingsBackup.restore(config, backup)
+                                    universalBindings = UniversalRemoteMap.parse(restored.config.universalRemoteBindings)
+                                    if (restored.config.windowMode != windowMode) setWindowMode(restored.config.windowMode)
+                                    AppLog.i("kopia ustawień: przywrócono ${restored.count} ustawień z ${profile.name}")
+                                    finishBackupDecision(
+                                        restored.config,
+                                        "Przeniesiono ${restored.count} ustawień z „${profile.name.ifBlank { profile.model }}”.",
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+            LaunchedEffect(config.host, config.pluginPort, config.backupDecision) {
+                if (config.host.isBlank() || config.backupDecision) return@LaunchedEffect
+                delay(500)
+                checkInitialBackup()
             }
 
             fun savePhysicalBinding(button: VirtualRemoteKey, id: String, label: String) {
@@ -1304,7 +1468,7 @@ fun main() {
                 }
                 if (inSettings) {
                     navigator.openChoice(
-                        SettingsChoice(title, tracks.map { if (it.id == current) "${it.name}  (odtwarzana)" else it.name }, selected, onSelect),
+                        SettingsChoice(title, tracks.map { if (it.id == current) "${it.name}  (odtwarzana)" else it.name }, selected, onSelect = onSelect),
                     )
                     return
                 }
@@ -1724,7 +1888,7 @@ fun main() {
             // ---------- Pozycje ustawień ----------
 
             fun choose(title: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-                navigator.openChoice(SettingsChoice(title, options, selected.coerceAtLeast(0), onSelect))
+                navigator.openChoice(SettingsChoice(title, options, selected.coerceAtLeast(0), onSelect = onSelect))
             }
 
             fun editText(
@@ -1783,7 +1947,7 @@ fun main() {
             fun discover() {
                 scope.launch {
                     busy = true
-                    status = "Szukam dekoderów w sieci lokalnej…"
+                    status = "Szukam dekoderów w sieci lokalnej (mDNS i adresy sieci)…"
                     val current = config
                     val found = try {
                         withContext(Dispatchers.IO) { ReceiverDiscovery.scan(current.httpPort, current.pluginPort) }
@@ -1795,8 +1959,55 @@ fun main() {
                     } else {
                         status = "Znalezione dekodery: ${found.size}."
                         choose("Znalezione dekodery", found.map { "${it.ip}   ${it.label}" }, found.indexOfFirst { it.ip == config.host }) {
-                            saveConfig(config.copy(host = found[it].ip), "Wybrano dekoder ${found[it].ip}.")
+                            val receiver = found[it]
+                            saveConfig(
+                                config.copy(
+                                    host = receiver.ip,
+                                    pluginPort = receiver.pluginPort ?: config.pluginPort,
+                                    httpPort = receiver.httpPort ?: config.httpPort,
+                                    streamPort = receiver.streamPort ?: config.streamPort,
+                                ),
+                                "Wybrano dekoder ${receiver.ip}${if (receiver.viaMdns) " (mDNS)" else ""}.",
+                            )
                         }
+                    }
+                }
+            }
+
+            /** EIT ze strumienia: włączenie tylko wtedy, gdy Enigma2 wysyła EIT (ustawienie odczytane przez EPG Scan). */
+            fun enableStreamEit() {
+                status = "Sprawdzam ustawienie EIT w Enigma2…"
+                val current = config
+                scope.launch {
+                    val state: Boolean? = withContext(Dispatchers.IO) {
+                        runCatching { DecoderClient(current).pluginInfo() }.getOrNull()
+                            ?.takeIf { it.has("stream_eit") && !it.isNull("stream_eit") }?.optBoolean("stream_eit")
+                    }
+                    fun on() = saveConfig(
+                        config.copy(eitStream = true),
+                        "EIT ze strumienia włączone — działa od następnego przełączenia kanału.",
+                    )
+                    when (state) {
+                        true -> on()
+                        false -> navigator.openChoice(
+                            SettingsChoice(
+                                "EIT w strumieniu wyłączone",
+                                listOf("OK"),
+                                0,
+                                body = "Enigma2 nie wysyła EIT w strumieniu, więc tej opcji nie można włączyć. Na dekoderze: " +
+                                    "Menu → Ustawienia → System → Dostosuj (poziom ustawień: ekspert) → „Include EIT in http streams” = tak. " +
+                                    "Potem włącz tę opcję tutaj.",
+                            ) {},
+                        )
+                        null -> navigator.openChoice(
+                            SettingsChoice(
+                                "Nie można sprawdzić",
+                                listOf("Włącz", "Anuluj"),
+                                1,
+                                body = "Nie da się odczytać ustawienia EIT w Enigma2 (potrzebna wtyczka EPG Scan 2.19.1 lub nowsza). " +
+                                    "Jeśli Enigma2 nie wysyła EIT w strumieniu, opcja niczego nie zmieni. Włączyć?",
+                            ) { if (it == 0) on() },
+                        )
                     }
                 }
             }
@@ -2025,9 +2236,9 @@ fun main() {
                         status = "Usunięto zapamiętane ścieżki dźwięku."
                     },
                     SettingItem.Toggle(
-                        "Ścieżki wspólne z Androidem",
+                        "Ścieżki dźwiękowe wspólne",
                         config.audioSync,
-                        "wybory ścieżek synchronizowane z dekoderem (wtyczka EPG Scan) — jak w E2Stream na TV",
+                        "wybory ścieżek synchronizowane z dekoderem (wtyczka EPG Scan)",
                     ) {
                         saveConfig(config.copy(audioSync = it))
                         if (it) syncAudio(manual = true)
@@ -2084,6 +2295,19 @@ fun main() {
                     SettingItem.Action("EPG na ile dni do przodu", "${config.epgDays}") {
                         editNumber("EPG na ile dni do przodu", config.epgDays, 1..14) { config.copy(epgDays = it) }
                     },
+                    SettingItem.Toggle(
+                        "EIT ze strumienia (teraz/następne)",
+                        config.eitStream,
+                        "aktualne „teraz/następne” z oglądanego kanału (Enigma2: Include EIT in http streams); " +
+                            "działa od następnego przełączenia kanału",
+                    ) { enabled -> if (enabled) enableStreamEit() else saveConfig(config.copy(eitStream = false)) },
+                ) + (if (!config.eitStream) emptyList() else listOf(
+                    SettingItem.Toggle(
+                        "Podmieniaj EPG po odebraniu EIT",
+                        config.eitReplace,
+                        "zmieniona audycja trafia do zapisanego EPG kanału (do następnego pobrania EPG)",
+                    ) { saveConfig(config.copy(eitReplace = it)) },
+                )) + listOf(
                     SettingItem.Action("Bieżąca audycja", epgError ?: "OpenWebif, odświeżana co minutę (${nowEvents.size} kanałów)") {
                         epgRefresh++
                         status = "Odświeżam bieżące EPG…"
@@ -2478,6 +2702,77 @@ fun main() {
                 return navigator.handleKey(key, settingsItems(navigator.screen))
             }
 
+            val editorNavKeys = remember {
+                setOf(
+                    VirtualRemoteKey.UP, VirtualRemoteKey.DOWN, VirtualRemoteKey.LEFT, VirtualRemoteKey.RIGHT,
+                    VirtualRemoteKey.OK, VirtualRemoteKey.VOICE, VirtualRemoteKey.DELETE,
+                    VirtualRemoteKey.CHANNEL_UP, VirtualRemoteKey.CHANNEL_DOWN,
+                )
+            }
+            /** Dyktowanie Windows (Win+H) do pola tekstowego, które ma fokus — mówi się do mikrofonu komputera. */
+            fun startDictation() {
+                scope.launch {
+                    delay(250)
+                    val ok = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val robot = java.awt.Robot()
+                            robot.keyPress(KeyEvent.VK_WINDOWS)
+                            robot.keyPress(KeyEvent.VK_H)
+                            robot.delay(40)
+                            robot.keyRelease(KeyEvent.VK_H)
+                            robot.keyRelease(KeyEvent.VK_WINDOWS)
+                        }.isSuccess
+                    }
+                    status = if (ok) "Dyktowanie Windows: mów teraz (mikrofon komputera); ponowne naciśnięcie kończy."
+                    else "Nie udało się uruchomić dyktowania Windows (Win+H)."
+                }
+            }
+            SideEffect { navigator.onVoice = ::startDictation }
+
+            // ---------- Numer kanału z cyfr pilota ----------
+            var numberBuffer by remember { mutableStateOf("") }
+            var numberJob by remember { mutableStateOf<Job?>(null) }
+            fun commitNumber() {
+                numberJob?.cancel()
+                numberJob = null
+                val number = numberBuffer.toIntOrNull()
+                numberBuffer = ""
+                if (number == null) return
+                val list = playList.ifEmpty { channels.filterNot { it.ref.startsWith(REC_PREFIX) } }
+                val target = list.firstOrNull { it.number == number }
+                if (target != null) startChannel(target) else status = "Brak kanału o numerze $number w bieżącym bukiecie."
+            }
+            fun digit(value: Int) {
+                if (numberBuffer.length >= 4) numberBuffer = ""
+                numberBuffer += value.toString()
+                numberJob?.cancel()
+                numberJob = scope.launch {
+                    delay(1800)
+                    commitNumber()
+                }
+            }
+
+            // ---------- Długie OK: Menu, a przy pasku kanału — timeshift (jak w Androidzie) ----------
+            fun openTimeshiftControls() {
+                if (timeshift != null) {
+                    bannerVisible = false
+                    showPlaybackBar()
+                } else {
+                    quickPick = QuickPick(
+                        "Timeshift",
+                        listOf("Ustawienia timeshiftu", "Zamknij"),
+                        0,
+                        body = "Timeshift jest wyłączony. Włącz go w Ustawienia → Odtwarzanie i obraz → Timeshift " +
+                            "(bufor na dysku komputera).",
+                    ) { if (it == 0) openSettings(SettingsScreen.PLAYBACK) }
+                }
+            }
+            fun longOk() {
+                remoteDiagnostics.log { "key=OK long banner=$bannerVisible" }
+                if (playingRecording == null && playingChannel != null && bannerVisible) openTimeshiftControls()
+                else openMenu()
+            }
+
             fun handleVirtualKey(key: VirtualRemoteKey): Boolean {
                 if (showExitConfirmation) {
                     handleExitConfirmation(key)
@@ -2508,6 +2803,17 @@ fun main() {
                     else -> Unit
                 }
                 if (navigator.isVisible) return handleSettingsKey(key)
+                if (numberBuffer.isNotEmpty() && !showMenu && quickPick == null && !showChannelList) {
+                    when (key) {
+                        VirtualRemoteKey.OK -> { commitNumber(); return true }
+                        VirtualRemoteKey.BACK -> {
+                            numberJob?.cancel()
+                            numberBuffer = ""
+                            return true
+                        }
+                        else -> Unit
+                    }
+                }
                 if (showMenu) {
                     val result = navigation.handleMenuKey(key)
                     result.activated?.let(::runMenuItem)
@@ -2653,6 +2959,11 @@ fun main() {
                     VirtualRemoteKey.INFO -> runNavAction(NavAction.EPG_EVENT)
                     VirtualRemoteKey.GUIDE, VirtualRemoteKey.TV_DATA -> runNavAction(NavAction.MULTI_EPG)
                     VirtualRemoteKey.SEARCH -> runNavAction(NavAction.EPG_SEARCH)
+                    VirtualRemoteKey.VOICE -> {
+                        openEpgSearch()
+                        startDictation()
+                    }
+                    VirtualRemoteKey.DELETE -> Unit
                     VirtualRemoteKey.AUDIO -> runNavAction(NavAction.AUDIO)
                     VirtualRemoteKey.LAST_CHANNEL -> recall()
                     VirtualRemoteKey.REWIND, VirtualRemoteKey.FAST_FORWARD, VirtualRemoteKey.STOP ->
@@ -2660,8 +2971,46 @@ fun main() {
                     VirtualRemoteKey.DIGIT_0, VirtualRemoteKey.DIGIT_1, VirtualRemoteKey.DIGIT_2,
                     VirtualRemoteKey.DIGIT_3, VirtualRemoteKey.DIGIT_4, VirtualRemoteKey.DIGIT_5,
                     VirtualRemoteKey.DIGIT_6, VirtualRemoteKey.DIGIT_7, VirtualRemoteKey.DIGIT_8,
-                    VirtualRemoteKey.DIGIT_9 -> unavailable("Wybór kanału numerem")
+                    VirtualRemoteKey.DIGIT_9 -> if (playingRecording == null) digit(key.ordinal - VirtualRemoteKey.DIGIT_0.ordinal)
                     else -> return false
+                }
+                return true
+            }
+
+            val okPress = remember { OkPress() }
+            var okLongJob by remember { mutableStateOf<Job?>(null) }
+            var okReleaseJob by remember { mutableStateOf<Job?>(null) }
+            /** Długie OK ma znaczenie tylko podczas oglądania, bez otwartych okien. */
+            fun okHoldContext(): Boolean =
+                !showExitConfirmation && captureButton == null && !navigator.isVisible && !showMenu &&
+                    quickPick == null && !showChannelList && numberBuffer.isEmpty()
+            fun okReleased() {
+                okReleaseJob?.cancel()
+                okLongJob?.cancel()
+                if (okPress.up()) {
+                    lastVirtualKey = null
+                    handleVirtualKey(VirtualRemoteKey.OK)
+                }
+            }
+            /**
+             * OK wciśnięte: false = obsłużyć zwykle (od razu). [autoReleaseMs] > 0 dla źródeł bez zdarzenia puszczenia
+             * (WinLIRC podaje tylko powtórzenia) — brak kolejnego powtórzenia w tym czasie oznacza puszczenie.
+             */
+            fun okPressed(autoReleaseMs: Long = 0): Boolean {
+                if (!okPress.isDown && !okHoldContext()) return false
+                if (okPress.down(System.currentTimeMillis())) {
+                    okLongJob?.cancel()
+                    okLongJob = scope.launch {
+                        delay(OK_LONG_MS)
+                        if (okPress.longDue(System.currentTimeMillis()) && okHoldContext()) longOk()
+                    }
+                }
+                if (autoReleaseMs > 0) {
+                    okReleaseJob?.cancel()
+                    okReleaseJob = scope.launch {
+                        delay(autoReleaseMs)
+                        okReleased()
+                    }
                 }
                 return true
             }
@@ -2692,6 +3041,15 @@ fun main() {
                 RemoteAction.MENU -> { openMenu(); true }
                 RemoteAction.SETTINGS -> { openSettings(); true }
                 RemoteAction.RECALL -> { recall(); true }
+                RemoteAction.EPG_EVENT -> { runNavAction(NavAction.EPG_EVENT); true }
+                RemoteAction.EPG_CHANNEL -> { runNavAction(NavAction.EPG_CHANNEL); true }
+                RemoteAction.MULTI_EPG -> { runNavAction(NavAction.MULTI_EPG); true }
+                RemoteAction.EPG_SEARCH -> { runNavAction(NavAction.EPG_SEARCH); true }
+                RemoteAction.AUDIO -> { runNavAction(NavAction.AUDIO); true }
+                RemoteAction.STATS -> {
+                    saveConfig(config.copy(showStats = !config.showStats))
+                    true
+                }
                 RemoteAction.NONE, null -> false
                 else -> {
                     status = "${bindings[keyCode]?.label} nie jest jeszcze dostępne w wersji Windows."
@@ -2714,6 +3072,12 @@ fun main() {
             DisposableEffect(desktopWindow) {
                 val dispatcher = java.awt.KeyEventDispatcher { event ->
                     val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+                    if (event.id == KeyEvent.KEY_RELEASED && okPress.isDown &&
+                        UniversalRemoteMap.findKey(universalBindings, UniversalRemoteMap.keyId(event.keyCode)) == VirtualRemoteKey.OK
+                    ) {
+                        okReleased()
+                        return@KeyEventDispatcher true
+                    }
                     if (!belongsToApplication(focusedWindow, desktopWindow) ||
                         !isForegroundApplication() ||
                         event.id != KeyEvent.KEY_PRESSED ||
@@ -2739,8 +3103,8 @@ fun main() {
                             savePhysicalBinding(button, physicalId, RemoteKeyMap.keyName(event.keyCode))
                             true
                         }
-                        // Edytor tekstu sam obsługuje wpisywane znaki, Enter i Esc.
-                        navigator.editor != null -> false
+                        // Edytor: strzałki i OK sterują klawiaturą ekranową, resztę znaków wpisuje pole tekstowe.
+                        navigator.editor != null -> virtualKey in editorNavKeys && handleVirtualKey(virtualKey!!)
                         event.keyCode == KeyEvent.VK_F11 -> {
                             toggleFullscreen()
                             true
@@ -2750,6 +3114,7 @@ fun main() {
                             if (virtualKey == VirtualRemoteKey.BACK) handleVirtualKey(VirtualRemoteKey.BACK)
                             true
                         }
+                        virtualKey == VirtualRemoteKey.OK && okPressed() -> true
                         else -> {
                             if (virtualKey != null) remoteDiagnostics.log { "source=keyboard key=$virtualKey" }
                             val handled = virtualKey != null && handleVirtualKey(virtualKey)
@@ -2795,10 +3160,17 @@ fun main() {
                                     if (isRemoteTestOpen() && navigator.choice == null) {
                                         recordTest("Pilot HID", UniversalRemoteMap.label(physicalId), key)
                                         if (key == VirtualRemoteKey.BACK) handleVirtualKey(key)
-                                    } else {
+                                    } else if (key != VirtualRemoteKey.OK || !okPressed()) {
                                         key?.let(::handleVirtualKey)
                                     }
                                 }
+                            }
+                        },
+                        onRelease = { physicalId ->
+                            EventQueue.invokeLater {
+                                if (okPress.isDown &&
+                                    UniversalRemoteMap.findKey(universalBindings, physicalId) == VirtualRemoteKey.OK
+                                ) okReleased()
                             }
                         },
                         onError = { message ->
@@ -2883,6 +3255,7 @@ fun main() {
                                     if (key == VirtualRemoteKey.BACK) handleVirtualKey(key)
                                 }
                                 key == null -> Unit
+                                key == VirtualRemoteKey.OK && okPressed(autoReleaseMs = 350) -> Unit
                                 event.repeat == 0 || (event.repeat >= 3 && key in repeatable) -> handleVirtualKey(key)
                             }
                         }
@@ -2915,7 +3288,10 @@ fun main() {
                     PlayerPage(
                         channel = channel,
                         session = session,
-                        event = channel?.let { nowEvents[serviceKey(it.ref)] },
+                        event = bannerNowNext.first ?: channel?.let { nowEvents[serviceKey(it.ref)] },
+                        next = bannerNowNext.second,
+                        owner = desktopWindow,
+                        barsHidden = navigator.isVisible,
                         status = epgError ?: status,
                         bannerVisible = bannerVisible,
                         bannerFontScale = config.uiBannerFont / 100f,

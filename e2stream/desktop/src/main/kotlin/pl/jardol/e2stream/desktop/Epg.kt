@@ -77,11 +77,50 @@ internal class EpgStore(private val dir: File = DesktopConfig.appDataDir().resol
 /** Dostęp do EPG: pamięć (10 min) → plik lokalny (do 26 h) → dekoder. */
 internal class EpgRepository(val store: EpgStore = EpgStore()) {
     private val memory = ConcurrentHashMap<String, Pair<Long, List<EpgEvent>>>()
+    /** Audycje z EIT strumienia (teraz/następne) — ważniejsze od EPG z dekodera, do zamknięcia aplikacji. */
+    private val eitOverlay = ConcurrentHashMap<String, List<EpgEvent>>()
 
     fun invalidate() = memory.clear()
 
+    private fun withEit(ref: String, events: List<EpgEvent>): List<EpgEvent> {
+        val eit = eitOverlay[serviceKey(ref)] ?: return events
+        return EitMerge.merge(events, eit, { it.begin }, { it.end }, { it.id })
+    }
+
+    /** Bieżąca i następna audycja z danych lokalnych (z EIT), bez sieci. */
+    fun nowNext(ref: String, now: Long = System.currentTimeMillis() / 1000): Pair<EpgEvent?, EpgEvent?> {
+        val events = cached(ref) ?: eitOverlay[serviceKey(ref)] ?: return null to null
+        val current = events.firstOrNull { it.begin <= now && now < it.end }
+        val next = events.firstOrNull { it.begin >= (current?.end ?: now) }
+        return current to next
+    }
+
+    /**
+     * EIT teraz/następne kanału: nakładka na EPG, a przy [persist] także zapis w EPG kanału (do następnej
+     * aktualizacji z dekodera). Zwraca różnice względem dotychczasowego EPG (stara audycja albo null, nowa).
+     */
+    fun applyEit(ref: String, name: String, events: List<EitEvent>, persist: Boolean): List<Pair<EpgEvent?, EpgEvent>> {
+        if (events.isEmpty()) return emptyList()
+        val key = serviceKey(ref)
+        val eit = events.map { EpgEvent(it.id, it.begin, it.duration, it.title, it.shortDesc, it.longDesc, ref, name) }
+        val base = rawCached(ref) ?: store.read(ref)?.second ?: emptyList()
+        val diff = EitMerge.changes(base, eit, { it.begin }, { it.end }, { it.title })
+        eitOverlay[key] = eit
+        if (persist && diff.isNotEmpty()) {
+            runCatching {
+                val at = store.read(ref)?.first ?: System.currentTimeMillis()
+                val merged = EitMerge.merge(base, eit, { it.begin }, { it.end }, { it.id })
+                store.write(ref, merged, at)
+                memory[key] = System.currentTimeMillis() to merged
+            }.onFailure { AppLog.i("EIT: zapis EPG kanału $name: ${it.message}") }
+        }
+        return diff
+    }
+
     /** Tylko dane lokalne, bez sieci. */
-    fun cached(ref: String): List<EpgEvent>? {
+    fun cached(ref: String): List<EpgEvent>? = rawCached(ref)?.let { withEit(ref, it) }
+
+    private fun rawCached(ref: String): List<EpgEvent>? {
         val key = serviceKey(ref)
         val nowMs = System.currentTimeMillis()
         memory[key]?.takeIf { nowMs - it.first < MEMORY_MS }?.let { return it.second }
@@ -99,10 +138,12 @@ internal class EpgRepository(val store: EpgStore = EpgStore()) {
             val events = client.epgService(ref)
             if (events.isNotEmpty()) store.write(ref, events)
             memory[key] = System.currentTimeMillis() to events
-            events
+            withEit(ref, events)
         } catch (e: Exception) {
             // Dekoder niedostępny — lepsze starsze dane niż żadne.
-            store.read(ref)?.second?.takeIf { it.isNotEmpty() } ?: throw e
+            store.read(ref)?.second?.takeIf { it.isNotEmpty() }?.let { withEit(ref, it) }
+                ?: eitOverlay[key]
+                ?: throw e
         }
     }
 
