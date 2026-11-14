@@ -55,6 +55,7 @@
     <string name="player_ts_setup_disk_unavailable">Wybrany dysk timeshiftu jest niedostępny. Podłącz go lub sprawdź miejsce bufora w ustawieniach. Jeśli zezwolono na pamięć urządzenia, może ona zostać użyta zamiast dysku.</string>
     <string name="player_ts_live_buffer">▶  Na żywo  •  Timeshift (w buforze %1$s)</string>
     <string name="player_ts_live_empty">▶  Na żywo  •  Timeshift (bufor rusza po pauzie)</string>
+    <string name="player_ts_shifted_buffer">%1$s  Timeshift  −%2$s  •  w buforze %3$s</string>
     <string name="player_live_lower">na żywo</string>
     <string name="player_ts_controls">◀ ▶ ±%1$d s   ▲ ▼ ±%2$d min   OK pauza / start   ■ na żywo   WSTECZ zamknij pasek</string>
     <string name="player_ts_start">Początek bufora (%1$s)</string>

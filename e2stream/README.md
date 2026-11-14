@@ -113,6 +113,7 @@ Strzałki przewijają tylko na widocznym pasku timeshiftu, również po dotarciu
 na pasku kanału i po ukryciu paska działają jak podczas zwykłego oglądania.
 Pasek i jego skala pokazują zakres dostępny do przewijania: od początku z zachowanym 10-sekundowym
 marginesem bezpieczeństwa do transmisji na żywo. Przy cofaniu wskazanie nie wykracza poza ten początek.
+Podczas odtwarzania z bufora pasek pokazuje zarówno przesunięcie względem transmisji, jak i dostępny czas bufora.
 W ustawieniach Ogólne dostępne są osobne mapowania OK i strzałek dla ekranu bez paska oraz z paskiem kanału.
 Domyślnie strzałki zachowują dotychczasowe przypisania, również zmienione w starszych wersjach,
 a OK zachowuje dotychczasowe działanie. Mapowanie nie zmienia działania długiego OK ani paska timeshiftu;

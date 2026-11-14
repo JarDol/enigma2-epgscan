@@ -308,23 +308,28 @@ class PlayerRecoveryTest {
         set(activity, "tsMode", true)
         set(activity, "tsShifted", true)
         set(activity, "tsBaseWall", oldest + 15_000)
+        call(activity, "tsUpdateBanner")
+        assertEquals(activity.getString(R.string.player_ts_shifted_buffer, "⏸", "0:28", "0:33"),
+            get<TextView>(activity, "bannerNow").text.toString())
 
         val seek = PlayerActivity::class.java.getDeclaredMethod("tsSeek", java.lang.Long.TYPE)
         seek.isAccessible = true
         repeat(3) { seek.invoke(activity, -5_000L) }
 
         assertEquals(0, get<ProgressBar>(activity, "bannerProgress").progress)
-        assertEquals("−0:33", get<TextView>(activity, "bannerStart").text.toString())
-        assertTrue(get<TextView>(activity, "bannerNow").text.toString().endsWith("−0:33"))
+        assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
+        assertEquals(activity.getString(R.string.player_ts_shifted_buffer, "⏸", "0:33", "0:33"),
+            get<TextView>(activity, "bannerNow").text.toString())
         call(activity, "tsCtlOpen")
         assertEquals(1000, get<ProgressBar>(activity, "bannerProgress").progress)
-        assertEquals("−0:33", get<TextView>(activity, "bannerStart").text.toString())
+        assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
         assertTrue(get<TextView>(activity, "bannerNow").text.toString().contains("0:33"))
         get<Runnable>(activity, "tsApply").run()
         assertEquals(activity.getString(R.string.player_ts_start, "0:33"), get<TextView>(activity, "message").text.toString())
         assertEquals(0, get<ProgressBar>(activity, "bannerProgress").progress)
-        assertEquals("−0:33", get<TextView>(activity, "bannerStart").text.toString())
-        assertTrue(get<TextView>(activity, "bannerNow").text.toString().endsWith("−0:33"))
+        assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
+        assertEquals(activity.getString(R.string.player_ts_shifted_buffer, "⏸", "0:33", "0:33"),
+            get<TextView>(activity, "bannerNow").text.toString())
         controller.pause().stop().destroy()
     }
 }

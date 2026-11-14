@@ -2171,7 +2171,7 @@ class PlayerActivity : Activity() {
         val span = buffered?.let { timeshiftAvailableSpan(it.oldestWall, SystemClock.elapsedRealtime()) } ?: 0L
         bannerClock.text = hm.format(Date())
         bannerNow.text = if (buffered != null) getString(R.string.player_ts_live_buffer, fmtMs(span)) else getString(R.string.player_ts_live_empty)
-        bannerStart.text = if (span > 0) "−${fmtMs(span)}" else ""
+        bannerStart.text = ""
         bannerEnd.text = getString(R.string.player_live_lower)
         bannerProgress.progress = 1000
         bannerNext.text = getString(R.string.player_ts_controls, prefs.tsStepSec, prefs.tsStepMin)
@@ -2267,8 +2267,9 @@ class PlayerActivity : Activity() {
         val span = timeshiftAvailableSpan(oldest, now)
         val paused = player?.playWhenReady == false
         bannerClock.text = hm.format(Date(System.currentTimeMillis() - behind))
-        bannerNow.text = (if (paused) "⏸  Timeshift" else "▶  Timeshift") + "  −${fmtMs(behind)}"
-        bannerStart.text = if (span > 0) "−${fmtMs(span)}" else ""
+        bannerNow.text = getString(R.string.player_ts_shifted_buffer,
+            if (paused) "⏸" else "▶", fmtMs(behind), fmtMs(span))
+        bannerStart.text = ""
         bannerEnd.text = getString(R.string.player_live_lower)
         bannerProgress.progress = timeshiftBufferProgress(shown, oldest, now)
         bannerNext.text = getString(R.string.player_ts_controls, prefs.tsStepSec, prefs.tsStepMin)
