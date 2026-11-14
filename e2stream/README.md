@@ -142,6 +142,9 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
   wyjścia wideo VLC nie jest dowodem wyświetlenia klatki,
 * zapas w trakcie oglądania (domyślnie 4000 ms): po starcie odtwarzanie jest lekko zwalniane (0,95×, wysokość dźwięku bez zmian), aż bufor dojdzie do zapasu; przerwy w paczkach z dekodera nie powodują wtedy czkawki. Przy tunelowaniu zwolnienia nie ma (zmiana prędkości psuła płynność obrazu) – wtedy o płynności decyduje bufor startowy (na MiBox 4 zalecane 2500 ms), a zapas buduje się po pierwszym niedoborze,
 * odświeżanie ekranu (bez zmian / 50 Hz / automatycznie),
+* pasek komunikatów odtwarzacza: włączony domyślnie, czas wyświetlania 1–10 s (domyślnie 3 s).
+  Wyłączenie ukrywa także ostrzeżenia na tym pasku; okna dialogowe działają niezależnie.
+  Wielkość tekstu paska komunikatów jest zgodna z ustawieniem czcionki paska kanału,
 * preferowany język dźwięku i AC3,
 * log przez FTP: użytkownik (root), hasło, katalog na dekoderze.
 

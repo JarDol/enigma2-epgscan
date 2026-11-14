@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="setting_message_bar">Pasek komunikatu</string>
+    <string name="setting_message_bar_duration">Czas zamknięcia paska komunikatu (s)</string>
     <string name="setting_receiver" formatted="false">Dekoder</string>
     <string name="setting_receiver_ip_address" formatted="false">Adres IP dekodera</string>
     <string name="setting_search_for_receivers_on_the_network" formatted="false">Szukaj dekoderów w sieci</string>

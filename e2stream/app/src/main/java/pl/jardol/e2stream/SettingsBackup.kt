@@ -29,6 +29,7 @@ internal object SettingsBackup {
         "startChannel" to p.startChannel, "startChannelName" to p.startChannelName,
         "wakeForZap" to p.wakeForZap, "zapHistoryDays" to p.zapHistoryDays,
         "invertUpDown" to p.invertUpDown, "bannerSec" to p.bannerSec, "tsBannerSec" to p.tsBannerSec,
+        "messageBar" to p.messageBar, "messageBarSec" to p.messageBarSec,
         "channelListSec" to p.channelListSec, "epgEventSec" to p.actionDialogSec,
         "confirmDialogSec" to p.confirmDialogSec, "epgChannelSec" to p.epgChannelSec,
         "epgMultiSec" to p.epgMultiSec, "infoDialogSec" to p.infoDialogSec,

@@ -5,7 +5,9 @@ import android.content.Context
 import android.net.Uri
 import android.os.Looper
 import android.os.SystemClock
+import android.view.View
 import android.widget.Button
+import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.media3.common.TrackSelectionParameters
@@ -37,6 +39,75 @@ import kotlin.concurrent.thread
 @Config(sdk = [28], application = Application::class)
 @LooperMode(LooperMode.Mode.PAUSED)
 class PlayerRecoveryTest {
+    @Test
+    fun messageBarDurationSettingFollowsToggle() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("e2stream", Context.MODE_PRIVATE).edit().clear().commit()
+        val prefs = Prefs(context)
+        prefs.channelSync = false
+        prefs.messageBarSec = 7
+        SyncManager.init(context)
+        val controller = Robolectric.buildActivity(SettingsActivity::class.java).setup()
+        val activity = controller.get()
+        SettingsActivity::class.java.getDeclaredMethod("openSection", String::class.java)
+            .apply { isAccessible = true }.invoke(activity, "Ogólne")
+        val list = activity.findViewById<ListView>(R.id.settingsList)
+        fun indexOf(label: String): Int = (0 until list.adapter.count).firstOrNull { index ->
+            val row = list.adapter.getView(index, null, list)
+            val text = if (row is TextView) row else row.findViewById<TextView>(R.id.label)
+            text.text.toString() == label
+        } ?: -1
+        val toggle = indexOf(activity.getString(R.string.setting_message_bar))
+        val duration = activity.getString(R.string.setting_message_bar_duration)
+        assertTrue(toggle >= 0)
+        assertEquals(toggle + 1, indexOf(duration))
+        list.performItemClick(list.adapter.getView(toggle, null, list), toggle, list.adapter.getItemId(toggle))
+        assertFalse(prefs.messageBar)
+        assertEquals(-1, indexOf(duration))
+        list.performItemClick(list.adapter.getView(toggle, null, list), toggle, list.adapter.getItemId(toggle))
+        assertTrue(prefs.messageBar)
+        assertEquals(toggle + 1, indexOf(duration))
+        assertEquals(7, prefs.messageBarSec)
+        controller.pause().stop().destroy()
+    }
+
+    @Test
+    fun messageBarUsesConfiguredDurationAndCanBeDisabled() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("e2stream", Context.MODE_PRIVATE).edit().clear().commit()
+        val prefs = Prefs(context)
+        assertTrue(prefs.messageBar)
+        assertEquals(3, prefs.messageBarSec)
+        prefs.playbackAttempt = "unfinished / VLC"
+        prefs.channelSync = false
+        prefs.logFtp = false
+        SyncManager.init(context)
+        val controller = Robolectric.buildActivity(PlayerActivity::class.java).setup()
+        val activity = controller.get()
+        ShadowDialog.getLatestDialog().dismiss()
+        val show = PlayerActivity::class.java.getDeclaredMethod("showMessage", String::class.java)
+        show.isAccessible = true
+        val message = get<TextView>(activity, "message")
+        show.invoke(activity, "Test")
+        assertEquals(View.VISIBLE, message.visibility)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(2999))
+        assertEquals(View.VISIBLE, message.visibility)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
+        assertEquals(View.GONE, message.visibility)
+        prefs.messageBarSec = 10
+        show.invoke(activity, "Test")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(9))
+        assertEquals(View.VISIBLE, message.visibility)
+        prefs.messageBar = false
+        show.invoke(activity, "Hidden")
+        assertEquals(View.GONE, message.visibility)
+        prefs.messageBarSec = 0
+        assertEquals(1, prefs.messageBarSec)
+        prefs.messageBarSec = 11
+        assertEquals(10, prefs.messageBarSec)
+        controller.pause().stop().destroy()
+    }
+
     private fun set(activity: PlayerActivity, name: String, value: Any?) {
         PlayerActivity::class.java.getDeclaredField(name).apply { isAccessible = true }.set(activity, value)
     }

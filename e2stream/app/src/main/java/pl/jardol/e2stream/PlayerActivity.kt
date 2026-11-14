@@ -63,17 +63,17 @@ class PlayerActivity : Activity() {
     }
 
     private fun showDecoderTimers() {
-        showMessage(getString(R.string.message_loading_timers_from_receiver), 3000)
+        showMessage(getString(R.string.message_loading_timers_from_receiver))
         io.execute {
             val result = try { api.decoderTimers() to null } catch (e: Exception) { null to (e.message ?: e.toString()) }
             runOnUiThread {
                 val timers = result.first
                 if (timers == null) {
-                    showMessage(getString(R.string.player_timers_failed, result.second), 8000)
+                    showMessage(getString(R.string.player_timers_failed, result.second))
                     return@runOnUiThread
                 }
                 if (timers.isEmpty()) {
-                    showMessage(getString(R.string.message_no_timers_on_the_receiver), 5000)
+                    showMessage(getString(R.string.message_no_timers_on_the_receiver))
                     return@runOnUiThread
                 }
                 val now = System.currentTimeMillis() / 1000
@@ -254,7 +254,7 @@ class PlayerActivity : Activity() {
             override fun currentBouquet(): Bouquet? = bouquets.getOrNull(playBouquet)?.takeIf { it.ref != REC_REF }
             override fun zapTo(ref: String, onResult: ((Boolean, String) -> Unit)?) =
                 this@PlayerActivity.zapTo(ref, onResult = onResult)
-            override fun message(t: String) = showMessage(t, 4000)
+            override fun message(t: String) = showMessage(t)
         })
         AppLog.i("=== Start E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} | ${prefs.displayName} | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) | ekran: ${displayInfo()}")
         if (wakeTimerKey != null || wakeTestId != null) {
@@ -435,6 +435,7 @@ class PlayerActivity : Activity() {
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
         keyMap = KeyMap.load(prefs)
         UiScale.apply(banner, UiScale.pct(prefs.uiBannerFont), UiScale.pct(prefs.uiBannerIcon))
+        UiScale.apply(message, UiScale.pct(prefs.uiBannerFont))
         ui.removeCallbacks(epgTick)
         ui.postDelayed(epgTick, 15_000)
         ui.removeCallbacks(zapTick)
@@ -482,7 +483,7 @@ class PlayerActivity : Activity() {
         backupCheckRunning = true
         val generation = ++backupCheckGeneration
         val host = prefs.host
-        showMessage(getString(R.string.message_checking_settings_backups_on_receiver), 10_000)
+        showMessage(getString(R.string.message_checking_settings_backups_on_receiver))
         io.execute {
             val result = runCatching {
                 if (!PluginApi.check(prefs)) null
@@ -827,7 +828,7 @@ class PlayerActivity : Activity() {
                 watchdog?.paused = true
                 ui.removeCallbacks(restartRunnable); restartPending = false
                 AppLog.i("kanał kodowany: dekoder nie rozkodowuje (${(ratio * 100).toInt()}% pakietów kodowanych) — bez restartów")
-                showMessage(getString(R.string.message_encrypted_channel_receiver_is_not_decrypting_it_card_so), 15_000)
+                showMessage(getString(R.string.message_encrypted_channel_receiver_is_not_decrypting_it_card_so))
             }
         } else if (ratio < 0.2) {
             scrHits = 0
@@ -1242,7 +1243,7 @@ class PlayerActivity : Activity() {
                         player?.stop()
                     }
                     if (prefs.blockOnDisconnect) showConnectionDialog(false)
-                    else if (!connectionDialogShown()) showMessage(getString(R.string.player_unreachable_retry, prefs.host), 4000)
+                    else if (!connectionDialogShown()) showMessage(getString(R.string.player_unreachable_retry, prefs.host))
                     return@runOnUiThread
                 }
                 val wasUnavailable = decoderUnavailable
@@ -1253,7 +1254,7 @@ class PlayerActivity : Activity() {
                 val lastData = analyzer?.lastFeedAt?.takeIf { it > 0 } ?: streamStartAt
                 if (wasUnavailable || availableAt - lastData >= 8000) {
                     if (vlcFailureDialog?.isShowing == true && !wasUnavailable) return@runOnUiThread
-                    if (!wasUnavailable) showMessage(getString(R.string.message_receiver_responds_but_no_stream_is_arriving_reconnectin), 6000)
+                    if (!wasUnavailable) showMessage(getString(R.string.message_receiver_responds_but_no_stream_is_arriving_reconnectin))
                     if (tsMode) restartTimeshiftRecorder(url, generation) else {
                         failStreak = 0
                         restartPending = false
@@ -1403,7 +1404,7 @@ class PlayerActivity : Activity() {
     private fun loadBouquets() {
         if (safeMode) return
         val generation = ++startupProbeGeneration
-        showMessage(getString(R.string.player_connecting, prefs.host), 10_000)
+        showMessage(getString(R.string.player_connecting, prefs.host))
         io.execute {
             try {
                 while (generation == startupProbeGeneration && !isFinishing) {
@@ -1439,7 +1440,7 @@ class PlayerActivity : Activity() {
                 runOnUiThread {
                     bouquets = withRec(bq)
                     if (bq.isEmpty()) {
-                        showMessage(getString(R.string.message_no_bouquets_on_receiver), 8000)
+                        showMessage(getString(R.string.message_no_bouquets_on_receiver))
                         return@runOnUiThread
                     }
                     message.visibility = View.GONE
@@ -1465,7 +1466,7 @@ class PlayerActivity : Activity() {
                 if (generation != startupProbeGeneration || isFinishing) return@execute
                 AppLog.i("błąd połączenia z OpenWebif: $e")
                 runOnUiThread {
-                    showMessage(getString(R.string.player_load_failed, e.message), 15_000)
+                    showMessage(getString(R.string.player_load_failed, e.message))
                 }
             }
         }
@@ -1646,13 +1647,11 @@ class PlayerActivity : Activity() {
                         AppLog.i("bukiet: nie udało się pobrać kanałów ${bq.name}: $error")
                         showMessage(
                             if (bq.ref == REC_REF) getString(R.string.player_recording_error, error.message ?: error.toString())
-                            else getString(R.string.player_bouquet_failed, bq.name, error.message),
-                            8000,
-                        )
+                            else getString(R.string.player_bouquet_failed, bq.name, error.message))
                         return@runOnUiThread
                     }
                     panelList = ch.orEmpty()
-                    if (panelList.isEmpty() && bq.ref != REC_REF) showMessage(getString(R.string.player_bouquet_empty, bq.name), 5000)
+                    if (panelList.isEmpty() && bq.ref != REC_REF) showMessage(getString(R.string.player_bouquet_empty, bq.name))
                     // nagrania: zaznaczone ostatnio oglądane
                     val sel = if (bq.ref == REC_REF) panelList.indexOfFirst { it.rec?.path == recLastPath }.coerceAtLeast(0) else 0
                     refreshPanel(sel)
@@ -1826,7 +1825,7 @@ class PlayerActivity : Activity() {
         }
         hidePanel()
         zapTo(t.ref, forceTune)
-        showMessage(getString(R.string.player_schedule_message, t.channel, t.title), 4000)
+        showMessage(getString(R.string.player_schedule_message, t.channel, t.title))
     }
 
     private fun zapSkip(t: ZapTimers.Timer) {
@@ -1841,7 +1840,7 @@ class PlayerActivity : Activity() {
         val future = ZapTimers.list(this)
         val history = ZapTimers.history(this)
         if (future.isEmpty() && history.isEmpty()) {
-            showMessage(getString(R.string.message_no_scheduled_switches_add_one_from_programme_details_lo), 6000)
+            showMessage(getString(R.string.message_no_scheduled_switches_add_one_from_programme_details_lo))
             return
         }
         val items = ArrayList<TvDialog.Item>()
@@ -1911,7 +1910,7 @@ class PlayerActivity : Activity() {
 
     private fun playZapRecording(entry: ZapTimers.History) {
         val timer = entry.timer
-        showMessage(getString(R.string.player_recording_search, timer.title), 5000)
+        showMessage(getString(R.string.player_recording_search, timer.title))
         io.execute {
             val (recording, error) = try {
                 val movies = api.movies("").second.filterNot { it.isDir }
@@ -1980,7 +1979,7 @@ class PlayerActivity : Activity() {
             if (tsBuf != null || !tsWarned) {
                 tsWarned = true
                 AppLog.i("timeshift: nośnik ${prefs.tsDir.ifBlank { "pamięć urządzenia (brak zgody)" }} niedostępny — timeshift wyłączony")
-                showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)), 5000)
+                showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)))
             }
             tsBuf?.reset(); tsBuf = null
             return
@@ -2060,22 +2059,22 @@ class PlayerActivity : Activity() {
     /** Czy timeshift jest skonfigurowany; jeśli nie — komunikat. */
     private fun tsConfigured(): Boolean {
         if (prefs.tsMin > 0) return true
-        showMessage(getString(R.string.message_timeshift_is_not_configured_settings_playback_and_video), 5000)
+        showMessage(getString(R.string.message_timeshift_is_not_configured_settings_playback_and_video))
         return false
     }
 
     private fun tsEnter(pause: Boolean, backMs: Long) {
         val url = currentUrl
         if (!tsConfigured()) return
-        if (recMode) { showMessage(getString(R.string.message_timeshift_is_unavailable_when_playing_a_recording), 3000); return }
-        if (url == null) { showMessage(getString(R.string.message_timeshift_no_channel_playing), 3000); return }
+        if (recMode) { showMessage(getString(R.string.message_timeshift_is_unavailable_when_playing_a_recording)); return }
+        if (url == null) { showMessage(getString(R.string.message_timeshift_no_channel_playing)); return }
         if (tsBuf == null) tsNewChannel()          // bufor mógł nie powstać (np. dysk podłączony po starcie)
         val b = tsBuf
-        if (b == null) { showMessage(getString(R.string.message_timeshift_unavailable_usb_drive_unavailable_or_device_s), 5000); return }
-        b.failed?.let { showMessage(getString(R.string.player_ts_error, it), 5000); return }
+        if (b == null) { showMessage(getString(R.string.message_timeshift_unavailable_usb_drive_unavailable_or_device_s)); return }
+        b.failed?.let { showMessage(getString(R.string.player_ts_error, it)); return }
         // bufor jeszcze nie zapisywany (opóźnienie / tryb ręczny) lub prawie pusty: pauza rusza od teraz, cofnięcie niemożliwe
         val fresh = b.total < 2_000_000
-        if (fresh && !pause) { showMessage(getString(R.string.message_timeshift_buffer_is_still_empty_nothing_to_rewind), 4000); return }
+        if (fresh && !pause) { showMessage(getString(R.string.message_timeshift_buffer_is_still_empty_nothing_to_rewind)); return }
         tsWriteFrom = 0
         val p = player ?: return
         // obraz na ekranie jest za danymi o zapas odtwarzacza
@@ -2142,7 +2141,7 @@ class PlayerActivity : Activity() {
             tsSetShifted(false)
             ui.removeCallbacks(tsApply)
             tsPending = 0
-            showMessage(getString(R.string.message_live), 2000)
+            showMessage(getString(R.string.message_live))
             // ~6 s za końcem bufora: odtwarzacz ma od razu zapas na start (dane z dekodera przychodzą paczkami)
             tsPlayFrom(SystemClock.elapsedRealtime() - 6000, play = true)
             if (showControls) tsCtlOpen() else playList.getOrNull(playIndex)?.let { showBanner(it) }
@@ -2151,7 +2150,7 @@ class PlayerActivity : Activity() {
         tsLeave()
         tsCtl = controlsActive
         AppLog.i("timeshift: na żywo${if (reason.isNotBlank()) " ($reason)" else ""}")
-        showMessage(getString(R.string.message_live), 2000)
+        showMessage(getString(R.string.message_live))
         failStreak = 0
         startStream(url)
         if (showControls) tsCtlOpen() else playList.getOrNull(playIndex)?.let { showBanner(it) }
@@ -2209,7 +2208,7 @@ class PlayerActivity : Activity() {
         when {
             target >= now - 6000 -> tsGoLive("przewinięte do końca")
             target == earliest -> {
-                showMessage(getString(R.string.player_ts_start, fmtMs(now - earliest)), 2500)
+                showMessage(getString(R.string.player_ts_start, fmtMs(now - earliest)))
                 tsPlayFrom(earliest, play = player?.playWhenReady != false)
             }
             else -> tsPlayFrom(target, play = player?.playWhenReady != false)
@@ -2229,7 +2228,7 @@ class PlayerActivity : Activity() {
             }
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> {
                 val forward = if (code == KeyEvent.KEYCODE_DPAD_RIGHT) prefs.tsStepSec * 1000L else prefs.tsStepMin * 60_000L
-                if (tsMode && tsShifted) tsSeek(forward) else { showMessage(getString(R.string.message_already_live), 1500); tsCtlOpen() }
+                if (tsMode && tsShifted) tsSeek(forward) else { showMessage(getString(R.string.message_already_live)); tsCtlOpen() }
             }
             // Wstecz: najpierw zamyka pasek (także przy pauzie), dopiero kolejne naciśnięcie wraca na żywo
             KeyEvent.KEYCODE_BACK -> {
@@ -2284,7 +2283,7 @@ class PlayerActivity : Activity() {
             if (player == null) return
             // pauza dłuższa niż okno: miejsce pauzy zaraz wypadnie z bufora — wznowienie od najstarszego
             if (tsPending == 0L && b.trimmed && tsShownWall() < b.oldestWall + 5000) {
-                showMessage(getString(R.string.message_timeshift_buffer_full_resuming_from_the_oldest_recorded), 5000)
+                showMessage(getString(R.string.message_timeshift_buffer_full_resuming_from_the_oldest_recorded))
                 AppLog.i("timeshift: pauza dłuższa niż okno — wznowienie od początku bufora")
                 tsPlayFrom(b.oldestWall + 10_000, play = true)
                 return
@@ -2420,7 +2419,7 @@ class PlayerActivity : Activity() {
         if (bouquets.getOrNull(bqIndex)?.ref != REC_REF) return
         io.execute {
             val channels = try { channelsOf(bouquets[bqIndex]) } catch (e: Exception) {
-                runOnUiThread { showMessage(getString(R.string.player_recording_error, e.message ?: e.toString()), 6000) }
+                runOnUiThread { showMessage(getString(R.string.player_recording_error, e.message ?: e.toString())) }
                 return@execute
             }
             runOnUiThread {
@@ -2491,7 +2490,7 @@ class PlayerActivity : Activity() {
         AppLog.i("nagranie: koniec")
         recMode = false
         recItem = null
-        showMessage(getString(R.string.message_end_of_recording), 3000)
+        showMessage(getString(R.string.message_end_of_recording))
         stopPlayback()
         showRecordings()
     }
@@ -2676,11 +2675,15 @@ class PlayerActivity : Activity() {
         ui.postDelayed(hideBanner, prefs.bannerSec.coerceIn(1, 30) * 1000L)
     }
 
-    private fun showMessage(t: String, ms: Long = 3000) {
+    private fun showMessage(t: String) {
+        ui.removeCallbacks(hideMessage)
+        if (!prefs.messageBar) {
+            message.visibility = View.GONE
+            return
+        }
         message.text = t
         message.visibility = View.VISIBLE
-        ui.removeCallbacks(hideMessage)
-        ui.postDelayed(hideMessage, ms)
+        ui.postDelayed(hideMessage, prefs.messageBarSec * 1000L)
     }
 
     private val statsTick = object : Runnable {
@@ -2776,7 +2779,7 @@ class PlayerActivity : Activity() {
             when {
                 keyCode == KeyEvent.KEYCODE_BACK -> {
                     if (backExit.press(SystemClock.elapsedRealtime())) finish()
-                    else showMessage(getString(R.string.message_press_back_again_to_exit), 2500)
+                    else showMessage(getString(R.string.message_press_back_again_to_exit))
                     return true
                 }
                 keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_INFO || isOk(keyCode) -> {
@@ -2851,7 +2854,7 @@ class PlayerActivity : Activity() {
                 if (backExit.press(SystemClock.elapsedRealtime())) {
                     finish()
                 } else {
-                    showMessage(getString(R.string.message_press_back_again_to_exit), 2500)
+                    showMessage(getString(R.string.message_press_back_again_to_exit))
                 }
                 return true
             }
@@ -2944,8 +2947,8 @@ class PlayerActivity : Activity() {
             }
             Act.TS_FORWARD -> when {
                 tsShifted -> tsSeek(prefs.tsStepSec * 1000L)
-                tsMode -> showMessage(getString(R.string.message_already_live), 1500)
-                prefs.tsMin > 0 -> showMessage(getString(R.string.message_already_live), 1500)
+                tsMode -> showMessage(getString(R.string.message_already_live))
+                prefs.tsMin > 0 -> showMessage(getString(R.string.message_already_live))
                 else -> tsConfigured()
             }
             Act.TS_LIVE -> if (tsMode) tsGoLive() else if (prefs.tsMin <= 0) tsConfigured()
@@ -3008,6 +3011,11 @@ class PlayerActivity : Activity() {
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
         keyMap = KeyMap.load(prefs)
         UiScale.apply(banner, UiScale.pct(prefs.uiBannerFont), UiScale.pct(prefs.uiBannerIcon))
+        UiScale.apply(message, UiScale.pct(prefs.uiBannerFont))
+        if (!prefs.messageBar) {
+            ui.removeCallbacks(hideMessage)
+            message.visibility = View.GONE
+        }
         applyDisplayMode()
         epg.clearMemory()
         list.adapter = adapter      // wiersze od nowa (np. nowa wielkość czcionki)
@@ -3095,7 +3103,7 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- aktualizacja
 
-    private fun checkUpdate(manual: Boolean) = Tools.checkUpdate(this, manual) { showMessage(it, 8000) }
+    private fun checkUpdate(manual: Boolean) = Tools.checkUpdate(this, manual) { showMessage(it) }
 
 
 
@@ -3405,7 +3413,7 @@ class PlayerActivity : Activity() {
         if (SyncManager.dirty) SyncManager.syncAsync()
     }
 
-    private fun uploadLog(manual: Boolean) = Tools.uploadLog(this, prefs, manual) { showMessage(it, 6000) }
+    private fun uploadLog(manual: Boolean) = Tools.uploadLog(this, prefs, manual) { showMessage(it) }
 
 
 

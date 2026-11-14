@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="setting_message_bar">Message bar</string>
+    <string name="setting_message_bar_duration">Message bar duration (s)</string>
     <string name="setting_receiver" formatted="false">Receiver</string>
     <string name="setting_receiver_ip_address" formatted="false">Receiver IP address</string>
     <string name="setting_search_for_receivers_on_the_network" formatted="false">Search for receivers on the network</string>

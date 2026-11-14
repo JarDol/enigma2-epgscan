@@ -432,6 +432,14 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("bannerSec", 4)
         set(v) = putI("bannerSec", v)
 
+    var messageBar: Boolean
+        get() = sp.getBoolean("messageBar", true)
+        set(v) = putB("messageBar", v)
+
+    var messageBarSec: Int
+        get() = sp.getInt("messageBarSec", 3).coerceIn(1, 10)
+        set(v) = putI("messageBarSec", v.coerceIn(1, 10))
+
     var tsBannerSec: Int
         get() = sp.getInt("tsBannerSec", bannerSec)
         set(v) = putI("tsBannerSec", v)

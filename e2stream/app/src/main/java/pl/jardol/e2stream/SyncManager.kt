@@ -35,7 +35,7 @@ object SyncManager {
         "tunneling", "engine", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps", "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon", "watchdog", "stallSec", "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "dropRestart",
         "audioLang", "preferAc3",
         "logFtp", "ftpUser", "ftpPass", "ftpDir", "saveTs", "tsRingMb", "tsFtp", "cleanTs",
-        "hiddenBouquets", "pin", "pinMin", "invertUpDown", "bannerSec", "tsBannerSec",
+        "hiddenBouquets", "pin", "pinMin", "invertUpDown", "bannerSec", "tsBannerSec", "messageBar", "messageBarSec",
         "channelListSec", "epgEventSec", "confirmDialogSec", "epgChannelSec", "epgMultiSec", "infoDialogSec", "hideInfoDialogs", "resumeLast",
         "startBouquet", "startChannel", "startChannelName", "autoUpdate", "keyMap", "keyMapNoBanner", "keyMapBanner",
         "epgDaily", "epgHour", "epgDays", "epgUpdateMode", "picons", "missingPiconLogo", "piconDir", "showStats",

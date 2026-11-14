@@ -243,6 +243,8 @@ class SettingsActivity : Activity() {
         },
         Item.Toggle(getString(R.string.setting_reverse_when_changing_channels), { p.invertUpDown }, { p.invertUpDown = it }),
         num(getString(R.string.setting_channel_banner_duration_s), { p.bannerSec }, { p.bannerSec = it }, 1..30),
+        Item.Toggle(getString(R.string.setting_message_bar), { p.messageBar }, { p.messageBar = it; items = buildItems() }),
+        *(if (p.messageBar) arrayOf(num(getString(R.string.setting_message_bar_duration), { p.messageBarSec }, { p.messageBarSec = it }, 1..10)) else emptyArray()),
         num(getString(R.string.setting_timeshift_banner_duration_s), { p.tsBannerSec }, { p.tsBannerSec = it }, 1..30),
         num(getString(R.string.setting_channel_list_duration_s_0_no_timeout), { p.channelListSec }, { p.channelListSec = it }, 0..600),
         num(getString(R.string.setting_action_dialog_duration_s_0_no_timeout), { p.actionDialogSec }, { p.actionDialogSec = it }, 0..600),
