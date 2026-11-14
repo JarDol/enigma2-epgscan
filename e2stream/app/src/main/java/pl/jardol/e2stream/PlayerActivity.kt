@@ -3038,6 +3038,14 @@ class PlayerActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (recreateForLanguage()) return
+        // pierwsza konfiguracja: wybrano dekoder w ustawieniach, a decyzja o kopii ustawień jeszcze nie zapadła —
+        // pytanie od razu, niezależnie od tego, czy po powrocie z ustawień był pełny start (onStart)
+        if (!safeMode && prefs.host.isNotBlank() && SyncManager.needsBackupDecision && !backupCheckRunning && !backupDialogOpen) {
+            settingsOpen = false
+            AppLog.i("kopia ustawień: pytanie po powrocie z ustawień")
+            checkInitialBackup()
+            return
+        }
         if (!settingsOpen) return
         settingsOpen = false
         if (player == null && vlc == null) {

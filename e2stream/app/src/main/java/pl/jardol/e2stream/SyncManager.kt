@@ -292,6 +292,7 @@ object SyncManager {
             if (savedRecord?.optString("host") == prefs.host) savedRecord else JSONObject().also { record ->
                 record.put("host", prefs.host)
                 oldDevice?.optJSONObject("backup")?.let { record.put("backup", it) }
+                oldDevice?.optLong("updated")?.takeIf { it > 0 }?.let { record.put("updated", it) }
                 dData?.let { record.put("data", it) }
                 check(meta.edit().putString("backupBeforeFirstPush", record.toString()).commit()) {
                     "Nie udało się zabezpieczyć poprzedniej kopii"
@@ -304,6 +305,9 @@ object SyncManager {
             else oldDevice?.optJSONObject("previousData")
         if (previousBackup != null) device.put("previousBackup", previousBackup)
         if (previousData != null) device.put("previousData", previousData)
+        // data poprzedniej kopii (do 0.18.43 nie zapisywana - wtedy lista pokazuje datę bieżącej)
+        val previousUpdated = if (freshDecision) preserved?.optLong("updated") ?: 0L else oldDevice?.optLong("previousUpdated") ?: 0L
+        if ((previousBackup != null || previousData != null) && previousUpdated > 0) device.put("previousUpdated", previousUpdated)
         val myFile = JSONObject()
             .put("device", device)
             .put("data", myData)
@@ -379,7 +383,7 @@ object SyncManager {
                     js.optJSONObject("data") ?: JSONObject(), d.optJSONObject("backup")))
                 if (d.has("previousBackup") || d.has("previousData")) {
                     out.add(Profile(js.optString("file") + "#previous", d.optString("name") + " (poprzednia kopia)",
-                        d.optString("model"), d.optLong("updated"), d.optJSONObject("previousData") ?: JSONObject(),
+                        d.optString("model"), d.optLong("previousUpdated").takeIf { it > 0 } ?: d.optLong("updated"), d.optJSONObject("previousData") ?: JSONObject(),
                         d.optJSONObject("previousBackup")))
                 }
             }
@@ -395,7 +399,7 @@ object SyncManager {
                     js.optJSONObject("data") ?: JSONObject(), d.optJSONObject("backup")))
                 if (d.has("previousBackup") || d.has("previousData")) {
                     out.add(Profile(n + "#previous", d.optString("name") + " (poprzednia kopia)",
-                        d.optString("model"), d.optLong("updated"), d.optJSONObject("previousData") ?: JSONObject(),
+                        d.optString("model"), d.optLong("previousUpdated").takeIf { it > 0 } ?: d.optLong("updated"), d.optJSONObject("previousData") ?: JSONObject(),
                         d.optJSONObject("previousBackup")))
                 }
             }
