@@ -21,15 +21,15 @@ import xml.etree.ElementTree as ET
 
 from enigma import eTimer, eEPGCache
 
-from .common import cfg, log, E2
+from .common import cfg, log, E2, XMLTV_STATE_FILE, PLUGIN_SOURCES_DIR
 from .epgintervals import uncovered_event
 from .i18n import _
 
 SOURCES_DIR = "/etc/epgimport"
 TMP = "/tmp/epgscan_xmltv"
 EPGIMPORT_CONF = "/etc/enigma2/epgimport.conf"
-STATE_FILE = "/etc/enigma2/epgscan_xmltv.json"   # stan zrodel z ostatniego przebiegu
-CACHE_DIR = "/etc/enigma2/epgscan_sources"      # kopie list zrodel:
+STATE_FILE = XMLTV_STATE_FILE                    # stan zrodel z ostatniego przebiegu
+CACHE_DIR = PLUGIN_SOURCES_DIR                   # kopie list zrodel:
 PKG_DIR = CACHE_DIR + "/pakiet"                 #  - pliki pakietu epgimport-sources (lustro pakietu, zostaje po odinstalowaniu)
 OWN_DIR = CACHE_DIR + "/wlasne"                 #  - wlasne listy (spoza pakietu i pobrane z adresu) - usuwane tylko recznie
 OPKG_INFO = ("/var/lib/opkg/info", "/usr/lib/opkg/info")

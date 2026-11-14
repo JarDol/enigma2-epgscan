@@ -2864,8 +2864,8 @@ msgstr "Report-only mode - satellites.xml was not changed."
 msgid "Twoje kanaly na zmienionych/usunietych TP:"
 msgstr "Your channels on changed/removed transponders:"
 
-msgid "Twoje listy (adres z niebieskiego albo pliki w /etc/enigma2/epgscan_sources/wlasne).\nSa sprawdzane jako pierwsze - maja pierwszenstwo przed listami pakietu."
-msgstr "Your lists (address from blue or files in /etc/enigma2/epgscan_sources/wlasne).\nChecked first and take priority over package lists."
+msgid "Twoje listy (adres z niebieskiego albo pliki w /etc/enigma2/epgscan/sources/wlasne).\nSa sprawdzane jako pierwsze - maja pierwszenstwo przed listami pakietu."
+msgstr "Your lists (address from blue or files in /etc/enigma2/epgscan/sources/wlasne).\nChecked first and take priority over package lists."
 
 msgid "Tyle tunerów skan zawsze zostawia wolnych - na oglądanie, nagrania i streamy (1 tuner w dekoderze: ustaw 0)."
 msgstr "The scan always leaves this many tuners free for watching, recording and streams (set 0 on a receiver with one tuner)."

@@ -35,8 +35,8 @@ VERSION = "0.4.2"
 
 DEFAULT_URL = "https://raw.githubusercontent.com/OpenPLi/tuxbox-xml/master/xml/satellites.xml"
 E2DIR = "/etc/enigma2"
-DATA_DIR = "/etc/enigma2/satwatch"
-LOG_PREF = ""   # wybrany katalog logu i historii raportow (np. /media/hdd/satwatch); "" = DATA_DIR
+DATA_DIR = "/etc/enigma2/epgscan/satwatch"   # od EPG Scan 2.19 (wczesniej /etc/enigma2/satwatch)
+LOG_PREF = ""   # katalog logu i historii raportow: katalog kopii EPG Scan + /satwatch; "" = DATA_DIR
 TARGET = "/etc/enigma2/satellites.xml"
 DEFAULT_IGNORE = "Last Scanned"
 SYSTEM = "/etc/tuxbox/satellites.xml"
@@ -1623,15 +1623,15 @@ def out_dir():
     return DATA_DIR
 
 
-def migrate_out_dir(old, new):
-    """Po zmianie katalogu: kopiuje log i historie raportow (stare zostaja)."""
+def migrate_out_dir(old, new, move=False):
+    """Po zmianie katalogu: kopiuje (move=True: przenosi) log i historie raportow."""
     n = 0
     if not old or not new or os.path.abspath(old) == os.path.abspath(new) or not dir_usable(new):
         return 0
     for f in os.listdir(old) if os.path.isdir(old) else []:
         if f.startswith("satwatch.log") or f == "last_report.txt":
             if not os.path.exists(os.path.join(new, f)):
-                shutil.copy2(os.path.join(old, f), os.path.join(new, f))
+                (shutil.move if move else shutil.copy2)(os.path.join(old, f), os.path.join(new, f))
                 n += 1
     src = os.path.join(old, "reports")
     if os.path.isdir(src):
@@ -1639,8 +1639,14 @@ def migrate_out_dir(old, new):
         ensure_dir(dst)
         for f in os.listdir(src):
             if not os.path.exists(os.path.join(dst, f)):
-                shutil.copy2(os.path.join(src, f), os.path.join(dst, f))
+                (shutil.move if move else shutil.copy2)(os.path.join(src, f), os.path.join(dst, f))
                 n += 1
+    if move:
+        for d in (src, old):
+            try:
+                os.rmdir(d)      # tylko pusty katalog
+            except OSError:
+                pass
     return n
 
 

@@ -12,11 +12,11 @@ import urllib.request
 
 from enigma import eTimer
 
-from .common import cfg, log, backup_dir
+from .common import cfg, log, backup_dir, PLUGIN_SOURCES_DIR
 from .localgrab import LocalGrab, PARSERS, write_xmltv
 from .i18n import _
 
-SRC_FILE = "/etc/enigma2/epgscan_sources/wlasne/dekoder.sources.xml"
+SRC_FILE = os.path.join(PLUGIN_SOURCES_DIR, "wlasne", "dekoder.sources.xml")
 DESC = "EPG PL (dekoder)"
 
 

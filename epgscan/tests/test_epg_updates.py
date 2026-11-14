@@ -23,6 +23,8 @@ common.log = lambda message: None
 common.E2 = "/etc/enigma2"
 common.save_cfg = lambda: None
 common.VERSION = "2.18.0-beta.4"
+common.XMLTV_STATE_FILE = "/tmp/epgscan-test-xmltv.json"
+common.PLUGIN_SOURCES_DIR = "/tmp/epgscan-test-sources"
 sys.modules[common.__name__] = common
 
 intervals = importlib.import_module(package.__name__ + ".epgintervals")
@@ -183,6 +185,13 @@ class DaytimeScheduleTests(unittest.TestCase):
 			scheduler.check_topup()
 		self.assertEqual(started, [{"topup_jobs": jobs}])
 		self.assertEqual(cfg.last_topup.value, 20000)
+
+
+class SourcePathTests(unittest.TestCase):
+	def test_source_cache_is_plugin_directory_not_epgimport(self):
+		self.assertEqual(xmltv.SOURCES_DIR, "/etc/epgimport")
+		self.assertEqual(xmltv.CACHE_DIR, common.PLUGIN_SOURCES_DIR)
+		self.assertNotEqual(xmltv.CACHE_DIR, xmltv.SOURCES_DIR)
 
 
 class UpdaterChannelTests(unittest.TestCase):

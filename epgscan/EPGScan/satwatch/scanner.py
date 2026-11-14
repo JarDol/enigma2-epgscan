@@ -23,7 +23,7 @@ GAP = 3                 # przerwa miedzy TP [s] (Unicable nie lubi strojenia ser
 POLL = 2                # kontrola rezerwy w trakcie skanu [s]
 MAX_PREEMPT = 5         # ile razy TP moze byc oddany uzytkownikowi, zanim go pominiemy
 
-LOG = None     # None = core.out_dir()/satwatch.log (wybrany katalog lub /etc/enigma2/satwatch)
+LOG = None     # None = core.out_dir()/satwatch.log (katalog EPG Scan + /satwatch lub /etc/enigma2/epgscan/satwatch)
 LOG_MAX = 200 * 1024    # po przekroczeniu: satwatch.log -> .1 -> .2 ... (rotacja)
 LOG_KEEP = 4            # ile starszych plikow zachowac (lacznie max ok. 1 MB)
 

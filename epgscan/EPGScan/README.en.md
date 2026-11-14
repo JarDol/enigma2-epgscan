@@ -309,7 +309,7 @@ Alternatively the map can come from the epgpl server (*Mapa kanałów dla dekode
 Own import (no EPG Import plugin needed):
 
 - sources: *EPG PL (dekoder)*, the epgpl server, lists from the `epgimport-sources` package (e.g. Rytec), your own
-  lists by URL or from `/etc/enigma2/epgscan_sources/wlasne`; without the package – a built-in list of mirrors,
+  lists by URL or from `/etc/enigma2/epgscan/sources/wlasne`; without the package – a built-in list of mirrors,
 - adjustable source order (e.g. receiver → server → others),
 - *Co uzupełniać* (what to fill): only channels without EPG, or also gaps and later days of the others,
 - channels from the selected bouquets (all / selected / those being scanned) and optionally copies of channels
@@ -367,7 +367,7 @@ busy – watching, fast channel change (FCC) or streaming. A second cable to inp
 After the scan, services no longer found on a scanned transponder can be removed from `lamedb` (with protection
 against a "suspicious" transponder where less than half of the channels were found). With removal off, the report
 still lists them, and bouquet channels pointing to them go to replacement or decision like lost channels
-(list: `/etc/enigma2/satwatch/nieaktualne.json`).
+(list: `/etc/enigma2/epgscan/satwatch/nieaktualne.json`).
 
 ### 8.2 Bouquet repair
 
@@ -702,16 +702,21 @@ the service status.
 | `/etc/enigma2/epgscan/wskazania.txt`, `aliases.txt` | manual station choices, your own mappings (same names as on the server) |
 | `/etc/enigma2/epgscan/channelparams.json` | PAT/PMT scan results and confirmed audio selections |
 | `/etc/enigma2/epgscan/tuners-epg.json`, `tuners-params.json` | latest tuner usage reports |
-| `/etc/enigma2/epgscan_sources/` | copies of XMLTV source lists, your own lists, the "EPG PL (dekoder)" source |
-| `/etc/enigma2/epgscan_tps.json`, `epgscan_xmltv.json`, `epgscan_wakeup` | transponder state, sources, wake-up |
-| `/etc/enigma2/satwatch/` | SatWatch state, bouquet snapshot, backups of bouquets and `satellites.xml` |
+| `/etc/enigma2/epgscan/sources/` | copies of XMLTV source lists, your own lists (`wlasne/`), the "EPG PL (dekoder)" source |
+| `/etc/enigma2/epgscan/tps.json`, `xmltv.json`, `wakeup` | transponder state, sources, wake-up |
+| `/etc/enigma2/epgscan/satwatch/` | SatWatch state, bouquet snapshot, backups of bouquets and `satellites.xml`; log when no disk |
 | `/etc/enigma2/satellites.xml` | only when SatWatch has updated transponders |
 | `/media/hdd/epgscan/` | EPG backups, log, `lokalne/` (downloaded listings, channel map, reports) |
-| `/media/hdd/satwatch/` | SatWatch log and report history (when this directory is chosen) |
+| `/media/hdd/epgscan/satwatch/` | SatWatch log and report history (EPG Scan backup and log directory + `satwatch`) |
 
 The plugin does **not change**: bouquets (except repairs by SatWatch, always with a backup), tuner settings, the
 system file `/etc/tuxbox/satellites.xml`, cron. It changes the EIT setting in Menu → EPG only according to the
 options in the *Satelita* group.
+
+Since 2.19 all plugin files live in `/etc/enigma2/epgscan/` and in the backup directory (default
+`/media/hdd/epgscan/`). Files from the old locations (`/etc/enigma2/epgscan_*`, `/etc/enigma2/satwatch/`, the previously
+chosen SatWatch log directory) are moved once on the first start – the log lists what was moved. E2Stream logs sent
+from the app go to the directory set in the app (default `/media/hdd/e2stream`).
 
 ---
 
@@ -733,7 +738,7 @@ watch: [chapter 8.4](#84-tuner-setup--what-to-set-in-the-system-and-what-in-the-
 **A channel disappeared from a bouquet after a change on the satellite.** Menu → *Kanały* → *SatWatch* → *Kanały do decyzji*.
 
 **Where are the logs?** Info/EPG → *Log EPG Scan* and *SatWatch – log*; files in `/media/hdd/epgscan/` and
-`/media/hdd/satwatch/`.
+`/media/hdd/epgscan/satwatch/`.
 
 **Is the interface available in English?** Choose English under **Settings → Updates and plugin
 information**. Logs, older reports, some technical details and external data may remain in their

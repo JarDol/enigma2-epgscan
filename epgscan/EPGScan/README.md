@@ -316,7 +316,7 @@ Alternatywnie mapa może przychodzić z serwera epgpl (*Mapa kanałów dla dekod
 Własny import (bez wtyczki EPG Import):
 
 - źródła: *EPG PL (dekoder)*, serwer epgpl, listy z pakietu `epgimport-sources` (np. Rytec), własne
-  listy pod adresem URL albo z `/etc/enigma2/epgscan_sources/wlasne`; gdy brak pakietu – wbudowana lista luster,
+  listy pod adresem URL albo z `/etc/enigma2/epgscan/sources/wlasne`; gdy brak pakietu – wbudowana lista luster,
 - kolejność źródeł do ustawienia (np. dekoder → serwer → pozostałe),
 - *Co uzupełniać*: tylko kanały bez EPG albo również luki i dalsze dni pozostałych,
 - kanały z wybranych bukietów (wszystkie / wybrane / do skanowania) i opcjonalnie kopie kanałów spoza bukietów,
@@ -378,7 +378,7 @@ i podział tunerów na dwie grupy – jedna do oglądania, druga (z preferowanym
 Po skanie: serwisy, których już nie ma na zeskanowanym transponderze, mogą być usuwane z `lamedb`
 (z zabezpieczeniem przed „podejrzanym” transponderem, na którym znaleziono mniej niż połowę kanałów).
 Przy wyłączonym usuwaniu raport i tak wypisuje serwisy, których skan nie znalazł, a kanały z bukietów
-wskazujące na nie trafiają do podmiany albo decyzji – tak jak zgubione (lista: `/etc/enigma2/satwatch/nieaktualne.json`).
+wskazujące na nie trafiają do podmiany albo decyzji – tak jak zgubione (lista: `/etc/enigma2/epgscan/satwatch/nieaktualne.json`).
 
 ### 8.2 Naprawa bukietów
 
@@ -732,12 +732,12 @@ w E2Stream. Po instalacji i uruchomieniu Avahi zrestartuj Enigma2, aby odśwież
 |---|---|
 | `/etc/enigma2/settings` | ustawienia `config.plugins.epgscan.*` i `config.plugins.satwatch.*` |
 | `/etc/enigma2/epgscan/wskazania.txt`, `aliases.txt` | ręczne wskazania stacji, własne dopasowania (te same nazwy co na serwerze) |
-| `/etc/enigma2/epgscan_sources/` | kopie list źródeł XMLTV, własne listy, źródło „EPG PL (dekoder)” |
-| `/etc/enigma2/epgscan_tps.json`, `epgscan_xmltv.json`, `epgscan_wakeup` | stan transponderów, źródeł, wybudzania |
-| `/etc/enigma2/satwatch/` | stan SatWatch, zrzut bukietów, kopie bukietów i `satellites.xml` |
+| `/etc/enigma2/epgscan/sources/` | kopie list źródeł XMLTV, własne listy (`wlasne/`), źródło „EPG PL (dekoder)” |
+| `/etc/enigma2/epgscan/tps.json`, `xmltv.json`, `wakeup` | stan transponderów, źródeł, wybudzania |
+| `/etc/enigma2/epgscan/satwatch/` | stan SatWatch, zrzut bukietów, kopie bukietów i `satellites.xml`; log, gdy brak dysku |
 | `/etc/enigma2/satellites.xml` | tylko gdy SatWatch zaktualizował transpondery |
 | `/media/hdd/epgscan/` | kopie EPG, log, `lokalne/` (pobrany program, mapa kanałów, raporty) |
-| `/media/hdd/satwatch/` | log i historia raportów SatWatch (gdy wybrano ten katalog) |
+| `/media/hdd/epgscan/satwatch/` | log i historia raportów SatWatch (katalog kopii i logów EPG Scan + `satwatch`) |
 | `/etc/enigma2/epgscan/clients/` | dane aplikacji E2Stream: `common.json` (domyślne dla nowych odbiorników, wspólne PMT kanałów), `device-<id>.json` (każdy odbiornik) |
 | `/etc/enigma2/epgscan/channelparams.json` | wyniki skanu PAT/PMT i potwierdzone wybory audio |
 | `/etc/enigma2/epgscan/tuners-epg.json`, `tuners-params.json` | ostatnie raporty wykorzystania tunerów |
@@ -745,6 +745,11 @@ w E2Stream. Po instalacji i uruchomieniu Avahi zrestartuj Enigma2, aby odśwież
 Wtyczka **nie zmienia**: bukietów (poza naprawą przez SatWatch, zawsze z kopią), ustawień tunerów,
 pliku systemowego `/etc/tuxbox/satellites.xml`, crona. Zmienia ustawienie EIT w Menu → EPG tylko
 zgodnie z opcjami w grupie *Satelita*.
+
+Od 2.19 wszystkie pliki wtyczki są w `/etc/enigma2/epgscan/` i w katalogu kopii (domyślnie
+`/media/hdd/epgscan/`). Pliki ze starych miejsc (`/etc/enigma2/epgscan_*`, `/etc/enigma2/satwatch/`,
+wybrany wcześniej katalog logu SatWatch) są przenoszone raz, przy pierwszym starcie – log pokazuje, co przeniesiono.
+Logi E2Stream wysyłane z aplikacji trafiają do katalogu ustawionego w aplikacji (domyślnie `/media/hdd/e2stream`).
 
 ---
 
@@ -766,7 +771,7 @@ oglądania: [rozdział 8.4](#84-konfiguracja-tunerów--co-ustawić-w-systemie-a-
 **Kanał zniknął z bukietu po zmianie na satelicie.** Menu → Kanały → SatWatch → *Kanały do decyzji*.
 
 **Gdzie są logi?** Info/EPG → *Log EPG Scan* i *SatWatch – log*; pliki w `/media/hdd/epgscan/`
-i `/media/hdd/satwatch/`.
+i `/media/hdd/epgscan/satwatch/`.
 
 ## Wsparcie
 

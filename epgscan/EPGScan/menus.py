@@ -15,7 +15,7 @@ from Components.ScrollLabel import ScrollLabel
 from Components.config import getConfigListEntry, ConfigSelection, ConfigYesNo, NoSave
 
 from .common import cfg, log, save_cfg, VERSION, keys_skin, init_keys, set_keys, hints_skin, init_hints, CLEAR_CHOICES, \
-	profile_default, profile_text, log_path, backup_dir, SRV_CHOICES, SW_CHOICES
+	profile_default, profile_text, log_path, backup_dir, SRV_CHOICES, SW_CHOICES, SATWATCH_DATA_DIR
 from .i18n import _, language
 
 
@@ -825,7 +825,7 @@ def channels_menu(session, sel=0):
 
 
 SATWATCH_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/SatWatch"
-SATWATCH_REPORT = "/etc/enigma2/satwatch/last_report.txt"
+SATWATCH_REPORT = os.path.join(SATWATCH_DATA_DIR, "last_report.txt")
 
 
 def satwatch_installed():

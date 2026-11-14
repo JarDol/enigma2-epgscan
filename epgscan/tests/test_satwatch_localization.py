@@ -27,10 +27,13 @@ class Timer:
 class Config:
     def __init__(self, *args, default=None, choices=None, **kwargs):
         self.value = default
+        self.default = default
+        self.saved_value = None
         self.choices = types.SimpleNamespace(choices=list(choices or []))
 
     def setChoices(self, choices, default=None):
         self.choices.choices = list(choices)
+        self.default = default
         self.value = default
 
 
@@ -195,6 +198,40 @@ class SatWatchLocalizationTests(unittest.TestCase):
         self.assertEqual(dict(cfg.action.choices.choices)["update"], "raport + aktualizacja satellites.xml")
         self.assertEqual(dict(cfg.full_day.choices.choices)["6"], "niedziela")
         self.assertEqual(cfg.logdir.value, "/media/unmounted/satwatch")
+
+    def test_setup_keeps_fixed_defaults_so_chosen_tuner_is_saved(self):
+        # Enigma2 nie zapisuje wartosci rownej domyslnej - wybrany tuner nie moze stac sie domyslnym
+        cfg = self.sw.cfg
+        cfg.scan_tuner.value = "3"
+        self.sw.SatWatchSetup(None)
+        self.assertEqual(cfg.scan_tuner.value, "3")
+        self.assertEqual(cfg.scan_tuner.default, "auto")
+
+    def test_saved_choice_missing_at_startup_is_kept(self):
+        element = Config(default="auto", choices=[("auto", "auto"), ("0", "A")])
+        element.saved_value = "5"
+        self.sw._keep_saved(element)
+        self.assertEqual(element.value, "5")
+        self.assertEqual(element.default, "auto")
+
+    def test_old_satwatch_log_directory_is_moved_once(self):
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as root:
+            old = os.path.join(root, "satwatch")
+            os.makedirs(os.path.join(old, "reports"))
+            for name in ("satwatch.log", "last_report.txt", os.path.join("reports", "report-1.txt")):
+                with open(os.path.join(old, name), "w") as f:
+                    f.write("x")
+            new = os.path.join(root, "epgscan", "satwatch")
+            cfg = self.sw.cfg
+            cfg.logdir.value = old
+            cfg.logdir.save = lambda: None
+            with patch.object(self.core, "LOG_PREF", new):
+                self.assertEqual(self.sw.migrate_old_logdir(), 3)
+            self.assertTrue(os.path.exists(os.path.join(new, "satwatch.log")))
+            self.assertTrue(os.path.exists(os.path.join(new, "reports", "report-1.txt")))
+            self.assertFalse(os.path.exists(old))
+            self.assertEqual(cfg.logdir.value, self.core.DATA_DIR)
 
     def test_report_history_parser_finds_meaningful_english_line(self):
         diff = {"added": [], "removed": [], "changed": [], "shifted": []}

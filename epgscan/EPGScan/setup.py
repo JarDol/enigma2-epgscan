@@ -1202,7 +1202,7 @@ class EPGScanXmltvSources(Screen):
 			self["info"].setText(_({
 				"hdr_ctl": "Program pobierany przez dekoder i serwer epgpl wlacza sie w Akcjach (zielony) - tam tez kolejnosc\n"
 					"i zapas. Tutaj tylko data danych; niebieski na serwerze: dopasowanie kanalow, adres.",
-				"hdr_own": "Twoje listy (adres z niebieskiego albo pliki w /etc/enigma2/epgscan_sources/wlasne).\n"
+				"hdr_own": "Twoje listy (adres z niebieskiego albo pliki w /etc/enigma2/epgscan/sources/wlasne).\n"
 					"Sa sprawdzane jako pierwsze - maja pierwszenstwo przed listami pakietu.",
 				"hdr_pkg": "Listy z pakietu enigma2-plugin-extensions-epgimport-sources (Rytec i inne).\n"
 					"Po odinstalowaniu pakietu dzialaja z kopii wtyczki."}.get(hdr, "")))

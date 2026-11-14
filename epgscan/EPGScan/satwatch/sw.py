@@ -95,7 +95,23 @@ def tuner_choices():
     return out
 
 
+def _keep_saved(element):
+    """Zapisany wybor, ktorego nie ma na liscie przy starcie (tuner jeszcze niewidoczny w NimManager,
+    katalog niezamontowany) - Enigma2 ustawilaby wtedy domyslny i nadpisala go przy nastepnym zapisie."""
+    try:
+        saved = element.saved_value
+        raw = element.choices.choices
+        current = list(raw.items()) if isinstance(raw, dict) else \
+            [(item[0], item[1]) if isinstance(item, tuple) else (item, item) for item in raw]
+        if saved and saved not in [key for key, label in current]:
+            element.setChoices(current + [(saved, saved)], default=element.default)
+            element.value = saved
+    except Exception:
+        pass
+
+
 cfg.scan_tuner = ConfigSelection(default="auto", choices=tuner_choices())
+_keep_saved(cfg.scan_tuner)
 cfg.urls = ConfigText(default="", fixed_size=False)     # dopisane adresy satellites.xml, rozdzielone "|"
 
 
@@ -125,10 +141,36 @@ def _logdir_choices():
 
 
 cfg.logdir = ConfigSelection(default=core.DATA_DIR, choices=_logdir_choices())
+_keep_saved(cfg.logdir)
+
+
+def shared_logdir():
+    """Log i historia raportow SatWatch: katalog kopii i logow EPG Scan + /satwatch (np. /media/hdd/epgscan/satwatch)."""
+    import os
+    from ..common import backup_dir
+    return os.path.join(backup_dir(), "satwatch")
 
 
 def apply_logdir():
-    core.LOG_PREF = "" if cfg.logdir.value == core.DATA_DIR else cfg.logdir.value
+    core.LOG_PREF = shared_logdir()
+
+
+def migrate_old_logdir():
+    """Do 2.18: osobne ustawienie katalogu logu SatWatch (np. /media/hdd/satwatch) - zawartosc przenoszona
+    raz do katalogu EPG Scan; stare ustawienie wraca do domyslnego."""
+    import os
+    old = cfg.logdir.value
+    new = core.out_dir()
+    if not old or old == core.DATA_DIR or not os.path.isdir(old) or os.path.abspath(old) == os.path.abspath(new):
+        return 0
+    if new != core.LOG_PREF:
+        return 0     # dysk jeszcze niezamontowany - sprobuje przy nastepnym starcie
+    n = core.migrate_out_dir(old, new, move=True)
+    scanner.log("Katalog logu: %s -> %s (przeniesiono %d plikow)" % (old, new, n))
+    cfg.logdir.value = core.DATA_DIR
+    cfg.logdir.save()
+    configfile.save()
+    return n
 
 
 def get_opts():
@@ -681,11 +723,13 @@ class SatWatchSetup(ConfigListScreen, Screen):
     def __init__(self, session):
         Screen.__init__(self, session)
         self.setTitle(_("SatWatch - transpondery - ustawienia"))
-        for element, choices in ((cfg.scan_tuner, tuner_choices()), (cfg.logdir, _logdir_choices())):
+        # domyslna wartosc zostaje stala ("auto" / pamiec wewnetrzna): Enigma2 nie zapisuje wartosci rownej
+        # domyslnej, wiec default=value gubil wybrany tuner/katalog po restarcie
+        for element, choices, default in ((cfg.scan_tuner, tuner_choices(), "auto"),):
             value = element.value
             if value and value not in [key for key, label in choices]:
                 choices.append((value, value))
-            element.setChoices(choices, default=value)
+            element.setChoices(choices, default=default)
             element.value = value
         self["help"] = Label("")
         from . import pick
@@ -715,7 +759,6 @@ class SatWatchSetup(ConfigListScreen, Screen):
             getConfigListEntry("Kanały z bukietów (OK - lista)", self.p_bouquets),
             getConfigListEntry("Zrzut i raport bukietów przy sprawdzaniu", cfg.snapshot),
             getConfigListEntry("Przeładuj transpondery po aktualizacji", cfg.reload),
-            getConfigListEntry("Katalog logu i historii raportów", cfg.logdir),
             getConfigListEntry("Powiadomienie na ekranie", cfg.popup),
             getConfigListEntry("Liczba kopii satellites.xml", cfg.backups),
             getConfigListEntry("Weryfikacja certyfikatu SSL", cfg.verify_ssl),
@@ -768,8 +811,6 @@ class SatWatchSetup(ConfigListScreen, Screen):
                     "i TP) i zapis nowego zrzutu. Ręcznie: Kanały -> SatWatch -> Zapisz zrzut / Podgląd bukietów.",
         "reload": "Po aktualizacji satellites.xml przeładowuje transpondery w Enigma2 bez restartu. Wyłączone: zmiana działa "
                   "po restarcie GUI (może go zrobić 'Restart po nocnym przebiegu' w EPG Scan).",
-        "logdir": "Gdzie trzymać satwatch.log i historię raportów (30 ostatnich). Dysk/USB oszczędza pamięć flash; gdy nośnik "
-                  "jest niedostępny, log trafia do pamięci wewnętrznej. Raporty i log: Info/EPG -> Raporty.",
         "popup": "Komunikat na ekranie po sprawdzeniu lub skanie: nigdy / tylko gdy coś się zmieniło / zawsze.",
         "backups": "Ile kopii satellites.xml sprzed aktualizacji trzymać. Przywracanie: Kanały -> SatWatch -> "
                    "Przywróć kopię satellites.xml.",
@@ -863,22 +904,9 @@ class SatWatchSetup(ConfigListScreen, Screen):
             if c.value != v:
                 c.value = v
                 c.save()
-        old = core.out_dir()
         for x in self["config"].list:
             x[1].save()
         configfile.save()
-        apply_logdir()
-        new = core.out_dir()
-        if core.LOG_PREF and new != core.LOG_PREF:
-            self.session.open(MessageBox, _("Katalog %s jest niedostępny (nośnik niezamontowany?).\n"
-                              "Do czasu jego pojawienia się log zostaje w %s.") % (core.LOG_PREF, new),
-                              MessageBox.TYPE_WARNING, timeout=10)
-        elif new != old:
-            try:
-                n = core.migrate_out_dir(old, new)
-                scanner.log("Katalog logu: %s -> %s (skopiowano %d plikow)" % (old, new, n))
-            except Exception as e:
-                scanner.log("Katalog logu: blad kopiowania %s" % e)
         self.close(True)
 
     def keyCancel(self):
@@ -892,6 +920,10 @@ class SatWatchSetup(ConfigListScreen, Screen):
 def init(session):
     """Start w EPG Scan (sessionstart): katalog logu, sesja dla skanera, zegar wznawiania przerwanych skanow."""
     apply_logdir()
+    try:
+        migrate_old_logdir()
+    except Exception as e:
+        scanner.log("Katalog logu: przeniesienie nieudane: %s" % e)
     runner.session = session
     runner.schedule()
 

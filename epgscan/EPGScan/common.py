@@ -19,12 +19,24 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.18.3"
+VERSION = "2.19.0-beta.1"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
-CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
-TP_STATS = "/etc/enigma2/epgscan_tps.json"
-WAKEUP_FILE = "/etc/enigma2/epgscan_wakeup"
+DATA_DIR = os.path.join(E2, "epgscan")          # wszystkie pliki wtyczki w pamieci wewnetrznej
+CHANNEL_PARAMS_FILE = os.path.join(DATA_DIR, "channelparams.json")
+TP_STATS = os.path.join(DATA_DIR, "tps.json")
+WAKEUP_FILE = os.path.join(DATA_DIR, "wakeup")
+XMLTV_STATE_FILE = os.path.join(DATA_DIR, "xmltv.json")
+PLUGIN_SOURCES_DIR = os.path.join(DATA_DIR, "sources")
+SATWATCH_DATA_DIR = os.path.join(DATA_DIR, "satwatch")
+# 2.19: stare miejsca w /etc/enigma2 -> /etc/enigma2/epgscan (przenoszone raz, przy starcie)
+OLD_PATHS = [
+	(os.path.join(E2, "epgscan_tps.json"), TP_STATS),
+	(os.path.join(E2, "epgscan_wakeup"), WAKEUP_FILE),
+	(os.path.join(E2, "epgscan_xmltv.json"), XMLTV_STATE_FILE),
+	(os.path.join(E2, "epgscan_sources"), PLUGIN_SOURCES_DIR),
+	(os.path.join(E2, "satwatch"), SATWATCH_DATA_DIR),
+]
 RADIO_TYPES = {2, 10}
 DAYS = ["Poniedzialek", "Wtorek", "Sroda", "Czwartek", "Piatek", "Sobota", "Niedziela"]
 
@@ -1658,3 +1670,32 @@ def whole_cache_stats():
 	except Exception:
 		finfo = "%s: brak pliku" % path
 	return len(refs), cov, n, finfo
+
+
+def migrate_paths(old_paths=None):
+	"""Jednorazowo: pliki i katalogi wtyczki ze starych miejsc w /etc/enigma2 do /etc/enigma2/epgscan.
+	Gdy nowe miejsce juz istnieje, stare zostaje nietkniete (nic nie jest nadpisywane)."""
+	moved = []
+	for old, new in (OLD_PATHS if old_paths is None else old_paths):
+		try:
+			if not os.path.lexists(old) or os.path.lexists(new):
+				continue
+			parent = os.path.dirname(new)
+			if not os.path.isdir(parent):
+				os.makedirs(parent)
+			os.rename(old, new)
+			moved.append("%s -> %s" % (old, new))
+		except Exception as e:
+			try:
+				log("Przenoszenie %s -> %s nieudane: %s" % (old, new, e))
+			except Exception:
+				pass
+	if moved:
+		try:
+			log("Katalogi: przeniesiono do %s: %s" % (DATA_DIR, "; ".join(moved)))
+		except Exception:
+			pass
+	return moved
+
+
+migrate_paths()
