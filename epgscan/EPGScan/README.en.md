@@ -146,7 +146,7 @@ profile values. **Menu** opens the schedule and **Info/EPG** shows a scrollable 
 | ***Serwer epgpl*** | *fallback* (the server's file when the receiver has none of its own) / *always* / *no* |
 | ***Pozostałe źródła XMLTV*** (other XMLTV sources) | XMLTV lists ticked in the settings |
 | ***Pobierz świeże dane*** (fetch fresh data) | *yes – in one place*: if the other side (server or receiver) already has today's full package, it is used instead of downloading; *yes – download again*: always download; *no*: use existing files (still downloads if a file is missing or older than 30 h) |
-| **Channel parameter scan** | PAT/PMT scan after the EPG run finishes |
+| **Channel parameter scan** | PAT/PMT during EPG, then scan missing services |
 
 Below the list you see a description of the selected item and the full order of steps, e.g.
 `SatWatch (changes) -> satellite -> receiver -> server (fallback) -> others`.
@@ -195,9 +195,11 @@ the importer skips the conflicting entry and logs a warning rather than risk rep
 
 ### Channel parameters (PAT/PMT)
 
-This is a separate task: it does not replace the EPG scan and does not clear or modify the EPG database. It scans
+This does not replace the EPG scan and does not clear or modify the EPG database. It scans
 each unique DVB service in the selected bouquets, grouped by transport stream. One tuned service provides PAT
-and PMTs for the group; after 20 seconds from starting capture or a failure only missing channels are checked individually.
+and PMTs for the group. During EPG, capture and PMT change monitoring run until its service is released, without
+affecting EPG duration; PMT filters are limited and rotated. A standalone group has
+a 20-second limit, after which or on failure only missing channels are checked individually.
 EPG Scan's parallel limit
 and free-tuner reserve are respected; at least two tuners are kept free (one on receivers with fewer than three
 tuners). With six tuners and a reserve of two, up to four groups can run at once; with eight, up to six. Transponder
@@ -207,9 +209,12 @@ table-read errors are included in the report.
 
 Enable the scan as a profile step: on the main screen choose **Actions** and select
 **Channel parameters (PAT/PMT)**. Green **Run** starts the selected profile actions; yellow
-**Save as default** stores the profile. A profile scan runs after its other steps, and its progress and
-PAT/PMT/audio summary appear on the main screen. You can also start a standalone scan from **Menu** in the
+**Save as default** stores the profile. During EPG scanning, PAT/PMT is read from the already tuned service,
+without another tune or extending the EPG job. After the other steps, only services not captured in this run
+are scanned separately, including skipped and failed EPG transponders; old results do not count as a successful
+capture. Progress and the PAT/PMT/audio summary appear on the main screen. You can also start a standalone scan from **Menu** in the
 results screen.
+Stopping preserves successfully captured results without marking the incomplete scan as completed.
 
 Review results from **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. **OK** tunes to a channel and opens
 its available audio tracks; if scan data is missing, the plugin attempts a PAT/PMT read for that channel.
@@ -224,23 +229,31 @@ track without closing the screen, **OK** confirms it, and **Red** returns and re
 active before preview. **Info/EPG** shows full PAT/PMT and stream data. Audio preferences can come from
 Enigma2's automatic-audio settings or a manually ordered list (for example `pol,eng`). If PAT/PMT scanning
 does not identify audio tracks, the picker uses the audio list supplied by the current Enigma2 service.
-The first audio track is accepted as the default; an existing manual PID is retained if it is still present,
-otherwise the selection falls back to the first track.
+The first track in the highest-priority available language is accepted as the default, or the first track if
+no language matches. An existing manual or legacy confirmed PID without a source is retained if still present;
+previous automatic defaults are recalculated.
 Track selection is saved immediately.
 
 The **Channel parameters (PAT/PMT)** settings group selects language preferences, bouquets, parallel limit,
 tuner reserve, transponder grouping and an interval of 1/2/4/7 days. An optional single extra attempt for failed
 channels runs after the entire scan, including scheduled scans; without it there are no post-scan retries.
 Missing transport-stream data is first checked individually as a separate fallback.
-An automatic scan runs only after a completed
-main EPG schedule run, when the selected interval has elapsed; it follows the **Schedule** conditions (standby,
+An automatic capture runs during the main scheduled EPG run when the selected interval has elapsed, with missing
+services scanned afterwards; it follows the **Schedule** conditions (standby,
 recordings and wake-up). EPG top-ups do not trigger it.
 
-**Info/EPG** in the results screen provides four confirmed operations:
+Post-scan synchronization, including scheduled scans, is configurable and disabled by default for both targets.
+Common defaults can be overwritten or missing entries added; all `device-*.json` profiles can be overwritten,
+filled, or repaired. Only successful results from the current run are synchronized. Fill never changes existing
+entries, even invalid ones; repair keeps a client PID present in the current PMT and does not guess replacements
+for unrelated references. Failures are reported and existing files are backed up before changes.
+
+**Info/EPG** in the results screen provides five confirmed operations:
 
 - replace default audio/PMT values in `common.json` or add missing values;
-- replace values on selected E2Stream receivers or add missing values; backups are made before writing.
+- replace values on selected E2Stream receivers, add missing values, or repair missing PIDs.
 
+Valid PMT data can be sent without a selected audio track; audio is sent only for a confirmed selection.
 PMT data is sent only when its SID is not ambiguous across scanned services. Results are stored in
 `/etc/enigma2/epgscan/channelparams.json`.
 

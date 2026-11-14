@@ -146,7 +146,7 @@ pobierania świeżych danych OK otwiera wybór trybu. Strzałki lewo/prawo nadal
 | **Serwer epgpl** | *zapas* (gotowy plik serwera, gdy dekoder nie ma swojego) / *zawsze* / *nie* |
 | **Pozostałe źródła XMLTV** | listy XMLTV zaznaczone w ustawieniach |
 | **Pobierz świeże dane** | *tak – w jednym miejscu*: gdy druga strona (serwer albo dekoder) ma dzisiejszą pełną paczkę – ona zamiast pobierania; *tak – pobierz na nowo*: zawsze własne pobieranie; *nie*: pliki, które są (pobiera i tak, jeśli pliku brak albo jest starszy niż 30 h) |
-| **Skan parametrów kanałów** | skan PAT/PMT po zakończeniu przebiegu EPG |
+| **Skan parametrów kanałów** | odczyt PAT/PMT podczas EPG, potem skan brakujących kanałów |
 
 Pod listą widać opis wybranej pozycji i pełną kolejność kroków, np.
 `SatWatch (zmiany) -> satelita -> dekoder -> serwer (zapas) -> pozostałe`.
@@ -196,9 +196,11 @@ zamiast ryzykować zastąpienie istniejącej audycji.
 
 ### Skan parametrów kanałów (PAT/PMT)
 
-To osobne zadanie; nie zastępuje skanu EPG i nie czyści ani nie zmienia bazy EPG. Obejmuje każdy unikalny kanał
+Skan nie zastępuje EPG i nie czyści ani nie zmienia jego bazy. Obejmuje każdy unikalny kanał
 DVB w wybranych bukietach, grupując je według strumienia transportowego. Jeden dostrojony kanał udostępnia PAT
-i PMT kanałów z grupy; po 20 sekundach od rozpoczęcia odczytu lub błędzie tylko brakujące kanały są sprawdzane osobno.
+i PMT kanałów z grupy. Podczas EPG odczyt i obserwacja zmian PMT trwają najwyżej do zwolnienia jego usługi,
+bez wpływu na czas EPG; filtry PMT są ograniczone i rotowane. Osobny skan ma limit
+20 sekund na grupę, po którym lub po błędzie tylko brakujące kanały są sprawdzane osobno.
 Limit równoległości i rezerwa wolnych tunerów
 EPG Scan są respektowane; skaner zostawia co najmniej dwa wolne tunery (na dekoderach z mniej niż trzema tunerami
 zostawia jeden). Przy sześciu tunerach i rezerwie dwóch może pracować do czterech grup naraz, a przy ośmiu – do
@@ -208,9 +210,12 @@ jako nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.
 
 Skan można włączyć jako etap profilu: na ekranie głównym wybierz **Akcje** i zaznacz
 **Skan parametrów kanałów (PAT/PMT)**. Zielony **Uruchom** uruchamia wybrane akcje profilu, a żółty
-**Zapisz jako domyślne** zapamiętuje profil. Skan uruchomiony z profilu wykonuje się po jego pozostałych
-etapach; jego postęp i podsumowanie PAT/PMT oraz ścieżek audio są widoczne na ekranie głównym. Można też
+**Zapisz jako domyślne** zapamiętuje profil. Podczas skanu EPG PAT/PMT jest odczytywane z już dostrojonej
+usługi, bez dodatkowego strojenia i bez przedłużania EPG. Po pozostałych etapach osobno sprawdzane są tylko kanały
+nieodczytane w tym przebiegu, także z pominiętych lub błędnych transponderów; wcześniejsze wyniki nie zastępują
+udanego odczytu. Postęp i podsumowanie PAT/PMT oraz ścieżek audio są widoczne na ekranie głównym. Można też
 uruchomić sam skan z ekranu wyników przez **Menu**.
+Przerwanie zachowuje poprawnie odczytane wyniki, bez oznaczania nieukończonego skanu jako zakończonego.
 
 Wyniki otworzysz przez **Menu → Kanały → Skan parametrów kanałów (PAT/PMT)**. **OK** przełącza na wybrany
 kanał i otwiera dostępne ścieżki audio; jeśli skan nie ma danych, wtyczka próbuje odczytać PAT/PMT dla tego
@@ -226,25 +231,36 @@ zaznaczoną ścieżkę bez zamykania okna, **OK** zatwierdza wybór, a **Czerwon
 aktywną przed podglądem.
 **Info/EPG** pokazuje pełne dane PAT/PMT i strumieni. Preferencje języków można pobierać z ustawień
 automatycznego audio Enigma2 albo ustawić własną kolejność (np. `pol,eng`). Gdy skan PAT/PMT nie rozpozna
-ścieżek, okno wyboru korzysta z listy audio udostępnionej przez bieżącą usługę Enigma2. Domyślna jest pierwsza
-ścieżka audio i jest uznawana za prawidłowy wybór; wcześniejszy ręczny wybór jest zachowywany, jeśli jego PID
-nadal występuje, a w przeciwnym razie wraca wybór pierwszej ścieżki. Wybór ścieżki jest
+ścieżek, okno wyboru korzysta z listy audio udostępnionej przez bieżącą usługę Enigma2. Domyślnie wybierana
+jest pierwsza ścieżka w najwyżej preferowanym dostępnym języku, a jeśli żadna nie pasuje – pierwsza ścieżka.
+Wybór jest uznawany za prawidłowy; wcześniejszy ręczny lub starszy potwierdzony wybór bez oznaczenia źródła
+jest zachowywany, jeśli jego PID nadal występuje. Automatyczny wybór z poprzedniego skanu jest przeliczany.
+Wybór ścieżki jest
 zapisywany od razu; zamknięcie głównego okna nie pyta o zapis.
 
 W ustawieniach **Skan parametrów kanałów (PAT/PMT)** wybiera się języki, bukiety, limit równoległości,
 rezerwę tunerów, grupowanie po transponderze i odstęp 1/2/4/7 dni. Opcjonalnie po całym skanie (także
 automatycznym) wykonywana jest dokładnie jedna dodatkowa próba tylko kanałów z błędem; bez tej opcji
 nie ma ponowień błędów po skanie. Odrębnie brakujące dane z transpondera są najpierw sprawdzane indywidualnie.
-Automatyczny skan uruchamia się dopiero po
-głównym przebiegu EPG z harmonogramu, jeśli minął ustawiony odstęp; nadrzędne są warunki z **Harmonogramu**
+Automatyczny odczyt odbywa się w głównym przebiegu EPG z harmonogramu, jeśli minął ustawiony odstęp;
+brakujące kanały są skanowane po EPG. Nadrzędne są warunki z **Harmonogramu**
 (czuwanie, nagrania i wybudzanie). Doczytywanie EPG nie uruchamia skanu parametrów.
 
-**Info/EPG** w ekranie wyników udostępnia cztery potwierdzane działania:
+W ustawieniach skanu można włączyć synchronizację po skanie, także z harmonogramu. Oba cele są domyślnie
+wyłączone: `common.json` można nadpisać lub uzupełnić braki, a wszystkie pliki `device-*.json` nadpisać,
+uzupełnić braki lub poprawić nieistniejące PID-y. Synchronizowane są tylko pomyślne wyniki bieżącego przebiegu.
+Uzupełnianie braków nie zmienia żadnych istniejących wpisów, nawet wadliwych; naprawa zachowuje poprawny PID
+klienta według aktualnej PMT i nie zgaduje zamienników dla innych referencji. Błędy są widoczne w raporcie,
+a przed zmianą istniejącego pliku tworzona jest kopia.
+
+**Info/EPG** w ekranie wyników udostępnia pięć potwierdzanych działań:
 
 - zastąpienie domyślnych wpisów audio/PMT w `common.json` albo dopisanie brakujących,
-- zastąpienie wpisów na wybranych odbiornikach E2Stream albo dopisanie brakujących; przed zapisem tworzona jest kopia.
+- zastąpienie wpisów na wybranych odbiornikach E2Stream, dopisanie brakujących albo poprawienie nieistniejących.
 
-PMT jest przekazywana tylko wtedy, gdy SID nie koliduje z inną zeskanowaną treścią. Plik wyników skanu:
+Prawidłowa PMT może być przekazana także bez wybranej ścieżki audio; wpis audio powstaje tylko dla
+potwierdzonego wyboru. PMT jest przekazywana tylko wtedy, gdy SID nie koliduje z inną zeskanowaną treścią.
+Plik wyników skanu:
 `/etc/enigma2/epgscan/channelparams.json`.
 
 Przy wejściu dekodera w czuwanie otwarte okna EPG Scan są zamykane bez zapisywania niezapisanych ustawień.

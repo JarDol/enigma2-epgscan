@@ -83,11 +83,12 @@ class ChannelParametersTest(unittest.TestCase):
 		self.assertEqual(channelparams.choose_audio(audio, ["Poland"])["pid"], 536)
 		self.assertEqual(audio[1]["codec"], "audio/eac3")
 
-	def test_unknown_and_ambiguous_audio_need_review(self):
+	def test_language_priority_and_first_matching_audio(self):
 		def stream(pid, languages):
 			return {"pid": pid, "kind": "audio", "languages": languages}
 		self.assertIsNone(channelparams.choose_audio([stream(1, [])], ["pol"]))
-		self.assertIsNone(channelparams.choose_audio([stream(1, ["pol"]), stream(2, ["pol"])], ["pol"]))
+		self.assertEqual(channelparams.choose_audio([stream(1, ["pol"]), stream(2, ["pol"])], ["pol"])["pid"], 1)
+		self.assertEqual(channelparams.choose_audio([stream(1, ["eng"]), stream(2, ["pol"])], ["pol", "eng"])["pid"], 2)
 		self.assertEqual(channelparams.choose_audio([stream(1, ["eng"])], ["pol", "eng"])["pid"], 1)
 		self.assertIsNone(channelparams.choose_audio([stream(1, ["und"])], ["und"]))
 

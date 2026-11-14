@@ -1,4 +1,5 @@
 import importlib
+import ast
 import base64
 import json
 import os
@@ -53,6 +54,7 @@ common.TUNE_TIMEOUT = 30
 common.channel_params_bouquet_channels = lambda _files: []
 common.cfg = types.SimpleNamespace(cp_language_source=setting("manual"), cp_languages=setting("pol"),
 	cp_group_tp=setting(True), cp_retry_failed=setting(False), cp_interval=setting("7"), cp_last_run=setting(0), cp_auto_in_progress=setting(False),
+	cp_sync_common=setting("off"), cp_sync_devices=setting("off"),
 	cp_common_overwrite=setting(False), cp_devices_overwrite=setting(False),
 	map_sort=setting("bq"), scope=types.SimpleNamespace(value="all",
 		choices=types.SimpleNamespace(choices=[("all", "wszystkie"), ("selected", "wybrane"), ("tps", "transpondery")])),
@@ -880,7 +882,7 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertTrue(scan.results[ref]["selectedConfirmed"])
 		self.assertEqual(scan.results[ref]["selectionSource"], "default")
 
-	def test_first_audio_is_default_even_when_a_later_track_matches_language(self):
+	def test_preferred_audio_is_default_when_a_later_track_matches_language(self):
 		pmt = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
 		pmt["streams"][1]["languages"] = ["eng"]
 		pmt["streams"][2]["languages"] = ["pol"]
@@ -889,7 +891,7 @@ class ChannelParamScanTests(unittest.TestCase):
 		job = types.SimpleNamespace(ref="1:0:1:428F:1:1:13E:0:0:0:", name="test", pmt_pid=307,
 			pat_section=b"pat", state="")
 		scan._save_channel(job, pmt)
-		self.assertEqual(scan.results[job.ref]["selectedAudioPid"], 536)
+		self.assertEqual(scan.results[job.ref]["selectedAudioPid"], 792)
 		self.assertEqual(scan.results[job.ref]["preferredAudioPid"], 792)
 		self.assertTrue(scan.results[job.ref]["selectedConfirmed"])
 		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
@@ -900,7 +902,7 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertIn("pmts_17039", pmts)
 		self.assertEqual(conflicts, set())
 
-	def test_automatic_default_follows_first_audio_when_order_changes(self):
+	def test_automatic_default_follows_preferred_audio_when_order_changes(self):
 		pmt = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
 		pmt["streams"][1], pmt["streams"][2] = pmt["streams"][2], pmt["streams"][1]
 		with patch.object(scanner_module, "load_results", return_value={"results": {}}):
@@ -909,8 +911,40 @@ class ChannelParamScanTests(unittest.TestCase):
 			pat_section=b"pat", state="")
 		scan.results[job.ref] = {"selectedAudioPid": 536, "selectedConfirmed": True, "selectionSource": "default"}
 		scan._save_channel(job, pmt)
-		self.assertEqual(scan.results[job.ref]["selectedAudioPid"], 792)
+		self.assertEqual(scan.results[job.ref]["selectedAudioPid"], 536)
 		self.assertEqual(scan.results[job.ref]["selectionSource"], "default")
+
+	def test_beta8_defaults_migrate_to_preferred_language_but_confirmed_legacy_is_preserved(self):
+		pmt = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
+		ref = "1:0:1:428F:1:1:13E:0:0:0:"
+		job = types.SimpleNamespace(ref=ref, name="test", pmt_pid=307, pat_section=b"pat", state="")
+		for tracks, old_pid, preferred_pid in [
+				([(208, "und"), (308, "pol")], 208, 308),
+				([(1052, "eng"), (1053, "deu"), (1054, "pol"), (1055, "eng")], 1052, 1054)]:
+			pmt["streams"] = [{"kind": "audio", "pid": pid, "languages": [lang]} for pid, lang in tracks]
+			with patch.object(scanner_module, "load_results", return_value={"results": {}}), \
+					patch.object(scanner_module, "preferred_languages", return_value=["pol", "eng"]):
+				scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+				for previous, expected in [
+						({"selectedAudioPid": old_pid, "selectionSource": "default", "selectedConfirmed": True}, preferred_pid),
+						({"selectedAudioPid": old_pid, "selectionSource": "manual", "selectedConfirmed": True}, old_pid),
+						({"selectedAudioPid": 9999, "selectionSource": "manual", "selectedConfirmed": True}, preferred_pid),
+						({"selectedAudioPid": old_pid, "selectedConfirmed": True}, old_pid),
+						({"selectedAudioPid": old_pid, "selectedConfirmed": False}, preferred_pid)]:
+					scan.results[ref] = previous
+					scan._save_channel(job, pmt)
+					self.assertEqual(scan.results[ref]["selectedAudioPid"], expected)
+
+	def test_no_preferred_language_selects_first_track(self):
+		pmt = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
+		pmt["streams"][1]["languages"] = ["und"]
+		pmt["streams"][2]["languages"] = ["deu"]
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}), \
+				patch.object(scanner_module, "preferred_languages", return_value=["pol", "eng"]):
+			scan = scanner_module.ChannelParamsScan(types.SimpleNamespace(active=[]))
+			job = types.SimpleNamespace(ref="ref", name="test", pmt_pid=307, pat_section=b"pat", state="")
+			scan._save_channel(job, pmt)
+		self.assertEqual(scan.results["ref"]["selectedAudioPid"], 536)
 
 	def test_no_audio_is_not_reported_as_a_confirmed_selection(self):
 		pmt = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
@@ -1259,6 +1293,215 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertFalse(available[1][2])
 
 
+class SyncModeTests(unittest.TestCase):
+	def setUp(self):
+		self.directory = tempfile.TemporaryDirectory()
+		self.addCleanup(self.directory.cleanup)
+		self.dir_patch = patch.object(clients, "DIR", self.directory.name, create=True)
+		self.common_patch = patch.object(clients, "COMMON", os.path.join(self.directory.name, "common.json"), create=True)
+		self.dir_patch.start()
+		self.common_patch.start()
+		self.addCleanup(self.dir_patch.stop)
+		self.addCleanup(self.common_patch.stop)
+		self.ref = "1:0:1:428F:1:1:13E:0:0:0:"
+		self.key = "audio_1_0_1_428F_1_1_13E_0_0_0"
+		parsed = channelparams.parse_pmt(base64.b64decode(PMT_BASE64), 17039)
+		self.result = {"ref": self.ref, "name": "test", "selectedConfirmed": True,
+			"selectedAudioPid": 536, "sid": 17039, "section": PMT_BASE64, "streams": parsed["streams"]}
+		self.results = {self.ref: self.result}
+
+	def write(self, name, data):
+		with open(os.path.join(self.directory.name, name), "w", encoding="utf-8") as file:
+			json.dump({"data": data}, file)
+
+	def read(self, name):
+		with open(os.path.join(self.directory.name, name), encoding="utf-8") as file:
+			return json.load(file)["data"]
+
+	def test_pmt_without_selected_audio_syncs_all_modes_without_audio_entry(self):
+		body = bytes.fromhex("02b012428fc10000e118f0001be118f000")
+		video_pmt = base64.b64encode(body + channelparams._crc32(body).to_bytes(4, "big")).decode("ascii")
+		result = dict(self.result, section=video_pmt, selectedAudioPid=None, selectedConfirmed=False, streams=[])
+		results = {self.ref: result}
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.results = results
+		self.assertTrue(screen._syncable_results())
+		for mode in ("missing", "overwrite"):
+			with self.subTest(target="common", mode=mode):
+				self.write("common.json", {})
+				store_module.add_common_defaults(results, mode=mode)
+				self.assertEqual(self.read("common.json")["pmts_17039"]["v"], video_pmt)
+				self.assertNotIn(self.key, self.read("common.json"))
+		for mode in ("missing", "overwrite", "repair"):
+			with self.subTest(target="device", mode=mode):
+				self.write("device-test.json", {})
+				store_module.apply_to_devices(results, ["device-test.json"], mode=mode)
+				self.assertEqual(self.read("device-test.json")["pmts_17039"]["v"], video_pmt)
+				self.assertNotIn(self.key, self.read("device-test.json"))
+		result.update(selectedAudioPid=536, selectedConfirmed=False, streams=self.result["streams"])
+		audio, _, pmts, _ = store_module._sync_payload(results)
+		self.assertEqual(audio, {})
+		self.assertEqual(pmts["pmts_17039"], video_pmt)
+
+	def test_pmt_only_modes_leave_audio_untouched_and_obey_existing_pmt_policy(self):
+		result = dict(self.result, selectedAudioPid=None, selectedConfirmed=False, streams=[])
+		results = {self.ref: result}
+		for mode in ("missing", "overwrite"):
+			with self.subTest(target="common", mode=mode):
+				self.write("common.json", {self.key: {"v": "792|eng|old"}, "pmts_17039": {"v": "broken"}})
+				store_module.add_common_defaults(results, mode=mode)
+				data = self.read("common.json")
+				self.assertEqual(data[self.key]["v"], "792|eng|old")
+				self.assertEqual(data["pmts_17039"]["v"], "broken" if mode == "missing" else PMT_BASE64)
+		for mode in ("missing", "overwrite", "repair"):
+			with self.subTest(target="device", mode=mode):
+				self.write("device-test.json", {self.key: {"v": "792|eng|old"}, "pmts_17039": {"v": "broken"}})
+				store_module.apply_to_devices(results, ["device-test.json"], mode=mode)
+				data = self.read("device-test.json")
+				self.assertEqual(data[self.key]["v"], "792|eng|old")
+				self.assertEqual(data["pmts_17039"]["v"], "broken" if mode == "missing" else PMT_BASE64)
+
+	def test_audio_free_pmt_participates_in_sid_collision_detection(self):
+		changed = bytearray(base64.b64decode(PMT_BASE64))
+		changed[9] ^= 1
+		changed[-4:] = channelparams._crc32(changed[:-4]).to_bytes(4, "big")
+		without_audio = dict(self.result, ref="1:0:1:428F:2:1:13E:0:0:0:", selectedAudioPid=None,
+			selectedConfirmed=False, section=base64.b64encode(changed).decode("ascii"))
+		audio, _, pmts, conflicts = store_module._sync_payload({self.ref: self.result, "other": without_audio})
+		self.assertEqual(list(audio), [self.key])
+		self.assertEqual(pmts, {})
+		self.assertEqual(conflicts, {"pmts_17039"})
+		without_audio["section"] = PMT_BASE64
+		_, _, pmts, conflicts = store_module._sync_payload({self.ref: self.result, "other": without_audio})
+		self.assertEqual(pmts, {"pmts_17039": PMT_BASE64})
+		self.assertEqual(conflicts, set())
+
+	def test_collision_only_is_reported_without_writing(self):
+		first = dict(self.result, selectedConfirmed=False, selectedAudioPid=None)
+		second = dict(first, ref="1:0:1:428F:2:1:13E:0:0:0:")
+		raw = bytearray(base64.b64decode(PMT_BASE64))
+		raw[9] ^= 1
+		raw[-4:] = channelparams._crc32(raw[:-4]).to_bytes(4, "big")
+		second["section"] = base64.b64encode(raw).decode("ascii")
+		results = {"first": first, "second": second}
+		message, conflicts = store_module.add_common_defaults(results)
+		self.assertIn("koliz", message.lower())
+		self.assertEqual(conflicts, ["pmts_17039"])
+		self.assertFalse(os.path.exists(clients.COMMON))
+		self.write("device-test.json", {})
+		message, conflicts = store_module.apply_to_devices(results, ["device-test.json"])
+		self.assertIn("koliz", message.lower())
+		self.assertEqual(conflicts, ["pmts_17039"])
+		self.assertEqual(self.read("device-test.json"), {})
+
+	def test_invalid_pmt_without_audio_is_reported(self):
+		result = dict(self.result, selectedConfirmed=False, selectedAudioPid=None, section="not-base64")
+		screen = channelparamsui.ChannelParamsScreen.__new__(channelparamsui.ChannelParamsScreen)
+		screen.results = {self.ref: result}
+		self.assertFalse(screen._syncable_results())
+		with self.assertRaisesRegex(ValueError, "Nieprawidlowa PMT"):
+			store_module.add_common_defaults(screen.results)
+		for sid in (None, 1):
+			result.update(section=PMT_BASE64, sid=sid)
+			with self.subTest(sid=sid), self.assertRaisesRegex(ValueError, "Nieprawidlowa PMT"):
+				store_module.add_common_defaults(screen.results)
+
+	def test_automatic_sync_exports_only_current_run_pmt_without_audio(self):
+		self.write("common.json", {})
+		self.write("device-test.json", {})
+		engine = types.SimpleNamespace(active=[], channel_params_scan=None)
+		result = dict(self.result, selectedAudioPid=None, selectedConfirmed=False, streams=[])
+		raw = bytearray(base64.b64decode(PMT_BASE64))
+		raw[3:5] = (17040).to_bytes(2, "big")
+		raw[-4:] = channelparams._crc32(raw[:-4]).to_bytes(4, "big")
+		stale = dict(result, ref="1:0:1:4290:2:1:13E:0:0:0:", sid=17040,
+			section=base64.b64encode(raw).decode("ascii"))
+		reports = []
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}), \
+				patch.object(scanner_module, "save_results"), \
+				patch.object(common.cfg.cp_sync_common, "value", "missing"), \
+				patch.object(common.cfg.cp_sync_devices, "value", "repair"):
+			scan = scanner_module.ChannelParamsScan(engine, done=reports.append)
+			scan.results = {self.ref: result, "stale": stale}
+			scan.scanned_refs = {self.ref}
+			scan._finish()
+		self.assertEqual(reports[0]["errors"], [])
+		self.assertEqual(len(reports[0]["sync"]), 2)
+		self.assertEqual(set(self.read("common.json")), {"pmts_17039"})
+		self.assertEqual(set(self.read("device-test.json")), {"pmts_17039"})
+
+	def test_automatic_sync_reports_collision_when_only_pmts_are_available(self):
+		engine = types.SimpleNamespace(active=[], channel_params_scan=None)
+		first = dict(self.result, selectedAudioPid=None, selectedConfirmed=False, streams=[])
+		raw = bytearray(base64.b64decode(PMT_BASE64))
+		raw[9] ^= 1
+		raw[-4:] = channelparams._crc32(raw[:-4]).to_bytes(4, "big")
+		other_ref = "1:0:1:428F:2:1:13E:0:0:0:"
+		second = dict(first, ref=other_ref, section=base64.b64encode(raw).decode("ascii"))
+		reports = []
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}), \
+				patch.object(scanner_module, "save_results"), \
+				patch.object(common.cfg.cp_sync_common, "value", "missing"):
+			scan = scanner_module.ChannelParamsScan(engine, done=reports.append)
+			scan.results = {self.ref: first, other_ref: second}
+			scan.scanned_refs = {self.ref, other_ref}
+			scan._finish()
+		self.assertIn("pmts_17039", reports[0]["sync"][0])
+		self.assertIn("koliz", reports[0]["sync"][0].lower())
+		self.assertEqual(reports[0]["errors"], [])
+		self.assertFalse(os.path.exists(clients.COMMON))
+
+	def test_common_missing_never_replaces_invalid_but_overwrite_does(self):
+		self.write("common.json", {self.key: {"v": "999|und|bad"}, "pmts_17039": {"v": "broken"}})
+		store_module.add_common_defaults(self.results, mode="missing")
+		self.assertEqual(self.read("common.json")[self.key]["v"], "999|und|bad")
+		self.assertEqual(self.read("common.json")["pmts_17039"]["v"], "broken")
+		store_module.add_common_defaults(self.results, mode="overwrite")
+		self.assertTrue(self.read("common.json")[self.key]["v"].startswith("536|"))
+		self.assertEqual(self.read("common.json")["pmts_17039"]["v"], PMT_BASE64)
+		self.assertTrue(any(name.startswith("common.json.bak-") for name in os.listdir(self.directory.name)))
+
+	def test_malformed_common_section_is_not_overwritten(self):
+		self.write("common.json", [])
+		with self.assertRaisesRegex(ValueError, "Nieprawidlowa sekcja"):
+			store_module.add_common_defaults(self.results, mode="overwrite")
+		self.assertEqual(self.read("common.json"), [])
+
+	def test_device_modes_preserve_valid_choices_and_only_repair_missing_pids(self):
+		for name, pid in (("device-valid.json", 792), ("device-invalid.json", 999),
+				("device-overwrite.json", 792)):
+			self.write(name, {self.key: {"v": "%s|eng|old" % pid}, "audio_unrelated": {"v": "999|und|bad"}})
+		store_module.apply_to_devices(self.results, ["device-invalid.json"], mode="missing")
+		self.assertEqual(self.read("device-invalid.json")[self.key]["v"], "999|eng|old")
+		store_module.apply_to_devices(self.results, ["device-valid.json", "device-invalid.json"], mode="repair")
+		self.assertEqual(self.read("device-valid.json")[self.key]["v"], "792|eng|old")
+		self.assertTrue(self.read("device-invalid.json")[self.key]["v"].startswith("536|"))
+		self.assertEqual(self.read("device-invalid.json")["audio_unrelated"]["v"], "999|und|bad")
+		store_module.apply_to_devices(self.results, ["device-overwrite.json"], mode="overwrite")
+		self.assertTrue(self.read("device-overwrite.json")[self.key]["v"].startswith("536|"))
+		self.assertTrue(any(name.startswith("device-invalid.json.bak-") for name in os.listdir(self.directory.name)))
+
+	def test_repair_updates_pmt_with_disappeared_pid_and_adds_missing_audio(self):
+		old = bytearray(base64.b64decode(PMT_BASE64))
+		offset = old.find(bytes.fromhex("e218"))
+		self.assertGreater(offset, 0)
+		old[offset:offset + 2] = bytes.fromhex("e3e7")
+		old[-4:] = channelparams._crc32(old[:-4]).to_bytes(4, "big")
+		self.write("device-test.json", {"pmts_17039": {"v": base64.b64encode(old).decode("ascii")}})
+		store_module.apply_to_devices(self.results, ["device-test.json"], mode="repair")
+		data = self.read("device-test.json")
+		self.assertEqual(data["pmts_17039"]["v"], PMT_BASE64)
+		self.assertTrue(data[self.key]["v"].startswith("536|"))
+
+	def test_repair_does_not_guess_when_current_pmt_is_missing(self):
+		self.write("device-test.json", {self.key: {"v": "999|und|bad"}})
+		result = dict(self.result)
+		result.pop("section")
+		_, conflicts = store_module.apply_to_devices({self.ref: result}, ["device-test.json"], mode="repair")
+		self.assertEqual(self.read("device-test.json")[self.key]["v"], "999|und|bad")
+		self.assertIn(self.key, conflicts)
+
+
 class BatchScanTests(unittest.TestCase):
 	def setUp(self):
 		self.now = 100
@@ -1326,6 +1569,453 @@ class BatchScanTests(unittest.TestCase):
 	def tune(self):
 		self.scan.rec_event(self.records[-1], enigma.iRecordableService.evTunedIn)
 		self.scan.tick()
+
+	def borrowed_job(self, ref=None):
+		return types.SimpleNamespace(ref=ref or self.rows[0]["ref"],
+			rec=types.SimpleNamespace(stream=lambda: types.SimpleNamespace(
+				getStreamingData=lambda: {"adapter": 0, "demux": 2})))
+
+	def real_engine_module(self):
+		path = os.path.join(ROOT, "EPGScan", "engine.py")
+		with open(path, encoding="utf-8") as source:
+			tree = ast.parse(source.read())
+		names = next(node.names for node in tree.body
+			if isinstance(node, ast.ImportFrom) and node.module == "common")
+		missing = {name.name: Mock() for name in names if not hasattr(common, name.name)}
+		spec = importlib.util.spec_from_file_location(PACKAGE + ".real_engine", path)
+		module = importlib.util.module_from_spec(spec)
+		with patch.multiple(common, create=True, **missing):
+			spec.loader.exec_module(module)
+		return module
+
+	def test_engine_scheduling_and_manual_policy_prepare_only_when_requested(self):
+		module = self.real_engine_module()
+		engine = module.ScanEngine.__new__(module.ScanEngine)
+		engine.topup = False
+		engine.profile = {"channelparams": False}
+		engine.epg_params_scan = None
+		engine.auto = True
+		with patch.object(scanner_module, "scan_due", return_value=False), \
+				patch.object(scanner_module, "ChannelParamsScan") as constructor:
+			engine.prepare_epg_params()
+			constructor.assert_not_called()
+		with patch.object(scanner_module, "scan_due", return_value=True), \
+				patch.object(scanner_module, "save_cfg"), patch.object(module, "save_cfg"):
+			engine.prepare_epg_params()
+			self.assertIsNotNone(engine.epg_params_scan)
+			self.assertTrue(common.cfg.cp_auto_in_progress.value)
+		common.cfg.cp_auto_in_progress.value = False
+		engine.epg_params_scan = None
+		engine.auto = False
+		with patch.object(scanner_module, "ChannelParamsScan") as constructor:
+			engine.prepare_epg_params()
+			constructor.assert_not_called()
+			engine.profile["channelparams"] = True
+			engine.prepare_epg_params()
+			constructor.assert_called_once_with(engine)
+		engine.topup = True
+		with patch.object(scanner_module, "ChannelParamsScan") as constructor:
+			engine.prepare_epg_params()
+			constructor.assert_not_called()
+
+	def test_scheduled_sync_uses_only_this_run_and_configured_modes(self):
+		self.engine.running = False
+		self.engine.maybe_deep_standby = lambda: None
+		self.scan.prepare()
+		for job in self.scan.queue:
+			job.pmt_pid = 307
+			job.pat_section = self.pat([(int(job.ref.split(":")[3], 16), 307)])
+			self.scan._save_channel(job, channelparams.parse_pmt(self.pmt(int(job.ref.split(":")[3], 16)),
+				int(job.ref.split(":")[3], 16)))
+		self.scan.results["stale-ref"] = {"selectedAudioPid": 999}
+		reports = []
+		with patch.object(common.cfg.cp_sync_common, "value", "missing"), \
+				patch.object(common.cfg.cp_sync_devices, "value", "repair"), \
+				patch.object(common.cfg.cp_auto_in_progress, "value", False), \
+				patch.object(common.cfg.cp_last_run, "value", 0), \
+				patch.object(scanner_module, "save_cfg"), \
+				patch.object(store_module, "add_common_defaults", return_value=("common ok", [])) as common_sync, \
+				patch.object(store_module, "device_profiles", return_value=["device-one.json"]), \
+				patch.object(store_module, "apply_to_devices", return_value=("devices ok", [])) as device_sync:
+			self.assertTrue(scanner_module.start_scheduled(self.engine, scan=self.scan, done=reports.append))
+			self.scan.tick()
+		self.assertEqual(set(common_sync.call_args.args[0]), {row["ref"] for row in self.rows})
+		self.assertNotIn("stale-ref", device_sync.call_args.args[0])
+		self.assertEqual(common_sync.call_args.kwargs["mode"], "missing")
+		self.assertEqual(device_sync.call_args.kwargs["mode"], "repair")
+		self.assertEqual(reports[0]["sync"], ["common ok", "devices ok"])
+		self.assertEqual(reports[0]["errors"], [])
+
+	def test_sync_is_opt_in_and_failures_are_reported(self):
+		ref = self.rows[0]["ref"]
+		self.scan.scanned_refs.add(ref)
+		self.scan.results[ref] = {"ref": ref, "streams": []}
+		reports = []
+		self.scan.done = reports.append
+		with patch.object(store_module, "add_common_defaults") as sync:
+			self.scan._finish()
+			sync.assert_not_called()
+		with patch.object(common.cfg.cp_sync_devices, "value", "repair"), \
+				patch.object(store_module, "device_profiles", side_effect=OSError("profile error")):
+			self.scan._finish()
+		self.assertIn("profile error", reports[-1]["errors"][-1]["error"])
+		saved = scanner_module.save_results.call_args.args[0]
+		self.assertIn("profile error", saved["last_scan"]["errors"][-1]["error"])
+
+	def test_no_sync_when_results_cannot_be_saved(self):
+		ref = self.rows[0]["ref"]
+		self.scan.scanned_refs.add(ref)
+		self.scan.results[ref] = {"ref": ref, "streams": []}
+		reports = []
+		self.scan.done = reports.append
+		with patch.object(common.cfg.cp_sync_common, "value", "overwrite"), \
+				patch.object(scanner_module, "save_results", side_effect=OSError("disk full")), \
+				patch.object(store_module, "add_common_defaults") as sync:
+			self.scan._finish()
+		sync.assert_not_called()
+		self.assertIn("disk full", reports[0]["errors"][-1]["error"])
+
+	def test_finish_preserves_new_manual_selection_made_after_capture(self):
+		ref = self.rows[0]["ref"]
+		self.scan.prepare()
+		job = self.scan.queue[0]
+		job.pmt_pid = 307
+		job.pat_section = self.pat([(1, 307)])
+		self.scan._save_channel(job, channelparams.parse_pmt(self.pmt(1), 1))
+		latest = {"results": {ref: {"selectedAudioPid": 792, "selectedConfirmed": True,
+			"selectionSource": "manual", "selectedAt": 123}, "other": {"name": "new"}}}
+		with patch.object(scanner_module, "load_results", return_value=latest):
+			self.scan._finish()
+		saved = scanner_module.save_results.call_args.args[0]["results"]
+		self.assertEqual(saved[ref]["selectedAudioPid"], 792)
+		self.assertEqual(saved[ref]["selectionSource"], "manual")
+		self.assertEqual(saved["other"], {"name": "new"})
+
+	def test_after_epg_passes_this_run_to_scheduled_or_manual_fallback(self):
+		module = self.real_engine_module()
+		engine = module.ScanEngine.__new__(module.ScanEngine)
+		engine.topup = False
+		engine.woke = False
+		engine.auto_start_time = 50
+		engine.profile = {"channelparams": True}
+		engine.night_notes = Mock()
+		engine.maybe_deep_standby = Mock()
+		engine.epg_params_scan = self.scan
+		engine.auto = True
+		with patch.object(scanner_module, "scan_due", return_value=True), \
+				patch.object(scanner_module, "start_scheduled", return_value=True) as scheduled:
+			engine.after_backup()
+			self.assertIs(scheduled.call_args.kwargs["scan"], self.scan)
+			self.assertIsNone(engine.epg_params_scan)
+		engine.auto = False
+		engine.epg_params_scan = self.scan
+		with patch.object(scanner_module, "start_manual", return_value=True) as manual:
+			engine.after_backup()
+			self.assertIs(manual.call_args.kwargs["scan"], self.scan)
+			self.assertIsNone(engine.epg_params_scan)
+
+	def test_pending_epg_results_cannot_be_replaced_before_backup_handoff(self):
+		module = self.real_engine_module()
+		engine = module.ScanEngine.__new__(module.ScanEngine)
+		engine.running = False
+		engine.phase = ""
+		engine.epg_params_scan = self.scan
+		self.assertFalse(engine.start(profile={"sat": True}))
+		self.assertFalse(engine.start_xmltv_only())
+		engine.prepare()
+		self.assertFalse(scanner_module.start_manual(engine))
+		with patch.object(common.cfg.cp_auto_in_progress, "value", True):
+			self.assertFalse(scanner_module.start_scheduled(engine))
+			self.assertTrue(common.cfg.cp_auto_in_progress.value)
+		self.assertIs(engine.epg_params_scan, self.scan)
+		engine.running = True
+		engine.after_backup()
+		self.assertIs(engine.epg_params_scan, self.scan)
+
+	def test_after_backup_start_failure_preserves_captured_results_and_reports_error(self):
+		module = self.real_engine_module()
+		engine = module.ScanEngine.__new__(module.ScanEngine)
+		engine.running = False
+		engine.topup = False
+		engine.auto = False
+		engine.profile = {"channelparams": True}
+		engine.epg_params_scan = self.scan
+		engine.notify = Mock()
+		engine.maybe_deep_standby = Mock()
+		ref = self.rows[0]["ref"]
+		self.scan.scanned_refs.add(ref)
+		self.scan.results[ref] = {"sid": 1}
+		self.scan.last_scan = {"errors": [{"name": "old error"}]}
+		with patch.object(scanner_module, "start_manual", side_effect=RuntimeError("start failed")):
+			engine.after_backup()
+		saved = scanner_module.save_results.call_args.args[0]
+		self.assertEqual(saved["results"][ref], {"sid": 1})
+		self.assertEqual(saved["last_scan"], self.scan.last_scan)
+		self.assertIn("start failed", engine.note)
+		self.assertIn("start failed", engine.channelparams_report["errors"][0]["error"])
+		self.assertIsNone(engine.epg_params_scan)
+
+	def test_stop_persists_partial_results_and_surfaces_save_failures(self):
+		module = self.real_engine_module()
+		for phase, save_fails in (("scan", False), ("channelparams", False), ("scan", True)):
+			with self.subTest(phase=phase, save_fails=save_fails):
+				engine = module.ScanEngine.__new__(module.ScanEngine)
+				engine.running = True
+				engine.phase = phase
+				engine.auto = False
+				engine.channelparams_auto = False
+				engine.active = []
+				engine.timer = FakeTimer()
+				engine.end_eit = Mock()
+				engine.detach = Mock()
+				engine.notify = Mock()
+				engine.clear_auto_flag = Mock()
+				self.scan.engine = engine
+				self.scan.scanned_refs = {self.rows[0]["ref"]}
+				self.scan.results[self.rows[0]["ref"]] = {"sid": 1}
+				self.scan.last_scan = {"errors": [{"name": "previous"}]}
+				engine.epg_params_scan = self.scan if phase == "scan" else None
+				engine.channel_params_scan = self.scan if phase == "channelparams" else None
+				scanner_module.save_results.reset_mock()
+				scanner_module.save_results.side_effect = OSError("disk full") if save_fails else None
+				engine.stop()
+				self.assertFalse(engine.running)
+				scanner_module.save_results.assert_called_once()
+				if save_fails:
+					self.assertIn("disk full", engine.note)
+				else:
+					saved = scanner_module.save_results.call_args.args[0]
+					self.assertEqual(saved["results"][self.rows[0]["ref"]], {"sid": 1})
+					self.assertEqual(saved["last_scan"], {"errors": [{"name": "previous"}]})
+					self.assertEqual(common.cfg.cp_last_run.value, 0)
+				scanner_module.save_results.side_effect = None
+
+	def test_previous_run_results_do_not_count_as_current_capture(self):
+		self.scan.results[self.rows[0]["ref"]] = {"selectedAudioPid": 208, "selectionSource": "default"}
+		self.scan.prepare()
+		self.assertEqual(self.scan.scanned_refs, set())
+		self.assertTrue(self.scan.start())
+		self.assertEqual(self.records[0].ref, self.rows[0]["ref"])
+
+	def test_fallback_respects_last_epg_tune_gap(self):
+		self.scan.prepare()
+		self.engine.last_tune = self.now
+		self.assertTrue(self.scan.start())
+		self.assertEqual(self.records, [])
+		self.now += common.TUNE_GAP
+		self.scan.tick()
+		self.assertEqual(len(self.records), 1)
+
+	def test_engine_tuned_event_poll_and_release_use_existing_service(self):
+		module = self.real_engine_module()
+		engine = module.ScanEngine.__new__(module.ScanEngine)
+		engine.epg_params_scan = self.scan
+		engine.other_used = set()
+		engine.fail_streak = {}
+		engine.active = []
+		engine.queue = [types.SimpleNamespace(not_before=9999, state="waiting")]
+		engine.running = True
+		engine.last_usage = self.now
+		engine.last_tune = self.now
+		engine.timer_hold = 0
+		engine.max_parallel = 1
+		engine.free_tuners = lambda: 4
+		engine.eff_reserve = lambda: 1
+		engine.notify = lambda: None
+		job = self.borrowed_job()
+		job.name = "EPG"
+		job.tuner_no = -1
+		job.last_count = self.now
+		job.all_events = 0
+		job.t0 = self.now
+		engine.active.append(job)
+		self.navigation.stopRecordService = Mock()
+		self.sections = {0: [self.pat([(1, 307), (2, 308)])],
+			307: [self.pmt(1)], 308: [self.pmt(2)]}
+		self.scan.prepare()
+		engine.rec_event(job.rec, enigma.iRecordableService.evTunedIn)
+		with patch.multiple(module.cfg, create=True, min_time=setting(100), max_time=setting(200),
+				idle_time=setting(100)), patch.multiple(module, USAGE_EVERY=100, COUNT_EVERY=100):
+			engine.tick()
+			engine.tick()
+		self.assertEqual(self.scan.scanned_refs, {row["ref"] for row in self.rows})
+		engine.release(job)
+		self.navigation.stopRecordService.assert_called_once()
+		self.assertEqual(self.records, [])
+
+	def test_epg_capture_completes_without_any_additional_tune(self):
+		self.sections = {0: [self.pat([(1, 307), (2, 308)])],
+			307: [self.pmt(1)], 308: [self.pmt(2)]}
+		self.scan.prepare()
+		job = self.borrowed_job()
+		self.scan.attach_epg(job)
+		self.scan.poll_epg(job)
+		self.scan.poll_epg(job)
+		self.assertEqual(self.scan.scanned_refs, {row["ref"] for row in self.rows})
+		self.assertIn(id(job), self.scan.borrowed)
+		self.scan.release_epg(job)
+		self.assertEqual(self.released, [])
+		reports = []
+		self.scan.done = reports.append
+		self.assertTrue(self.scan.start())
+		self.scan.tick()
+		self.assertEqual(self.records, [])
+		self.assertEqual(reports[0]["scanned"], 2)
+		self.assertEqual(reports[0]["errors"], [])
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+
+	def test_epg_partial_capture_and_skipped_or_failed_transponders_fall_back(self):
+		self.rows.extend([{"ref": "1:0:1:%X:%X:1:13E:0:0:0:" % (sid, sid),
+			"name": str(sid), "supported": True} for sid in (3, 4)])
+		self.scan.prepare()
+		self.scan.results[self.rows[2]["ref"]] = {"old": True}
+		self.sections = {0: [self.pat([(1, 307), (2, 308)])], 307: [self.pmt(1)]}
+		job = self.borrowed_job()
+		self.scan.attach_epg(job)
+		self.scan.poll_epg(job)
+		self.scan.poll_epg(job)
+		self.scan.release_epg(job)
+		self.assertEqual(self.scan.scanned_refs, {self.rows[0]["ref"]})
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+		self.assertEqual(self.released, [])
+		reports = []
+		self.scan.done = reports.append
+		self.assertTrue(self.scan.start())
+		self.assertEqual(self.records[0].ref, self.rows[1]["ref"])
+		self.assertEqual({job.ref for job in self.scan.queue} | {self.scan.active[0].ref},
+			{row["ref"] for row in self.rows[1:]})
+		self.assertEqual(self.scan.results[self.rows[2]["ref"]], {"old": True})
+		for _ in range(50):
+			for current in list(self.scan.active):
+				if current.state == "strojenie":
+					fields = current.ref.split(":")
+					sid, tsid = int(fields[3], 16), int(fields[4], 16)
+					self.sections = {0: [self.pat([(sid, 307)], tsid=tsid)], 307: [self.pmt(sid)]}
+					self.scan.rec_event(current.rec, enigma.iRecordableService.evTunedIn)
+			self.now += 1
+			self.scan.tick()
+			if reports:
+				break
+		self.assertEqual(len(self.records), 3)
+		self.assertEqual(reports[0]["scanned"], 4)
+		self.assertEqual(reports[0]["errors"], [])
+		self.assertEqual(self.scan.results[self.rows[2]["ref"]]["sid"], 3)
+
+	def test_epg_capture_rejects_other_transport_identity_and_cleans_up_on_cancel(self):
+		self.scan.prepare()
+		job = self.borrowed_job("1:0:1:1:1:2:13E:0:0:0:")
+		self.scan.attach_epg(job)
+		self.assertEqual(self.scan.borrowed, {})
+		job = self.borrowed_job()
+		self.scan.attach_epg(job)
+		self.scan.poll_epg(job)
+		self.scan.cancel()
+		self.assertEqual(self.scan.borrowed, {})
+		self.assertEqual(self.released, [])
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+
+	def test_epg_capture_accepts_pmt_after_batch_timeout_without_retune(self):
+		self.scan.prepare()
+		job = self.borrowed_job()
+		self.sections = {0: [self.pat([(1, 307), (2, 308)])]}
+		self.scan.attach_epg(job)
+		self.scan.poll_epg(job)
+		self.scan.poll_epg(job)
+		self.now += scanner_module.BATCH_DATA_WAIT + 1
+		self.sections[307] = [self.pmt(1)]
+		self.sections[308] = [self.pmt(2)]
+		self.scan.poll_epg(job)
+		self.assertEqual(self.scan.scanned_refs, {row["ref"] for row in self.rows})
+		self.assertIn(id(job), self.scan.borrowed)
+		self.scan.release_epg(job)
+		self.assertEqual(self.records, [])
+		self.assertEqual(self.released, [])
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+		reports = []
+		self.scan.done = reports.append
+		self.assertTrue(self.scan.start())
+		self.scan.tick()
+		self.assertEqual(self.records, [])
+		self.assertEqual(reports[0]["scanned"], 2)
+
+	def test_epg_observes_changed_pmt_until_release_without_losing_manual_pid(self):
+		self.scan.prepare()
+		job = self.borrowed_job()
+		self.sections = {0: [self.pat([(1, 307)])], 307: [self.pmt(1)]}
+		self.scan.results[self.rows[0]["ref"]] = {"selectedAudioPid": 792,
+			"selectedConfirmed": True, "selectionSource": "manual"}
+		self.scan.attach_epg(job)
+		self.scan.poll_epg(job)
+		self.scan.poll_epg(job)
+		changed = bytearray(self.pmt(1))
+		changed[5] ^= 0x02
+		offset = changed.find(bytes.fromhex("e218"))
+		self.assertGreater(offset, 0)
+		changed[offset:offset + 2] = bytes.fromhex("e219")
+		changed[-4:] = channelparams._crc32(changed[:-4]).to_bytes(4, "big")
+		self.sections[307] = [bytes(changed)]
+		self.scan.poll_epg(job)
+		result = self.scan.results[self.rows[0]["ref"]]
+		self.assertEqual(base64.b64decode(result["section"]), bytes(changed))
+		self.assertIn(537, [stream["pid"] for stream in result["streams"]])
+		self.assertNotIn(536, [stream["pid"] for stream in result["streams"]])
+		self.assertEqual(result["selectedAudioPid"], 792)
+		self.assertEqual(result["selectionSource"], "manual")
+		self.assertIn(id(job), self.scan.borrowed)
+		self.scan.release_epg(job)
+		self.assertEqual(self.records, [])
+		self.assertEqual(self.released, [])
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+
+	def test_epg_monitor_rotates_filters_after_initial_reads(self):
+		self.rows = [{"ref": "1:0:1:%X:1:1:13E:0:0:0:" % sid, "name": str(sid), "supported": True}
+			for sid in range(1, 7)]
+		self.scan.prepare()
+		job = self.borrowed_job()
+		self.sections = {0: [self.pat([(sid, 300 + sid) for sid in range(1, 7)])]}
+		for sid in range(1, 7):
+			self.sections[300 + sid] = [self.pmt(sid)]
+		self.scan.attach_epg(job)
+		self.scan.poll_epg(job)
+		for _ in range(15):
+			self.scan.poll_epg(job)
+			anchor = self.scan.borrowed[id(job)]
+			self.assertLessEqual(len(anchor.batch_readers), scanner_module.BATCH_MAX_PMT_FILTERS)
+			self.now += 1
+		self.assertEqual(self.scan.scanned_refs, {row["ref"] for row in self.rows})
+		self.scan.release_epg(job)
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+		self.assertEqual(self.records, [])
+
+	def test_epg_changed_pat_requires_new_pmt_before_counting_success(self):
+		self.scan.prepare()
+		job = self.borrowed_job()
+		self.sections = {0: [self.pat([(1, 307)])], 307: [self.pmt(1)]}
+		self.scan.attach_epg(job)
+		self.scan.poll_epg(job)
+		self.scan.poll_epg(job)
+		self.assertIn(self.rows[0]["ref"], self.scan.scanned_refs)
+		self.sections[0] = [self.pat([(1, 308)])]
+		self.scan.poll_epg(job)
+		self.assertNotIn(self.rows[0]["ref"], self.scan.scanned_refs)
+		self.scan.release_epg(job)
+		self.assertIn(self.rows[0]["ref"], [item.ref for item in self.scan.queue])
+		self.assertTrue(self.scan.start())
+		self.assertEqual(self.records[0].ref, self.rows[0]["ref"])
+
+	def test_epg_waits_for_late_stream_metadata_until_release(self):
+		self.scan.prepare()
+		job = self.borrowed_job()
+		stream = types.SimpleNamespace(getStreamingData=Mock(side_effect=[None, {"adapter": 0, "demux": 2}]))
+		job.rec.stream = lambda: stream
+		self.scan.attach_epg(job)
+		self.scan.poll_epg(job)
+		self.now += scanner_module.STREAM_DATA_WAIT + 1
+		self.scan.poll_epg(job)
+		self.assertIn(id(job), self.scan.borrowed)
+		self.scan.release_epg(job)
+		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
+		self.assertEqual(self.records, [])
 
 	def test_one_reservation_collects_multiple_pat_sections_and_shared_pmt_pid(self):
 		self.sections = {0: [self.pat([(1, 307)], number=0, last=1),

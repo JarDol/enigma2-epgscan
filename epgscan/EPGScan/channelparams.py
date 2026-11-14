@@ -203,7 +203,7 @@ def parse_pmt(data, service_id):
 
 
 def choose_audio(streams, preferred):
-	"""Choose only an unambiguous language match; unknowns need review."""
+	"""Choose the first track in the highest-priority matching language."""
 	for language in preferred:
 		lang = language.strip().lower()
 		if lang in ("pl", "pol", "polish", "poland", "polski"):
@@ -212,9 +212,7 @@ def choose_audio(streams, preferred):
 			lang = "eng"
 		if not lang or lang in ("und", "unknown", "none"):
 			continue
-		candidates = [s for s in streams if s["kind"] == "audio" and lang in s["languages"]]
-		if len(candidates) == 1:
-			return candidates[0]
-		if len(candidates) > 1:
-			return None
+		match = next((s for s in streams if s["kind"] == "audio" and lang in s["languages"]), None)
+		if match is not None:
+			return match
 	return None

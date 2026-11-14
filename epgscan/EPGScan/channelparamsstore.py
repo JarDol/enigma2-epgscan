@@ -34,12 +34,29 @@ def _valid_audio_entry(entry, result):
 	return _audio(result, pid) is not None
 
 
-def _valid_pmt_entry(entry, sid):
+def _current_pmt(result):
 	try:
-		parsed = parse_pmt(base64.b64decode(_stored_value(entry), validate=True), int(sid))
-		return parsed["sid"] == int(sid)
+		return parse_pmt(base64.b64decode(result["section"], validate=True), int(result["sid"]))
+	except Exception:
+		return None
+
+
+def _pmt_references_exist(entry, current):
+	try:
+		old = parse_pmt(base64.b64decode(_stored_value(entry), validate=True), current["sid"])
+		current_pids = {stream["pid"] for stream in current["streams"]}
+		old_pids = {stream["pid"] for stream in old["streams"]}
+		pcr = old["pcr_pid"]
+		return old_pids <= current_pids and (pcr in (0x1fff, current["pcr_pid"]) or pcr in current_pids)
 	except Exception:
 		return False
+
+
+def _mode(overwrite, mode, allowed):
+	mode = mode if mode is not None else ("overwrite" if overwrite else "missing")
+	if mode not in allowed:
+		raise ValueError("Nieznany tryb synchronizacji: %s" % mode)
+	return mode
 
 
 def _sync_key(ref):
@@ -53,19 +70,17 @@ def _sync_payload(results):
 	collisions = set()
 	for result in results.values():
 		pid = result.get("selectedAudioPid")
-		if not result.get("selectedConfirmed") or pid is None:
-			continue
-		stream = _audio(result, pid)
-		if stream is None:
-			continue
-		audio["audio_" + _sync_key(result["ref"])] = _audio_value(stream)
-		audio_sources["audio_" + _sync_key(result["ref"])] = result
+		stream = _audio(result, pid) if result.get("selectedConfirmed") and pid is not None else None
+		if stream is not None:
+			key = "audio_" + _sync_key(result["ref"])
+			audio[key] = _audio_value(stream)
+			audio_sources[key] = result
 		sid = result.get("sid")
 		section = result.get("section")
-		if sid is None or not section:
+		if not section:
 			continue
-		key = "pmts_%d" % int(sid)
 		try:
+			key = "pmts_%d" % int(sid)
 			parsed = parse_pmt(base64.b64decode(section, validate=True), int(sid))
 		except Exception as e:
 			raise ValueError("Nieprawidlowa PMT dla %s: %s" % (result.get("name", result["ref"]), e))
@@ -115,27 +130,29 @@ def _backup(path, stamp):
 	return name
 
 
-def add_common_defaults(results, overwrite=False):
+def add_common_defaults(results, overwrite=False, mode=None):
 	from . import clients
-	audio, audio_sources, pmts, conflicts = _sync_payload(results)
+	mode = _mode(overwrite, mode, ("missing", "overwrite"))
+	audio, _audio_sources, pmts, conflicts = _sync_payload(results)
 	if not audio and not pmts:
-		raise ValueError("Brak potwierdzonych wyborow sciezki do zapisania")
+		if conflicts:
+			return "PMT pominieto z powodu kolizji SID; niczego nie zapisano.", sorted(conflicts)
+		raise ValueError("Brak prawidlowych PMT lub potwierdzonych wyborow audio do zapisania")
 	data = _read_json(clients.COMMON)
-	values = data.get("data") or {}
+	values = data.get("data", {})
 	if not isinstance(values, dict):
 		raise ValueError("Nieprawidlowa sekcja data w common.json")
 	changed = []
 	for key, value in audio.items():
 		old = values.get(key)
-		if overwrite or old is None or not _valid_audio_entry(old, audio_sources[key]):
+		if mode == "overwrite" or key not in values:
 			values[key] = {"v": value, "t": int(time.time() * 1000)}
 			changed.append(key)
 		elif _stored_value(old) != value:
 			conflicts.add(key)
 	for key, value in pmts.items():
 		old = values.get(key)
-		sid = int(key.split("_", 1)[1])
-		if overwrite or old is None or not _valid_pmt_entry(old, sid):
+		if mode == "overwrite" or key not in values:
 			values[key] = {"v": value, "t": int(time.time() * 1000)}
 			changed.append(key)
 		elif _stored_value(old) != value:
@@ -152,15 +169,24 @@ def add_common_defaults(results, overwrite=False):
 	return "Dodano %d wartosci jako domyslne dla nowych urzadzen." % len(changed), sorted(conflicts)
 
 
-def apply_to_devices(results, selected_files, overwrite=False):
+def device_profiles():
 	from . import clients
-	audio, audio_sources, pmts, conflicts = _sync_payload(results)
-	if not audio and not pmts:
-		raise ValueError("Brak potwierdzonych wyborow sciezki do zapisania")
 	if not os.path.isdir(clients.DIR):
 		raise ValueError("Brak katalogu profili E2Stream")
-	allowed = set(n for n in os.listdir(clients.DIR) if n.startswith("device-") and n.endswith(".json"))
-	targets = [n for n in selected_files if n in allowed]
+	return sorted(name for name in os.listdir(clients.DIR)
+		if name.startswith("device-") and name.endswith(".json") and os.path.isfile(os.path.join(clients.DIR, name)))
+
+
+def apply_to_devices(results, selected_files, overwrite=False, mode=None):
+	from . import clients
+	mode = _mode(overwrite, mode, ("missing", "repair", "overwrite"))
+	audio, audio_sources, pmts, conflicts = _sync_payload(results)
+	if not audio and not pmts:
+		if conflicts:
+			return "PMT pominieto z powodu kolizji SID; niczego nie zapisano.", sorted(conflicts)
+		raise ValueError("Brak prawidlowych PMT lub potwierdzonych wyborow audio do zapisania")
+	allowed = set(device_profiles())
+	targets = list(dict.fromkeys(n for n in selected_files if n in allowed))
 	if not targets:
 		raise ValueError("Nie wybrano aktywnego odbiornika")
 
@@ -176,21 +202,32 @@ def apply_to_devices(results, selected_files, overwrite=False):
 			raise ValueError("Nieprawidlowy profil odbiornika: %s" % name)
 		originals[path] = raw
 		entries = data.setdefault("data", {})
+		changed = False
 		for key, value in audio.items():
 			old = entries.get(key)
-			if overwrite or old is None or not _valid_audio_entry(old, audio_sources[key]):
+			current = _current_pmt(audio_sources[key]) if mode == "repair" else None
+			invalid = current is not None and not _valid_audio_entry(old, {"streams": current["streams"]})
+			if mode == "overwrite" or key not in entries or (mode == "repair" and invalid):
+				if mode == "repair" and (current is None or
+						not _valid_audio_entry(value, {"streams": current["streams"]})):
+					conflicts.add(key)
+					continue
 				entries[key] = {"v": value, "t": stamp}
+				changed = True
 			elif _stored_value(old) != value:
 				conflicts.add(key)
 		for key, value in pmts.items():
 			old = entries.get(key)
 			sid = int(key.split("_", 1)[1])
-			if overwrite or old is None or not _valid_pmt_entry(old, sid):
+			current = parse_pmt(base64.b64decode(value, validate=True), sid) if mode == "repair" else None
+			if mode == "overwrite" or key not in entries or (mode == "repair" and not _pmt_references_exist(old, current)):
 				entries[key] = {"v": value, "t": stamp}
+				changed = True
 			elif _stored_value(old) != value:
 				conflicts.add(key)
-		data["updated"] = stamp
-		updated[path] = data
+		if changed:
+			data["updated"] = stamp
+			updated[path] = data
 
 	written = []
 	try:

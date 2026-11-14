@@ -28,6 +28,7 @@ def all_items():
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
 		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto, cfg.upd_channel,
 		cfg.cp_language_source, cfg.cp_languages, cfg.cp_group_tp, cfg.cp_retry_failed, cfg.cp_interval, cfg.cp_last_run, cfg.cp_auto_in_progress,
+		cfg.cp_sync_common, cfg.cp_sync_devices,
 		cfg.cp_common_overwrite, cfg.cp_devices_overwrite,
 		cfg.topup, cfg.topup_mode, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
 
@@ -185,6 +186,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				e("Maks. rownoleglych skanow", cfg.max_parallel), e("Rezerwa wolnych tunerow", cfg.reserve),
 				e("Grupowanie kanalow po transponderze", cfg.cp_group_tp),
 				e("Ponow raz bledne kanaly po skanie", cfg.cp_retry_failed),
+				e("Po skanie: wspolne ustawienia E2Stream", cfg.cp_sync_common),
+				e("Po skanie: wszystkie profile E2Stream", cfg.cp_sync_devices),
 				e("Skanuj kanaly co", cfg.cp_interval)]
 		elif sec == "net":
 			lst.append(e("Program z internetu (XMLTV)", cfg.xmltv))
@@ -232,8 +235,6 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			if cfg.cli_api.value:
 				lst += [e("  Port", cfg.cli_port), e("  Token (puste = bez, siec lokalna)", cfg.cli_token),
 					e("  Dane dla aplikacji po skanach (EPG, ikony, referencje)", cfg.cli_pack),
-					e("  Dane domyslne nadpisuj", cfg.cp_common_overwrite),
-					e("  Zamieniaj w konfiguracji klientow", cfg.cp_devices_overwrite),
 					e("  Przygotuj dane teraz", self.p_pack)]
 		else:
 			lst += [e("Powiadomienie po pracy w tle", cfg.notify), e("Restart po nocnym przebiegu", cfg.rs_mode)]
@@ -288,11 +289,14 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"tu swoje ustawienia i dane kanalow (czesc wspolna dla nowych odbiornikow + plik kazdego odbiornika). " \
 				"Dziala w sieci lokalnej; token - opcjonalne zabezpieczenie (ten sam wpisz w aplikacji). Stan: %s" % st
 		elif item is cfg.cp_common_overwrite:
-			txt = "Tak: nadpisuje zgodne klucze audio i PMT w common.json. Nie: dopisuje tylko klucze brakujace albo " \
-				"nieprawidlowe; istniejace poprawne wartosci pozostawia bez zmian."
+			txt = "Synchronizacja wspolnych wartosci E2Stream jest ustawiana w sekcji skanu parametrow."
 		elif item is cfg.cp_devices_overwrite:
-			txt = "Tak: nadpisuje klucze audio i PMT w zaznaczonych profilach klientow. Nie: dopisuje tylko klucze " \
-				"brakujace albo nieprawidlowe; istniejace poprawne wartosci pozostawia bez zmian."
+			txt = "Synchronizacja profili E2Stream jest ustawiana w sekcji skanu parametrow."
+		elif item in (cfg.cp_sync_common, cfg.cp_sync_devices):
+			txt = "Automatyczna synchronizacja po skanie, rowniez z harmonogramu, tylko z kanalow odczytanych " \
+				"w tym przebiegu. Wylaczona domyslnie. Klienci: wszystkie pliki device-*.json. " \
+				"Dopisz braki nie zmienia istniejacych wpisow; popraw nieistniejace zachowuje poprawny PID. " \
+				"Przed zmianami powstaja kopie."
 		elif item is cfg.scope:
 			txt = "Ktore kanaly skanowac z satelity i skanem parametrow. OK - lista bukietow do zaznaczenia (zapis ustawia 'wybrane bukiety'); " \
 				"strzalki - tryb. Wszystkie bukiety: takze bukiety dodane w przyszlosci. Wybrane: tylko zaznaczone. " \
@@ -316,8 +320,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"skanu parametrow. Teraz: %s." % (cfg.cp_interval.value,
 					"oczekuje na skan" if scan_due() else "odstep jeszcze nie uplynal")
 		elif item is cfg.cp_language_source:
-			txt = "Jezyki stosowane do wskazania proponowanej sciezki audio. Wybor propozycji wymaga potwierdzenia w oknie " \
-				"parametrow kanalow; wynik nigdy sam nie nadpisuje profili E2Stream."
+			txt = "Pierwsza pasujaca sciezka w kolejnosci preferencji jest wybierana automatycznie; reczny PID " \
+				"jest zachowywany, jesli nadal wystepuje. Synchronizacja E2Stream jest osobno konfigurowana."
 		elif item in (cfg.skip_empty, cfg.skip_recheck):
 			txt = "Transponder, ktory w 2 kolejnych skanach nie dal zadnego EPG, jest pomijany i sprawdzany " \
 				"ponownie po podanej liczbie dni."

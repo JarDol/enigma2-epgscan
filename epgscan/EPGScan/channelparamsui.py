@@ -17,7 +17,7 @@ from Components.SelectionList import SelectionList, SelectionEntryComponent
 from enigma import eServiceReference, eTimer
 
 from .channelparamscan import load_results, save_results, start_manual
-from .channelparamsstore import add_common_defaults, apply_to_devices
+from .channelparamsstore import add_common_defaults, apply_to_devices, _current_pmt
 from .common import cfg, keys_skin, init_keys, log, set_keys, selected_bouquets, channel_params_bouquet_channels, save_cfg
 
 
@@ -544,14 +544,15 @@ class ChannelParamsScreen(Screen):
 			list=[("1. Zastap domyslne", ("common", True)),
 				("2. Dopisz braki", ("common", False)),
 				("3. Zastap na klientach", ("devices", True)),
-				("4. Dopisz braki na klientach", ("devices", False))])
+				("4. Dopisz braki na klientach", ("devices", False)),
+				("5. Popraw nieistniejace na klientach", ("devices", "repair"))])
 
 	def sync_choice(self, choice):
 		if not choice:
 			return
 		target, self.sync_overwrite = choice[1]
 		if not self._syncable_results():
-			self.session.open(MessageBox, "Brak prawidlowych sciezek audio do synchronizacji. Najpierw wykonaj skan lub wybierz sciezki.",
+			self.session.open(MessageBox, "Brak prawidlowych PMT lub potwierdzonych sciezek audio do synchronizacji.",
 				MessageBox.TYPE_INFO, timeout=7)
 			return
 		if target == "common":
@@ -564,8 +565,9 @@ class ChannelParamsScreen(Screen):
 				ChannelParamsDevicesScreen, self.results)
 
 	def _syncable_results(self):
-		return any(result.get("selectedAudioPid") is not None
-			and _audio(result, result.get("selectedAudioPid")) for result in self.results.values())
+		return any(_current_pmt(result) is not None or (result.get("selectedConfirmed")
+			and result.get("selectedAudioPid") is not None
+			and _audio(result, result.get("selectedAudioPid"))) for result in self.results.values())
 
 	def sync_common_confirm(self, yes):
 		if not yes:
@@ -584,14 +586,16 @@ class ChannelParamsScreen(Screen):
 		self.session.openWithCallback(lambda yes: self.apply_devices(yes, files, overwrite), MessageBox,
 			"%s dane audio i PMT w %d wybranych odbiornikach?\n"
 			"PMT z kolizja SID zostana pominiete. Przed zapisem powstana kopie." %
-			("Zastapic" if overwrite else "Dopisac braki", len(files)),
+			("Poprawic nieistniejace" if overwrite == "repair" else
+				("Zastapic" if overwrite else "Dopisac braki"), len(files)),
 			MessageBox.TYPE_YESNO, default=False)
 
 	def apply_devices(self, yes, files, overwrite=None):
 		if not yes:
 			return
 		try:
-			message, collisions = apply_to_devices(self.results, files, overwrite=bool(overwrite))
+			message, collisions = apply_to_devices(self.results, files,
+				overwrite=overwrite is True, mode="repair" if overwrite == "repair" else None)
 			if collisions:
 				message += "\nPominieto istniejace wartosci z konfliktem: %s" % ", ".join(collisions)
 			self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)

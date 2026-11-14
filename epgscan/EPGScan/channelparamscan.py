@@ -165,21 +165,33 @@ class ChannelParamsScan(object):
 		self.last_tune = getattr(engine, "last_tune", 0)
 		self.last_notify = 0
 		self.cancelled = False
+		self.borrowed = {}
+		self.prepared = False
 		self.timer = eTimer()
 		self.timer.callback.append(self.tick)
 
-	def start(self):
-		if self.engine.phase == "channelparams":
-			return False
+	def prepare(self):
 		rows = channel_params_bouquet_channels(selected_bouquets())
 		if self.refs is not None:
 			rows = [row for row in rows if row["ref"] in self.refs]
 		self.unsupported = [row for row in rows if not row["supported"]]
 		self.queue = [ChannelJob(row) for row in rows if row["supported"]]
 		self.groups = group_channel_jobs(self.queue, bool(cfg.cp_group_tp.value))
-		if not self.queue and not self.unsupported:
-			return False
+		self.prepared = True
 		self.started = int(time.time())
+
+	def start(self):
+		if self.engine.phase == "channelparams":
+			return False
+		if not self.prepared:
+			self.prepare()
+		self.last_tune = max(self.last_tune, getattr(self.engine, "last_tune", 0))
+		self.queue = [job for job in self.queue if job.ref not in self.scanned_refs]
+		for group in self.groups:
+			group.pending = [job for job in group.pending if job.ref not in self.scanned_refs]
+		if not self.queue and not self.unsupported:
+			if not self.scanned_refs:
+				return False
 		self.engine.phase = "channelparams"
 		self.engine.channel_params_scan = self
 		log("Skan parametrow: %d kanalow DVB w %d transponderach, %d nieobslugiwanych; tunery %d, rezerwa %d" %
@@ -195,9 +207,83 @@ class ChannelParamsScan(object):
 		self.tick()
 		return True
 
+	def attach_epg(self, job):
+		"""Borrow the already tuned EPG service, without owning or releasing it."""
+		key = tp_key(job.ref)
+		if key is None or id(job) in self.borrowed:
+			return
+		in_use = {member.ref for anchor in self.borrowed.values() for member in anchor.batch_members}
+		members = [member for member in self.queue if member.tp_key == key
+			and member.ref not in self.scanned_refs and member.ref not in in_use]
+		if not members:
+			return
+		anchor = ChannelJob({"ref": members[0].ref, "name": members[0].name})
+		anchor.rec = job.rec
+		anchor.group = TransponderGroup(members[0].tp)
+		anchor.group.pending = list(members)
+		anchor.batch_members = members
+		anchor.tuned_at = time.time()
+		anchor.state = "odczyt strumienia"
+		anchor.borrowed = True
+		self.borrowed[id(job)] = anchor
+
+	def poll_epg(self, job):
+		anchor = self.borrowed.get(id(job))
+		if anchor is None:
+			return
+		try:
+			if anchor.state == "odczyt strumienia":
+				self._begin_capture(anchor)
+			elif anchor.state == "zbieranie PAT/PMT":
+				self._poll_batch(anchor)
+		except Exception as e:
+			log("Skan parametrow podczas EPG: %s" % e)
+			self._end_borrowed(anchor)
+
+	def _end_borrowed(self, anchor):
+		self._close_readers(anchor)
+		anchor.rec = None
+		for key, current in list(self.borrowed.items()):
+			if current is anchor:
+				del self.borrowed[key]
+				break
+
+	def release_epg(self, job):
+		anchor = self.borrowed.get(id(job))
+		if anchor is not None:
+			self._end_borrowed(anchor)
+
+	def save_partial(self):
+		if self.scanned_refs:
+			self._merge_latest_results()
+			save_results({"updated": int(time.time()), "results": self.results, "last_scan": self.last_scan})
+
+	def _merge_latest_results(self):
+		latest = load_results().get("results", {})
+		for ref in self.scanned_refs:
+			current = self.results.get(ref)
+			old = latest.get(ref, {})
+			if not current or old.get("selectionSource") == "default":
+				continue
+			pid = old.get("selectedAudioPid")
+			if (old.get("selectedConfirmed") or old.get("selectionSource") == "manual") and \
+					any(stream.get("kind") == "audio" and stream.get("pid") == pid
+						for stream in current.get("streams", [])):
+				current["selectedAudioPid"] = pid
+				current["selectedConfirmed"] = True
+				for field in ("selectionSource", "selectedAt"):
+					if field in old:
+						current[field] = old[field]
+					else:
+						current.pop(field, None)
+		latest.update({ref: self.results[ref] for ref in self.scanned_refs if ref in self.results})
+		self.results.update(latest)
+
 	def cancel(self):
 		self.cancelled = True
 		self.timer.stop()
+		for anchor in list(self.borrowed.values()):
+			self._end_borrowed(anchor)
 		try:
 			NavigationInstance.instance.record_event.remove(self.rec_event)
 		except Exception:
@@ -247,7 +333,7 @@ class ChannelParamsScan(object):
 			if reader is not None:
 				try:
 					reader.close()
-				except OSError as e:
+				except Exception as e:
 					log("Skan parametrow: zamkniecie filtra %s (%s): %s" % (job.name, attr, e))
 
 	def _close_batch_reader(self, job, pid):
@@ -255,7 +341,7 @@ class ChannelParamsScan(object):
 		job.batch_started.pop(pid, None)
 		try:
 			reader.close()
-		except OSError as e:
+		except Exception as e:
 			log("Skan parametrow: zamkniecie filtra PMT %d (%s): %s" % (pid, job.name, e))
 
 	def _release(self, job):
@@ -305,6 +391,10 @@ class ChannelParamsScan(object):
 			group.done = True
 
 	def _handle_failure(self, job, reason):
+		if getattr(job, "borrowed", False):
+			log("Skan parametrow podczas EPG: %s: %s" % (job.name, reason))
+			self._end_borrowed(job)
+			return
 		if getattr(job, "batch_members", None):
 			self._fallback_batch(job, reason)
 			return
@@ -356,11 +446,11 @@ class ChannelParamsScan(object):
 			stream = job.rec.stream()
 			data = stream and stream.getStreamingData()
 			if not isinstance(data, dict) or not data:
-				if time.time() - job.tuned_at < STREAM_DATA_WAIT:
+				if getattr(job, "borrowed", False) or time.time() - job.tuned_at < STREAM_DATA_WAIT:
 					return
 				raise ValueError("Enigma2 nie udostepnila danych strumienia")
 			if data.get("adapter") is None or data.get("demux") is None:
-				if time.time() - job.tuned_at < STREAM_DATA_WAIT:
+				if getattr(job, "borrowed", False) or time.time() - job.tuned_at < STREAM_DATA_WAIT:
 					return
 				raise ValueError("Enigma2 nie udostepnila adaptera/demuksera")
 			job.adapter = int(data["adapter"])
@@ -411,6 +501,10 @@ class ChannelParamsScan(object):
 			self._handle_failure(job, "odczyt PAT/PMT: %s" % e)
 
 	def _fallback_batch(self, anchor, reason):
+		if getattr(anchor, "borrowed", False):
+			log("Skan parametrow podczas EPG: %s - %s; brakujace kanaly pozniej" % (anchor.name, reason))
+			self._end_borrowed(anchor)
+			return
 		members = list(anchor.batch_members)
 		anchor.batch_members = []
 		group = anchor.group
@@ -429,7 +523,8 @@ class ChannelParamsScan(object):
 		self._finish_group_if_idle(group)
 
 	def _poll_batch(self, anchor):
-		if time.time() - anchor.capture_started_at >= BATCH_DATA_WAIT:
+		borrowed = getattr(anchor, "borrowed", False)
+		if not borrowed and time.time() - anchor.capture_started_at >= BATCH_DATA_WAIT:
 			self._fallback_batch(anchor, "timeout PAT/PMT")
 			return
 		try:
@@ -440,7 +535,7 @@ class ChannelParamsScan(object):
 				entries = channelparams.parse_pat_entries(section)
 				tsid = (section[3] << 8) | section[4]
 				for member in anchor.batch_members:
-					if member.ref in self.scanned_refs:
+					if not borrowed and member.ref in self.scanned_refs:
 						continue
 					fields = member.ref.split(":")
 					sid = int(fields[3], 16)
@@ -448,7 +543,11 @@ class ChannelParamsScan(object):
 						continue
 					pid = entries[sid]
 					if member.pat_section is not None and member.pmt_pid != pid:
-						raise ValueError("zmieniony PID PMT")
+						if not borrowed:
+							raise ValueError("zmieniony PID PMT")
+						self.scanned_refs.discard(member.ref)
+						if member not in self.queue:
+							self.queue.append(member)
 					member.pat_section = section
 					member.pmt_pid = pid
 					member.capture_started_at = anchor.capture_started_at
@@ -476,12 +575,18 @@ class ChannelParamsScan(object):
 							raise ValueError("Niepelna sekcja PMT")
 						sid = (section[3] << 8) | section[4]
 						matches = [member for member in anchor.batch_members
-							if member.ref not in self.scanned_refs and member.pmt_pid == pid
+							if (borrowed or member.ref not in self.scanned_refs) and member.pmt_pid == pid
 							and int(member.ref.split(":")[3], 16) == sid]
 						if not matches:
 							continue
 						pmt = channelparams.parse_pmt(section, sid)
 						for member in matches:
+							old = self.results.get(member.ref, {})
+							if borrowed and member.ref in self.scanned_refs and \
+									old.get("section") == base64.b64encode(pmt["section"]).decode("ascii") and \
+									old.get("pat") == base64.b64encode(member.pat_section).decode("ascii") and \
+									old.get("pmtPid") == member.pmt_pid:
+								continue
 							self._save_channel(member, pmt)
 							if member is anchor:
 								anchor.state = "zbieranie PAT/PMT"
@@ -498,13 +603,13 @@ class ChannelParamsScan(object):
 					if pid not in anchor.batch_waiting:
 						anchor.batch_waiting.append(pid)
 					continue
-				unresolved = any(member.ref not in self.scanned_refs and member.pmt_pid == pid
+				unresolved = any((borrowed or member.ref not in self.scanned_refs) and member.pmt_pid == pid
 					for member in anchor.batch_members)
 				if not unresolved or (anchor.batch_waiting and time.time() - anchor.batch_started[pid] >= BATCH_PMT_SLICE):
 					self._close_batch_reader(anchor, pid)
 					if unresolved:
 						anchor.batch_waiting.append(pid)
-			if all(member.ref in self.scanned_refs for member in anchor.batch_members):
+			if not borrowed and all(member.ref in self.scanned_refs for member in anchor.batch_members):
 				anchor.state = "gotowe"
 				anchor.batch_members = []
 				group = anchor.group
@@ -522,7 +627,8 @@ class ChannelParamsScan(object):
 		old_available = old_source != "default" and (old.get("selectedConfirmed", False) or old_source == "manual") \
 			and old_pid is not None and any(s["pid"] == old_pid for s in streams if s["kind"] == "audio")
 		first_audio = next((stream for stream in streams if stream["kind"] == "audio"), None)
-		selected_pid = old_pid if old_available else (first_audio["pid"] if first_audio else None)
+		default = selected or first_audio
+		selected_pid = old_pid if old_available else (default["pid"] if default else None)
 		self.results[job.ref] = {
 			"ref": job.ref, "name": job.name, "sid": pmt["sid"], "pmtPid": job.pmt_pid,
 			"pcrPid": pmt["pcr_pid"], "streams": streams, "section": base64.b64encode(pmt["section"]).decode("ascii"),
@@ -541,6 +647,32 @@ class ChannelParamsScan(object):
 			self.results[job.ref]["selectionSource"] = "default"
 		self.scanned_refs.add(job.ref)
 		job.state = "gotowe"
+
+	def _sync_after_scan(self, report):
+		common_mode = getattr(getattr(cfg, "cp_sync_common", None), "value", "off")
+		device_mode = getattr(getattr(cfg, "cp_sync_devices", None), "value", "off")
+		if not self.scanned_refs or (common_mode == "off" and device_mode == "off"):
+			return False
+		from . import channelparamsstore as store
+		results = {ref: self.results[ref] for ref in self.scanned_refs if ref in self.results}
+		report["sync"] = []
+		for target, mode in (("common", common_mode), ("clients", device_mode)):
+			if mode == "off":
+				continue
+			try:
+				if target == "common":
+					message, conflicts = store.add_common_defaults(results, mode=mode)
+				else:
+					message, conflicts = store.apply_to_devices(results, store.device_profiles(), mode=mode)
+				if conflicts:
+					message += " Pominiete konflikty: " + ", ".join(conflicts)
+				report["sync"].append(message)
+				log("Synchronizacja PAT/PMT %s: %s" % (target, message))
+			except Exception as e:
+				message = "Synchronizacja %s nieudana: %s" % (target, e)
+				report["errors"].append({"name": "E2Stream " + target, "error": message})
+				log(message)
+		return True
 
 	def _finish(self):
 		self.timer.stop()
@@ -576,12 +708,31 @@ class ChannelParamsScan(object):
 				errors.append(retry_errors.pop(ref, row))
 			errors.extend(retry_errors.values())
 			last_scan["errors"] = errors
-		data = {"updated": int(time.time()), "results": self.results, "last_scan": last_scan}
+		saved = False
 		try:
+			self._merge_latest_results()
+			data = {"updated": int(time.time()), "results": self.results, "last_scan": last_scan}
 			save_results(data)
+			saved = True
 		except Exception as e:
 			log("Skan parametrow: zapis wynikow nieudany: %s" % e)
 			report["errors"] = list(self.errors) + [{"name": "wyniki", "error": "Zapis wynikow nieudany: %s" % e}]
+		if saved:
+			try:
+				synced = self._sync_after_scan(report)
+			except Exception as e:
+				report["errors"].append({"name": "E2Stream", "error": "Synchronizacja nieudana: %s" % e})
+				log(report["errors"][-1]["error"])
+				synced = True
+			if synced:
+				if last_scan is not report:
+					last_scan["errors"].extend(row for row in report["errors"] if not row.get("ref"))
+					last_scan["sync"] = report.get("sync", [])
+				try:
+					save_results(data)
+				except Exception as e:
+					log("Skan parametrow: zapis raportu synchronizacji nieudany: %s" % e)
+					report["errors"].append({"name": "wyniki", "error": "Zapis raportu synchronizacji nieudany: %s" % e})
 		log("Skan parametrow zakonczony: %d kanalow, %d z audio, %d sciezek audio, %d wyborow, %d bledow, %d nieobslugiwanych" %
 			(report["scanned"], report["audio_channels"], report["audio_tracks"], report["selected_audio"],
 				len(report["errors"]), len(self.unsupported)))
@@ -696,8 +847,9 @@ def scan_due(now=None):
 	return last <= 0 or now - last >= int(cfg.cp_interval.value) * 86400
 
 
-def _start_scan(engine, done, auto=False, woke=False, refs=None):
-	if engine.running or engine.phase == "channelparams":
+def _start_scan(engine, done, auto=False, woke=False, refs=None, scan=None):
+	pending = getattr(engine, "epg_params_scan", None)
+	if engine.running or engine.phase == "channelparams" or (pending is not None and pending is not scan):
 		return False
 
 	def finished(report):
@@ -708,6 +860,10 @@ def _start_scan(engine, done, auto=False, woke=False, refs=None):
 		engine.channelparams_report = report
 		engine.summary = "Skan parametrow: %d kanalow, %d bledow" % (report["scanned"], len(report["errors"]))
 		engine.note = engine.summary
+		if report["errors"]:
+			engine.note += "; " + report["errors"][-1].get("error", "")
+		elif report.get("sync"):
+			engine.note += "; " + "; ".join(report["sync"])
 		if not auto and refs is None:
 			cfg.cp_last_run.value = int(report["finished"])
 			save_cfg()
@@ -718,7 +874,10 @@ def _start_scan(engine, done, auto=False, woke=False, refs=None):
 		finally:
 			engine.channelparams_only = False
 
-	scan = ChannelParamsScan(engine, finished, refs=refs)
+	if scan is None:
+		scan = ChannelParamsScan(engine, finished, refs=refs)
+	else:
+		scan.done = finished
 	engine.running = True
 	engine.finished = False
 	engine.channelparams_report = None
@@ -754,12 +913,13 @@ def _start_scan(engine, done, auto=False, woke=False, refs=None):
 	return True
 
 
-def start_manual(engine, done=None, refs=None):
-	return _start_scan(engine, done, refs=refs)
+def start_manual(engine, done=None, refs=None, scan=None):
+	return _start_scan(engine, done, refs=refs, scan=scan)
 
 
-def start_scheduled(engine, slot=None, woke=False, done=None):
-	if engine.running or engine.phase == "channelparams":
+def start_scheduled(engine, slot=None, woke=False, done=None, scan=None):
+	pending = getattr(engine, "epg_params_scan", None)
+	if engine.running or engine.phase == "channelparams" or (pending is not None and pending is not scan):
 		return False
 	cfg.cp_auto_in_progress.value = True
 	save_cfg()
@@ -784,7 +944,7 @@ def start_scheduled(engine, slot=None, woke=False, done=None):
 		engine.channelparams_only = False
 
 	try:
-		started = _start_scan(engine, finished, auto=True, woke=woke)
+		started = _start_scan(engine, finished, auto=True, woke=woke, scan=scan)
 	except Exception:
 		cfg.cp_auto_in_progress.value = False
 		save_cfg()
