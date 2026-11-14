@@ -2,6 +2,9 @@
 
 ## EPG Scan (wtyczka Enigma2)
 
+- **2.19.0** – wszystkie pliki wtyczki w `/etc/enigma2/epgscan/` (pliki SatWatch z przedrostkiem `satwatch-`) i w katalogu kopii (`satwatch.log` obok `epgscan.log`, raporty w `raporty/`); stare miejsca przenoszone raz przy starcie; wspólne ustawienie „Logi i raporty: usuwaj starsze niż” dla EPG Scan i SatWatch; naprawione zapamiętywanie preferowanego tunera SatWatch
+- **2.18.3** – SatWatch: metoda okna decyzji nie zasłania `dict.update` ekranu (zapobiegawczo)
+- **2.18.2** – szybszy skan PAT/PMT: jedno strojenie na odstęp (ustawienie, domyślnie 1 s), odczyt równolegle na wolnych tunerach; nieudany transponder raz ponawiany całą grupą, bez strojenia kanałów osobno; ponowienie błędów po skanie pojedynczo z odstępem min. 2 s; lista „Aktualizuj teraz” według kanału aktualizacji
 - **2.17.1** – naprawiony crash ustawień przy imporcie modułu (`all_items` pozostawało funkcją zamiast listą)
 - **2.17.0** – skan PAT/PMT każdego kanału DVB w wybranych bukietach z ochroną tunerów i nagrań; rozpoznawanie języków audio, wideo, napisów i teletekstu; odsłuch/wybór ścieżki, preferencje Enigma2 lub własne; opcjonalny skan po EPG w wybrane dni; potwierdzany zapis do E2Stream z kopiami i ochroną przed kolizją PMT
 - **2.16.1** – parser PAT/PMT i rozpoznawanie ścieżek audio
