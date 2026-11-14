@@ -3,6 +3,11 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.3.5
+
+- Brak obrazu: VLC w kółko zmieniał format klatek (wysokość 1088 / 1090) i nie oddawał żadnej klatki — format ustalany raz na strumień; gdy po 5 s nadal brak klatek, odtwarzacz sam próbuje bez usuwania przeplotu VLC (komunikat i wpis w logu)
+- Ostrzeżenia i błędy VLC trafiają do logu aplikacji (każdy komunikat najwyżej 3 razy)
+
 ## 0.3.4
 
 - Dekoder Enigma2 — brakujące opcje z Androida: dodatkowa podsieć IPv4 do wyszukiwania, „Blokuj zmiany przy braku komunikacji z dekoderem” (okno do powrotu dekodera), sekcja „Synchronizacja z dekoderem”: synchronizuj ustawienia i dane kanałów, nazwa tego komputera, synchronizuj teraz, przenieś ustawienia z innego odbiornika
