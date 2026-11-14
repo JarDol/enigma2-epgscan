@@ -86,17 +86,10 @@ internal fun SettingsWindow(
     onWindow: (java.awt.Window?) -> Unit,
     testContent: @Composable () -> Unit,
 ) {
-    DialogWindow(
-        onCloseRequest = navigator::close,
-        title = "E2Stream — ustawienia",
-        state = rememberDialogState(position = WindowPosition(Alignment.Center), size = DpSize(1040.dp, 740.dp)),
-        undecorated = true,
-        resizable = false,
-    ) {
-        val dialog = window
-        DisposableEffect(dialog) {
-            onWindow(dialog)
-            onDispose { onWindow(null) }
+    InWindowDialog(width = 1040.dp, height = 740.dp, onDismiss = navigator::close) {
+        DisposableEffect(Unit) {
+            onWindow(null)
+            onDispose { }
         }
         MaterialTheme(colorScheme = colors) {
             Surface(

@@ -51,6 +51,34 @@ internal class TimeshiftBuffer(
 
     @Volatile private var session = newSession()
 
+    /** Nagranie z bufora: kawałki z zakresu są przenoszone do [dir] zamiast kasowania (bez kopiowania). */
+    internal class Recording(
+        val dir: File,
+        val fromWall: Long,
+        val untilWall: Long,
+        /** Najwięcej bajtów nagrania (limit zajętości nośnika). */
+        val maxBytes: Long,
+        val onFinished: (RecordingResult) -> Unit,
+    ) {
+        var files = 0
+        var bytes = 0L
+        var firstWall = Long.MAX_VALUE
+        var lastWall = 0L
+    }
+
+    internal data class RecordingResult(
+        val dir: File,
+        val files: Int,
+        val bytes: Long,
+        val firstWall: Long,
+        val endWall: Long,
+        val reason: String,
+    )
+
+    @Volatile private var recording: Recording? = null
+
+    val isRecording: Boolean get() = recording != null
+
     init {
         dir.mkdirs()
         cleanupAsync(dir, session)
@@ -121,6 +149,13 @@ internal class TimeshiftBuffer(
     }
 
     private fun rotate(now: Long) {
+        recording?.let { rec ->
+            val pending = segments.filter { segmentEnd(it) > rec.fromWall }.sumOf { it.length }
+            when {
+                now >= rec.untilWall -> finishLocked("koniec zakresu nagrania")
+                rec.bytes + pending > rec.maxBytes -> finishLocked("osiągnięto limit miejsca na nagrania")
+            }
+        }
         runCatching { output?.close() }
         val file = File(dir, "$session${nextIndex++}.ts")
         output = FileOutputStream(file)
@@ -130,10 +165,91 @@ internal class TimeshiftBuffer(
     }
 
     private fun dropOldest() {
-        val file = segments.removeAt(0).file
+        val end = segmentEnd(segments[0])
+        val segment = segments.removeAt(0)
         trimmed = true
-        thread(name = "timeshift-usun", isDaemon = true) { file.delete() }
+        val rec = recording
+        if (rec != null && end > rec.fromWall && segment.wall < rec.untilWall) {
+            moveToRecording(rec, segment, end)
+        } else {
+            thread(name = "timeshift-usun", isDaemon = true) { segment.file.delete() }
+        }
     }
+
+    private fun segmentEnd(segment: Segment): Long {
+        val index = segments.indexOf(segment)
+        return segments.getOrNull(index + 1)?.wall ?: if (index >= 0) clock() else segment.wall + 60_000
+    }
+
+    /** Przeniesienie kawałka do katalogu nagrania (zmiana nazwy; przy otwartym odczycie — kilka prób, potem kopia). */
+    private fun moveToRecording(rec: Recording, segment: Segment, end: Long) {
+        if (segment.length <= 0) {
+            segment.file.delete()
+            return
+        }
+        val target = File(rec.dir, "%05d.ts".format(rec.files))
+        var moved = false
+        for (attempt in 0 until 20) {
+            if (segment.file.renameTo(target)) {
+                moved = true
+                break
+            }
+            Thread.sleep(25)
+        }
+        if (!moved) {
+            moved = runCatching {
+                segment.file.copyTo(target, overwrite = true)
+                segment.file.delete()
+            }.isSuccess
+        }
+        if (!moved) {
+            AppLog.i("nagranie: nie udało się przenieść ${segment.file.name}")
+            return
+        }
+        rec.files++
+        rec.bytes += segment.length
+        rec.firstWall = minOf(rec.firstWall, segment.wall)
+        rec.lastWall = maxOf(rec.lastWall, end)
+    }
+
+    /**
+     * Początek nagrania od chwili [fromWall] (kawałek, w którym wypada, w całości) do [untilWall]; nowe kawałki
+     * dochodzą, dopóki nagranie trwa. False — nagranie już trwa albo bufor jest pusty.
+     */
+    fun startRecording(dir: File, fromWall: Long, untilWall: Long, maxBytes: Long, onFinished: (RecordingResult) -> Unit): Boolean =
+        synchronized(lock) {
+            if (recording != null || segments.isEmpty() || failed != null) return false
+            dir.mkdirs()
+            recording = Recording(dir, fromWall, untilWall, maxBytes, onFinished)
+            true
+        }
+
+    /** Koniec nagrania teraz: wszystkie kawałki z zakresu trafiają do nagrania, bufor zaczyna od nowa. */
+    fun stopRecording(reason: String) = synchronized(lock) {
+        if (recording != null) finishLocked(reason)
+        lock.notifyAll()
+    }
+
+    private fun finishLocked(reason: String) {
+        val rec = recording ?: return
+        runCatching { output?.close() }
+        output = null
+        pendingLength = 0
+        val now = clock()
+        val all = segments.toList()
+        for ((index, segment) in all.withIndex()) {
+            val end = all.getOrNull(index + 1)?.wall ?: now
+            if (end > rec.fromWall && segment.wall < rec.untilWall) moveToRecording(rec, segment, end)
+            else thread(name = "timeshift-usun", isDaemon = true) { segment.file.delete() }
+        }
+        segments.clear()
+        trimmed = false
+        recording = null
+        val result = RecordingResult(rec.dir, rec.files, rec.bytes, rec.firstWall, rec.lastWall, reason)
+        AppLog.i("nagranie: koniec (${result.reason}) — ${result.files} kawałków, ${result.bytes / 1_000_000} MB")
+        thread(name = "nagranie-koniec", isDaemon = true) { runCatching { rec.onFinished(result) } }
+    }
+
 
     val oldestWall: Long get() = synchronized(lock) { segments.firstOrNull()?.wall ?: clock() }
 
@@ -142,7 +258,7 @@ internal class TimeshiftBuffer(
 
     /** Bajt (początek pakietu TS) odpowiadający chwili [wall]. */
     fun offsetAt(wall: Long): Long = synchronized(lock) {
-        if (segments.isEmpty()) return 0
+        if (segments.isEmpty()) return total
         val now = clock()
         for (index in segments.indices) {
             val segment = segments[index]
@@ -258,6 +374,7 @@ internal class TimeshiftBuffer(
 
     /** Koniec bufora: pliki skasowane w tle. */
     override fun close() = synchronized(lock) {
+        if (recording != null) finishLocked("zmiana kanału albo wyjście")
         runCatching { output?.close() }
         output = null
         segments.clear()

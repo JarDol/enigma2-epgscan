@@ -1,13 +1,23 @@
 package pl.jardol.e2stream.desktop
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asComposeImageBitmap
+import com.sun.jna.Pointer
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorType
+import org.jetbrains.skia.ImageInfo
 import java.io.IOException
-import java.awt.event.ComponentAdapter
-import java.awt.event.ComponentEvent
-import java.awt.event.MouseListener
-import javax.swing.JComponent
+import java.nio.ByteBuffer
 import javax.swing.SwingUtilities
+import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
-import uk.co.caprica.vlcj.player.component.EmbeddedMediaPlayerComponent
+import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormat
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCallback
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallback
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.format.RV32BufferFormat
 import uk.co.caprica.vlcj.player.base.DeinterlaceMode
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
@@ -56,11 +66,60 @@ internal fun vlcDeinterlaceMode(value: String): DeinterlaceMode? = when (value) 
     else -> DeinterlaceMode.AUTO
 }
 
+/**
+ * Klatki z VLC rysowane przez aplikację (zamiast osobnego okna systemowego VLC): dzięki temu paski, menu i okna
+ * są warstwami w tym samym oknie co obraz. Format RV32 (BGRA), kopiowany do jednej z trzech bitmap Skia.
+ */
+internal class VideoFrames : BufferFormatCallback, RenderCallback {
+    val frame = mutableStateOf<ImageBitmap?>(null)
+    private var bitmaps: Array<Bitmap> = emptyArray()
+    private var next = 0
+    @Volatile private var width = 0
+    @Volatile private var height = 0
+
+    override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat {
+        synchronized(this) {
+            width = sourceWidth
+            height = sourceHeight
+            val info = ImageInfo(sourceWidth, sourceHeight, ColorType.BGRA_8888, ColorAlphaType.OPAQUE)
+            // Stare bitmapy mogą być jeszcze rysowane — zwalnia je GC, bez close().
+            bitmaps = Array(3) { Bitmap().apply { allocPixels(info) } }
+            next = 0
+        }
+        return RV32BufferFormat(sourceWidth, sourceHeight)
+    }
+
+    override fun allocatedBuffers(buffers: Array<out ByteBuffer>) = Unit
+
+    override fun display(mediaPlayer: uk.co.caprica.vlcj.player.base.MediaPlayer, nativeBuffers: Array<out ByteBuffer>, bufferFormat: BufferFormat) {
+        synchronized(this) {
+            if (bitmaps.isEmpty()) return
+            val bitmap = bitmaps[next]
+            next = (next + 1) % bitmaps.size
+            val pixmap = bitmap.peekPixels() ?: return
+            val size = minOf(pixmap.rowBytes.toLong() * height, nativeBuffers[0].capacity().toLong())
+            val source = nativeBuffers[0].duplicate().apply { rewind(); limit(size.toInt()) }
+            Pointer(pixmap.addr).getByteBuffer(0, size).put(source)
+            bitmap.notifyPixelsChanged()
+            frame.value = bitmap.asComposeImageBitmap()
+        }
+    }
+
+    fun clear() {
+        frame.value = null
+    }
+
+    fun close() = synchronized(this) {
+        frame.value = null
+        bitmaps = emptyArray()
+    }
+}
+
 class VlcSession(private val onError: (String) -> Unit) {
-    private val component: EmbeddedMediaPlayerComponent
-    private val playbackGate: SurfacePlaybackGate
+    private val factory: MediaPlayerFactory
+    private val player: EmbeddedMediaPlayer
+    internal val frames = VideoFrames()
     private var paused = false
-    private var scaleMode = VideoScaleMode.FIT
     private var closed = false
 
     @Volatile private var volume = 100
@@ -75,38 +134,20 @@ class VlcSession(private val onError: (String) -> Unit) {
     val isPaused: Boolean
         get() = paused
 
-    val view: JComponent
-        get() = component
-
-    fun addVideoMouseListener(listener: MouseListener) {
-        component.addMouseListener(listener)
-        component.videoSurfaceComponent().addMouseListener(listener)
-    }
-
-    fun removeVideoMouseListener(listener: MouseListener) {
-        component.removeMouseListener(listener)
-        component.videoSurfaceComponent().removeMouseListener(listener)
-    }
-
     init {
         if (!NativeDiscovery().discover()) {
             throw IllegalStateException(
                 "Nie znaleziono 64-bitowego VLC. Zainstaluj VLC 3.x i uruchom aplikację ponownie.",
             )
         }
-        component = try {
-            EmbeddedMediaPlayerComponent()
+        try {
+            factory = MediaPlayerFactory()
+            player = factory.mediaPlayers().newEmbeddedMediaPlayer()
         } catch (e: LinkageError) {
             throw IllegalStateException("Nie można załadować bibliotek VLC. Sprawdź instalację VLC 64-bit.", e)
         }
-        playbackGate = SurfacePlaybackGate(component.videoSurfaceComponent(), onError)
-        component.videoSurfaceComponent().addComponentListener(object : ComponentAdapter() {
-            override fun componentResized(e: ComponentEvent) = applyVideoScale()
-        })
-        component.mediaPlayer().events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
-            override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) {
-                if (newCount > 0) SwingUtilities.invokeLater { applyVideoScale() }
-            }
+        player.videoSurface().set(factory.videoSurfaces().newVideoSurface(frames, frames, true))
+        player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
             override fun error(mediaPlayer: MediaPlayer) {
                 SwingUtilities.invokeLater {
                     onError("VLC: nie udało się odtworzyć strumienia. Sprawdź połączenie i dane logowania.")
@@ -132,12 +173,12 @@ class VlcSession(private val onError: (String) -> Unit) {
     fun setAudioLevel(volume: Int, muted: Boolean) {
         this.volume = volume.coerceIn(0, DesktopConfig.MAX_VOLUME)
         this.muted = muted
-        if (!closed) component.mediaPlayer().submit { applyAudioLevel() }
+        if (!closed) player.submit { applyAudioLevel() }
     }
 
     private fun applyAudioLevel() {
         if (closed) return
-        val audio = component.mediaPlayer().audio()
+        val audio = player.audio()
         if (audio.volume() != volume) audio.setVolume(volume)
         if (audio.isMute != muted) audio.setMute(muted)
     }
@@ -145,7 +186,7 @@ class VlcSession(private val onError: (String) -> Unit) {
     /** Ścieżki dźwięku bieżącego strumienia (bez pozycji „wyłączone”). */
     internal fun audioTracks(): List<AudioTrack> {
         if (closed) return emptyList()
-        val player = component.mediaPlayer()
+        val player = player
         val info = runCatching { player.media().info().audioTracks() }.getOrNull().orEmpty().associateBy { it.id() }
         return player.audio().trackDescriptions().orEmpty().filter { it.id() >= 0 }.map { description ->
             val track = info[description.id()]
@@ -163,46 +204,45 @@ class VlcSession(private val onError: (String) -> Unit) {
         }
     }
 
-    internal fun selectedAudioTrack(): Int = if (closed) -1 else component.mediaPlayer().audio().track()
+    internal fun selectedAudioTrack(): Int = if (closed) -1 else player.audio().track()
 
-    internal fun selectAudioTrack(id: Int): Boolean = !closed && component.mediaPlayer().audio().setTrack(id) == 0
+    internal fun selectAudioTrack(id: Int): Boolean = !closed && player.audio().setTrack(id) == 0
 
-    fun setVideoScale(mode: VideoScaleMode) {
-        scaleMode = mode
-        applyVideoScale()
-    }
+    /** Skalowanie rysuje aplikacja (VideoView); tu tylko zapamiętane dla zgodności wywołań. */
+    fun setVideoScale(mode: VideoScaleMode) = Unit
 
-    private fun applyVideoScale() {
-        if (closed) return
-        val surface = component.videoSurfaceComponent()
-        val geometry = videoGeometry(scaleMode, surface.width, surface.height)
-        component.mediaPlayer().video().apply {
-            setAspectRatio(geometry.aspect)
-            setCropGeometry(geometry.crop)
-            setScale(0f)
-        }
+    /** Proporcje wyświetlania bieżącego obrazu (z pikselami niekwadratowymi SD); null, gdy nieznane. */
+    internal fun displayAspect(): Float? {
+        if (closed) return null
+        val track = runCatching { player.media().info().videoTracks().firstOrNull() }.getOrNull() ?: return null
+        val width = track.width()
+        val height = track.height()
+        if (width <= 0 || height <= 0) return null
+        val num = track.sampleAspectRatio()
+        val den = track.sampleAspectRatioBase()
+        val sar = if (num > 0 && den > 0) num.toFloat() / den else 1f
+        return width * sar / height
     }
 
     fun play(url: String, config: DesktopConfig, startMs: Long = 0) {
         val options = vlcMediaOptions(config) +
             if (startMs > 0) listOf(":start-time=%.1f".format(java.util.Locale.US, startMs / 1000.0)) else emptyList()
         val deinterlace = vlcDeinterlaceMode(config.vlcDeint)
-        playbackGate.request {
-            component.mediaPlayer().video().setDeinterlace(deinterlace)
-            val started = component.mediaPlayer().media().play(url, *options.toTypedArray())
-            if (!started) throw IOException("VLC nie przyjął strumienia.")
-            paused = false
-        }
+        check(!closed) { "Odtwarzacz został zamknięty." }
+        player.video().setDeinterlace(deinterlace)
+        val started = player.media().play(url, *options.toTypedArray())
+        if (!started) throw IOException("VLC nie przyjął strumienia.")
+        paused = false
     }
 
     /** Położenie odtwarzania (ms) od początku bieżącego materiału; -1, gdy nieznane. */
-    fun time(): Long = if (closed) -1 else component.mediaPlayer().status().time()
+    fun time(): Long = if (closed) -1 else player.status().time()
 
     /** Długość materiału (ms); 0 lub -1 dla strumieni na żywo. */
-    fun length(): Long = if (closed) -1 else component.mediaPlayer().status().length()
+    fun length(): Long = if (closed) -1 else player.status().length()
 
     fun seekTo(ms: Long) {
-        if (!closed) component.mediaPlayer().controls().setTime(ms.coerceAtLeast(0))
+        if (!closed) player.controls().setTime(ms.coerceAtLeast(0))
     }
 
     fun togglePause() {
@@ -219,20 +259,21 @@ class VlcSession(private val onError: (String) -> Unit) {
 
     private fun setPaused(value: Boolean) {
         if (paused == value) return
-        if (value) component.mediaPlayer().controls().pause()
-        else component.mediaPlayer().controls().play()
+        if (value) player.controls().pause()
+        else player.controls().play()
         paused = value
     }
 
     fun stop() {
-        component.mediaPlayer().controls().stop()
+        player.controls().stop()
+        frames.clear()
         paused = false
     }
 
     /** Liczniki VLC do statystyk na ekranie; null, gdy nic nie jest odtwarzane. */
     internal fun statistics(): PlaybackStats? {
         if (closed) return null
-        val player = component.mediaPlayer()
+        val player = player
         if (!player.media().isValid) return null
         val stats = player.media().info().statistics() ?: return null
         val size = player.video().videoDimension()
@@ -253,7 +294,9 @@ class VlcSession(private val onError: (String) -> Unit) {
     fun close() {
         if (closed) return
         closed = true
-        playbackGate.close()
-        component.release()
+        runCatching { player.controls().stop() }
+        player.release()
+        factory.release()
+        frames.close()
     }
 }

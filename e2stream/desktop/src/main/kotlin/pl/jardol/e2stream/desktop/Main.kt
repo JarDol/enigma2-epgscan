@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -60,6 +62,7 @@ import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.awt.Window as AwtWindow
 import java.net.URI
+import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.Instant
@@ -173,7 +176,7 @@ fun main() {
             val captureActive = remember { AtomicBoolean(false) }
             fun openMenu() = navigation.openMenu(
                 DesktopMenuItem.visible(config.menuOrder, config.menuHidden)
-                    .filter { it != DesktopMenuItem.SAVE_TIMESHIFT || (timeshift != null && playingRecording == null) },
+                    .filter { it != DesktopMenuItem.RECORD || (timeshift != null && playingRecording == null) },
             )
             LaunchedEffect(config.appLanguage) { AppLanguage.apply(config.appLanguage) }
             var lastVirtualKey by remember { mutableStateOf<VirtualRemoteKey?>(null) }
@@ -267,7 +270,7 @@ fun main() {
             LaunchedEffect(selectedBouquet, config.host, config.httpPort, config.username, config.password, epgRefresh) {
                 val bouquet = selectedBouquet
                 epgError = null
-                if (bouquet == null || bouquet.ref == REC_BOUQUET) return@LaunchedEffect
+                if (bouquet == null || isRecordingsBouquet(bouquet.ref)) return@LaunchedEffect
                 val client = DecoderClient(config)
                 while (true) {
                     try {
@@ -410,11 +413,16 @@ fun main() {
             /** Bukiety listy kanałów: widoczne bukiety TV i wirtualny bukiet „Nagrania”. */
             fun listBouquets(): List<Bouquet> {
                 val tv = visibleBouquets()
-                return if (catalog == null || REC_BOUQUET in config.hiddenBouquets) tv else tv + RECORDINGS_BOUQUET
+                if (catalog == null) return tv
+                return tv + listOfNotNull(
+                    RECORDINGS_BOUQUET.takeIf { REC_BOUQUET !in config.hiddenBouquets },
+                    LOCAL_RECORDINGS_BOUQUET.takeIf { LOCAL_REC_BOUQUET !in config.hiddenBouquets },
+                )
             }
 
             // EIT ze strumienia: tunel do VLC (bez timeshiftu) i wersja danych do odświeżenia paska.
             var streamTap by remember { mutableStateOf<StreamTap?>(null) }
+            var activeRecording by remember { mutableStateOf<ActiveRecording?>(null) }
             var eitVersion by remember { mutableIntStateOf(0) }
             var eitJob by remember { mutableStateOf<Job?>(null) }
 
@@ -570,12 +578,12 @@ fun main() {
                     val current = playingChannel
                     if (current != null && current.ref != channel.ref) previousChannel = current
                     playingChannel = channel
-                    if (selectedBouquet?.ref != REC_BOUQUET && channels.any { it.ref == channel.ref }) playList = channels
+                    if (!isRecordingsBouquet(selectedBouquet?.ref) && channels.any { it.ref == channel.ref }) playList = channels
                     captureButton = null
                     logInfo("Otwieranie strumienia: ${channel.name}")
                     saveConfig(
                         config.copy(
-                            lastBouquetRef = selectedBouquet?.ref?.takeIf { it != REC_BOUQUET } ?: config.lastBouquetRef,
+                            lastBouquetRef = selectedBouquet?.ref?.takeIf { !isRecordingsBouquet(it) } ?: config.lastBouquetRef,
                             lastChannelRef = channel.ref,
                         ),
                     )
@@ -585,13 +593,18 @@ fun main() {
                 }
             }
 
+            val localRecordingServer = remember { LocalRecordingServer { LocalRecordings.root(config) } }
+            DisposableEffect(Unit) { onDispose { localRecordingServer.close() } }
+
             fun playRecording(recording: Recording) {
                 saveRecordingPosition()
                 closeTimeshift()
                 try {
                     val session = sessionOrNew()
                     val start = recPositions.get(recording.path)
-                    session.play(DecoderClient(config).recordingUrl(recording.path), config, start)
+                    val url = if (recording.path.startsWith(LOCAL_PREFIX)) localRecordingServer.url(recording)
+                    else DecoderClient(config).recordingUrl(recording.path)
+                    session.play(url, config, start)
                     playingChannel?.let { previousChannel = it }
                     playingChannel = null
                     playingRecording = recording
@@ -655,6 +668,22 @@ fun main() {
                 }
             }
 
+            suspend fun loadLocalRecordings(select: String? = null): Boolean {
+                selectedBouquet = LOCAL_RECORDINGS_BOUQUET
+                channels = emptyList()
+                nowEvents = emptyMap()
+                channelListSelected = 0
+                val current = config
+                val items = withContext(Dispatchers.IO) { runCatching { LocalRecordings.list(current) }.getOrDefault(emptyList()) }
+                recRows = items.associateBy { REC_PREFIX + it.path }
+                channels = items.mapIndexed { index, item -> Channel(index + 1, item.title, REC_PREFIX + item.path) }
+                val wanted = select ?: playingRecording?.path
+                channelListSelected = channels.indexOfFirst { it.ref == REC_PREFIX + wanted }.coerceAtLeast(0)
+                logInfo("Nagrania lokalne: ${items.size} w ${LocalRecordings.root(current).path}")
+                if (items.isEmpty()) status = "Brak nagrań lokalnych — nagrywanie: długie OK na pasku timeshiftu albo Menu → Nagraj z timeshiftu."
+                return true
+            }
+
             fun openRecordingDir(row: Recording) {
                 if (row.path == REC_UP) {
                     val parent = recStack.lastOrNull() ?: return
@@ -669,6 +698,7 @@ fun main() {
 
             suspend fun loadBouquetChannels(bouquet: Bouquet): Boolean {
                 if (bouquet.ref == REC_BOUQUET) return loadRecordings(recDir)
+                if (bouquet.ref == LOCAL_REC_BOUQUET) return loadLocalRecordings()
                 val currentCatalog = catalog ?: return false
                 selectedBouquet = bouquet
                 channels = emptyList()
@@ -1010,9 +1040,10 @@ fun main() {
                 showChannelList = true
             }
 
-            fun openRecordingsList() {
+            fun openRecordingsList(local: Boolean = false, select: String? = null) {
                 scope.launch {
-                    if (selectedBouquet?.ref != REC_BOUQUET || channels.isEmpty()) loadRecordings(recDir)
+                    if (local) loadLocalRecordings(select)
+                    else if (selectedBouquet?.ref != REC_BOUQUET || channels.isEmpty()) loadRecordings(recDir)
                     else {
                         val playingRef = playingRecording?.let { REC_PREFIX + it.path }
                         channelListSelected = channels.indexOfFirst { it.ref == playingRef }.coerceAtLeast(0)
@@ -1058,7 +1089,7 @@ fun main() {
             fun stopRecordingToList() {
                 val recording = playingRecording ?: return
                 stopPlayback("Nagranie zatrzymane: ${recording.title}")
-                openRecordingsList()
+                openRecordingsList(local = recording.path.startsWith(LOCAL_PREFIX), select = recording.path)
             }
 
             fun timeshiftShown(ts: TimeshiftSession, session: VlcSession): Long = ts.shownWall(session.time())
@@ -1174,7 +1205,7 @@ fun main() {
                             recPositions.remove(recording.path)
                             playingRecording = null
                             stopPlayback("Koniec nagrania: ${recording.title}")
-                            openRecordingsList()
+                            openRecordingsList(local = recording.path.startsWith(LOCAL_PREFIX), select = recording.path)
                         }
                         timeshift != null -> timeshiftPlay(
                             if (timeshiftShifted()) TimeshiftTarget.At(timeshift!!.buffer.oldestWall + 10_000, true)
@@ -1838,7 +1869,7 @@ fun main() {
 
             fun showMultiEpgImpl(bouquet: Bouquet?, at: Long?, selectRef: String?) {
                 val visible = visibleBouquets()
-                val target = bouquet ?: selectedBouquet?.takeIf { it.ref != REC_BOUQUET }
+                val target = bouquet ?: selectedBouquet?.takeIf { !isRecordingsBouquet(it.ref) }
                     ?: visible.firstOrNull { it.ref == config.lastBouquetRef } ?: visible.firstOrNull()
                 val currentCatalog = catalog
                 if (target == null || currentCatalog == null) {
@@ -1992,72 +2023,175 @@ fun main() {
                 if (config.autoUpdate && System.currentTimeMillis() - config.lastUpdateCheck > 20 * 3_600_000L) checkUpdate(manual = false)
             }
 
-            // ---------- Zapis bufora timeshiftu do nagrań na komputerze ----------
-            var tsSaveBusy by remember { mutableStateOf(false) }
-            fun saveTimeshiftBuffer(fromWall: Long, label: String) {
+            // ---------- Nagrania lokalne z bufora timeshiftu (kawałki przenoszone, nie kopiowane) ----------
+            /** Wall (zegar bufora) odpowiadający czasowi [epochSec]. */
+            fun wallOf(epochSec: Long): Long = monotonicMs() - (System.currentTimeMillis() - epochSec * 1000)
+            fun epochOf(wall: Long): Long = System.currentTimeMillis() - (monotonicMs() - wall)
+
+            fun startLocalRecording(kind: String, fromWall: Long, untilWall: Long, title: String?, note: String?) {
                 val ts = timeshift ?: return
                 val channel = playingChannel ?: return
-                if (tsSaveBusy) {
-                    status = "Zapis bufora już trwa."
+                if (ts.buffer.isRecording) {
+                    status = "Nagrywanie już trwa."
                     return
                 }
-                val dir = TimeshiftBuffer.recordingsDir(config)
-                val title = bannerNowNext.first?.title ?: nowEvents[serviceKey(channel.ref)]?.title
-                val target = java.io.File(dir, TimeshiftBuffer.recordingName(channel.name, title, java.time.LocalDateTime.now()))
-                tsSaveBusy = true
-                status = "Zapisuję bufor timeshiftu ($label)…"
+                val current = config
                 scope.launch {
-                    try {
-                        val bytes = withContext(Dispatchers.IO) {
-                            ts.buffer.saveTo(target, fromWall) { percent ->
-                                if (percent % 10 == 0) EventQueue.invokeLater { status = "Zapis bufora: $percent%" }
-                            }
-                        }
-                        if (bytes <= 0) {
-                            target.delete()
-                            status = "Bufor timeshiftu jest pusty — nic nie zapisano."
-                        } else {
-                            logInfo("timeshift: zapisano ${bytes / 1_000_000} MB do ${target.path}")
-                            status = "Zapisano ${bytes / 1_000_000} MB: ${target.path}"
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        status = "Nie udało się zapisać bufora: ${e.message}"
-                    } finally {
-                        tsSaveBusy = false
+                    val allowed = withContext(Dispatchers.IO) { runCatching { LocalRecordings.allowedBytes(current) }.getOrDefault(0L) }
+                    if (allowed <= 0) {
+                        quickPick = QuickPick(
+                            "Brak miejsca na nagrania",
+                            listOf("OK"),
+                            0,
+                            body = "Nagrania zajmują już ${(LocalRecordings.MAX_SHARE * 100).toInt()}% pojemności dysku albo brakuje wolnego " +
+                                "miejsca. Usuń stare nagrania (lista kanałów → Nagrania lokalne → Menu → Usuń).",
+                        ) {}
+                        return@launch
                     }
+                    val dir = LocalRecordings.newDir(current, channel.name, java.time.LocalDateTime.now())
+                    val maxMs = current.recMaxH.coerceIn(1, 6) * 3_600_000L
+                    val start = maxOf(fromWall, ts.buffer.oldestWall)
+                    val until = minOf(untilWall, start + maxMs)
+                    val info = JSONObject()
+                        .put("channel", channel.name)
+                        .put("ref", channel.ref)
+                        .put("title", title.orEmpty())
+                        .put(
+                            "description",
+                            withContext(Dispatchers.IO) {
+                                runCatching { epgRepo.nowNext(channel.ref).first?.let(::epgDescription) }.getOrNull()
+                            }.takeIf { title != null }.orEmpty(),
+                        )
+                        .put("kind", kind)
+                        .put("begin", epochOf(start))
+                        .put("recording", true)
+                    withContext(Dispatchers.IO) { LocalRecordings.writeInfo(dir, info) }
+                    val ok = ts.buffer.startRecording(dir, start, until, allowed) { result ->
+                        val done = JSONObject(info.toString())
+                            .put("recording", false)
+                            .put("begin", if (result.firstWall != Long.MAX_VALUE) epochOf(result.firstWall) else epochOf(start))
+                            .put("durationMs", if (result.firstWall != Long.MAX_VALUE) result.endWall - result.firstWall else 0L)
+                            .put("bytes", result.bytes)
+                            .put("end", result.reason)
+                        runCatching { LocalRecordings.writeInfo(result.dir, done) }
+                        EventQueue.invokeLater {
+                            if (activeRecording?.dir == result.dir) activeRecording = null
+                            if (result.files == 0) runCatching { result.dir.deleteRecursively() }
+                            status = if (result.files == 0) "Nagranie puste — nic nie zapisano."
+                            else "Nagranie zapisane: ${title ?: channel.name} (${result.bytes / 1_000_000} MB, ${result.reason})."
+                        }
+                    }
+                    if (!ok) {
+                        dir.deleteRecursively()
+                        status = "Nie udało się rozpocząć nagrania (bufor timeshiftu pusty?)."
+                        return@launch
+                    }
+                    activeRecording = ActiveRecording(dir, title ?: channel.name, channel.ref)
+                    logInfo("nagranie: start ($kind) ${channel.name} — ${dir.name}")
+                    status = "● Nagrywanie: ${title ?: channel.name}" + (note?.let { " — $it" } ?: "")
+                    if (kind == "bufor-do-teraz") ts.buffer.stopRecording("bufor do teraz")
                 }
             }
-            fun pickTimeshiftSave() {
+
+            fun stopLocalRecording() {
                 val ts = timeshift
-                if (ts == null) {
-                    status = "Timeshift jest wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift."
+                if (ts == null || !ts.buffer.isRecording) {
+                    activeRecording = null
+                    return
+                }
+                scope.launch(Dispatchers.IO) { ts.buffer.stopRecording("zatrzymane") }
+            }
+
+            /** Menu nagrywania z bufora: audycja / bufor do teraz / cały bufor do zmiany kanału (albo zatrzymanie). */
+            fun pickRecording() {
+                val ts = timeshift
+                val channel = playingChannel
+                if (ts == null || channel == null || playingRecording != null) {
+                    status = "Nagrywanie działa przy włączonym timeshifcie — Ustawienia → Odtwarzanie i obraz → Timeshift."
+                    return
+                }
+                if (ts.buffer.isRecording) {
+                    val active = activeRecording
+                    quickPick = QuickPick(
+                        "Nagrywanie",
+                        listOf("Zatrzymaj nagrywanie", "Nagrywaj dalej"),
+                        0,
+                        body = "● ${active?.title ?: channel.name}",
+                    ) { if (it == 0) stopLocalRecording() }
                     return
                 }
                 val now = monotonicMs()
                 val span = ts.buffer.spanMs()
-                val options = mutableListOf<Pair<String, Long>>()
-                options += "Cały bufor (${formatDuration(span)})" to Long.MIN_VALUE
                 val event = bannerNowNext.first
-                if (event != null) {
-                    val eventWall = now - (System.currentTimeMillis() / 1000 - event.begin) * 1000
-                    if (eventWall > ts.buffer.oldestWall) {
-                        options += "Od początku audycji „${event.title}” (${formatDuration(now - eventWall)})" to eventWall
+                val options = mutableListOf<Pair<String, () -> Unit>>()
+                if (event != null && event.end > System.currentTimeMillis() / 1000) {
+                    val beginWall = wallOf(event.begin)
+                    val inBuffer = beginWall >= ts.buffer.oldestWall
+                    options += "Audycja „${event.title}” (${EpgTime.range(event.begin, event.end)})" to {
+                        startLocalRecording(
+                            "audycja", beginWall, wallOf(event.end), event.title,
+                            if (inBuffer) null else "początek audycji niedostępny w buforze — nagranie od najstarszego miejsca",
+                        )
                     }
                 }
-                for (minutes in listOf(5, 15, 30)) {
-                    if (span > minutes * 60_000L) options += "Ostatnie $minutes min" to now - minutes * 60_000L
+                options += "Bufor do teraz (${formatDuration(span)})" to {
+                    startLocalRecording("bufor-do-teraz", ts.buffer.oldestWall, now, event?.title, null)
+                }
+                options += "Cały bufor do zmiany kanału (najwyżej ${config.recMaxH} h)" to {
+                    startLocalRecording("do-zmiany-kanalu", ts.buffer.oldestWall, Long.MAX_VALUE, event?.title, null)
                 }
                 quickPick = QuickPick(
-                    "Zapisz bufor timeshiftu",
+                    "Nagraj z timeshiftu",
                     options.map { it.first },
                     0,
-                    body = "Plik .ts trafi do: ${TimeshiftBuffer.recordingsDir(config).path} (zmiana: Ustawienia → Odtwarzanie i obraz). " +
-                        "Nie zmieniaj kanału do końca zapisu.",
+                    body = "Nagrania lokalne: lista kanałów → bukiet „Nagrania lokalne”. Zmiana kanału albo wyjście kończy nagranie.",
+                ) { index -> options[index].second() }
+            }
+
+            /** Klawisz Menu na nagraniu lokalnym: odtwórz / eksportuj do jednego pliku / usuń. */
+            fun localRecordingActions(recording: Recording) {
+                val current = config
+                quickPick = QuickPick(
+                    recording.title,
+                    listOf("Odtwórz", "Eksportuj do jednego pliku .ts", "Usuń"),
+                    0,
+                    body = listOfNotNull(
+                        recording.service.takeIf(String::isNotBlank),
+                        recording.begin.takeIf { it > 0 }?.let { EpgTime.day(it) + " " + EpgTime.clock(it) },
+                        recording.lengthSec.takeIf { it > 0 }?.let { formatDuration(it * 1000) },
+                        recording.size.takeIf { it > 0 }?.let { "${it / 1_000_000} MB" },
+                    ).joinToString("  •  "),
                 ) { index ->
-                    val (label, from) = options[index]
-                    saveTimeshiftBuffer(from, label)
+                    when (index) {
+                        0 -> {
+                            showChannelList = false
+                            playRecording(recording)
+                        }
+                        1 -> scope.launch {
+                            status = "Eksport: ${recording.title}…"
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    LocalRecordings.export(current, recording) { percent ->
+                                        if (percent % 10 == 0) EventQueue.invokeLater { status = "Eksport: $percent%" }
+                                    }
+                                }
+                            }
+                            status = result.fold({ "Wyeksportowano: ${it.path}" }, { "Eksport nieudany: ${it.message}" })
+                        }
+                        2 -> quickPick = QuickPick(
+                            "Usunąć nagranie?",
+                            listOf("Usuń", "Anuluj"),
+                            1,
+                            body = recording.title,
+                        ) { confirm ->
+                            if (confirm == 0) scope.launch {
+                                if (playingRecording?.path == recording.path) stopPlayback("Nagranie usunięte.")
+                                val ok = withContext(Dispatchers.IO) { LocalRecordings.delete(current, recording) }
+                                status = if (ok) "Usunięto: ${recording.title}" else "Nie udało się usunąć nagrania."
+                                loadLocalRecordings()
+                            }
+                        }
+                    }
                 }
             }
 
@@ -2099,7 +2233,7 @@ fun main() {
                     DesktopMenuItem.EPG_CHANNEL -> runNavAction(NavAction.EPG_CHANNEL)
                     DesktopMenuItem.EPG_SEARCH -> openEpgSearch()
                     DesktopMenuItem.AUDIO -> showAudioPick()
-                    DesktopMenuItem.SAVE_TIMESHIFT -> pickTimeshiftSave()
+                    DesktopMenuItem.RECORD -> pickRecording()
                     DesktopMenuItem.EXIT -> {
                         powerDialogOpen.set(true)
                         showExitConfirmation = true
@@ -2440,15 +2574,18 @@ fun main() {
                     SettingItem.Toggle("Wstecz wraca na żywo", config.tsBackLive) {
                         saveConfig(config.copy(tsBackLive = it))
                     },
-                    SettingItem.Action("Katalog nagrań z bufora", TimeshiftBuffer.recordingsDir(config).path) {
-                        editText(
-                            "Katalog nagrań zapisanych z bufora timeshiftu",
-                            config.recLocalDir,
-                            "pusty = ${TimeshiftBuffer.recordingsDir(config.copy(recLocalDir = "")).path}",
-                        ) { config.copy(recLocalDir = it.trim()) }
+                    SettingItem.Action("Najdłuższe nagranie z timeshiftu", "${config.recMaxH} h") {
+                        val hours = (1..6).toList()
+                        choose("Najdłuższe nagranie (godziny)", hours.map { "$it h" }, hours.indexOf(config.recMaxH)) {
+                            saveConfig(config.copy(recMaxH = hours[it]), "Najdłuższe nagranie: ${hours[it]} h.")
+                        }
                     },
-                    SettingItem.Action("Otwórz katalog nagrań", "Menu → Zapisz bufor timeshiftu zapisuje tam pliki .ts") {
-                        val dir = TimeshiftBuffer.recordingsDir(config)
+                    SettingItem.Action(
+                        "Nagrania lokalne",
+                        "${LocalRecordings.root(config).path} — obok bufora, najwyżej ${(LocalRecordings.MAX_SHARE * 100).toInt()}% dysku; " +
+                            "OK otwiera katalog",
+                    ) {
+                        val dir = LocalRecordings.root(config)
                         status = runCatching { dir.mkdirs(); java.awt.Desktop.getDesktop().open(dir) }
                             .fold({ "Otwarto: ${dir.path}" }, { "Nie udało się otworzyć katalogu: ${it.message}" })
                     },
@@ -2845,6 +2982,13 @@ fun main() {
                                 hiddenBouquets = if (visible) config.hiddenBouquets - REC_BOUQUET else config.hiddenBouquets + REC_BOUQUET,
                             ),
                         )
+                    } + SettingItem.Toggle("Nagrania lokalne (z timeshiftu)", LOCAL_REC_BOUQUET !in config.hiddenBouquets) { visible ->
+                        saveConfig(
+                            config.copy(
+                                hiddenBouquets = if (visible) config.hiddenBouquets - LOCAL_REC_BOUQUET
+                                else config.hiddenBouquets + LOCAL_REC_BOUQUET,
+                            ),
+                        )
                     }
                 SettingsScreen.MENU_ITEMS -> {
                     val order = DesktopMenuItem.inOrder(config.menuOrder)
@@ -3032,10 +3176,17 @@ fun main() {
                     ) { if (it == 0) openSettings(SettingsScreen.PLAYBACK) }
                 }
             }
+            /** Długie OK: na pasku kanału — timeshift; na pasku timeshiftu — nagrywanie; bez pasków — Menu. */
             fun longOk() {
-                remoteDiagnostics.log { "key=OK long banner=$bannerVisible" }
-                if (playingRecording == null && playingChannel != null && bannerVisible) openTimeshiftControls()
-                else openMenu()
+                remoteDiagnostics.log { "key=OK long banner=$bannerVisible playbackBar=$playbackBarVisible" }
+                when {
+                    playingRecording == null && timeshift != null && playbackBarVisible -> {
+                        playbackBarVisible = false
+                        pickRecording()
+                    }
+                    playingRecording == null && playingChannel != null && bannerVisible -> openTimeshiftControls()
+                    else -> openMenu()
+                }
             }
 
             fun handleVirtualKey(key: VirtualRemoteKey): Boolean {
@@ -3133,7 +3284,7 @@ fun main() {
                         }
                         VirtualRemoteKey.HOME -> showChannelList = false
                         VirtualRemoteKey.INFO, VirtualRemoteKey.GUIDE -> channels.getOrNull(channelListSelected)
-                            ?.takeUnless { it.ref.startsWith(REC_PREFIX) || selectedBouquet?.ref == REC_BOUQUET }
+                            ?.takeUnless { it.ref.startsWith(REC_PREFIX) || isRecordingsBouquet(selectedBouquet?.ref) }
                             ?.let { showChannelEpg(it) }
                         VirtualRemoteKey.CHANNEL_UP -> if (channels.isNotEmpty()) {
                             channelListSelected = (channelListSelected - 8).coerceAtLeast(0)
@@ -3142,8 +3293,12 @@ fun main() {
                             channelListSelected = (channelListSelected + 8).coerceAtMost(channels.lastIndex)
                         }
                         VirtualRemoteKey.MENU -> {
-                            showChannelList = false
-                            openMenu()
+                            val row = channels.getOrNull(channelListSelected)?.let { recRows[it.ref] }
+                            if (selectedBouquet?.ref == LOCAL_REC_BOUQUET && row != null) localRecordingActions(row)
+                            else {
+                                showChannelList = false
+                                openMenu()
+                            }
                         }
                         else -> return false
                     }
@@ -3535,6 +3690,7 @@ fun main() {
             CompositionLocalProvider(
                 LocalBackButtonVisible provides (config.backButtonMode == BackButtonMode.ALWAYS || inputMode.mouseActive),
             ) {
+            Box(Modifier.fillMaxSize()) {
             val session = vlcSession
             val channel = playingChannel
             val playbackBar = playbackBarFor(
@@ -3575,6 +3731,7 @@ fun main() {
                         onMenu = ::openMenu,
                         onBack = { stopPlayback("Odtwarzanie zatrzymane.") },
                         playback = playbackBar,
+                        recordingLabel = activeRecording?.title,
                         onTogglePause = ::togglePlaybackPause,
                         onSeek = when {
                             playingRecording != null -> { forward -> seekRecording(if (forward) 30_000 else -10_000) }
@@ -3624,7 +3781,7 @@ fun main() {
                     piconFor = { piconVersion; Picons.image(it) },
                     piconStyle = piconStyle(config),
                     iconScale = config.uiListIcon / 100f,
-                    recordings = if (selectedBouquet?.ref == REC_BOUQUET) recRows else emptyMap(),
+                    recordings = if (isRecordingsBouquet(selectedBouquet?.ref)) recRows else emptyMap(),
                 )
             }
             if (showMenu && !navigator.isVisible) {
@@ -3687,13 +3844,7 @@ fun main() {
                     delay(config.confirmDialogSec * 1000L)
                     cancelExitConfirmation()
                 }
-                DialogWindow(
-                    onCloseRequest = ::cancelExitConfirmation,
-                    title = "Wyłączyć E2Stream?",
-                    state = rememberDialogState(width = 440.dp, height = 220.dp),
-                    undecorated = true,
-                    resizable = false,
-                ) {
+                InWindowDialog(width = 440.dp, height = 220.dp, onDismiss = ::cancelExitConfirmation) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = colorScheme.surface,
@@ -3714,6 +3865,7 @@ fun main() {
                 }
             }
             }
+            }
         }
     }
     }
@@ -3727,16 +3879,13 @@ private fun MenuDialog(
     onClose: () -> Unit,
     onSelect: (DesktopMenuItem) -> Unit,
 ) {
-    DialogWindow(
-        onCloseRequest = onClose,
-        title = "E2Stream",
-        state = rememberDialogState(width = 460.dp, height = (150 + items.size * 54).dp),
-        undecorated = true,
-        resizable = false,
-    ) {
+    InWindowDialog(width = 460.dp, height = (150 + items.size * 54).dp, onDismiss = onClose) {
         MaterialTheme(colorScheme = colors) {
             Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
-                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(tr("Menu"), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)
                         BackButton(onClick = onClose)
@@ -3767,3 +3916,6 @@ private fun belongsToApplication(window: AwtWindow?, mainWindow: AwtWindow): Boo
     }
     return false
 }
+
+/** Trwające nagranie z bufora timeshiftu (do wskaźnika ● REC i zatrzymania). */
+internal data class ActiveRecording(val dir: java.io.File, val title: String, val channelRef: String)

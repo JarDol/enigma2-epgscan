@@ -37,7 +37,7 @@ class DesktopNavigationTest {
                 DesktopMenuItem.IMAGE, DesktopMenuItem.CHANNEL_LIST, DesktopMenuItem.RECORDINGS,
                 DesktopMenuItem.ZAP_TIMERS, DesktopMenuItem.DECODER_TIMERS, DesktopMenuItem.WINDOW,
                 DesktopMenuItem.MULTI_EPG, DesktopMenuItem.EPG_CHANNEL, DesktopMenuItem.EPG_SEARCH, DesktopMenuItem.AUDIO,
-                DesktopMenuItem.SAVE_TIMESHIFT,
+                DesktopMenuItem.RECORD,
                 DesktopMenuItem.SETTINGS, DesktopMenuItem.EXIT,
             ),
             items,

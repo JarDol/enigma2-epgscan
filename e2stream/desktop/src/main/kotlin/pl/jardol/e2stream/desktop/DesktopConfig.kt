@@ -113,6 +113,8 @@ data class DesktopConfig(
     /** "stable" albo "test" (także wersje testowe). */
     val updateChannel: String = "stable",
     val lastUpdateCheck: Long = 0,
+    /** Najdłuższe nagranie z timeshiftu (godziny, 1–6). */
+    val recMaxH: Int = 3,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -206,6 +208,7 @@ data class DesktopConfig(
             setProperty("autoUpdate", autoUpdate.toString())
             setProperty("updateChannel", updateChannel)
             setProperty("lastUpdateCheck", lastUpdateCheck.toString())
+            setProperty("recMaxH", recMaxH.toString())
     }
 
     companion object {
@@ -349,6 +352,7 @@ data class DesktopConfig(
                 updateChannel = string("updateChannel", defaults.updateChannel).takeIf { it == "stable" || it == "test" }
                     ?: defaults.updateChannel,
                 lastUpdateCheck = properties.getProperty("lastUpdateCheck")?.toLongOrNull() ?: 0,
+                recMaxH = int("recMaxH", defaults.recMaxH, 1..6),
             )
         }
 

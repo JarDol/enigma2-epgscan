@@ -3,6 +3,14 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.3.0
+
+- Obraz rysowany w oknie aplikacji (VLC oddaje klatki), a paski, menu, EPG, listy i ustawienia są warstwami w tym samym oknie — skalują się razem z oknem, nie wychodzą poza nie i nie zabierają fokusu (koniec z chowaniem okna po Wstecz). Pasek kanału i przyciski myszy leżą na obrazie, obraz nie zmienia rozmiaru
+- Nagrania lokalne z bufora timeshiftu (jak ustalone dla Androida): długie OK na pasku kanału — timeshift, ponowne długie OK na pasku timeshiftu — „Nagraj z timeshiftu” (też w Menu): audycja (gdy jej początku nie ma w buforze — od najstarszego miejsca), bufor do teraz (bufor zaczyna od nowa), cały bufor do zmiany kanału. Kawałki bufora są przenoszone, nie kopiowane; czerwony wskaźnik ● REC; zmiana kanału albo wyjście kończy nagranie bez pytania
+- Nagrania w katalogu „nagrania” obok bufora timeshiftu; najwyżej 70% pojemności dysku (z ostrzeżeniem); najdłuższe nagranie 1–6 h (domyślnie 3 h, Ustawienia → Odtwarzanie i obraz)
+- Bukiet „Nagrania lokalne” na liście kanałów (do ukrycia w Widocznych bukietach): odtwarzanie z przewijaniem i wznawianiem; klawisz Menu na nagraniu — Odtwórz / Eksportuj do jednego pliku .ts / Usuń
+- „Zapisz bufor timeshiftu” z 0.2.1 zastąpione nagraniami lokalnymi
+
 ## 0.2.1
 
 - Watchdog jak w Androidzie: gdy obraz stoi (domyślnie 3 s + 2 s, po starcie kanału 15 s), strumień jest otwierany ponownie (kolejne próby po 0, 1, 2, 5, 10 s); gdy dekoder nie odpowiada — komunikat i sprawdzanie co 3 s, potem wznowienie tego samego kanału lub nagrania. Ustawienia → Odtwarzanie i obraz → Watchdog

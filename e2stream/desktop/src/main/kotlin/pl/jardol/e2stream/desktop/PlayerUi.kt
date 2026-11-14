@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -116,19 +117,12 @@ internal fun PlayerPage(
     owner: java.awt.Window? = null,
     /** Ukryj paski (np. otwarte ustawienia). */
     barsHidden: Boolean = false,
+    /** Trwające nagranie z timeshiftu — czerwony wskaźnik ● REC. */
+    recordingLabel: String? = null,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     var statusVisible by remember { mutableStateOf(false) }
     val currentToggleControls by androidx.compose.runtime.rememberUpdatedState(onToggleControls)
-    DisposableEffect(session) {
-        val listener = object : MouseAdapter() {
-            override fun mousePressed(event: MouseEvent) {
-                if (SwingUtilities.isRightMouseButton(event)) currentToggleControls()
-            }
-        }
-        session?.addVideoMouseListener(listener)
-        onDispose { session?.removeVideoMouseListener(listener) }
-    }
     LaunchedEffect(Unit) {
         while (true) {
             now = Instant.now().epochSecond
@@ -156,7 +150,7 @@ internal fun PlayerPage(
     val colors = MaterialTheme.colorScheme
     val accent = colors.primary
     val secondary = colors.onSurfaceVariant
-    Column(
+    Box(
         Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit) {
             awaitPointerEventScope {
                 while (true) {
@@ -169,13 +163,21 @@ internal fun PlayerPage(
         },
     ) {
         if (session != null) {
-            SwingPanel(
-                factory = { session.view },
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                background = Color.Black,
+            VideoView(session, videoScaleMode, Modifier.fillMaxSize())
+        }
+        if (recordingLabel != null) {
+            Text(
+                "● REC",
+                modifier = Modifier.align(Alignment.TopEnd).padding(24.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                color = Color(0xFFE53935),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
             )
-        } else {
-            Box(Modifier.fillMaxWidth().weight(1f).padding(24.dp)) {
+        }
+        if (session == null) {
+            Box(Modifier.fillMaxSize().padding(24.dp)) {
                 Text(
                     "$status\nMenu: M / pilot · przyciski myszy: prawy przycisk",
                     color = Color.White,
@@ -185,11 +187,11 @@ internal fun PlayerPage(
         if (!barsHidden &&
             ((channel != null && bannerVisible) || controlsVisible || statusVisible || stats != null || playback != null)
         ) {
-            BottomOverlay(owner) {
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.BottomCenter) {
             Column(
                 modifier = Modifier.fillMaxWidth()
-                    .background(colors.surface.copy(alpha = if (owner != null) 0.94f else 1f), RoundedCornerShape(if (owner != null) 16.dp else 0.dp))
-                    .padding(horizontal = 24.dp, vertical = if (owner != null) 16.dp else 10.dp),
+                    .background(colors.surface.copy(alpha = 0.92f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (playback != null) {
@@ -233,7 +235,10 @@ internal fun PlayerPage(
                 if (statusVisible && !controlsVisible) {
                     Text(status, color = secondary, maxLines = 2)
                 }
-                if (controlsVisible) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (controlsVisible) Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     OutlinedButton(onClick = onChannels) { Text("Lista kanałów") }
                     OutlinedButton(onClick = onShowBanner, enabled = channel != null) { Text("Pasek") }
                     OutlinedButton(onClick = onTogglePause, enabled = session != null) { Text("Pauza / Wznów") }
@@ -251,71 +256,9 @@ internal fun PlayerPage(
                     OutlinedButton(onClick = onAudio, enabled = session != null) { Text("Audio") }
                     OutlinedButton(onClick = onMenu) { Text("Menu") }
                     OutlinedButton(onClick = onBack, enabled = session != null) { Text("Zatrzymaj") }
-                    Text(status, modifier = Modifier.weight(1f).padding(top = 12.dp), color = secondary, maxLines = 1)
+                    Text(status, modifier = Modifier.padding(top = 12.dp), color = secondary, maxLines = 1)
                 }
             }
-            }
-        }
-    }
-}
-
-/**
- * Pasek nad obrazem: obraz VLC jest osobnym oknem systemowym i przykrywa elementy Compose, więc pasek to
- * przezroczyste okno bez fokusu przy dolnej krawędzi okna głównego (wysokość dopasowana do treści).
- * Bez [owner] — zwykły pasek pod obrazem.
- */
-@Composable
-private fun BottomOverlay(owner: java.awt.Window?, content: @Composable () -> Unit) {
-    if (owner == null) {
-        content()
-        return
-    }
-    var bounds by remember { mutableStateOf(owner.bounds) }
-    DisposableEffect(owner) {
-        val listener = object : java.awt.event.ComponentAdapter() {
-            override fun componentMoved(e: java.awt.event.ComponentEvent) { bounds = owner.bounds }
-            override fun componentResized(e: java.awt.event.ComponentEvent) { bounds = owner.bounds }
-        }
-        owner.addComponentListener(listener)
-        bounds = owner.bounds
-        onDispose { owner.removeComponentListener(listener) }
-    }
-    var contentHeight by remember { mutableIntStateOf(0) }
-    val insets = owner.insets
-    val margin = 24
-    val width = (bounds.width - insets.left - insets.right - 2 * margin).coerceAtLeast(320)
-    val height = if (contentHeight > 0) contentHeight else 200
-    val x = bounds.x + insets.left + margin
-    val y = bounds.y + bounds.height - insets.bottom - margin - height
-    val state = rememberDialogState(
-        position = androidx.compose.ui.window.WindowPosition(x.dp, y.dp),
-        size = androidx.compose.ui.unit.DpSize(width.dp, height.dp),
-    )
-    LaunchedEffect(x, y, width, height) {
-        state.position = androidx.compose.ui.window.WindowPosition(x.dp, y.dp)
-        state.size = androidx.compose.ui.unit.DpSize(width.dp, height.dp)
-    }
-    val colors = MaterialTheme.colorScheme
-    DialogWindow(
-        onCloseRequest = {},
-        title = "E2Stream — pasek",
-        state = state,
-        undecorated = true,
-        transparent = true,
-        resizable = false,
-        focusable = false,
-    ) {
-        MaterialTheme(colorScheme = colors) {
-            val density = androidx.compose.ui.platform.LocalDensity.current
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-                Box(
-                    Modifier.fillMaxWidth()
-                        .wrapContentHeight(align = Alignment.Top, unbounded = true)
-                        .onSizeChanged { size ->
-                            val measured = with(density) { size.height.toDp().value.toInt() } + 1
-                            if (measured != contentHeight) contentHeight = measured
-                        },
-                ) { content() }
             }
         }
     }
@@ -430,44 +373,8 @@ internal fun ChannelListDialog(
     LaunchedEffect(selected, channels) {
         if (selected in channels.indices) listState.animateScrollToItem(selected)
     }
-    DialogWindow(
-        onCloseRequest = onClose,
-        title = "Lista kanałów — ${bouquet?.name.orEmpty()}",
-        state = rememberDialogState(width = 950.dp, height = 700.dp),
-        undecorated = true,
-        resizable = false,
-        onPreviewKeyEvent = { event ->
-            if (event.type != KeyEventType.KeyDown) false
-            else when (event.key) {
-                Key.DirectionDown -> {
-                    if (channels.isNotEmpty()) onSelectedChange((selected + 1) % channels.size)
-                    true
-                }
-                Key.DirectionUp -> {
-                    if (channels.isNotEmpty()) onSelectedChange((selected - 1 + channels.size) % channels.size)
-                    true
-                }
-                Key.DirectionLeft -> {
-                    bouquetOffset(bouquets, bouquet, -1)?.let(onBouquetSelected)
-                    true
-                }
-                Key.DirectionRight -> {
-                    bouquetOffset(bouquets, bouquet, 1)?.let(onBouquetSelected)
-                    true
-                }
-                Key.Enter, Key.NumPadEnter -> {
-                    channels.getOrNull(selected)?.let(onPlay)
-                    true
-                }
-                Key.Escape -> {
-                    onClose()
-                    true
-                }
-                else -> false
-            }
-        },
-    ) {
-        LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    InWindowDialog(width = 950.dp, height = 700.dp, onDismiss = onClose) {
+        LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
         MaterialTheme(colorScheme = colors) {
             Column(
                 modifier = Modifier.fillMaxSize().background(colors.surface).focusRequester(focusRequester)
@@ -679,18 +586,7 @@ internal fun VolumeOsd(
     owner: java.awt.Window,
     colors: androidx.compose.material3.ColorScheme,
 ) {
-    val width = 300
-    val position = remember(owner.x, owner.y, owner.width) {
-        androidx.compose.ui.window.WindowPosition((owner.x + owner.width - width - 24).dp, (owner.y + 48).dp)
-    }
-    DialogWindow(
-        onCloseRequest = {},
-        title = "Głośność",
-        state = rememberDialogState(position = position, width = width.dp, height = 84.dp),
-        undecorated = true,
-        resizable = false,
-        focusable = false,
-    ) {
+    InWindowDialog(width = 300.dp, height = 84.dp, onDismiss = {}, alignment = Alignment.TopEnd, scrim = false, margin = 24.dp) {
         MaterialTheme(colorScheme = colors) {
             androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
                 Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -720,15 +616,10 @@ internal fun QuickPickDialog(
     val rowsHeight = ((pick.options.size * 54 + pick.subtitles.count { it != null } * 24 + pick.headers.size * 40) * scale).toInt() +
         bodyHeight + if (pick.onHorizontal != null) 56 else 0
     val wide = pick.subtitles.isNotEmpty() || pick.headers.isNotEmpty() || bodyHeight > 0
-    DialogWindow(
-        onCloseRequest = onClose,
-        title = pick.title,
-        state = rememberDialogState(
-            width = if (wide) (720 * scale).coerceAtLeast(640f).dp else 460.dp,
-            height = (150 + rowsHeight).coerceAtMost(720).dp,
-        ),
-        undecorated = true,
-        resizable = false,
+    InWindowDialog(
+        width = if (wide) (720 * scale).coerceAtLeast(640f).dp else 460.dp,
+        height = (150 + rowsHeight).coerceAtMost(720).dp,
+        onDismiss = onClose,
     ) {
         MaterialTheme(colorScheme = colors) {
             androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
@@ -790,5 +681,30 @@ internal fun QuickPickDialog(
                 }
             }
         }
+    }
+}
+/** Obraz VLC rysowany w oknie aplikacji, skalowany wg [mode] i proporcji wyświetlania strumienia. */
+@Composable
+internal fun VideoView(session: VlcSession, mode: VideoScaleMode, modifier: Modifier = Modifier) {
+    var aspect by remember(session) { mutableStateOf(0f) }
+    LaunchedEffect(session) {
+        while (true) {
+            aspect = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { session.displayAspect() } ?: 0f
+            delay(1000)
+        }
+    }
+    val frameState = session.frames.frame
+    androidx.compose.foundation.Canvas(modifier) {
+        val image = frameState.value ?: return@Canvas
+        val ratio = if (aspect > 0f) aspect else image.width.toFloat() / image.height
+        val place = videoPlacement(mode, size.width, size.height, image.width, image.height, ratio)
+        drawImage(
+            image,
+            srcOffset = androidx.compose.ui.unit.IntOffset(place.srcX, place.srcY),
+            srcSize = androidx.compose.ui.unit.IntSize(place.srcW, place.srcH),
+            dstOffset = androidx.compose.ui.unit.IntOffset(Math.round(place.dstX), Math.round(place.dstY)),
+            dstSize = androidx.compose.ui.unit.IntSize(Math.round(place.dstW), Math.round(place.dstH)),
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.Low,
+        )
     }
 }
