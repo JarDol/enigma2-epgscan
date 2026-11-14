@@ -14,6 +14,12 @@ import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
 
+internal fun timeshiftEarliestSeekWall(oldestWall: Long, now: Long): Long =
+    minOf(oldestWall + 10_000, now)
+
+internal fun timeshiftSeekTarget(base: Long, delta: Long, oldestWall: Long, now: Long): Long =
+    maxOf(base + delta, timeshiftEarliestSeekWall(oldestWall, now))
+
 /**
  * Bufor timeshiftu: strumień TS bieżącego kanału zapisywany w kawałkach po 1 minucie
  * (ts-N.ts w katalogu bufora). Kawałki to po prostu kolejne fragmenty jednego ciągłego strumienia —
@@ -346,13 +352,17 @@ class TimeshiftRecorder(
                 val inp = c.inputStream
                 onConnect()
                 val b = ByteArray(188 * 700)
+                val sourceAnalyzer = analyzer()
+                val analyzerSession = sourceAnalyzer?.sessionId
                 while (running) {
                     val t0 = SystemClock.elapsedRealtime()
                     val n = inp.read(b)
-                    if (n < 0) break
+                    if (n < 0 || !running) break
                     analyzer()?.let { a ->
-                        a.readTime(SystemClock.elapsedRealtime() - t0)
-                        if (n > 0) a.feed(b, 0, n)
+                        if (a === sourceAnalyzer) {
+                            a.readTime(SystemClock.elapsedRealtime() - t0, analyzerSession)
+                            if (n > 0) a.feed(b, 0, n, analyzerSession)
+                        }
                     }
                 }
                 if (running) AppLog.i("timeshift: strumień na żywo zakończył się")

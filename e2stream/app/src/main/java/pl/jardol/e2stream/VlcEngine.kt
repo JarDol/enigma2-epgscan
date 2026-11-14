@@ -16,6 +16,25 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
 
+internal enum class VlcFailureAction { RETRY, STARTUP_RECOVERY, PLAYBACK_RECOVERY }
+
+internal class PlaybackRecovery {
+    var hasPlayed = false
+        private set
+    var vlcRestarts = 0
+        private set
+
+    fun resetSession() { hasPlayed = false; vlcRestarts = 0 }
+    fun markHealthy() { hasPlayed = true }
+    fun resetVlcRestarts() { vlcRestarts = 0 }
+    fun recordVlcRestart() { vlcRestarts++ }
+    fun vlcFailureAction(): VlcFailureAction = when {
+        vlcRestarts < 2 -> VlcFailureAction.RETRY
+        hasPlayed -> VlcFailureAction.PLAYBACK_RECOVERY
+        else -> VlcFailureAction.STARTUP_RECOVERY
+    }
+}
+
 /**
  * Lokalny pośrednik strumienia dla VLC: pobiera TS z dekodera i przepuszcza go przez ten sam
  * analizator co przy ExoPlayerze (PMT z pamięci, czyszczenie, poprawki znaczników, statystyki, zrzuty),
@@ -43,6 +62,8 @@ class TsProxy(private val analyzer: () -> TsAnalyzer?, private val auth: () -> S
     /** Nowy kanał: poprzednie połączenia kończą się same (zmiana numeru). */
     fun setTarget(url: String) { target = url; gen++ }
 
+    fun invalidate() { gen++ }
+
     fun url(): String = "http://127.0.0.1:$port/stream-$gen.ts"
 
     private fun serve(c: Socket, g: Int) {
@@ -67,14 +88,16 @@ class TsProxy(private val analyzer: () -> TsAnalyzer?, private val auth: () -> S
             val src: InputStream = up.inputStream
             out.write("HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nConnection: close\r\n\r\n".toByteArray())
             val buf = ByteArray(188 * 700)
+            val sourceAnalyzer = analyzer()
+            val analyzerSession = sourceAnalyzer?.sessionId
             while (g == gen) {
                 val t0 = android.os.SystemClock.elapsedRealtime()
                 val n = src.read(buf)
-                if (n < 0) break
+                if (n < 0 || g != gen) break
                 val a = analyzer()
-                if (a != null) {
-                    a.readTime(android.os.SystemClock.elapsedRealtime() - t0)
-                    if (n > 0) a.feed(buf, 0, n)
+                if (a != null && a === sourceAnalyzer) {
+                    a.readTime(android.os.SystemClock.elapsedRealtime() - t0, analyzerSession)
+                    if (n > 0) a.feed(buf, 0, n, analyzerSession)
                 }
                 out.write(buf, 0, n)
             }
@@ -139,7 +162,7 @@ class VlcEngine(
                     MediaPlayer.Event.Buffering -> buffering = ev.buffering
                     MediaPlayer.Event.EncounteredError -> { playing = false; ui.post { onFailure("VLC: błąd odtwarzania") } }
                     MediaPlayer.Event.EndReached -> { playing = false; ui.post { onFailure("VLC: koniec strumienia") } }
-                    MediaPlayer.Event.Vout -> if (ev.voutCount > 0) onEvent("VLC: obraz")
+                    MediaPlayer.Event.Vout -> if (ev.voutCount > 0) onEvent("VLC: utworzone wyjście wideo")
                 }
             }
         }
@@ -193,6 +216,8 @@ class VlcEngine(
 
     /** Czas odtwarzania (ms) — do wykrywania zawieszenia. */
     fun time(): Long = try { mp?.time ?: -1 } catch (_: Exception) { -1 }
+
+    fun displayedPictures(): Int = mp?.media?.stats?.displayedPictures ?: 0
 
     /** Bieżące ID ścieżki audio; dla MPEG-TS jest to PID strumienia elementarnego. */
     fun selectedAudioTrackId(): Int? = try {

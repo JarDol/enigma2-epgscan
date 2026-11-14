@@ -19,7 +19,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.18.0-beta.12"
+VERSION = "2.18.0-beta.13"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
@@ -35,7 +35,7 @@ COUNT_EVERY = 5     # co ile sekund liczyc zdarzenia EPG
 TUNE_GAP = 2        # min. odstep miedzy kolejnymi strojeniami [s] (Unicable)
 NO_TUNER_WAIT = 15  # przy braku tunera ponow probe po tylu sekundach
 USAGE_EVERY = 5     # co ile sekund sprawdzac zajetosc tunerow
-TIMER_AHEAD = 120   # tyle sekund przed nagraniem z timera zwalniamy/trzymamy dla niego tuner
+TIMER_AHEAD = 120   # tyle sekund przed nagraniem/przelaczeniem zwalniamy/trzymamy tuner
 FREQ_TOL = 5000     # tolerancja czestotliwosci przy porownaniu transponderow [kHz]
 REP_CHECK = 5       # ile kanalow transpondera sprawdzic przy wyborze kanalu do strojenia
 COUNT_CAP = 80      # maks. kanalow transpondera liczonych przy postepie (duze listy)

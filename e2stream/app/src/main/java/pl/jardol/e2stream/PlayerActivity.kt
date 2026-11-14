@@ -187,12 +187,13 @@ class PlayerActivity : Activity() {
     private var settingsVersion = -1
     private var settingsShown = false
     private var safeMode = false
-    private var vlcRestartAttempts = 0
+    private val playbackRecovery = PlaybackRecovery()
+    private var vlcFailureDialog: Dialog? = null
     private var numberBuffer = ""
     private var suppressOkUp = false
     private var okAction = Act.DEFAULT_OK
     private val backExit = DoubleBackExit()
-    private var streamGen = 0
+    @Volatile private var streamGen = 0
     private var analyzer: TsAnalyzer? = null
     private var analyzerRing = -1
     private var lastDumpAt = 0L
@@ -200,6 +201,9 @@ class PlayerActivity : Activity() {
     private var epgStartupPending = false
     private var epgReturnFromSettings = false
     private var streamStartAt = 0L
+    private var decoderAvailableAt = 0L
+    private var firstStreamByteLogged = false
+    private var firstStreamFrameLogged = false
     private var readyLogged = false
     private var lastStartMs = -1L
     private var audioAppliedGen = -1
@@ -215,7 +219,9 @@ class PlayerActivity : Activity() {
     private var scheduledAppliedAt = 0L
     private var connectionDialog: Dialog? = null
     private var connectionProbePending = false
+    private var connectionProbeId = 0
     private var decoderUnavailable = false
+    private var disconnectedRecordingPosition = 0L
     private var lastProbeAt = 0L
     @Volatile private var startupProbeGeneration = 0
     private var backupCheckRunning = false
@@ -362,19 +368,19 @@ class PlayerActivity : Activity() {
     }
 
     private fun markPlaybackHealthy() {
+        playbackRecovery.markHealthy()
         if (prefs.playbackAttempt.isNotEmpty()) {
             prefs.playbackAttempt = ""
-            AppLog.i("start: odtwarzanie osiągnęło pierwszy obraz")
+            AppLog.i("start: odtwarzanie uznane za działające")
         }
         failStreak = 0
-        vlcRestartAttempts = 0
     }
 
     private fun retryNormalStartup() {
         if (!safeMode || isFinishing) return
         safeMode = false
         settingsVersion = -1
-        vlcRestartAttempts = 0
+        playbackRecovery.resetSession()
         AppLog.i("tryb bezpieczny: użytkownik jawnie ponawia normalny start")
         startUp()
     }
@@ -590,8 +596,11 @@ class PlayerActivity : Activity() {
         ui.removeCallbacks(epgTick)
         ui.removeCallbacks(zapTick)
         ui.removeCallbacks(connectionGuardTick)
+        connectionProbeId++
         connectionProbePending = false
         dismissConnectionDialog()
+        dismissVlcFailureDialog()
+        if (!safeMode && prefs.playbackAttempt.isNotEmpty()) prefs.playbackAttempt = ""
         releasePlayer()
         ui.removeCallbacks(logTick)
         if (!safeMode) {
@@ -610,6 +619,7 @@ class PlayerActivity : Activity() {
 
     private fun buildPlayer() {
         if (player != null) return
+        playbackRecovery.resetSession()
 
         val trackSelector = DefaultTrackSelector(this)
         val langs = AudioTrackLabels.preferredLanguages(prefs.audioLang)
@@ -673,8 +683,7 @@ class PlayerActivity : Activity() {
             }
 
             override fun onRenderedFirstFrame() {
-                lastStartMs = SystemClock.elapsedRealtime() - streamStartAt
-                AppLog.i("start: pierwszy obraz po $lastStartMs ms")
+                if (!tsMode) logFirstStreamFrame("ExoPlayer: pierwsza klatka")
                 markPlaybackHealthy()
             }
 
@@ -1011,26 +1020,33 @@ class PlayerActivity : Activity() {
             DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
                 DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
         )
+        val generation = streamGen
         val analyzing = DataSource.Factory {
-            AnalyzingDataSource(http.createDataSource()) { analyzer }
+            AnalyzingDataSource(http.createDataSource()) { if (generation == streamGen) analyzer else null }
         }
         return ProgressiveMediaSource.Factory(analyzing, extractors)
             .createMediaSource(MediaItem.fromUri(url))
     }
 
-    private fun startStream(url: String, startMs: Long = 0) {
+    private fun startStream(url: String, startMs: Long = 0, availableAt: Long = 0) {
         if (safeMode) return
         val p = player ?: return
         currentUrl = url
+        connectionProbeId++
+        connectionProbePending = false
         streamGen++
         ui.removeCallbacks(audioCheck)
         audioCheckGen = -1
         streamStartAt = SystemClock.elapsedRealtime()
+        decoderAvailableAt = availableAt
+        firstStreamByteLogged = false
+        firstStreamFrameLogged = false
         readyLogged = false
         cushionReset()
         lastStartMs = -1
         // SID serwisu = 4. pole referencji (hex), np. 1:0:19:3DD2:640:13E:820000:0:0:0:
         val sid = url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
+        proxy?.invalidate()
         analyzer?.reset(sid)
         // nagranie z pliku: bez poprawiania strumienia — po przewinięciu znaczniki czasu skaczą względem
         // ostatniego PCR i „poprawka” przesuwała dźwięk (obraz wyprzedzał dźwięk)
@@ -1038,10 +1054,11 @@ class PlayerActivity : Activity() {
         if (decoderUnavailable && !recMode) {
             p.stop()
             proxy?.stop(); proxy = null
-            vlc?.stop()
+            ui.removeCallbacks(vlcTick)
+            vlc?.release(); vlc = null
             return
         }
-        prefs.playbackAttempt = "${appVersion()} / ${prefs.engine.uppercase()}"
+        if (!playbackRecovery.hasPlayed) prefs.playbackAttempt = "${appVersion()} / ${prefs.engine.uppercase()}"
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
             return
@@ -1062,6 +1079,26 @@ class PlayerActivity : Activity() {
         watchdog?.reset()
     }
 
+    private fun logFirstStreamByte() {
+        val first = analyzer?.firstFeedAt ?: 0L
+        if (firstStreamByteLogged || first <= 0 || first < streamStartAt) return
+        firstStreamByteLogged = true
+        val fromProbe = if (decoderAvailableAt > 0) ", ${first - decoderAvailableAt} ms od testu dekodera" else ""
+        AppLog.i("start: pierwszy bajt po ${first - streamStartAt} ms$fromProbe")
+    }
+
+    private fun logFirstStreamFrame(source: String) {
+        if (firstStreamFrameLogged || streamStartAt <= 0) return
+        logFirstStreamByte()
+        val now = SystemClock.elapsedRealtime()
+        lastStartMs = now - streamStartAt
+        val first = analyzer?.firstFeedAt ?: 0L
+        val fromByte = if (first >= streamStartAt && first > 0) ", ${now - first} ms od pierwszych bajtów" else ""
+        val fromProbe = if (decoderAvailableAt > 0) ", ${now - decoderAvailableAt} ms od testu dekodera" else ""
+        AppLog.i("start: $source po $lastStartMs ms$fromByte$fromProbe")
+        firstStreamFrameLogged = true
+    }
+
     // ---------------------------------------------------------------- VLC
 
     private lateinit var vlcLayout: org.videolan.libvlc.util.VLCVideoLayout
@@ -1069,6 +1106,8 @@ class PlayerActivity : Activity() {
     private var proxy: TsProxy? = null
     private var vlcLastTime = -1L
     private var vlcLastMove = 0L
+    private var vlcProgressAt = 0L
+    private var vlcProgressPosition = 0L
 
     private fun startVlc(url: String) {
         player?.stop()
@@ -1076,25 +1115,35 @@ class PlayerActivity : Activity() {
         vlcLayout.visibility = View.VISIBLE
         val px = proxy ?: TsProxy({ analyzer }, { api.authHeader() }).also { it.start(); proxy = it }
         px.setTarget(url)
-        val v = vlc ?: VlcEngine(this, prefs, vlcLayout,
-            onEvent = { m ->
-                if (m == "VLC: odtwarzanie") {
+        val v = vlc ?: run {
+            lateinit var created: VlcEngine
+            created = VlcEngine(this, prefs, vlcLayout,
+                onEvent = { m ->
                     val generation = streamGen
-                    ui.post { if (generation == streamGen) startAudioCheck() }
-                }
-                if (m == "VLC: obraz") ui.post { markPlaybackHealthy() }
-                if (!readyLogged) { readyLogged = true; AppLog.i("start: $m po ${SystemClock.elapsedRealtime() - streamStartAt} ms") }
-            },
-            onFailure = { r -> scheduleRestart(r) }).also { vlc = it }
+                    ui.post {
+                        if (vlc !== created || generation != streamGen) return@post
+                        if (m == "VLC: odtwarzanie") startAudioCheck()
+                        if (!readyLogged) {
+                            readyLogged = true
+                            AppLog.i("start: $m po ${SystemClock.elapsedRealtime() - streamStartAt} ms")
+                        }
+                    }
+                },
+                onFailure = { r -> if (vlc === created) scheduleRestart(r) })
+            vlc = created
+            created
+        }
         AppLog.i("VLC: ${v.info()}")
         vlcLastTime = -1
         vlcLastMove = SystemClock.elapsedRealtime()
+        vlcProgressAt = 0
+        vlcProgressPosition = 0
         v.play(px.url())
         ui.postDelayed({
             Thread { vlc?.vlcLog()?.forEach { AppLog.i("VLC log: $it") } }.start()
         }, 6000)
         ui.removeCallbacks(vlcTick)
-        ui.postDelayed(vlcTick, 2000)
+        ui.postDelayed(vlcTick, 250)
     }
 
     /** Zawieszenie przy VLC: czas odtwarzania stoi dłużej niż próg (po starcie: 15 s). */
@@ -1102,10 +1151,34 @@ class PlayerActivity : Activity() {
         override fun run() {
             val v = vlc ?: return
             if (prefs.engine != "vlc") return
-            ui.postDelayed(this, 1000)
             val now = SystemClock.elapsedRealtime()
+            logFirstStreamByte()
+            if (!firstStreamFrameLogged && v.displayedPictures() > 0) {
+                val sampleMs = if (now - streamStartAt >= 15_000) 1000 else 250
+                logFirstStreamFrame("VLC: pierwsza klatka wg licznika (próbkowanie do $sampleMs ms)")
+                markPlaybackHealthy()
+            }
+            ui.postDelayed(this, if (firstStreamFrameLogged || now - streamStartAt >= 15_000) 1000 else 250)
             val t = v.time()
-            if (t != vlcLastTime) { vlcLastTime = t; vlcLastMove = now; return }
+            if (t != vlcLastTime) {
+                vlcLastTime = t
+                vlcLastMove = now
+                if (v.playing && t >= 0) {
+                    if (vlcProgressAt == 0L || t < vlcProgressPosition) {
+                        vlcProgressAt = now
+                        vlcProgressPosition = t
+                    } else if (now - vlcProgressAt >= 10_000 && t - vlcProgressPosition >= 2000) {
+                        if (!playbackRecovery.hasPlayed) {
+                            AppLog.i("VLC: czas odtwarzania postępuje, licznik pierwszej klatki niedostępny")
+                            markPlaybackHealthy()
+                        }
+                        playbackRecovery.resetVlcRestarts()
+                        vlcProgressAt = now
+                        vlcProgressPosition = t
+                    }
+                }
+                return
+            }
             val limit = if (v.playing) prefs.stallSec.coerceIn(1, 30) * 1000L + 2000 else 15_000L
             if (prefs.watchdog && now - vlcLastMove > limit) {
                 vlcLastMove = now
@@ -1120,28 +1193,25 @@ class PlayerActivity : Activity() {
         override fun run() {
             if (isFinishing || backgrounded) return
             ui.postDelayed(this, 1000)
-            if (recMode || currentUrl == null) return
+            if (currentUrl == null || (recMode && !decoderUnavailable)) return
+            logFirstStreamByte()
             val now = SystemClock.elapsedRealtime()
             val lastFeed = analyzer?.lastFeedAt ?: 0L
-            if (decoderUnavailable && lastFeed >= lastProbeAt && lastFeed > 0) {
-                decoderUnavailable = false
-                AppLog.i("dekoder: strumień wznowił się")
-                dismissConnectionDialog()
-            }
             if (decoderUnavailable) {
                 if (!connectionProbePending && now - lastProbeAt >= 3000) probeStalledStream()
                 return
             }
             val lastData = lastFeed.takeIf { it > 0 } ?: streamStartAt
             if (lastData <= 0 || now - lastData < 8000) return
-            if (!connectionProbePending) probeStalledStream()
+            if (!connectionProbePending && now - lastProbeAt >= 3000) probeStalledStream()
         }
     }
 
-    private fun probeStalledStream() {
+    private fun probeStalledStream(onReachableWithData: (() -> Unit)? = null) {
         if (connectionProbePending) return
         val url = currentUrl ?: return
         val generation = streamGen
+        val probeId = ++connectionProbeId
         connectionProbePending = true
         lastProbeAt = SystemClock.elapsedRealtime()
         probeIo.execute {
@@ -1151,11 +1221,26 @@ class PlayerActivity : Activity() {
                 DecoderProbe.Result(false, "${e.javaClass.simpleName}: ${e.message}")
             }
             runOnUiThread {
+                if (probeId != connectionProbeId) return@runOnUiThread
                 connectionProbePending = false
                 if (isFinishing || backgrounded || generation != streamGen || currentUrl != url) return@runOnUiThread
                 if (!result.reachable) {
+                    if (!decoderUnavailable && recMode) disconnectedRecordingPosition = player?.currentPosition ?: 0
                     if (!decoderUnavailable) AppLog.i("dekoder: brak komunikacji (${result.detail})")
                     decoderUnavailable = true
+                    playbackRecovery.resetVlcRestarts()
+                    if (prefs.playbackAttempt.isNotEmpty()) prefs.playbackAttempt = ""
+                    ui.removeCallbacks(restartRunnable)
+                    restartPending = false
+                    dismissVlcFailureDialog()
+                    if (tsMode) {
+                        tsRec?.stop(); tsRec = null
+                    } else {
+                        ui.removeCallbacks(vlcTick)
+                        proxy?.stop(); proxy = null
+                        vlc?.release(); vlc = null
+                        player?.stop()
+                    }
                     if (prefs.blockOnDisconnect) showConnectionDialog(false)
                     else if (!connectionDialogShown()) showMessage(getString(R.string.player_unreachable_retry, prefs.host), 4000)
                     return@runOnUiThread
@@ -1164,16 +1249,21 @@ class PlayerActivity : Activity() {
                 decoderUnavailable = false
                 dismissConnectionDialog()
                 if (wasUnavailable) AppLog.i("dekoder: komunikacja przywrócona")
+                val availableAt = SystemClock.elapsedRealtime()
                 val lastData = analyzer?.lastFeedAt?.takeIf { it > 0 } ?: streamStartAt
-                if (SystemClock.elapsedRealtime() - lastData >= 8000) {
-                    showMessage(getString(R.string.message_receiver_responds_but_no_stream_is_arriving_reconnectin), 6000)
+                if (wasUnavailable || availableAt - lastData >= 8000) {
+                    if (vlcFailureDialog?.isShowing == true && !wasUnavailable) return@runOnUiThread
+                    if (!wasUnavailable) showMessage(getString(R.string.message_receiver_responds_but_no_stream_is_arriving_reconnectin), 6000)
                     if (tsMode) restartTimeshiftRecorder(url, generation) else {
                         failStreak = 0
                         restartPending = false
                         ui.removeCallbacks(restartRunnable)
-                        startStream(url, if (recMode) (player?.currentPosition ?: 0) else 0)
+                        val position = if (recMode) {
+                            if (wasUnavailable) disconnectedRecordingPosition else (player?.currentPosition ?: 0)
+                        } else 0
+                        startStream(url, position, availableAt)
                     }
-                }
+                } else onReachableWithData?.invoke()
             }
         }
     }
@@ -1211,13 +1301,40 @@ class PlayerActivity : Activity() {
         connectionDialog = null
     }
 
+    private fun dismissVlcFailureDialog() {
+        vlcFailureDialog?.let { if (it.isShowing) it.dismiss() }
+        vlcFailureDialog = null
+    }
+
+    private fun showVlcPlaybackFailure(reason: String) {
+        if (vlcFailureDialog?.isShowing == true) return
+        AppLog.i("VLC: przerwano automatyczne restarty po ${playbackRecovery.vlcRestarts} próbach: $reason")
+        ui.removeCallbacks(vlcTick)
+        vlcFailureDialog = TvDialog.confirm(
+            this,
+            getString(R.string.player_vlc_failure_title),
+            getString(R.string.player_vlc_failure_message),
+            listOf(
+                TvDialog.Btn(getString(R.string.message_retry)) {
+                    vlcFailureDialog = null
+                    playbackRecovery.resetVlcRestarts()
+                    failStreak = 0
+                    currentUrl?.let { startStream(it) }
+                },
+                TvDialog.Btn(getString(R.string.message_settings)) {
+                    vlcFailureDialog = null
+                    openSettings()
+                },
+                TvDialog.Btn(getString(R.string.message_close)) { finish() },
+            ),
+            cancelable = false,
+            timeoutSec = 0,
+        )
+    }
+
     private fun scheduleRestart(reason: String) {
-        if (safeMode || currentUrl == null || restartPending || encrypted) return
-        if (prefs.engine == "vlc" && vlcRestartAttempts >= 2) {
-            AppLog.i("VLC: przerwano automatyczne restarty po $vlcRestartAttempts próbach")
-            showRecoveryDialog(getString(R.string.player_vlc_retries, vlcRestartAttempts, reason), stopPlayback = true)
-            return
-        }
+        if (safeMode || decoderUnavailable || currentUrl == null || restartPending || encrypted ||
+            vlcFailureDialog?.isShowing == true) return
         restartPending = true
         pendingReason = reason
         val delays = longArrayOf(0, 1000, 2000, 5000, 10_000)
@@ -1232,7 +1349,12 @@ class PlayerActivity : Activity() {
         restartPending = false
         val url = currentUrl ?: return
         if (safeMode) return
-        if (decoderUnavailable || connectionProbePending) return
+        if (decoderUnavailable || vlcFailureDialog?.isShowing == true) return
+        if (connectionProbePending) {
+            restartPending = true
+            ui.postDelayed(restartRunnable, 500)
+            return
+        }
         val lastFeed = analyzer?.lastFeedAt ?: 0L
         val lastData = lastFeed.takeIf { it > 0 } ?: streamStartAt
         val silence = SystemClock.elapsedRealtime() - lastData
@@ -1241,10 +1363,29 @@ class PlayerActivity : Activity() {
             return
         }
         if (lastFeed == 0L) return
+        val isVlcLive = prefs.engine == "vlc" && !tsMode && !recMode
+        if (isVlcLive && playbackRecovery.vlcFailureAction() != VlcFailureAction.RETRY) {
+            probeStalledStream {
+                if (vlc?.playing == true && (vlc?.time() ?: 0) > 0 &&
+                    SystemClock.elapsedRealtime() - vlcLastMove < 1500) {
+                    AppLog.i("VLC: odtwarzanie wznowiło się przed otwarciem okna błędu")
+                    return@probeStalledStream
+                }
+                when (playbackRecovery.vlcFailureAction()) {
+                    VlcFailureAction.STARTUP_RECOVERY -> showRecoveryDialog(
+                        getString(R.string.player_vlc_retries, playbackRecovery.vlcRestarts, pendingReason),
+                        stopPlayback = true,
+                    )
+                    VlcFailureAction.PLAYBACK_RECOVERY -> showVlcPlaybackFailure(pendingReason)
+                    VlcFailureAction.RETRY -> Unit
+                }
+            }
+            return
+        }
         restarts++
         lastRestartReason = pendingReason
         if (tsMode) { tsGoLive(pendingReason); return }
-        if (prefs.engine == "vlc") vlcRestartAttempts++
+        if (isVlcLive) playbackRecovery.recordVlcRestart()
         showMessage(getString(R.string.player_resuming, pendingReason))
         // nagranie: od miejsca, w którym przerwało, nie od początku
         startStream(url, if (recMode) (player?.currentPosition ?: 0) else 0)
@@ -1381,6 +1522,7 @@ class PlayerActivity : Activity() {
         prefs.lastChannel = ch.ref
 
         failStreak = 0
+        playbackRecovery.resetVlcRestarts()
         ui.removeCallbacks(restartRunnable)
         restartPending = false
         encrypted = false; scrHits = 0; scrTick = 0
@@ -1939,8 +2081,9 @@ class PlayerActivity : Activity() {
         // obraz na ekranie jest za danymi o zapas odtwarzacza
         val behind = if (vlc != null) prefs.bufferMs.toLong() else p.totalBufferedDuration
         tsAudioPid = vlc?.selectedAudioTrackId() ?: selectedAudioPid()
-        val target = if (fresh) SystemClock.elapsedRealtime() else
-            (SystemClock.elapsedRealtime() - behind - 300 - backMs).coerceAtLeast(b.oldestWall + 10_000)
+        val now = SystemClock.elapsedRealtime()
+        val target = if (fresh) now else
+            timeshiftSeekTarget(now - behind - 300, -backMs, b.oldestWall, now)
         AppLog.i("timeshift: zachowuję ścieżkę audio PID=${tsAudioPid ?: "auto"}")
         AppLog.i("timeshift: ${if (pause) "pauza" else "cofnięcie ${backMs / 1000} s"} (bufor ${b.spanMs() / 60000} min)")
         // strumień na żywo odtwarzacza zatrzymany — zapis przejmuje osobne połączenie
@@ -2046,8 +2189,9 @@ class PlayerActivity : Activity() {
     /** Przewinięcie o [delta] ms; kilka naciśnięć z rzędu sumuje się (jedno przeładowanie). */
     private fun tsSeek(delta: Long) {
         if (!tsMode) return
+        val b = tsBuf ?: return
         val base = if (tsPending != 0L) tsPending else tsShownWall()
-        tsPending = base + delta
+        tsPending = timeshiftSeekTarget(base, delta, b.oldestWall, SystemClock.elapsedRealtime())
         tsShowBanner(sticky = player?.playWhenReady == false)
         ui.removeCallbacks(tsApply)
         ui.postDelayed(tsApply, 700)
@@ -2055,15 +2199,17 @@ class PlayerActivity : Activity() {
 
     private val tsApply = Runnable {
         val b = tsBuf
-        val target = tsPending
+        val requested = tsPending
         tsPending = 0
-        if (b == null || !tsMode || target == 0L) return@Runnable
+        if (b == null || !tsMode || requested == 0L) return@Runnable
         val now = SystemClock.elapsedRealtime()
+        val earliest = timeshiftEarliestSeekWall(b.oldestWall, now)
+        val target = maxOf(requested, earliest)
         when {
             target >= now - 6000 -> tsGoLive("przewinięte do końca")
-            target < b.oldestWall -> {
+            target == earliest -> {
                 showMessage(getString(R.string.player_ts_start, b.spanMs() / 60000), 2500)
-                tsPlayFrom(b.oldestWall + 10_000, play = player?.playWhenReady != false)
+                tsPlayFrom(earliest, play = player?.playWhenReady != false)
             }
             else -> tsPlayFrom(target, play = player?.playWhenReady != false)
         }
@@ -2113,6 +2259,7 @@ class PlayerActivity : Activity() {
     private fun tsUpdateBanner() {
         val b = tsBuf ?: return
         val now = SystemClock.elapsedRealtime()
+        if (tsPending != 0L) tsPending = maxOf(tsPending, timeshiftEarliestSeekWall(b.oldestWall, now))
         val shown = if (tsPending != 0L) tsPending else tsShownWall()
         val behind = (now - shown).coerceAtLeast(0)
         val span = b.spanMs().coerceAtLeast(1)

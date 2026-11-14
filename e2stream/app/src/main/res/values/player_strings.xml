@@ -26,6 +26,8 @@
     <string name="player_wait_receiver">Oczekuję na dekoder %1$s.\n\nSprawdzam ponownie co 3 sekundy.</string>
     <string name="player_cannot_connect">Nie mogę połączyć się z %1$s.\n\nSprawdzam ponownie co 3 sekundy.</string>
     <string name="player_vlc_retries">VLC nie uruchomił strumienia po %1$d ponowieniach.\nOstatni problem: %2$s</string>
+    <string name="player_vlc_failure_title">Problem z odtwarzaniem VLC</string>
+    <string name="player_vlc_failure_message">Dekoder odpowiada, ale VLC nie może wznowić odtwarzania. Możesz ponowić próbę lub sprawdzić ustawienia.</string>
     <string name="player_resuming">Wznawiam strumień (%1$s)</string>
     <string name="player_connecting">Łączenie z %1$s…</string>
     <string name="player_no_network">Brak połączenia Wi-Fi / Ethernet na urządzeniu</string>

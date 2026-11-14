@@ -676,6 +676,35 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertEqual(group.pending, [next_job])
 		self.assertGreater(group.not_before, time.time())
 
+	def test_upcoming_timer_releases_reservation_and_blocks_new_tuning(self):
+		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=4,
+			scan_usage=lambda: None, upcoming_recordings=lambda: 1,
+			free_tuners=lambda: 2, on_busy_tp=lambda _job: False, notify=lambda: None)
+		engine.eff_reserve = lambda: 2 + engine.timer_hold
+		engine.release = lambda job: engine.active.remove(job) if job in engine.active else None
+		scan = scanner_module.ChannelParamsScan(engine)
+		group = scanner_module.TransponderGroup((11000, 0, 192))
+		anchor = scanner_module.ChannelJob({"ref": "tp-one-a", "name": "One"})
+		anchor.group = group
+		anchor.rec = object()
+		group.reservation = anchor
+		new_group = scanner_module.TransponderGroup((12000, 0, 192))
+		next_job = scanner_module.ChannelJob({"ref": "tp-two-a", "name": "Two"})
+		next_job.group = new_group
+		new_group.pending.append(next_job)
+		scan.groups = [group, new_group]
+		scan.queue = [next_job]
+		scan.reservations = [anchor]
+		engine.active.append(anchor)
+		scan._start = Mock()
+
+		scan.tick()
+
+		self.assertEqual(engine.timer_hold, 1)
+		self.assertIsNone(group.reservation)
+		scan._start.assert_not_called()
+		self.assertEqual(scan.queue, [next_job])
+
 	def test_eight_tuners_and_two_reserved_allow_six_transponder_groups(self):
 		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=6,
 			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 2,
@@ -1038,6 +1067,28 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertIn("Raporty", status)
 		self.assertNotIn(conflicts[-1], status)
 		self.assertLess(len(status), 300)
+
+	def test_main_screen_displays_effective_tuner_reserve_and_timer_error(self):
+		scan = types.SimpleNamespace(active=[], reservations=[], queue=[])
+		engine = types.SimpleNamespace(stats=lambda: (0, 0, 60), free_tuners=lambda: 3,
+			total_tuners=8, reserve=2, timer_hold=1, timer_check_error=None,
+			jobs=[], active=[], running=True, finished=False, phase="channelparams",
+			channel_params_scan=scan, note="")
+		screen = scan_module.EPGScanScreen.__new__(scan_module.EPGScanScreen)
+		dict.__init__(screen)
+		screen.engine, screen.ljob, screen.grab = engine, None, None
+		screen["status"] = types.SimpleNamespace(setText=Mock())
+		screen["list"] = types.SimpleNamespace(setText=Mock())
+
+		screen.redraw()
+		status = screen["status"].setText.call_args.args[0]
+		self.assertIn("rezerwa 3 (w tym timery: 1)", status)
+
+		engine.timer_check_error = "unavailable"
+		screen.redraw()
+		status = screen["status"].setText.call_args.args[0]
+		self.assertIn("brak danych timerow", status)
+		self.assertNotIn("w tym timery", status)
 
 	def test_single_channel_retry_preserves_other_last_scan_errors(self):
 		ref = "1:0:1:428F:1:1:13E:0:0:0:"

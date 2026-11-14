@@ -168,8 +168,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				lst.append(e("  Wymuszaj wylaczenie EIT", cfg.eit_force_off))
 			else:
 				lst.append(e("  Wymuszaj wlaczenie EIT", cfg.eit_mode))
-			lst += [e("Kanaly z bukietow (OK - lista)", cfg.scope), e("Maks. rownoleglych skanow", cfg.max_parallel),
-				e("Rezerwa wolnych tunerow", cfg.reserve), e("Min. czas na transponderze [s]", cfg.min_time),
+			lst += [e("Kanaly z bukietow (OK - lista)", cfg.scope), e("Maks. rownoleglych skanow (wspolny)", cfg.max_parallel),
+				e("Rezerwa wolnych tunerow (wspolna)", cfg.reserve), e("Min. czas na transponderze [s]", cfg.min_time),
 				e("Koniec po braku nowych zdarzen [s]", cfg.idle_time), e("Maks. czas na transponderze [s]", cfg.max_time),
 				e("Pomijaj transpondery bez EPG", cfg.skip_empty)]
 			if cfg.skip_empty.value:
@@ -188,7 +188,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			if cfg.cp_language_source.value == "manual":
 				lst.append(e("  Jezyki, kolejnosc (np. pol,eng)", cfg.cp_languages))
 			lst += [e("Kanaly z bukietow (jak Satelita - EPG)", cfg.scope),
-				e("Maks. rownoleglych skanow", cfg.max_parallel), e("Rezerwa wolnych tunerow", cfg.reserve),
+				e("Maks. rownoleglych skanow (wspolny)", cfg.max_parallel), e("Rezerwa wolnych tunerow (wspolna)", cfg.reserve),
 				e("Grupowanie kanalow po transponderze", cfg.cp_group_tp),
 				e("Ponow raz bledne kanaly po skanie", cfg.cp_retry_failed),
 				e("Po skanie: wspolne ustawienia E2Stream", cfg.cp_sync_common),
@@ -513,13 +513,14 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			txt = _("Log: %s (zachowywanych logow: %d - tyle, ile kopii EPG, min. 2). W katalogu kopii log przetrwa " \
 				"restart dekodera i wybudzenie z glebokiego czuwania.") % (log_path(), log_count())
 		elif item is cfg.max_parallel:
-			txt = "Gorna granica wlasnych skanow EPG i skanu parametrow naraz. Nowy tuner jest zajmowany tylko wtedy, gdy po tym zostanie " \
+			txt = "Wspolne ustawienie skanu EPG i parametrow. Gorna granica wlasnych skanow naraz. Nowy tuner jest zajmowany tylko wtedy, gdy po tym zostanie " \
 				"rezerwa wolnych - liczone sa wszystkie zajete (ogladanie, nagrania, streamy, PiP). Np. 8 tunerow, " \
 				"limit 6, rezerwa 1, ogladanie + nagranie: skan zajmie najwyzej 5. Skan na transponderze ogladanego " \
 				"kanalu nie zajmuje dodatkowego tunera."
 		elif item is cfg.reserve:
 			txt = "Wspolna rezerwa dla skanow EPG i skanu parametrow - tyle tunerow skan zostawia wolnych na zmiane kanalu lub nowy stream. Dodatkowo 2 min " \
-				"przed nagraniem z timera skan zwalnia/trzyma tyle tunerow, ile nagran ma ruszyc."
+				"przed nagraniem lub przelaczeniem z timera skan zwalnia/trzyma tyle tunerow, ile timerow ma ruszyc. " \
+				"Samodzielny skan parametrow przy co najmniej 3 tunerach zostawia minimum 2 wolne."
 			try:
 				from .satwatch.scanner import tuner_advice
 				txt = _(txt) + "\n" + tuner_advice()[0] + _(" Pelna porada: Info/EPG -> Raporty -> Konfiguracja tunerow.")

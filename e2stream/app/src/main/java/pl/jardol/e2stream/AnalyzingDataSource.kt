@@ -11,6 +11,8 @@ class AnalyzingDataSource(
     private val upstream: DataSource,
     private val analyzer: () -> TsAnalyzer?,
 ) : DataSource {
+    private val sourceAnalyzer = analyzer()
+    private val analyzerSession = sourceAnalyzer?.sessionId
 
     override fun addTransferListener(transferListener: TransferListener) {
         upstream.addTransferListener(transferListener)
@@ -22,9 +24,9 @@ class AnalyzingDataSource(
         val t0 = SystemClock.elapsedRealtime()
         val n = upstream.read(buffer, offset, length)
         val a = analyzer()
-        if (a != null) {
-            a.readTime(SystemClock.elapsedRealtime() - t0)
-            if (n > 0) a.feed(buffer, offset, n)
+        if (a != null && a === sourceAnalyzer) {
+            a.readTime(SystemClock.elapsedRealtime() - t0, analyzerSession)
+            if (n > 0) a.feed(buffer, offset, n, analyzerSession)
         }
         return n
     }

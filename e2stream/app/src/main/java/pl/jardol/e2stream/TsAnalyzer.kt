@@ -93,7 +93,11 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     private var ivBurstSum = 0L
 
     // --- liczniki sesji (od startu strumienia)
+    @Volatile var sessionId = 0L
+        private set
     @Volatile var bytes = 0L
+        private set
+    @Volatile var firstFeedAt = 0L
         private set
     @Volatile var lastFeedAt = 0L
         private set
@@ -152,6 +156,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     /** Nowa sesja strumienia; [sid] = identyfikator serwisu z referencji (lub -1). */
     @Synchronized
     fun reset(sid: Int = -1) {
+        sessionId++
         expectedSid = sid
         patSeenAt = 0
         pmtSeen = false
@@ -180,7 +185,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         burstAvgMs = 0
         ivBurstN = 0
         ivBurstSum = 0
-        bytes = 0; lastFeedAt = 0; packets = 0; ccErrors = 0; teiErrors = 0; scrambled = 0
+        bytes = 0; firstFeedAt = 0; lastFeedAt = 0; packets = 0; ccErrors = 0; teiErrors = 0; scrambled = 0
         syncLoss = 0; pcrJumps = 0; pmtChanges = 0; maxGapMs = 0; bitrateKbps = 0
         lastErrorAt = 0
         pidCc.fill(-1); pidCcErr.fill(0); lastPcrMs.fill(-1)
@@ -215,7 +220,8 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
 
     /** Czas trwania jednego odczytu z sieci (ms). */
     @Synchronized
-    fun readTime(ms: Long) {
+    fun readTime(ms: Long, expectedSession: Long? = null) {
+        if (expectedSession != null && expectedSession != sessionId) return
         if (ms > ivGap) ivGap = ms
         if (ms > maxGapMs) maxGapMs = ms
         if (ms >= 300) { ivBurstN++; ivBurstSum += ms }
@@ -227,9 +233,10 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     fun dropCarry() { carryLen = 0 }
 
     @Synchronized
-    fun feed(buf: ByteArray, off: Int, len: Int) {
-        if (len <= 0) return
+    fun feed(buf: ByteArray, off: Int, len: Int, expectedSession: Long? = null) {
+        if (len <= 0 || (expectedSession != null && expectedSession != sessionId)) return
         lastFeedAt = SystemClock.elapsedRealtime()
+        if (firstFeedAt == 0L) firstFeedAt = lastFeedAt
         feedInner(buf, off, len)
         // kopia po czyszczeniu (pakiety zmieniane w miejscu); niepełny pakiet z końca dochodzi w całości
         tee?.let { t -> try { t(buf, off, len) } catch (_: Exception) {} }

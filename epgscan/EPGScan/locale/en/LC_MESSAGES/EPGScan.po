@@ -1259,8 +1259,8 @@ msgstr "Up/Down, Left/Right: scroll     Exit/OK: close     (%s)"
 msgid "Gorna granica czasu na transponderze - skan przechodzi dalej, nawet jesli dane wciaz splywaja (w logu: \"gotowe (limit czasu)\")."
 msgstr "Maximum time on a transponder; the scan moves on even if data is still arriving (log: \"gotowe (limit czasu)\")."
 
-msgid "Gorna granica wlasnych skanow EPG i skanu parametrow naraz. Nowy tuner jest zajmowany tylko wtedy, gdy po tym zostanie rezerwa wolnych - liczone sa wszystkie zajete (ogladanie, nagrania, streamy, PiP). Np. 8 tunerow, limit 6, rezerwa 1, ogladanie + nagranie: skan zajmie najwyzej 5. Skan na transponderze ogladanego kanalu nie zajmuje dodatkowego tunera."
-msgstr "Maximum number of simultaneous EPG and parameter scans. A tuner is used only if the free reserve remains; all uses count (viewing, recordings, streams, PiP). For example, with 8 tuners, limit 6, reserve 1 and viewing plus recording, at most 5 are scanned. Scanning the currently viewed transponder needs no extra tuner."
+msgid "Wspolne ustawienie skanu EPG i parametrow. Gorna granica wlasnych skanow naraz. Nowy tuner jest zajmowany tylko wtedy, gdy po tym zostanie rezerwa wolnych - liczone sa wszystkie zajete (ogladanie, nagrania, streamy, PiP). Np. 8 tunerow, limit 6, rezerwa 1, ogladanie + nagranie: skan zajmie najwyzej 5. Skan na transponderze ogladanego kanalu nie zajmuje dodatkowego tunera."
+msgstr "Shared setting for EPG and parameter scans: maximum simultaneous scans. A tuner is used only if the free reserve remains; all uses count (viewing, recordings, streams, PiP). For example, with 8 tuners, limit 6, reserve 1 and viewing plus recording, at most 5 are scanned. Scanning the currently viewed transponder needs no extra tuner."
 
 msgid "Gotowe"
 msgstr "Done"
@@ -1555,6 +1555,9 @@ msgstr "Maximum time per transponder [s]"
 
 msgid "Maks. rownoleglych skanow"
 msgstr "Maximum simultaneous scans"
+
+msgid "Maks. rownoleglych skanow (wspolny)"
+msgstr "Maximum simultaneous scans (shared)"
 
 msgid "Mapa kanalow z dekodera (pierwszy raz: pobieranie list stacji serwisow, ok. 10 s)..."
 msgstr "Receiver channel map (first time: downloading station lists, about 10 s)..."
@@ -2369,6 +2372,9 @@ msgstr "Restart after overnight run"
 msgid "Rezerwa wolnych tunerow"
 msgstr "Free tuner reserve"
 
+msgid "Rezerwa wolnych tunerow (wspolna)"
+msgstr "Free tuner reserve (shared)"
+
 msgid "Rezerwa wolnych tunerów"
 msgstr "Free tuner reserve"
 
@@ -2948,8 +2954,8 @@ msgstr "Back"
 msgid "Wskaz zrodlo"
 msgstr "Choose source"
 
-msgid "Wspolna rezerwa dla skanow EPG i skanu parametrow - tyle tunerow skan zostawia wolnych na zmiane kanalu lub nowy stream. Dodatkowo 2 min przed nagraniem z timera skan zwalnia/trzyma tyle tunerow, ile nagran ma ruszyc."
-msgstr "Shared reserve for EPG and parameter scans: free tuners left for channel changes or streams. Two minutes before a timer recording, the scan additionally releases or holds as many tuners as the recordings require."
+msgid "Wspolna rezerwa dla skanow EPG i skanu parametrow - tyle tunerow skan zostawia wolnych na zmiane kanalu lub nowy stream. Dodatkowo 2 min przed nagraniem lub przelaczeniem z timera skan zwalnia/trzyma tyle tunerow, ile timerow ma ruszyc. Samodzielny skan parametrow przy co najmniej 3 tunerach zostawia minimum 2 wolne."
+msgstr "Shared reserve for EPG and parameter scans: free tuners left for channel changes or streams. Two minutes before a recording or channel-switch timer, the scan additionally releases or holds one tuner per timer. A standalone parameter scan leaves at least two tuners free on receivers with three or more tuners."
 
 msgid "Wszyscy kandydaci z listy maja juz program."
 msgstr "All listed candidates already have a guide."
@@ -3901,6 +3907,12 @@ msgstr "tuner needed by user (%dx)"
 
 msgid "tunery wolne %d/%d, rezerwa %d"
 msgstr "free tuners %d/%d, reserve %d"
+
+msgid " (w tym timery: %d)"
+msgstr " (including timers: %d)"
+
+msgid " (brak danych timerow)"
+msgstr " (timer data unavailable)"
 
 msgid "tylko kanaly bez EPG z satelity"
 msgstr "only channels without satellite EPG"

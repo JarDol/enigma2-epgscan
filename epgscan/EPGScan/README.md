@@ -190,7 +190,10 @@ zamiast ryzykować zastąpienie istniejącej audycji.
 - **Zawieszony tuner**: 3 nieudane strojenia z rzędu na tym samym tunerze (różne transpondery) =
   wpis w logu ze stanem wszystkich tunerów i w podsumowaniu nocy; w nocy w czuwaniu restart Enigma2
   i powtórka przebiegu (najwyżej raz na noc), przy ręcznym starcie pytanie o restart.
-- Przed nagraniem z timera wtyczka trzyma tunery wolne i wstrzymuje nowe skany.
+- Dwie minuty przed nagraniem lub przełączeniem z timera oba skany zwiększają rezerwę o liczbę
+  nadchodzących timerów i wstrzymują nowe niezależne strojenia; transponder już zajęty może być
+  nadal skanowany bez dodatkowego tunera. Ekran pokazuje faktyczną rezerwę, w tym timery.
+  Gdy odczyt timerów jest niemożliwy, niezależne strojenia są wstrzymane, a błąd trafia do logu.
 
 ---
 
@@ -202,8 +205,8 @@ i PMT kanałów z grupy. Podczas EPG odczyt i obserwacja zmian PMT trwają najwy
 bez wpływu na czas EPG; filtry PMT są ograniczone i rotowane. Osobny skan ma limit
 20 sekund na grupę, po którym lub po błędzie tylko brakujące kanały są sprawdzane osobno.
 Limit równoległości i rezerwa wolnych tunerów
-EPG Scan są respektowane; skaner zostawia co najmniej dwa wolne tunery (na dekoderach z mniej niż trzema tunerami
-zostawia jeden). Przy sześciu tunerach i rezerwie dwóch może pracować do czterech grup naraz, a przy ośmiu – do
+EPG Scan są wspólnymi ustawieniami; samodzielny skan zostawia co najmniej dwa wolne tunery (przy dwóch
+tunerach co najmniej jeden, przy jednym może użyć ustawionej rezerwy zero). Przy sześciu tunerach i rezerwie dwóch może pracować do czterech grup naraz, a przy ośmiu – do
 sześciu. Grupowanie po transponderze można wyłączyć, kosztem dodatkowych strojeń. Gdy oglądanie, streaming lub
 nagranie potrzebuje tunera, skaner zwalnia grupę i wznawia ją później. IPTV i nierozpoznane typy są jawnie wymieniane
 jako nieobsługiwane, a błędy dostrojenia lub odczytu trafiają do raportu.

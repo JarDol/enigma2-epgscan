@@ -9,7 +9,10 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   (sprzętowy deinterlacer telewizora, płynne paski informacyjne).
 * **Watchdog** – gdy obraz się zawiesi (licznik klatek dekodera albo zegar odtwarzania stoi
   dłużej niż ustawiony limit, zbyt długie buforowanie, błąd lub zerwane połączenie),
-  strumień jest automatycznie otwierany ponownie. To samo, co ręczne „przełącz i wróć”, tylko w ok. 1–2 s.
+  strumień jest automatycznie otwierany ponownie. Przy braku komunikacji z dekoderem aplikacja
+  sprawdza jego dostępność mniej więcej co 3 s i wznawia ten sam kanał po odzyskaniu połączenia.
+  Podczas oglądania powtarzające się błędy VLC nie włączają trybu bezpiecznego; po sprawdzeniu
+  dekodera można ponowić próbę lub otworzyć ustawienia.
 * Bukiety i kanały pobierane z OpenWebif (`/api/getservices`), EPG „teraz” (`/api/epgnow`).
 * Strumień: `http://DEKODER:8001/<referencja>` (opcjonalnie z logowaniem Basic).
 * Wyszukiwanie dekoderów przez mDNS i w sieci lokalnej (ustawienia → „Szukaj dekoderów w sieci”).
@@ -108,6 +111,7 @@ pojawia się komunikat z przejściem do pozycji Timeshift w ustawieniach (z zach
 Przy niedostępnym dysku można kontynuować, jeśli wcześniej zezwolono na użycie pamięci urządzenia.
 Strzałki przewijają tylko na widocznym pasku timeshiftu, również po dotarciu do transmisji na żywo;
 na pasku kanału i po ukryciu paska działają jak podczas zwykłego oglądania.
+Przy cofaniu wskazanie nie wykracza poza dostępny początek bufora.
 W ustawieniach Ogólne dostępne są osobne mapowania OK i strzałek dla ekranu bez paska oraz z paskiem kanału.
 Domyślnie strzałki zachowują dotychczasowe przypisania, również zmienione w starszych wersjach,
 a OK zachowuje dotychczasowe działanie. Mapowanie nie zmienia działania długiego OK ani paska timeshiftu;
@@ -130,7 +134,10 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 * silnik odtwarzania: ExoPlayer (domyślnie) albo VLC – dla każdego odbiornika osobno; przy VLC wybór usuwania przeplotu i dekodowania sprzętowego/programowego,
 * tunelowanie (ExoPlayer, domyślnie włączone),
 * watchdog i próg zawieszenia (domyślnie 3 s),
-* bufor startowy – szybki obraz po przełączeniu (domyślnie 700 ms),
+* bufor startowy – szybki obraz po przełączeniu (domyślnie 1500 ms; starsze instalacje mogły zachować 700 ms).
+  Dla VLC można testowo ustawić 300 ms, ale mniejszy bufor może pogorszyć płynność. Log pokazuje czas do
+  pierwszych bajtów i pierwszej klatki według licznika VLC (próbkowanie do 250 ms, a po 15 s do 1 s); sam sygnał utworzenia
+  wyjścia wideo VLC nie jest dowodem wyświetlenia klatki,
 * zapas w trakcie oglądania (domyślnie 4000 ms): po starcie odtwarzanie jest lekko zwalniane (0,95×, wysokość dźwięku bez zmian), aż bufor dojdzie do zapasu; przerwy w paczkach z dekodera nie powodują wtedy czkawki. Przy tunelowaniu zwolnienia nie ma (zmiana prędkości psuła płynność obrazu) – wtedy o płynności decyduje bufor startowy (na MiBox 4 zalecane 2500 ms), a zapas buduje się po pierwszym niedoborze,
 * odświeżanie ekranu (bez zmian / 50 Hz / automatycznie),
 * preferowany język dźwięku i AC3,

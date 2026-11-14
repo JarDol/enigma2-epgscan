@@ -58,7 +58,8 @@ class ScanEngine(object):
 		self.xmltv = None
 		self.xmltv_resume_eit = False
 		self.summary = ""
-		self.timer_hold = 0          # tunery trzymane wolne dla nagran, ktore zaraz rusza
+		self.timer_hold = 0          # tunery dla zblizajacych sie nagran i przelaczen
+		self.timer_check_error = None
 		self.auto = False            # start z harmonogramu
 		self.topup = False           # doczytywanie brakow (wybrane transpondery, bez czyszczenia)
 		self.woke = False            # odbiornik wybudzony przez wtyczke z glebokiego czuwania
@@ -307,20 +308,27 @@ class ScanEngine(object):
 		return self.reserve + self.timer_hold
 
 	def upcoming_recordings(self):
-		"""Ile nagran z timera ruszy w ciagu TIMER_AHEAD sekund (jeszcze nie nagrywaja)."""
+		"""Ile timerow nagrywania lub przelaczania zaraz ruszy."""
 		try:
 			now = time.time()
 			n = 0
 			for t in NavigationInstance.instance.RecordTimer.timer_list:
-				if getattr(t, "disabled", False) or getattr(t, "justplay", False):
+				if getattr(t, "disabled", False):
 					continue
-				if getattr(t, "state", 0) >= 2:          # juz nagrywa - liczy sie w zajetych tunerach
+				if getattr(t, "state", 0) >= 2:          # juz uruchomiony - liczy sie w zajetych tunerach
 					continue
 				if t.begin - now <= TIMER_AHEAD and t.end > now:
 					n += 1
+			if getattr(self, "timer_check_error", None) is not None:
+				log("Odczyt timerow przywrocony - wracam do zwyklej rezerwy")
+				self.timer_check_error = None
 			return n
-		except Exception:
-			return 0
+		except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+			error = "%s: %s" % (type(e).__name__, e)
+			if getattr(self, "timer_check_error", None) != error:
+				log("Nie mozna odczytac timerow (%s) - wstrzymuje nowe strojenia" % error)
+				self.timer_check_error = error
+			return max(1, self.total_tuners)
 
 	def scan_usage(self):
 		used = set()
@@ -581,11 +589,11 @@ class ScanEngine(object):
 			self.last_usage = now
 			hold = self.upcoming_recordings()
 			if hold != self.timer_hold:
-				if hold:
-					log("Za mniej niz %d min rusza nagranie (%d) - trzymam wolne tunery, nowe skany wstrzymane" % (
+				if not self.timer_check_error and hold:
+					log("Za mniej niz %d min rusza nagranie lub przelaczenie (%d) - trzymam wolne tunery, nowe skany wstrzymane" % (
 						TIMER_AHEAD // 60, hold))
-				else:
-					log("Brak nagran w najblizszych %d min - skan wraca do zwyklej rezerwy" % (TIMER_AHEAD // 60))
+				elif not self.timer_check_error:
+					log("Brak nagran i przelaczen w najblizszych %d min - skan wraca do zwyklej rezerwy" % (TIMER_AHEAD // 60))
 				self.timer_hold = hold
 
 		min_t = cfg.min_time.value

@@ -294,7 +294,12 @@ class EPGScanScreen(Screen):
 		e = self.engine
 		params_summary = False
 		done, err, el = e.stats()
-		tun = _("tunery wolne %d/%d, rezerwa %d") % (e.free_tuners(), e.total_tuners, e.reserve)
+		hold = getattr(e, "timer_hold", 0) if e.running and e.phase in ("scan", "channelparams") else 0
+		tun = _("tunery wolne %d/%d, rezerwa %d") % (e.free_tuners(), e.total_tuners, e.reserve + hold)
+		if hold and getattr(e, "timer_check_error", None):
+			tun += _(" (brak danych timerow)")
+		elif hold:
+			tun += _(" (w tym timery: %d)") % hold
 		nch = sum(len(j.refs) for j in e.jobs)
 		nall = sum(len(j.all_refs) for j in e.jobs)
 		nskip = len([j for j in e.jobs if j.skip])

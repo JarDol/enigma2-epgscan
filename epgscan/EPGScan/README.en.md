@@ -192,7 +192,10 @@ the importer skips the conflicting entry and logs a warning rather than risk rep
 - **Hung tuner**: 3 failed tunings in a row on the same tuner (different transponders) = log entry with the state of
   all tuners and a note in the night summary; at night in standby Enigma2 is restarted and the run repeated (at most
   once per night), on a manual start you are asked about a restart.
-- Before a timer recording the plugin keeps tuners free and pauses new scans.
+- Two minutes before recording or channel-switch timers, both scans add one free tuner per upcoming
+  timer to the reserve and pause new independent tuning. Already-used transponders can still be
+  scanned without another tuner. The screen shows the effective reserve, including timers.
+  If timers cannot be read, independent tuning is paused and the error is logged.
 
 ---
 
@@ -204,8 +207,8 @@ and PMTs for the group. During EPG, capture and PMT change monitoring run until 
 affecting EPG duration; PMT filters are limited and rotated. A standalone group has
 a 20-second limit, after which or on failure only missing channels are checked individually.
 EPG Scan's parallel limit
-and free-tuner reserve are respected; at least two tuners are kept free (one on receivers with fewer than three
-tuners). With six tuners and a reserve of two, up to four groups can run at once; with eight, up to six. Transponder
+and free-tuner reserve are shared; a standalone scan keeps at least two tuners free (at least one on a
+two-tuner receiver; a single-tuner receiver can use a zero reserve). With six tuners and a reserve of two, up to four groups can run at once; with eight, up to six. Transponder
 grouping can be disabled, at the cost of more retunes. If watching, streaming or a recording needs a tuner, the scan
 releases a group and resumes it later. IPTV and unknown service types are reported as unsupported; tuning and
 table-read errors are included in the report.

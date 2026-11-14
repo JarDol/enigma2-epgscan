@@ -846,7 +846,7 @@ class ChannelParamsScan(object):
 			own_groups.sort(key=lambda group: group.started_at, reverse=True)
 			for group in own_groups[:deficit]:
 				job = group.current or group.reservation
-				log("Skan parametrow: zwalniam tuner dla nagrania: %s" % job.name)
+				log("Skan parametrow: zwalniam tuner dla rezerwy lub timera: %s" % job.name)
 				self._yield_group(group, now)
 
 		own_groups = len([group for group in self.groups if group_owns_tuner(group)])
