@@ -2,6 +2,84 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8\nLanguage: en\n"
 
+msgid "Nie mozna odczytac raportu tunerow: %s"
+msgstr "Cannot read the tuner report: %s"
+
+msgid "Nie udalo sie zapisac raportu tunerow: %s"
+msgstr "Could not save the tuner report: %s"
+
+msgid "brak gotowych zadan (grupa aktywna lub opozniona)"
+msgstr "no ready tasks (group active or delayed)"
+
+msgid "blad odczytu timerow"
+msgstr "timer read error"
+
+msgid "nadchodzacy timer"
+msgstr "upcoming timer"
+
+msgid "trwa strojenie EPG"
+msgstr "EPG tuning in progress"
+
+msgid "odstep miedzy strojeniami"
+msgstr "delay between tunes"
+
+msgid "limit rownoleglych skanow"
+msgstr "parallel scan limit"
+
+msgid "rezerwa wolnych tunerow"
+msgstr "free tuner reserve"
+
+msgid "Warunki przy oczekujacych zadaniach (czasy moga sie nakladac):"
+msgstr "Conditions while tasks were waiting (durations may overlap):"
+
+msgid "Przebieg zmian (stan zgloszony przez Enigma2; kolejka zadan i gotowe grupy):"
+msgstr "Changes over time (Enigma2 state; queued tasks and ready groups):"
+
+msgid "* tuner wspoldzielony; ? tuner jeszcze nieznany."
+msgstr "* shared tuner; ? tuner not yet known."
+
+msgid "Wykorzystanie tunerow (%s)"
+msgstr "Tuner usage (%s)"
+
+msgid "Poczatek: %s | Koniec: %s"
+msgstr "Start: %s | End: %s"
+
+msgid "Tunery: %d | Rezerwa podstawowa: %d | Limit skanow: %d | Odstep: %d s"
+msgstr "Tuners: %d | Base reserve: %d | Scan limit: %d | Tune delay: %d s"
+
+msgid "Dane dotycza niezaleznej fazy PAT/PMT. Pozyczenia dostrojen EPG: %d; szczegoly w statystyce EPG."
+msgstr "Data covers the independent PAT/PMT phase. EPG tunes borrowed: %d; see EPG statistics for details."
+
+msgid "Niezalezna faza PAT/PMT nie rozpoczela sie. Pozyczenia dostrojen EPG: %d; szczegoly w statystyce EPG."
+msgstr "The independent PAT/PMT phase did not start. EPG tunes borrowed: %d; see EPG statistics for details."
+
+msgid "Brak probek wykorzystania tunerow."
+msgstr "No tuner usage samples."
+
+msgid "Wolne (probki): min %d, maks %d | Maks. niezaleznych grup: %d | Tunery skanu: %s"
+msgstr "Free (samples): min %d, max %d | Max independent groups: %d | Scan tuners: %s"
+
+msgid "Proby uruchomienia: niezalezne %d, wspoldzielone %d, nieudane %d"
+msgstr "Start attempts: independent %d, shared %d, failed %d"
+
+msgid "- brak zaobserwowanych ograniczen"
+msgstr "- no restrictions observed"
+
+msgid "zakonczony"
+msgstr "completed"
+
+msgid "%s | wolne %d/%d | skan %s | inne %s | uzyte %s"
+msgstr "%s | free %d/%d | scan %s | other %s | used %s"
+
+msgid "  grupy %d/%d | rezerwa %d (timery %d) | kolejka %d, gotowe %d | warunki: %s"
+msgstr "  groups %d/%d | reserve %d (timers %d) | queued %d, ready %d | conditions: %s"
+
+msgid "... pominieto %d zmian; podsumowanie obejmuje caly skan ..."
+msgstr "... %d changes omitted; summary covers the whole scan ..."
+
+msgid "  Blad timerow: %s"
+msgstr "  Timer error: %s"
+
 msgid "mDNS: blad: %s"
 msgstr "mDNS: error: %s"
 

@@ -57,7 +57,7 @@
     <string name="player_ts_live_empty">▶  Na żywo  •  Timeshift (bufor rusza po pauzie)</string>
     <string name="player_live_lower">na żywo</string>
     <string name="player_ts_controls">◀ ▶ ±%1$d s   ▲ ▼ ±%2$d min   OK pauza / start   ■ na żywo   WSTECZ zamknij pasek</string>
-    <string name="player_ts_start">Początek bufora (%1$d min)</string>
+    <string name="player_ts_start">Początek bufora (%1$s)</string>
     <string name="player_resume_recording">Wznów od %1$s</string>
     <string name="player_from_beginning">Od początku</string>
     <string name="player_recording_removed">Usunięto nagranie</string>

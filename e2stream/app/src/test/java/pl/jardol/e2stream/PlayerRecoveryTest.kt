@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Looper
 import android.os.SystemClock
 import android.widget.Button
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.datasource.DataSource
@@ -24,6 +25,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowDialog
+import java.io.File
 import java.lang.reflect.Proxy
 import java.net.ServerSocket
 import java.time.Duration
@@ -273,5 +275,56 @@ class PlayerRecoveryTest {
         assertEquals(0L, analyzer.bytes)
         AnalyzingDataSource(upstream) { analyzer }.read(packet, 0, packet.size)
         assertEquals(188L, analyzer.bytes)
+    }
+
+    @Test
+    fun timeshiftBannerStartsAtTheEarliestSeekablePosition() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("e2stream", Context.MODE_PRIVATE).edit().clear().commit()
+        val prefs = Prefs(context)
+        prefs.playbackAttempt = "unfinished / VLC"
+        prefs.channelSync = false
+        prefs.logFtp = false
+        prefs.tsMin = 5
+        SyncManager.init(context)
+        val controller = Robolectric.buildActivity(PlayerActivity::class.java).setup()
+        val activity = controller.get()
+        ShadowDialog.getLatestDialog().dismiss()
+        set(activity, "safeMode", false)
+        set(activity, "player", fakePlayer(activity, {}, {}))
+        val buffer = TimeshiftBuffer(File(context.cacheDir, "timeshift-banner-test"), 5)
+        set(activity, "tsBuf", buffer)
+        call(activity, "tsCtlOpen")
+        assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
+        assertEquals(1000, get<ProgressBar>(activity, "bannerProgress").progress)
+        val packets = ByteArray(188 * 20_000) { if (it % 188 == 0) 0x47 else 0 }
+        buffer.write(packets, 0, packets.size)
+        val oldest = buffer.oldestWall
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5))
+        call(activity, "tsCtlOpen")
+        assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
+        assertTrue(get<TextView>(activity, "bannerNow").text.toString().contains("0:00"))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(38))
+        set(activity, "tsMode", true)
+        set(activity, "tsShifted", true)
+        set(activity, "tsBaseWall", oldest + 15_000)
+
+        val seek = PlayerActivity::class.java.getDeclaredMethod("tsSeek", java.lang.Long.TYPE)
+        seek.isAccessible = true
+        repeat(3) { seek.invoke(activity, -5_000L) }
+
+        assertEquals(0, get<ProgressBar>(activity, "bannerProgress").progress)
+        assertEquals("−0:33", get<TextView>(activity, "bannerStart").text.toString())
+        assertTrue(get<TextView>(activity, "bannerNow").text.toString().endsWith("−0:33"))
+        call(activity, "tsCtlOpen")
+        assertEquals(1000, get<ProgressBar>(activity, "bannerProgress").progress)
+        assertEquals("−0:33", get<TextView>(activity, "bannerStart").text.toString())
+        assertTrue(get<TextView>(activity, "bannerNow").text.toString().contains("0:33"))
+        get<Runnable>(activity, "tsApply").run()
+        assertEquals(activity.getString(R.string.player_ts_start, "0:33"), get<TextView>(activity, "message").text.toString())
+        assertEquals(0, get<ProgressBar>(activity, "bannerProgress").progress)
+        assertEquals("−0:33", get<TextView>(activity, "bannerStart").text.toString())
+        assertTrue(get<TextView>(activity, "bannerNow").text.toString().endsWith("−0:33"))
+        controller.pause().stop().destroy()
     }
 }

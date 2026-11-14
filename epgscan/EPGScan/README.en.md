@@ -563,6 +563,15 @@ item ticks/unticks it, green saves, red cancels.
 - **Tuner setup** – advice for the detected tuner layout,
 - **Plugin description (README)** and **epgpl server description (README)** on the receiver screen.
 
+The PAT/PMT report and EPG statistics include tuner usage for the latest scan, including a stopped scan:
+free and busy tuners, scanned services, reserve, timers, queue, start attempts and the maximum number of
+independent groups. Waiting conditions are observations rather than proven causes, and their durations may
+overlap. Tuner usage is refreshed approximately every 5 s during EPG and 250 ms during standalone PAT/PMT.
+PAT/PMT also uses services already tuned for EPG: see EPG statistics for their usage; the PAT/PMT report
+shows the number of borrowed tunes and its separate scanning phase. Long change histories are truncated,
+but summaries cover the entire scan. Reports persist across restarts and are replaced by the next scan of
+the same type.
+
 ---
 
 ## 13. All settings
@@ -689,6 +698,7 @@ the service status.
 | `/etc/enigma2/settings` | settings `config.plugins.epgscan.*` and `config.plugins.satwatch.*` |
 | `/etc/enigma2/epgscan/wskazania.txt`, `aliases.txt` | manual station choices, your own mappings (same names as on the server) |
 | `/etc/enigma2/epgscan/channelparams.json` | PAT/PMT scan results and confirmed audio selections |
+| `/etc/enigma2/epgscan/tuners-epg.json`, `tuners-params.json` | latest tuner usage reports |
 | `/etc/enigma2/epgscan_sources/` | copies of XMLTV source lists, your own lists, the "EPG PL (dekoder)" source |
 | `/etc/enigma2/epgscan_tps.json`, `epgscan_xmltv.json`, `epgscan_wakeup` | transponder state, sources, wake-up |
 | `/etc/enigma2/satwatch/` | SatWatch state, bouquet snapshot, backups of bouquets and `satellites.xml` |

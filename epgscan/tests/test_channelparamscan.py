@@ -108,6 +108,7 @@ sys.modules[common.__name__] = common
 
 channelparams = importlib.import_module(PACKAGE + ".channelparams")
 scanner_module = importlib.import_module(PACKAGE + ".channelparamscan")
+tunerreport_module = importlib.import_module(PACKAGE + ".tunerreport")
 bouquetchannels = importlib.import_module(PACKAGE + ".bouquetchannels")
 clients = types.ModuleType(PACKAGE + ".clients")
 sys.modules[clients.__name__] = clients
@@ -153,6 +154,19 @@ with patch.dict(sys.modules, ui_modules):
 	scan_module = importlib.import_module(PACKAGE + ".scan")
 
 PMT_BASE64 = "ArAsQo/DAADhGPAAG+EY8AAE4hjwBgoEcG9sAAbjGPAKegKAAgoEcWFhAEkPdSI="
+
+
+def setUpModule():
+	global trace_directory, trace_path_patch
+	trace_directory = tempfile.TemporaryDirectory()
+	trace_path_patch = patch.object(tunerreport_module, "CHANNEL_PARAMS_FILE",
+		os.path.join(trace_directory.name, "channelparams.json"))
+	trace_path_patch.start()
+
+
+def tearDownModule():
+	trace_path_patch.stop()
+	trace_directory.cleanup()
 
 
 class ChannelParamScanTests(unittest.TestCase):
@@ -2231,6 +2245,12 @@ class BatchScanTests(unittest.TestCase):
 		self.assertTrue(all(b - a >= common.TUNE_GAP for a, b in zip(tune_times, tune_times[1:])))
 		self.assertEqual(reports[0]["scanned"], 46)
 		self.assertEqual(reports[0]["errors"], [])
+		trace = reports[0]["tuners"]
+		self.assertFalse(trace["cancelled"])
+		self.assertEqual(trace["attempts"]["independent"], 23)
+		self.assertEqual(trace["max_own"], 2)
+		self.assertGreater(trace["samples"], 0)
+		self.assertEqual(tunerreport_module.load_trace("params"), trace)
 		self.assertEqual(self.engine.active, [])
 		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
 
@@ -2293,6 +2313,59 @@ class BatchScanTests(unittest.TestCase):
 		self.assertEqual(self.engine.active, [])
 		self.assertTrue(all(reader.close.call_count == 1 for reader in self.readers))
 		self.assertEqual(self.navigation.record_event, [])
+
+	def test_scheduler_persists_cancelled_tuner_report_without_replacing_last_scan(self):
+		self.rows[1]["ref"] = "1:0:1:2:2:1:13E:0:0:0:"
+		self.engine.used, self.engine.other_used = {0, 1}, {0}
+		previous = {"started": 50, "scanned": 42}
+		self.scan.last_scan = previous
+		with patch.object(scanner_module, "frontend_of", return_value=(2, None)), \
+				patch.object(scanner_module.time, "monotonic", side_effect=lambda: self.now):
+			self.assertTrue(self.scan.start())
+			self.scan.rec_event(self.scan.active[0].rec, enigma.iRecordableService.evTunedIn)
+			self.now = 101
+			self.scan.tick()
+			self.now = 102
+			self.scan.tick()
+			self.scan.rec_event(self.scan.active[-1].rec, enigma.iRecordableService.evTunedIn)
+			ref = self.rows[0]["ref"]
+			self.scan.scanned_refs.add(ref)
+			self.scan.results[ref] = {"ref": ref}
+			self.now = 103
+			self.scan.cancel()
+			self.scan.save_partial()
+		report = tunerreport_module.load_trace("params")
+		self.assertTrue(report["cancelled"])
+		self.assertTrue(report["independent"])
+		self.assertEqual(report["tuners"], [2])
+		self.assertEqual(report["max_own"], 2)
+		self.assertEqual(report["attempts"]["independent"], 2)
+		self.assertGreater(report["seconds"]["gap"], 0)
+		self.assertEqual(scanner_module.save_results.call_args[0][0]["last_scan"], previous)
+		self.scan.cancel()
+		self.assertEqual(tunerreport_module.load_trace("params"), report)
+
+	def test_cancel_during_epg_reports_borrowed_tuning_without_independent_phase(self):
+		self.scan.prepare()
+		self.scan.attach_epg(types.SimpleNamespace(ref=self.rows[0]["ref"], rec=object()))
+		self.scan.cancel()
+		report = tunerreport_module.load_trace("params")
+		self.assertTrue(report["cancelled"])
+		self.assertFalse(report["independent"])
+		self.assertEqual(report["epg_borrowed"], 1)
+		self.assertEqual(report["samples"], 0)
+		with patch.object(tunerreport_module, "_", lambda value: value):
+			self.assertIn("Niezalezna faza PAT/PMT nie rozpoczela sie", tunerreport_module.format_trace(report))
+
+	def test_cancel_before_first_epg_tune_replaces_previous_tuner_report(self):
+		tunerreport_module.save_trace("params", {"events": [], "cancelled": False})
+		self.scan.prepare()
+		self.scan.cancel()
+		report = tunerreport_module.load_trace("params")
+		self.assertTrue(report["cancelled"])
+		self.assertFalse(report["independent"])
+		self.assertEqual(report["epg_borrowed"], 0)
+		self.assertEqual(report["samples"], 0)
 
 	def test_failed_pmt_filter_preserves_other_results_then_falls_back(self):
 		self.rows.append({"ref": "1:0:1:3:1:1:13E:0:0:0:", "name": "3", "supported": True})

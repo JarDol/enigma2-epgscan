@@ -12,6 +12,7 @@ import NavigationInstance
 
 from . import channelparams
 from .i18n import _
+from .tunerreport import TunerTrace, close_trace, format_trace
 from .common import CHANNEL_PARAMS_FILE, NO_TUNER_WAIT, TUNE_GAP, TUNE_TIMEOUT, \
 	channel_params_bouquet_channels, cfg, configured_tuners, frontend_of, log, same_tp, selected_bouquets, service_name, tp_key, tp_params, save_cfg
 
@@ -77,6 +78,9 @@ def display_state(state):
 def format_report(report):
 	if not report:
 		return _("Brak raportu skanu parametrow.")
+	tuner_report = report.get("tuners")
+	if len(report) == 1 and tuner_report:
+		return _("Brak raportu skanu parametrow.") + "\n\n" + format_trace(tuner_report)
 	def timestamp(value):
 		return time.strftime("%d.%m.%Y %H:%M:%S", time.localtime(value)) if value else "-"
 	duration = int(report.get("duration", 0))
@@ -106,6 +110,8 @@ def format_report(report):
 			ref = row.get("ref")
 			lines.append("%s%s%s" % (name, " [%s]" % ref if ref else "",
 				": %s" % reason if reason else ""))
+	if tuner_report:
+		lines += ["", format_trace(tuner_report)]
 	return "\n".join(lines)
 
 
@@ -221,7 +227,10 @@ class ChannelParamsScan(object):
 		self.last_notify = 0
 		self.cancelled = False
 		self.borrowed = {}
+		self.epg_borrowed = 0
 		self.prepared = False
+		self.tuner_trace = None
+		self.tuner_reported = False
 		self.timer = eTimer()
 		self.timer.callback.append(self.tick)
 
@@ -249,6 +258,8 @@ class ChannelParamsScan(object):
 				return False
 		self.engine.phase = "channelparams"
 		self.engine.channel_params_scan = self
+		self.tuner_trace = TunerTrace(self.engine.total_tuners, self.engine.reserve,
+			self.engine.max_parallel, TUNE_GAP, time.time(), epg_borrowed=self.epg_borrowed)
 		log("Skan parametrow: %d kanalow DVB w %d transponderach, %d nieobslugiwanych; tunery %d, rezerwa %d" %
 			(len(self.queue), len(self.groups), len(self.unsupported), self.engine.total_tuners, self.engine.reserve))
 		if self.unsupported:
@@ -281,6 +292,7 @@ class ChannelParamsScan(object):
 		anchor.state = "odczyt strumienia"
 		anchor.borrowed = True
 		self.borrowed[id(job)] = anchor
+		self.epg_borrowed += 1
 
 	def poll_epg(self, job):
 		anchor = self.borrowed.get(id(job))
@@ -337,6 +349,13 @@ class ChannelParamsScan(object):
 	def cancel(self):
 		self.cancelled = True
 		self.timer.stop()
+		if self.tuner_trace is None and not self.tuner_reported and self.prepared:
+			self.tuner_trace = TunerTrace(self.engine.total_tuners, self.engine.reserve,
+				self.engine.max_parallel, TUNE_GAP, self.started, epg_borrowed=self.epg_borrowed, independent=False)
+		if self.tuner_trace is not None:
+			self.engine.params_tuner_report = close_trace(self.tuner_trace, "params", time.time(), cancelled=True)
+			self.tuner_trace = None
+			self.tuner_reported = True
 		for anchor in list(self.borrowed.values()):
 			self._end_borrowed(anchor)
 		try:
@@ -367,6 +386,8 @@ class ChannelParamsScan(object):
 				job.tuned_at = time.time()
 				job.tuner_no, _params = frontend_of(job.rec)
 				job.tuner = chr(ord("A") + job.tuner_no) if job.tuner_no >= 0 else "?"
+				if self.tuner_trace is not None:
+					self.tuner_trace.note_tuner(job.tuner_no)
 				job.state = "odczyt strumienia"
 				group = job.group
 				anchor = group.reservation if group else None
@@ -737,7 +758,8 @@ class ChannelParamsScan(object):
 			NavigationInstance.instance.record_event.remove(self.rec_event)
 		except Exception:
 			pass
-		finished = int(time.time())
+		finished_at = time.time()
+		finished = int(finished_at)
 		scanned_results = [self.results[ref] for ref in self.scanned_refs if ref in self.results]
 		read_times = [result.get("readDuration", 0) for result in scanned_results if result.get("readDuration", 0) > 0]
 		audio_channels = [result for result in scanned_results if any(
@@ -753,6 +775,11 @@ class ChannelParamsScan(object):
 			"read_average": round(sum(read_times) / len(read_times), 2) if read_times else 0,
 			"read_max": round(max(read_times), 2) if read_times else 0,
 			"errors": self.errors, "unsupported": self.unsupported}
+		if self.tuner_trace is not None:
+			self.engine.params_tuner_report = close_trace(self.tuner_trace, "params", finished_at)
+			report["tuners"] = self.engine.params_tuner_report
+			self.tuner_trace = None
+			self.tuner_reported = True
 		last_scan = report
 		if self.refs is not None and self.last_scan:
 			last_scan = dict(self.last_scan)
@@ -819,6 +846,10 @@ class ChannelParamsScan(object):
 			self._release(group.reservation)
 		group.not_before = now + NO_TUNER_WAIT
 
+	def _ready_groups(self, now):
+		return [item for item in self.groups if not item.done and not item.current and item.pending
+			and item.not_before <= now and item.pending[0].not_before <= now]
+
 	def tick(self):
 		if self.cancelled:
 			return
@@ -854,8 +885,7 @@ class ChannelParamsScan(object):
 			job = None
 			group = None
 			shared = False
-			ready_groups = [item for item in self.groups if not item.done and not item.current and item.pending
-				and item.not_before <= now and item.pending[0].not_before <= now]
+			ready_groups = self._ready_groups(now)
 			new_groups = [item for item in ready_groups if item.reservation is None]
 			continuing_groups = [item for item in ready_groups if item.reservation is not None]
 			for candidate_group in new_groups + continuing_groups:
@@ -873,7 +903,10 @@ class ChannelParamsScan(object):
 			if job is not None:
 				group.pending.remove(job)
 				self.queue.remove(job)
-				if not self._start(job, shared):
+				started = self._start(job, shared)
+				if self.tuner_trace is not None:
+					self.tuner_trace.note_start(shared, started)
+				if not started:
 					self._handle_failure(job, "nie mozna zarezerwowac serwisu")
 		if not self.queue and not self.active and not self.final_retry_started:
 			self.final_retry_started = True
@@ -890,6 +923,10 @@ class ChannelParamsScan(object):
 		if not self.queue and not self.active:
 			for group in self.groups:
 				self._finish_group_if_idle(group)
+		if self.tuner_trace is not None:
+			self.tuner_trace.sample(engine, now, len(self.queue), len(self._ready_groups(now)),
+				len([group for group in self.groups if group_owns_tuner(group)]),
+				False, now - self.last_tune < TUNE_GAP)
 		if not self.queue and not self.active and not self.reservations:
 			return self._finish()
 		if now - self.last_notify >= 1:

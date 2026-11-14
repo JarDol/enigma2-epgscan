@@ -388,12 +388,24 @@ def reports_menu(session, engine, sel=0):
 			reports_menu(session, engine, idx)
 		if k == "params":
 			from .channelparamscan import format_report, load_results
+			from .tunerreport import load_trace
 			try:
 				report = getattr(engine, "channelparams_report", None)
 				if not report:
 					report = load_results().get("last_scan", {})
 					report = report.get("last_retry", report)
+				trace_error = ""
+				try:
+					live_trace = getattr(engine, "params_tuner_report", None)
+					trace = live_trace or load_trace("params")
+					embedded = report.get("tuners")
+					if trace and (live_trace or not embedded or trace.get("finished", 0) > embedded.get("finished", 0)):
+						report = dict(report, tuners=trace)
+				except (OSError, ValueError, TypeError) as e:
+					log("Nie mozna odczytac raportu tunerow PAT/PMT: %s" % e)
+					trace_error = "\n\n" + _("Nie mozna odczytac raportu tunerow: %s") % e
 				body = format_report(report)
+				body += trace_error
 			except Exception as e:
 				log("Skan parametrow: odczyt raportu nieudany: %s" % e)
 				body = _("Nie mozna odczytac raportu skanu parametrow: %s") % e

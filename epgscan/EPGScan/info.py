@@ -123,6 +123,14 @@ class EPGScanInfo(_Base):
 		t += [_("Cala pamiec EPG: kanalow na liscie %d, z EPG %d, audycji %d") % (nall, cov, nev),
 			_("Plik %s") % finfo, "", "Log: %s" % log_path(), "",
 			_("Kanaly od najkrotszego EPG, duble, pobieranie na dekoderze i raporty serwerow - w menu Info/EPG.")]
+		from .tunerreport import format_trace, load_trace
+		try:
+			trace = getattr(e, "epg_tuner_report", None) or load_trace("epg")
+			if trace:
+				t += ["", format_trace(trace)]
+		except (OSError, ValueError, TypeError, KeyError, OverflowError) as err:
+			log("Nie mozna odczytac raportu tunerow EPG: %s" % err)
+			t += ["", _("Nie mozna odczytac raportu tunerow: %s") % err]
 		self["text"].setText("\n".join(t))
 
 	def channels(self):

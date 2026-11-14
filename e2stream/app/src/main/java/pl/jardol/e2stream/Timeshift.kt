@@ -20,6 +20,15 @@ internal fun timeshiftEarliestSeekWall(oldestWall: Long, now: Long): Long =
 internal fun timeshiftSeekTarget(base: Long, delta: Long, oldestWall: Long, now: Long): Long =
     maxOf(base + delta, timeshiftEarliestSeekWall(oldestWall, now))
 
+internal fun timeshiftAvailableSpan(oldestWall: Long, now: Long): Long =
+    now - timeshiftEarliestSeekWall(oldestWall, now)
+
+internal fun timeshiftBufferProgress(shownWall: Long, oldestWall: Long, now: Long): Int {
+    val earliest = timeshiftEarliestSeekWall(oldestWall, now)
+    val span = now - earliest
+    return if (span == 0L) 1000 else ((shownWall - earliest).coerceIn(0, span) * 1000 / span).toInt()
+}
+
 /**
  * Bufor timeshiftu: strumień TS bieżącego kanału zapisywany w kawałkach po 1 minucie
  * (ts-N.ts w katalogu bufora). Kawałki to po prostu kolejne fragmenty jednego ciągłego strumienia —

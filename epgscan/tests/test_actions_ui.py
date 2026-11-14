@@ -290,9 +290,12 @@ class ParameterReportMenuTests(unittest.TestCase):
 		self.scanner = types.ModuleType(PACKAGE + ".channelparamscan")
 		self.scanner.load_results = Mock(return_value={"results": {}})
 		self.scanner.format_report = Mock(side_effect=lambda report: "report: %s" % report)
+		self.tunerreport = types.ModuleType(PACKAGE + ".tunerreport")
+		self.tunerreport.load_trace = Mock(return_value=None)
 		self.modules = dict(destinations, **{
 			PACKAGE + ".info": self.info,
 			PACKAGE + ".channelparamscan": self.scanner,
+			PACKAGE + ".tunerreport": self.tunerreport,
 		})
 
 	def open_report(self, engine):
@@ -326,6 +329,39 @@ class ParameterReportMenuTests(unittest.TestCase):
 		with patch.dict(sys.modules, self.modules), patch.object(menus, "log") as log:
 			text = self.open_report(types.SimpleNamespace(channelparams_report=None))
 		self.assertIn("unreadable results", text)
+		log.assert_called_once()
+
+	def test_latest_saved_tuner_report_is_shown_after_restart(self):
+		previous = {"finished": 10}
+		latest = {"finished": 20, "cancelled": True}
+		self.scanner.load_results.return_value = {"last_scan": {"tuners": previous}}
+		self.tunerreport.load_trace.return_value = latest
+		with patch.dict(sys.modules, self.modules):
+			self.open_report(types.SimpleNamespace(channelparams_report=None, params_tuner_report=None))
+		self.scanner.format_report.assert_called_once_with({"tuners": latest})
+
+	def test_older_trace_does_not_hide_newer_embedded_save_failure(self):
+		newer = {"finished": 20, "save_error": "disk full"}
+		self.scanner.load_results.return_value = {"last_scan": {"tuners": newer}}
+		self.tunerreport.load_trace.return_value = {"finished": 20}
+		with patch.dict(sys.modules, self.modules):
+			self.open_report(types.SimpleNamespace(channelparams_report=None, params_tuner_report=None))
+		self.scanner.format_report.assert_called_once_with({"tuners": newer})
+
+	def test_current_tuner_report_takes_precedence_with_equal_timestamps(self):
+		old = {"finished": 20}
+		latest = {"finished": 20, "cancelled": True}
+		self.scanner.load_results.return_value = {"last_scan": {"tuners": old}}
+		with patch.dict(sys.modules, self.modules):
+			self.open_report(types.SimpleNamespace(channelparams_report=None, params_tuner_report=latest))
+		self.tunerreport.load_trace.assert_not_called()
+		self.scanner.format_report.assert_called_once_with({"tuners": latest})
+
+	def test_tuner_report_read_errors_are_visible_and_logged(self):
+		self.tunerreport.load_trace.side_effect = ValueError("invalid tuner report")
+		with patch.dict(sys.modules, self.modules), patch.object(menus, "log") as log:
+			text = self.open_report(types.SimpleNamespace(channelparams_report=None))
+		self.assertIn("invalid tuner report", text)
 		log.assert_called_once()
 
 

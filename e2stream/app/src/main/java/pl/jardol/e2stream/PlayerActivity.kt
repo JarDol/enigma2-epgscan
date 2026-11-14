@@ -2167,9 +2167,10 @@ class PlayerActivity : Activity() {
         val ch = playList.getOrNull(playIndex)
         bannerName.text = ch?.let { "${it.num}   ${it.name}" } ?: ""
         Picons.show(bannerIcon, this, ch?.ref.orEmpty(), prefs.picons, prefs.missingPiconLogo)
-        val span = (tsBuf?.takeIf { it.total > 0 }?.spanMs() ?: 0L)
+        val buffered = tsBuf?.takeIf { it.total > 0 }
+        val span = buffered?.let { timeshiftAvailableSpan(it.oldestWall, SystemClock.elapsedRealtime()) } ?: 0L
         bannerClock.text = hm.format(Date())
-        bannerNow.text = if (span > 0) getString(R.string.player_ts_live_buffer, fmtMs(span)) else getString(R.string.player_ts_live_empty)
+        bannerNow.text = if (buffered != null) getString(R.string.player_ts_live_buffer, fmtMs(span)) else getString(R.string.player_ts_live_empty)
         bannerStart.text = if (span > 0) "−${fmtMs(span)}" else ""
         bannerEnd.text = getString(R.string.player_live_lower)
         bannerProgress.progress = 1000
@@ -2208,7 +2209,7 @@ class PlayerActivity : Activity() {
         when {
             target >= now - 6000 -> tsGoLive("przewinięte do końca")
             target == earliest -> {
-                showMessage(getString(R.string.player_ts_start, b.spanMs() / 60000), 2500)
+                showMessage(getString(R.string.player_ts_start, fmtMs(now - earliest)), 2500)
                 tsPlayFrom(earliest, play = player?.playWhenReady != false)
             }
             else -> tsPlayFrom(target, play = player?.playWhenReady != false)
@@ -2262,13 +2263,14 @@ class PlayerActivity : Activity() {
         if (tsPending != 0L) tsPending = maxOf(tsPending, timeshiftEarliestSeekWall(b.oldestWall, now))
         val shown = if (tsPending != 0L) tsPending else tsShownWall()
         val behind = (now - shown).coerceAtLeast(0)
-        val span = b.spanMs().coerceAtLeast(1)
+        val oldest = b.oldestWall
+        val span = timeshiftAvailableSpan(oldest, now)
         val paused = player?.playWhenReady == false
         bannerClock.text = hm.format(Date(System.currentTimeMillis() - behind))
         bannerNow.text = (if (paused) "⏸  Timeshift" else "▶  Timeshift") + "  −${fmtMs(behind)}"
-        bannerStart.text = "−${fmtMs(span)}"
+        bannerStart.text = if (span > 0) "−${fmtMs(span)}" else ""
         bannerEnd.text = getString(R.string.player_live_lower)
-        bannerProgress.progress = ((span - behind) * 1000 / span).toInt().coerceIn(0, 1000)
+        bannerProgress.progress = timeshiftBufferProgress(shown, oldest, now)
         bannerNext.text = getString(R.string.player_ts_controls, prefs.tsStepSec, prefs.tsStepMin)
     }
 

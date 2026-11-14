@@ -111,7 +111,8 @@ pojawia się komunikat z przejściem do pozycji Timeshift w ustawieniach (z zach
 Przy niedostępnym dysku można kontynuować, jeśli wcześniej zezwolono na użycie pamięci urządzenia.
 Strzałki przewijają tylko na widocznym pasku timeshiftu, również po dotarciu do transmisji na żywo;
 na pasku kanału i po ukryciu paska działają jak podczas zwykłego oglądania.
-Przy cofaniu wskazanie nie wykracza poza dostępny początek bufora.
+Pasek i jego skala pokazują zakres dostępny do przewijania: od początku z zachowanym 10-sekundowym
+marginesem bezpieczeństwa do transmisji na żywo. Przy cofaniu wskazanie nie wykracza poza ten początek.
 W ustawieniach Ogólne dostępne są osobne mapowania OK i strzałek dla ekranu bez paska oraz z paskiem kanału.
 Domyślnie strzałki zachowują dotychczasowe przypisania, również zmienione w starszych wersjach,
 a OK zachowuje dotychczasowe działanie. Mapowanie nie zmienia działania długiego OK ani paska timeshiftu;

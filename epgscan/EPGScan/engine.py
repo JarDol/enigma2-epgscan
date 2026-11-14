@@ -12,6 +12,7 @@ from .common import ensure_eit, restore_eit, pause_eit_for_xmltv, resume_eit_aft
 	frontend_of, same_tp, flush_all, flush_refs, clears_now, copy_backup, changes_since_last, remember_scan, \
 	update_tp_stats, update_topup_stats, horizons, apply_skip, epg_stats, stats_text, all_refs, xmltv_targets, log_dups, \
 	profile_default, profile_text, xmltv_in_profile, TUNE_TIMEOUT, MAX_RETRIES, COUNT_EVERY, TUNE_GAP, NO_TUNER_WAIT, USAGE_EVERY, TIMER_AHEAD
+from .tunerreport import TunerTrace, close_trace
 
 try:
 	from enigma import eDVBResourceManager
@@ -60,6 +61,9 @@ class ScanEngine(object):
 		self.summary = ""
 		self.timer_hold = 0          # tunery dla zblizajacych sie nagran i przelaczen
 		self.timer_check_error = None
+		self.epg_tuner_trace = None
+		self.epg_tuner_report = None
+		self.params_tuner_report = None
 		self.auto = False            # start z harmonogramu
 		self.topup = False           # doczytywanie brakow (wybrane transpondery, bez czyszczenia)
 		self.woke = False            # odbiornik wybudzony przez wtyczke z glebokiego czuwania
@@ -163,6 +167,7 @@ class ScanEngine(object):
 		self.running = True
 		self.finished = False
 		self.t_start = time.time()
+		self.epg_tuner_trace = TunerTrace(self.total_tuners, self.reserve, self.max_parallel, TUNE_GAP, self.t_start)
 		self.prepare_epg_params()
 		if self.topup:
 			log("Doczytywanie brakow: %d transponderow: %s" % (len(self.jobs),
@@ -278,6 +283,9 @@ class ScanEngine(object):
 			self.xmltv.cancel()          # konczy sie przez complete()
 			return
 		log("Przerwane przez uzytkownika")
+		if getattr(self, "epg_tuner_trace", None) is not None:
+			self.epg_tuner_report = close_trace(self.epg_tuner_trace, "epg", time.time(), cancelled=True)
+			self.epg_tuner_trace = None
 		self.clear_auto_flag()
 		self.topup = False
 		self.phase = ""
@@ -503,6 +511,8 @@ class ScanEngine(object):
 				j.tuned_at = j.last_change = time.time()
 				j.tuner_no, _ = frontend_of(j.rec)
 				j.tuner = chr(ord("A") + j.tuner_no) if j.tuner_no >= 0 else "?"
+				if getattr(self, "epg_tuner_trace", None) is not None:
+					self.epg_tuner_trace.note_tuner(j.tuner_no)
 				j.shared = j.tuner_no in self.other_used
 				log("Dostrojony: %s (tuner %s%s)" % (j.name, j.tuner, ", wspoldzielony" if j.shared else ""))
 				getattr(self, "fail_streak", {}).pop(j.tuner_no, None)
@@ -652,7 +662,10 @@ class ScanEngine(object):
 				job = ready[0]
 			if job is not None:
 				self.queue.remove(job)
-				if not self.start_job(job, shared):
+				started = self.start_job(job, shared)
+				if getattr(self, "epg_tuner_trace", None) is not None:
+					self.epg_tuner_trace.note_start(shared, started)
+				if not started:
 					job.state = "czeka na tuner"
 					job.not_before = now + NO_TUNER_WAIT
 					self.queue.append(job)
@@ -660,6 +673,12 @@ class ScanEngine(object):
 		for j in self.queue:
 			if j.state == "czeka" and self.active and self.free_tuners() - self.eff_reserve() <= 0:
 				j.state = "czeka na tuner"
+
+		if getattr(self, "epg_tuner_trace", None) is not None:
+			self.epg_tuner_trace.sample(self, now, len(self.queue),
+				len([j for j in self.queue if j.not_before <= now]),
+				len([j for j in self.active if not j.shared]),
+				any(j.state == "strojenie" for j in self.active), now - self.last_tune < TUNE_GAP)
 
 		if self.running and not self.queue and not self.active:
 			self.finish()
@@ -675,6 +694,9 @@ class ScanEngine(object):
 		self.timer.stop()
 		self.end_eit()
 		self.t_end = time.time()
+		if getattr(self, "epg_tuner_trace", None) is not None:
+			self.epg_tuner_report = close_trace(self.epg_tuner_trace, "epg", self.t_end)
+			self.epg_tuner_trace = None
 		self.detach()
 		done, err, el = self.stats()
 		if self.topup:

@@ -583,6 +583,15 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 - **Log EPG Scan** (najnowsze na górze), **raporty serwera** epgpl,
 - **Opis wtyczki (README)** – ten opis na ekranie dekodera, **Opis serwera epgpl (README)** – opis z serwera (epgpl 0.19.4+).
 
+Raport PAT/PMT i statystyka EPG zawierają wykorzystanie tunerów ostatniego skanu, również przerwanego:
+wolne i zajęte tunery, skanowane usługi, rezerwę, timery, kolejkę, próby uruchomienia i maksymalną
+liczbę niezależnych grup. Warunki oczekiwania są obserwacjami, nie rozstrzygają przyczyny, a ich czasy
+mogą się nakładać. Stan tunerów jest odświeżany co około 5 s przy EPG i 250 ms przy osobnym PAT/PMT.
+PAT/PMT korzysta także z usług dostrojonych podczas EPG: ich wykorzystanie opisuje statystyka EPG,
+a raport PAT/PMT pokazuje liczbę pożyczeń i osobną fazę skanowania. Przy długim przebiegu lista zmian
+jest skracana, lecz podsumowanie obejmuje cały skan. Raporty pozostają po restarcie i są zastępowane
+przy następnym skanie danego rodzaju.
+
 ---
 
 ## 13. Wszystkie ustawienia
@@ -724,6 +733,7 @@ w E2Stream. Po instalacji i uruchomieniu Avahi zrestartuj Enigma2, aby odśwież
 | `/media/hdd/satwatch/` | log i historia raportów SatWatch (gdy wybrano ten katalog) |
 | `/etc/enigma2/epgscan/clients/` | dane aplikacji E2Stream: `common.json` (domyślne dla nowych odbiorników, wspólne PMT kanałów), `device-<id>.json` (każdy odbiornik) |
 | `/etc/enigma2/epgscan/channelparams.json` | wyniki skanu PAT/PMT i potwierdzone wybory audio |
+| `/etc/enigma2/epgscan/tuners-epg.json`, `tuners-params.json` | ostatnie raporty wykorzystania tunerów |
 
 Wtyczka **nie zmienia**: bukietów (poza naprawą przez SatWatch, zawsze z kopią), ustawień tunerów,
 pliku systemowego `/etc/tuxbox/satellites.xml`, crona. Zmienia ustawienie EIT w Menu → EPG tylko
