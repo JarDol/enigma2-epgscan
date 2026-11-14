@@ -299,28 +299,8 @@ object SyncManager {
         val oldDevice = dev?.optJSONObject("device")
         val oldBackup = oldDevice?.optJSONObject("backup")
         val backupMissing = oldBackup == null || backup.keys().asSequence().any { !oldBackup.has(it) }
-        val preserved = if (freshDecision) {
-            val saved = meta.getString("backupBeforeFirstPush", null)
-            val savedRecord = saved?.let { JSONObject(it) }
-            if (savedRecord?.optString("host") == prefs.host) savedRecord else JSONObject().also { record ->
-                record.put("host", prefs.host)
-                oldDevice?.optJSONObject("backup")?.let { record.put("backup", it) }
-                oldDevice?.optLong("updated")?.takeIf { it > 0 }?.let { record.put("updated", it) }
-                dData?.let { record.put("data", it) }
-                check(meta.edit().putString("backupBeforeFirstPush", record.toString()).commit()) {
-                    "Nie udało się zabezpieczyć poprzedniej kopii"
-                }
-            }
-        } else null
-        val previousBackup = if (freshDecision) preserved?.optJSONObject("backup")
-            else oldDevice?.optJSONObject("previousBackup")
-        val previousData = if (freshDecision) preserved?.optJSONObject("data")
-            else oldDevice?.optJSONObject("previousData")
-        if (previousBackup != null) device.put("previousBackup", previousBackup)
-        if (previousData != null) device.put("previousData", previousData)
-        // data poprzedniej kopii (do 0.18.43 nie zapisywana - wtedy lista pokazuje datę bieżącej)
-        val previousUpdated = if (freshDecision) preserved?.optLong("updated") ?: 0L else oldDevice?.optLong("previousUpdated") ?: 0L
-        if ((previousBackup != null || previousData != null) && previousUpdated > 0) device.put("previousUpdated", previousUpdated)
+        // Bez „poprzedniej kopii": na dekoderze jest jedna kopia na urządzenie (pytanie o przywrócenie pada od razu
+        // po wyborze dekodera, zanim cokolwiek zostanie zmienione). Stare pola previous* znikają przy tym zapisie.
         val myFile = JSONObject()
             .put("device", device)
             .put("data", myData)
@@ -394,11 +374,6 @@ object SyncManager {
                 val d = js.optJSONObject("device") ?: JSONObject()
                 out.add(Profile(js.optString("file"), d.optString("name"), d.optString("model"), d.optLong("updated"),
                     js.optJSONObject("data") ?: JSONObject(), d.optJSONObject("backup")))
-                if (d.has("previousBackup") || d.has("previousData")) {
-                    out.add(Profile(js.optString("file") + "#previous", d.optString("name") + " (poprzednia kopia)",
-                        d.optString("model"), d.optLong("previousUpdated").takeIf { it > 0 } ?: d.optLong("updated"), d.optJSONObject("previousData") ?: JSONObject(),
-                        d.optJSONObject("previousBackup")))
-                }
             }
             return out.sortedByDescending { it.updated }
         }
@@ -410,11 +385,6 @@ object SyncManager {
                 val d = js.optJSONObject("device") ?: JSONObject()
                 out.add(Profile(n, d.optString("name"), d.optString("model"), d.optLong("updated"),
                     js.optJSONObject("data") ?: JSONObject(), d.optJSONObject("backup")))
-                if (d.has("previousBackup") || d.has("previousData")) {
-                    out.add(Profile(n + "#previous", d.optString("name") + " (poprzednia kopia)",
-                        d.optString("model"), d.optLong("previousUpdated").takeIf { it > 0 } ?: d.optLong("updated"), d.optJSONObject("previousData") ?: JSONObject(),
-                        d.optJSONObject("previousBackup")))
-                }
             }
         }
         return out.sortedByDescending { it.updated }

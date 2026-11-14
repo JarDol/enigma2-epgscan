@@ -931,7 +931,7 @@ class SettingsActivity : Activity() {
                     toast(getString(R.string.receiver_profiles_error, error?.message ?: error.toString()))
                     return@runOnUiThread
                 }
-                val others = result.getOrThrow().filter { (!it.file.contains(SyncManager.deviceId()) && !it.file.contains(SyncManager.legacyDeviceId())) || it.file.endsWith("#previous") }
+                val others = result.getOrThrow().filter { (!it.file.contains(SyncManager.deviceId()) && !it.file.contains(SyncManager.legacyDeviceId())) }
                 if (others.isEmpty()) { toast(getString(R.string.message_no_other_device_profiles_on_the_receiver)); return@runOnUiThread }
                 val fmt = SimpleDateFormat("dd.MM HH:mm", Locale.forLanguageTag(AppLanguage.selected(this)))
                 TvDialog.list(this, getString(R.string.message_import_settings_from_device),
