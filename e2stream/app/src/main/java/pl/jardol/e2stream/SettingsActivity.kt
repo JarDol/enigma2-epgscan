@@ -746,7 +746,7 @@ class SettingsActivity : Activity() {
                     val subtitle = listOf(state, receiver.description, source).filter { it.isNotBlank() }.joinToString("  ·  ")
                     TvDialog.Item("${receiver.ip}:${receiver.httpPort}", subtitle)
                 }
-                TvDialog.list(this, getString(R.string.receiver_search_devices), rows) { w ->
+                TvDialog.list(this, getString(R.string.receiver_search_devices), rows, stacked = true) { w ->
                     val receiver = found[w]
                     if (receiver.verified) selectReceiver(receiver)
                     else TvDialog.confirm(this, getString(R.string.receiver_search_unverified_title),
