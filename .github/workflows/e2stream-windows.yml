@@ -1,18 +1,61 @@
 name: E2Stream Windows — wersja testowa
 
+# Wersja: packageVersion w e2stream/desktop/build.gradle.kts.
+# Opis wydania: sekcja "## <wersja>" w e2stream/desktop/CHANGELOG.md.
+# Nowe wydanie = podbić packageVersion + dopisać sekcję w CHANGELOG i wypchnąć.
+
 on:
   push:
     branches: [ 'windows/0.1.0-test' ]
+    paths:
+      - 'e2stream/desktop/**'
+      - 'e2stream/gradle/**'
+      - 'e2stream/gradlew*'
+      - '.github/workflows/e2stream-windows.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: e2stream-windows-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+
+      - name: Wersja i opis wydania
+        id: ver
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $gradle = Get-Content e2stream/desktop/build.gradle.kts -Raw
+          if ($gradle -notmatch 'packageVersion\s*=\s*"(\d+\.\d+\.\d+)"') { throw "Brak packageVersion w e2stream/desktop/build.gradle.kts." }
+          $version = $Matches[1]
+          $tag = "e2stream-windows-$version-test"
+
+          gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" --silent *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Wydanie $tag już istnieje. Podbij packageVersion w e2stream/desktop/build.gradle.kts i dopisz sekcję '## <nowa wersja>' w e2stream/desktop/CHANGELOG.md."
+          }
+          $global:LASTEXITCODE = 0
+
+          $lines = Get-Content e2stream/desktop/CHANGELOG.md -Encoding utf8
+          $start = [Array]::FindIndex($lines, [Predicate[string]]{ param($l) $l.Trim() -eq "## $version" })
+          if ($start -lt 0) { throw "Brak sekcji '## $version' w e2stream/desktop/CHANGELOG.md." }
+          $notes = @()
+          for ($i = $start + 1; $i -lt $lines.Count -and -not $lines[$i].StartsWith('## '); $i++) { $notes += $lines[$i] }
+          $text = ($notes -join "`n").Trim()
+          if (-not $text) { throw "Sekcja '## $version' w e2stream/desktop/CHANGELOG.md jest pusta." }
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP notes.md), $text + "`n")
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          Write-Host "Wydanie: $tag"
 
       - uses: actions/setup-java@v4
         with:
@@ -41,12 +84,16 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ steps.ver.outputs.tag }}
         run: |
-          $exe = Get-ChildItem e2stream/desktop/build/compose/binaries/main-release/exe/*.exe
-          if (@($exe).Count -ne 1) { throw "Oczekiwano jednego instalatora EXE; znaleziono $(@($exe).Count)." }
-          gh release create e2stream-windows-0.1.7-test $exe.FullName `
+          $exe = @(Get-ChildItem e2stream/desktop/build/compose/binaries/main-release/exe/*.exe)
+          if ($exe.Count -ne 1) { throw "Oczekiwano jednego instalatora EXE; znaleziono $($exe.Count)." }
+          $asset = Join-Path $env:RUNNER_TEMP "E2Stream-$env:VERSION-test.exe"
+          Copy-Item $exe[0].FullName $asset
+          gh release create $env:TAG $asset `
             --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA `
-            --title "E2Stream Windows 0.1.7 — wersja testowa" `
-            --notes "Poprawiono responsywność obsługi pilota HID: ograniczono powtarzające się odpytywanie urządzenia i kolejkę aktualizacji diagnostycznych. Zachowano podgląd raportów i tłumienie klawiszy przeglądarki w aktywnym E2Stream. Dodano pełny ekran, tryby skalowania obrazu oraz listę kanałów bez paska okna. Obsługę konkretnego pilota i skalowanie VLC należy sprawdzić na urządzeniu. Wymaga VLC 3.x 64-bit; pełne EPG, nagrania i prawdziwy timeshift nie są jeszcze dostępne." `
+            --title "E2Stream Windows $env:VERSION — wersja testowa" `
+            --notes-file (Join-Path $env:RUNNER_TEMP notes.md) `
             --prerelease --latest=false
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

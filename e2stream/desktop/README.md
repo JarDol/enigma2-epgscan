@@ -129,6 +129,13 @@ with the repository's Gradle wrapper:
 e2stream\gradlew.bat -p e2stream\desktop packageReleaseMsi packageReleaseExe
 ```
 
+Test releases are built by `.github/workflows/e2stream-windows.yml` on every push to
+`windows/0.1.0-test` that touches `e2stream/desktop/` (or the workflow). To publish a new
+one, raise `packageVersion` in `build.gradle.kts` and add a `## X.Y.Z` section to
+[`CHANGELOG.md`](CHANGELOG.md); it becomes the release notes of `e2stream-windows-X.Y.Z-test`.
+The build stops right away if that release already exists or the section is missing.
+Add `[skip ci]` to commits that should not produce a release.
+
 The app tries the EPG Scan client API first and falls back to OpenWebif. Decoder
 settings and key bindings are stored in `%APPDATA%/E2Stream/settings.properties`.
 The OpenWebif password and EPG Scan token are stored in this file as plain text.
