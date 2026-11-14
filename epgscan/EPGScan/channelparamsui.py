@@ -18,7 +18,9 @@ from enigma import eServiceReference, eTimer
 
 from .channelparamscan import load_results, save_results, start_manual
 from .channelparamsstore import add_common_defaults, apply_to_devices, _current_pmt
-from .common import cfg, keys_skin, init_keys, log, set_keys, selected_bouquets, channel_params_bouquet_channels, save_cfg
+from .common import cfg, keys_skin, init_keys, hints_skin, init_hints, log, set_keys, selected_bouquets, channel_params_bouquet_channels, save_cfg
+
+PARAM_HINTS = (("OK", "Kanal / audio"), ("Menu", "Sortowanie / skan"), ("Info/EPG", "Synchronizacja"))
 
 
 def _audio(result, pid):
@@ -37,7 +39,8 @@ class ChannelParamsScreen(Screen):
 		<eLabel position="20,635" size="1560,2" backgroundColor="#00505050" />
 		<widget name="info" position="20,645" size="1560,130" font="Regular;25" />
 		%s
-	</screen>""" % keys_skin(20, 850, 1560)
+		%s
+	</screen>""" % (hints_skin(20, 788, 1560, hints=PARAM_HINTS), keys_skin(20, 850, 1560))
 
 	def __init__(self, session):
 		Screen.__init__(self, session)
@@ -46,6 +49,7 @@ class ChannelParamsScreen(Screen):
 		self["list"] = MenuList([])
 		self["preview"] = Label("Podglad aktualnego kanalu. Wybierz kanal klawiszem OK.")
 		self["info"] = Label("")
+		init_hints(self, PARAM_HINTS)
 		init_keys(self)
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions", "MenuActions", "EPGSelectActions"], {
 			"ok": self.choose_audio, "green": self.refresh, "yellow": self.filter_menu,

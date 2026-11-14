@@ -71,9 +71,9 @@ common.tp_key = lambda _ref: None
 common.tp_params = lambda _ref: None
 common.save_cfg = lambda: None
 common.keys_skin = lambda *_args: ""
-common.hints_skin = lambda *_args: ""
+common.hints_skin = lambda *_args, **_kwargs: ""
 common.init_keys = lambda _screen: None
-common.init_hints = lambda _screen: None
+common.init_hints = lambda _screen, *_args: None
 common.set_keys = lambda *_args, **_kwargs: None
 common.set_key_color = lambda *_args: None
 common.KEY_COLORS = [(0, 0)] * 4
@@ -1492,6 +1492,22 @@ class SyncModeTests(unittest.TestCase):
 		data = self.read("device-test.json")
 		self.assertEqual(data["pmts_17039"]["v"], PMT_BASE64)
 		self.assertTrue(data[self.key]["v"].startswith("536|"))
+
+	def test_repair_fills_missing_audio_from_common_without_overwriting_client(self):
+		self.write("common.json", {
+			"audio_shared": {"v": "123|pol|aac", "t": 1},
+			"audio_existing": {"v": "456|eng|aac", "t": 1},
+			"pmts_123": {"v": "not-copied"},
+			"other": {"v": "not-copied"},
+		})
+		self.write("device-test.json", {"audio_existing": {"v": "789|pol|aac", "t": 2}})
+		store_module.apply_to_devices(self.results, ["device-test.json"], mode="repair")
+		data = self.read("device-test.json")
+		self.assertEqual(data["audio_shared"]["v"], "123|pol|aac")
+		self.assertGreater(data["audio_shared"]["t"], 1)
+		self.assertEqual(data["audio_existing"]["v"], "789|pol|aac")
+		self.assertNotIn("pmts_123", data)
+		self.assertNotIn("other", data)
 
 	def test_repair_does_not_guess_when_current_pmt_is_missing(self):
 		self.write("device-test.json", {self.key: {"v": "999|und|bad"}})

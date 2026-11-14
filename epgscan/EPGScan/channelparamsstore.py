@@ -190,6 +190,18 @@ def apply_to_devices(results, selected_files, overwrite=False, mode=None):
 	if not targets:
 		raise ValueError("Nie wybrano aktywnego odbiornika")
 
+	common_audio = {}
+	if mode == "repair":
+		common = _read_json(clients.COMMON).get("data", {})
+		if not isinstance(common, dict):
+			raise ValueError("Nieprawidlowa sekcja data w common.json")
+		for key, entry in common.items():
+			if key.startswith("audio_"):
+				value = _stored_value(entry)
+				if not isinstance(value, str) or not value:
+					raise ValueError("Nieprawidlowy wpis %s w common.json" % key)
+				common_audio[key] = value
+
 	stamp = int(time.time() * 1000)
 	originals = {}
 	updated = {}
@@ -203,6 +215,10 @@ def apply_to_devices(results, selected_files, overwrite=False, mode=None):
 		originals[path] = raw
 		entries = data.setdefault("data", {})
 		changed = False
+		for key, value in common_audio.items():
+			if key not in entries:
+				entries[key] = {"v": value, "t": stamp}
+				changed = True
 		for key, value in audio.items():
 			old = entries.get(key)
 			current = _current_pmt(audio_sources[key]) if mode == "repair" else None

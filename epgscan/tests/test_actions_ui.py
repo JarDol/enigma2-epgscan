@@ -159,6 +159,16 @@ class ActionsWindowTests(unittest.TestCase):
 		self.screen = menus.EPGScanActions(self.session)
 		self.screen.update_help()
 
+	def test_settings_menu_separates_storage_from_updates(self):
+		menus.settings_menu(self.session)
+		options = self.session.calls[-1][3]["list"]
+		self.assertEqual([entry[1] for entry in options[-2:]], ["storage", "updates"])
+		callback = self.session.calls[-1][4]
+		callback(options[-2])
+		self.assertEqual(self.session.calls[-1][2], ("storage",))
+		callback(options[-1])
+		self.assertEqual(self.session.calls[-1][2], ("updates",))
+
 	def press_ok(self, index):
 		self.screen["config"].index = index
 		self.screen["actions"].actions["ok"]()

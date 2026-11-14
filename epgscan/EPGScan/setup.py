@@ -84,7 +84,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 
 	TITLES = {"sat": "satelita - EPG", "params": "skan parametrow kanalow", "net": "program z internetu",
 		"sched": "harmonogram", "misc": "powiadomienia, restart, sprzatanie",
-		"updates": "aktualizacje, kopie, log, E2Stream"}
+		"storage": "kopie, log, E2Stream", "updates": "aktualizacje i informacje"}
 
 	def __init__(self, session, section="sat"):
 		Screen.__init__(self, session)
@@ -94,6 +94,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		init_keys(self)
 		self.p_pack = NoSave(ConfigSelection(choices=[("v", "OK - przygotuj teraz")]))   # paczka dla E2Stream recznie
 		self.p_upd = NoSave(ConfigSelection(choices=[("v", "OK - wybierz wydanie GitHub")]))   # reczna aktualizacja
+		self.p_about = NoSave(ConfigSelection(choices=[("v", "OK - opis zainstalowanej wersji")]))
 		self.p_cldirs = NoSave(ConfigSelection(choices=[("v", cl_dirs_text())]))   # katalogi sprzatania - wybor z listy (OK)
 		self.available_updates = {}
 		ConfigListScreen.__init__(self, [], session=session, on_change=self.changed)
@@ -224,18 +225,21 @@ class EPGScanSetup(Screen, ConfigListScreen):
 					e("  Wybudzaj z glebokiego czuwania", cfg.sched_wakeup)]
 				if cfg.sched_wakeup.value:
 					lst.append(e("  Po skanie wroc do glebokiego czuwania", cfg.sched_deep_after))
-		elif sec == "updates":
+		elif sec == "storage":
 			lst += [e("Kopia EPG po skanie", cfg.backup)]
 			if cfg.backup.value:
 				lst += [e("Katalog kopii (OK = wybierz)", cfg.backup_dir), e("Liczba zachowanych kopii", cfg.backup_keep)]
 			lst += [e("Odtwarzanie EPG po starcie, gdy puste", cfg.restore), e("Zapisuj log", cfg.log_place),
-				e("Aktualizacja automatyczna", cfg.upd_auto), e("Kanał aktualizacji automatycznych", cfg.upd_channel),
-				e("Aktualizuj teraz (wybierz wydanie GitHub)", self.p_upd),
 				e("Serwer dla aplikacji E2Stream", cfg.cli_api)]
 			if cfg.cli_api.value:
 				lst += [e("  Port", cfg.cli_port), e("  Token (puste = bez, siec lokalna)", cfg.cli_token),
 					e("  Dane dla aplikacji po skanach (EPG, ikony, referencje)", cfg.cli_pack),
 					e("  Przygotuj dane teraz", self.p_pack)]
+		elif sec == "updates":
+			lst += [e("Aktualizacja automatyczna", cfg.upd_auto),
+				e("Kanał aktualizacji automatycznych", cfg.upd_channel),
+				e("Aktualizuj teraz (wybierz wydanie GitHub)", self.p_upd),
+				e("Informacje o wtyczce", self.p_about)]
 		else:
 			lst += [e("Powiadomienie po pracy w tle", cfg.notify), e("Restart po nocnym przebiegu", cfg.rs_mode)]
 			if cfg.rs_mode.value == "need":
@@ -536,6 +540,15 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			return
 		if cur and cur[1] is self.p_upd:
 			self.upd_check()
+			return
+		if cur and cur[1] is self.p_about:
+			from .menus import EPGScanText, readme_text
+			try:
+				body = readme_text()
+			except OSError as e:
+				self.session.open(MessageBox, "Brak opisu: %s" % e, MessageBox.TYPE_ERROR)
+				return
+			self.session.open(EPGScanText, "opis wtyczki %s" % VERSION, text=body)
 			return
 		if cur and cur[1] is self.p_pack:
 			from .clientpack import build

@@ -244,7 +244,8 @@ recordings and wake-up). EPG top-ups do not trigger it.
 
 Post-scan synchronization, including scheduled scans, is configurable and disabled by default for both targets.
 Common defaults can be overwritten or missing entries added; all `device-*.json` profiles can be overwritten,
-filled, or repaired. Only successful results from the current run are synchronized. Fill never changes existing
+filled, or repaired. Repair also fills missing profile audio entries from `common.json`, including channels not read
+in the current run. Only successful scan results from the current run are synchronized. Fill never changes existing
 entries, even invalid ones; repair keeps a client PID present in the current PMT and does not guess replacements
 for unrelated references. Failures are reported and existing files are backed up before changes.
 
@@ -552,7 +553,7 @@ item ticks/unticks it, green saves, red cancels.
 ## 13. All settings
 
 **Blue → *Ustawienia***. Main groups: *Satelita – EPG*, *Channel parameters*, *Program z internetu*, *Harmonogram*,
-*Notifications, restart, cleanup* and *Updates, backups, log, E2Stream*. SatWatch has its own settings. Defaults
+*Notifications, restart, cleanup*, *Backups, log, E2Stream* and *Updates and plugin information*. SatWatch has its own settings. Defaults
 are in brackets. Every option has a description below the settings list.
 
 ### *SatWatch – transpondery*
@@ -636,7 +637,7 @@ are in brackets. Every option has a description below the settings list.
 | Wake from deep standby / return afterwards | (no / yes) |
 | Schedule | controls the main EPG run and the channel-parameter scan that follows it |
 
-### Updates, backups, log and E2Stream
+### Backups, log and E2Stream; updates
 | Setting | Description |
 |---|---|
 | EPG backup after scan, directory, number of backups | (yes, `/media/hdd/epgscan/`, 3) |
@@ -645,8 +646,7 @@ are in brackets. Every option has a description below the settings list.
 | Automatic update | (no); checks daily and installs/restarts only in safe standby |
 | Automatic update channel | stable-only (default) or beta and stable; the manual list still shows all available releases |
 | Update now | OK – lists releases with a ZIP asset, including beta and older versions; installation requires confirmation |
-| E2Stream data overwrite | no – fill only missing/invalid values; yes – replace existing values too |
-| Replace in client configuration | same behavior, limited to selected receivers |
+| Plugin information | description bundled with the installed version, available offline |
 | Server for E2Stream | (yes); receiver API, port (8770), optional token |
 | Build client data now | OK – immediately build the EPG/icons/reference package |
 

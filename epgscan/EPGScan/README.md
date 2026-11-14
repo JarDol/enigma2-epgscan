@@ -248,7 +248,9 @@ brakujące kanały są skanowane po EPG. Nadrzędne są warunki z **Harmonogramu
 
 W ustawieniach skanu można włączyć synchronizację po skanie, także z harmonogramu. Oba cele są domyślnie
 wyłączone: `common.json` można nadpisać lub uzupełnić braki, a wszystkie pliki `device-*.json` nadpisać,
-uzupełnić braki lub poprawić nieistniejące PID-y. Synchronizowane są tylko pomyślne wyniki bieżącego przebiegu.
+uzupełnić braki lub poprawić nieistniejące PID-y. W trybie naprawy brakujące wpisy audio profilu są też
+uzupełniane z `common.json`, również dla kanałów nieodczytanych w bieżącym przebiegu.
+Ze skanu synchronizowane są tylko pomyślne wyniki bieżącego przebiegu.
 Uzupełnianie braków nie zmienia żadnych istniejących wpisów, nawet wadliwych; naprawa zachowuje poprawny PID
 klienta według aktualnej PMT i nie zgaduje zamienników dla innych referencji. Błędy są widoczne w raporcie,
 a przed zmianą istniejącego pliku tworzona jest kopia.
@@ -574,7 +576,7 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 ## 13. Wszystkie ustawienia
 
 **Niebieski → Ustawienia**. Główne grupy: *Satelita – EPG*, *Skan parametrów kanałów*, *Program z internetu*,
-*Harmonogram*, *Powiadomienia, restart, sprzątanie* i *Aktualizacje, kopie, log, E2Stream*. SatWatch ma osobne
+*Harmonogram*, *Powiadomienia, restart, sprzątanie*, *Kopie, log, E2Stream* i *Aktualizacje i informacje o wtyczce*. SatWatch ma osobne
 ustawienia. Wartości domyślne w nawiasach.
 
 ### SatWatch – transpondery
@@ -660,7 +662,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Wybudzaj z głębokiego czuwania / wróć po skanie | (nie / tak) |
 | Harmonogram | nadrzędny dla nocnego skanu EPG i uruchamianego po nim skanu parametrów |
 
-### Aktualizacje, kopie, log, E2Stream
+### Kopie, log, E2Stream oraz aktualizacje
 | Ustawienie | Opis |
 |---|---|
 | Kopia EPG po skanie, katalog, liczba kopii | (tak, `/media/hdd/epgscan/`, 3) |
@@ -671,8 +673,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Aktualizuj teraz | OK – lista dostępnych wydań z ZIP-em, także beta i starszych; instalacja wymaga potwierdzenia |
 | Dane dla aplikacji po skanach | (tak) paczka EPG (wszystkie bukiety TV), ikon i zamian referencji po pracy z harmonogramu oraz po cyklicznym skanie satelity; *Przygotuj dane teraz* (OK) – od razu |
 | Serwer dla aplikacji E2Stream | (tak) API dla klientów streamingu w sieci lokalnej: bukiety, kanały z PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników; port (8770), token (puste = bez) |
-| Dane domyślne nadpisuj | nie – tylko brakujące/błędne; tak – zastąp również istniejące wartości |
-| Zamieniaj w konfiguracji klientów | tak samo, ale tylko dla wybranych odbiorników |
+| Informacje o wtyczce | opis dołączony do zainstalowanej wersji, dostępny bez internetu |
 
 ### Powiadomienia, restart, sprzątanie
 | Ustawienie | Opis |

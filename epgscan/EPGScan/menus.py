@@ -310,7 +310,8 @@ SETTINGS = (
 	("net", "Program z internetu - dekoder, serwer, zrodla XMLTV, kolejnosc"),
 	("sched", "Harmonogram"),
 	("misc", "Powiadomienia, restart, sprzatanie dysku"),
-	("updates", "Aktualizacje, kopie, log, serwer E2Stream"),
+	("storage", "Kopie, log, serwer E2Stream"),
+	("updates", "Aktualizacje i informacje o wtyczce"),
 )
 
 
