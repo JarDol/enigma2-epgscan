@@ -303,7 +303,7 @@ internal fun syncAudioChoices(config: DesktopConfig, choices: AudioChoices, appV
         }
         val info = org.json.JSONObject()
             .put("id", deviceId)
-            .put("name", System.getenv("COMPUTERNAME") ?: deviceId)
+            .put("name", config.deviceName.ifBlank { System.getenv("COMPUTERNAME") ?: deviceId })
             .put("model", "Windows ${System.getProperty("os.version").orEmpty()}".trim())
             .put("app", "E2Stream Windows $appVersion")
             .put("updated", System.currentTimeMillis())

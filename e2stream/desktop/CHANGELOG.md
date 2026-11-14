@@ -3,6 +3,12 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.3.4
+
+- Dekoder Enigma2 — brakujące opcje z Androida: dodatkowa podsieć IPv4 do wyszukiwania, „Blokuj zmiany przy braku komunikacji z dekoderem” (okno do powrotu dekodera), sekcja „Synchronizacja z dekoderem”: synchronizuj ustawienia i dane kanałów, nazwa tego komputera, synchronizuj teraz, przenieś ustawienia z innego odbiornika
+- Usunięta pozycja „Bukiet” z ustawień dekodera (to samo co ◀ ▶ na liście kanałów)
+- „Śledzenie pilota w logu” — zwykły przełącznik (wcześniej tylko zmienną środowiskową i na niewidoczną konsolę)
+
 ## 0.3.3
 
 - Brak obrazu (był sam dźwięk): klatki z VLC w formacie RGBA (w RV32 kanał przezroczystości był pusty i obraz rysował się jako przezroczysty). W logu „obraz: format klatek …” i „obraz: pierwsza klatka …”

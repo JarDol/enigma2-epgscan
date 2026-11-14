@@ -389,6 +389,9 @@ fun main() {
                 }
             }
 
+            LaunchedEffect(config.remoteTrace) {
+                remoteDiagnostics.enabled = config.remoteTrace || System.getenv("E2STREAM_HID_TRACE") == "1"
+            }
             LaunchedEffect(config.logDir) {
                 AppLog.setDirectory(AppLog.dirFor(config))
             }
@@ -830,6 +833,10 @@ fun main() {
                     if (manual) status = "Synchronizacja ścieżek wymaga połączenia przez wtyczkę EPG Scan."
                     return
                 }
+                if (!config.channelSync) {
+                    if (manual) status = "Synchronizacja z dekoderem jest wyłączona (Ustawienia → Dekoder Enigma2)."
+                    return
+                }
                 if (audioSyncBusy || !config.backupDecision) return
                 audioSyncBusy = true
                 val current = config
@@ -1018,6 +1025,55 @@ fun main() {
                     }
                 }
             }
+            /** Ustawienia z profilu innego odbiornika (Android albo inny komputer), jak w Androidzie. */
+            fun importFromProfile() {
+                val current = config
+                status = "Wczytuję profile odbiorników z dekodera…"
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            parseDeviceProfiles(DecoderClient(current).syncDevices())
+                                .filter { it.backup != null && it.file != "device-${syncDeviceId()}.json" }
+                        }
+                    }
+                    result.onFailure { status = "Nie udało się pobrać profili (wymaga wtyczki EPG Scan): ${it.message}" }
+                        .onSuccess { profiles ->
+                            if (profiles.isEmpty()) {
+                                status = "Na dekoderze nie ma profili innych odbiorników."
+                                return@onSuccess
+                            }
+                            val stamp = DateTimeFormatter.ofPattern("dd.MM HH:mm")
+                            showChoice(
+                                SettingsChoice(
+                                    "Przenieś ustawienia z odbiornika",
+                                    profiles.map { profile ->
+                                        val kind = if (profile.isWindows) "Windows" else "Android"
+                                        val time = Instant.ofEpochMilli(profile.updated).atZone(java.time.ZoneId.systemDefault()).format(stamp)
+                                        "${profile.name.ifBlank { profile.model }}  •  $kind, $time"
+                                    },
+                                    0,
+                                    body = "Ustawienia z wybranego profilu zastąpią bieżące (adres dekodera zostaje). Z Androida przenoszone są " +
+                                        "ustawienia wspólne.",
+                                ) { index ->
+                                    val profile = profiles[index]
+                                    val backup = profile.backup
+                                    if (backup != null) {
+                                        val restored = SettingsBackup.restore(config, backup)
+                                        universalBindings = UniversalRemoteMap.parse(restored.config.universalRemoteBindings)
+                                        if (restored.config.windowMode != windowMode) setWindowMode(restored.config.windowMode)
+                                        AppLog.i("kopia ustawień: przeniesiono ${restored.count} ustawień z ${profile.name}")
+                                        saveConfig(
+                                            restored.config.copy(backupDecision = true),
+                                            "Przeniesiono ${restored.count} ustawień z „${profile.name.ifBlank { profile.model }}”.",
+                                        )
+                                        connect(autoStart = false)
+                                    }
+                                },
+                            )
+                        }
+                }
+            }
+
             LaunchedEffect(config.host, config.pluginPort, config.backupDecision) {
                 if (config.host.isBlank() || config.backupDecision) return@LaunchedEffect
                 delay(500)
@@ -1352,6 +1408,28 @@ fun main() {
             }
 
             var quickPick by remember { mutableStateOf<QuickPick?>(null) }
+            // Blokada przy braku dekodera (ustawienie): okno do powrotu komunikacji.
+            LaunchedEffect(decoderDown, config.blockOnDisconnect) {
+                if (!decoderDown) {
+                    if (quickPick?.tag == "brak-dekodera") quickPick = null
+                    return@LaunchedEffect
+                }
+                if (!config.blockOnDisconnect) return@LaunchedEffect
+                while (decoderDown) {
+                    if (quickPick == null && !navigator.isVisible) {
+                        quickPick = QuickPick(
+                            "Brak komunikacji z dekoderem",
+                            listOf("Czekaj na dekoder", "Ustawienia dekodera"),
+                            0,
+                            tag = "brak-dekodera",
+                            body = "Dekoder ${config.host} nie odpowiada. Aplikacja sprawdza go co 3 s i wznowi odtwarzanie, gdy wróci. " +
+                                "Do tego czasu zmiany kanału są wstrzymane.",
+                            timeoutSec = 0,
+                        ) { if (it == 1) openSettings(SettingsScreen.DECODER) }
+                    }
+                    delay(1000)
+                }
+            }
             fun pickVideoScale() {
                 val modes = VideoScaleMode.entries
                 quickPick = QuickPick("Obraz — skalowanie", modes.map { it.label }, modes.indexOf(config.videoScaleMode)) {
@@ -2324,7 +2402,7 @@ fun main() {
                     status = "Szukam dekoderów w sieci lokalnej (mDNS i adresy sieci)…"
                     val current = config
                     val found = try {
-                        withContext(Dispatchers.IO) { ReceiverDiscovery.scan(current.httpPort, current.pluginPort) }
+                        withContext(Dispatchers.IO) { ReceiverDiscovery.scan(current.httpPort, current.pluginPort, current.discoverySubnet) }
                     } finally {
                         busy = false
                     }
@@ -2465,6 +2543,23 @@ fun main() {
                     SettingItem.Action("Hasło OpenWebif", if (config.password.isEmpty()) "brak" else "••••••") {
                         editText("Hasło OpenWebif", config.password, secret = true) { config.copy(password = it) }
                     },
+                    SettingItem.Action("Dodatkowa podsieć IPv4", config.discoverySubnet.ifBlank { "brak — np. 192.168.2.0/24 (wyszukiwanie dekoderów)" }) {
+                        navigator.openEditor(
+                            SettingsEditor("Dodatkowa podsieć IPv4", config.discoverySubnet, "np. 192.168.2.0/24 (od /24 do /30), puste = brak") { input ->
+                                val subnet = input.trim()
+                                if (subnet.isNotEmpty() && ReceiverDiscovery.subnetHosts(subnet) == null) "Zapis a.b.c.d/24 … /30, np. 192.168.2.0/24."
+                                else {
+                                    saveConfig(config.copy(discoverySubnet = subnet), "Dodatkowa podsieć: ${subnet.ifBlank { "brak" }}.")
+                                    null
+                                }
+                            },
+                        )
+                    },
+                    SettingItem.Toggle(
+                        "Blokuj zmiany przy braku komunikacji z dekoderem",
+                        config.blockOnDisconnect,
+                        "okno z ponawianiem połączenia zamiast samego komunikatu",
+                    ) { saveConfig(config.copy(blockOnDisconnect = it)) },
                     SettingItem.Header("Wtyczka EPG Scan na dekoderze"),
                     SettingItem.Action("Stan wtyczki", pluginStatus) { checkPlugin() },
                     SettingItem.Action("Port wtyczki", config.pluginPort.toString()) {
@@ -2487,6 +2582,35 @@ fun main() {
                             config.copy(ftpDir = it.trim().ifEmpty { DesktopConfig.DEFAULT_FTP_DIR })
                         }
                     },
+                    SettingItem.Header("Synchronizacja z dekoderem"),
+                    SettingItem.Toggle(
+                        "Synchronizuj ustawienia i dane kanałów",
+                        config.channelSync,
+                        "przez wtyczkę EPG Scan: ścieżki dźwięku kanałów i kopia ustawień tego komputera (jak w Androidzie)",
+                    ) { enabled ->
+                        saveConfig(config.copy(channelSync = enabled))
+                        if (enabled) syncAudio(manual = true)
+                    },
+                    SettingItem.Action(
+                        "Nazwa tego komputera (znacznik ${syncDeviceId()})",
+                        config.deviceName.ifBlank { System.getenv("COMPUTERNAME") ?: syncDeviceId() },
+                    ) {
+                        editText("Nazwa tego komputera", config.deviceName, "np. Salon – PC; puste = nazwa komputera") {
+                            config.copy(deviceName = it.trim())
+                        }
+                    },
+                    SettingItem.Action(
+                        "Synchronizuj teraz",
+                        when {
+                            audioSyncBusy -> "trwa…"
+                            !config.channelSync -> "wyłączone"
+                            catalog?.usesPlugin != true -> "wymaga wtyczki EPG Scan"
+                            else -> audioSyncStatus.ifBlank { "jeszcze nie synchronizowano" }
+                        },
+                    ) { syncAudio(manual = true) },
+                    SettingItem.Action("Przenieś ustawienia z innego odbiornika", "profile Androida i innych komputerów na dekoderze") {
+                        importFromProfile()
+                    },
                     SettingItem.Header("Bukiety i kanały"),
                     SettingItem.Action(
                         "Połącz i pobierz bukiety",
@@ -2496,16 +2620,6 @@ fun main() {
                             else -> "bukiety: ${catalog?.bouquets?.size} (${if (catalog?.usesPlugin == true) "EPG Scan" else "OpenWebif"})"
                         },
                     ) { if (!busy) connect(autoStart = false) },
-                    SettingItem.Action(
-                        "Bukiet",
-                        selectedBouquet?.let { "${it.name} • kanały: ${channels.size}" } ?: "najpierw połącz z dekoderem",
-                    ) {
-                        val visible = visibleBouquets()
-                        if (visible.isEmpty()) status = "Najpierw połącz się z dekoderem."
-                        else choose("Bukiet", visible.map { it.name }, visible.indexOfFirst { it.ref == selectedBouquet?.ref }) {
-                            selectBouquet(visible[it])
-                        }
-                    },
                 )
                 SettingsScreen.PLAYBACK -> listOf(
                     SettingItem.Header("VLC"),
@@ -3110,11 +3224,11 @@ fun main() {
                     },
                     SettingItem.Action("Zrzuty TS przy zawieszeniu", "nie dotyczy — w Windows obraz odtwarza VLC (bez bufora TS aplikacji)") {},
                     SettingItem.Header("Pilot"),
-                    SettingItem.Action(
-                        "Śledzenie pilota",
-                        if (remoteDiagnostics.enabled) "włączone (E2STREAM_HID_TRACE=1, wyjście na konsolę)"
-                        else "wyłączone — uruchom z E2STREAM_HID_TRACE=1",
-                    ) {},
+                    SettingItem.Toggle(
+                        "Śledzenie pilota w logu",
+                        config.remoteTrace,
+                        "każdy odebrany klawisz (źródło, kod, przypisanie) trafia do logu — do diagnozy pilota; zwykle wyłączone",
+                    ) { saveConfig(config.copy(remoteTrace = it)) },
                     SettingItem.Action("Test pilota", "podgląd odbieranych klawiszy") {
                         testEvents = emptyList()
                         navigator.push(SettingsScreen.REMOTE_TEST)

@@ -40,7 +40,7 @@ internal object SettingsBackup {
     /** Ustawienia zależne od komputera albo stanu — nie trafiają do kopii ani z niej nie wracają. */
     private val excluded = setOf(
         "host", "lastBouquetRef", "lastChannelRef", "tsDir", "piconDir", "logDir", "lastPiconFetchDay",
-        "lastEpgFetch", "epgPackIdentity", "epgPackCheckAt", "backupDecision", "recLocalDir", "lastUpdateCheck",
+        "lastEpgFetch", "epgPackIdentity", "epgPackCheckAt", "backupDecision", "recLocalDir", "lastUpdateCheck", "deviceName",
     )
 
     // nazwa w Androidzie → nazwa w Windows
@@ -59,12 +59,13 @@ internal object SettingsBackup {
         "ftpUser" to "ftpUser", "ftpPass" to "ftpPass", "ftpDir" to "ftpDir", "audioLang" to "audioLang",
         "pin" to "pin", "epgHour" to "epgHour", "epgUpdateMode" to "epgUpdateMode", "appLanguage" to "appLanguage",
         "startBouquet" to "startBouquetRef", "startChannel" to "startChannelRef", "startChannelName" to "startChannelName",
+        "discoverySubnet" to "discoverySubnet",
     )
     private val bools = linkedMapOf(
         "resumeLast" to "resumeLast", "invertUpDown" to "invertUpDown", "tsBackLive" to "tsBackLive",
         "epgDaily" to "epgDaily", "picons" to "picons", "missingPiconLogo" to "missingPiconLogo",
         "showStats" to "showStats", "logFtp" to "logFtp", "hideInfoDialogs" to "hideInfoDialogs",
-        "watchdog" to "watchdog",
+        "watchdog" to "watchdog", "channelSync" to "channelSync", "blockOnDisconnect" to "blockOnDisconnect",
     )
 
     fun backup(config: DesktopConfig): JSONObject {

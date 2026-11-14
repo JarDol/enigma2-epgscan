@@ -117,6 +117,16 @@ data class DesktopConfig(
     val recMaxH: Int = 3,
     /** Gdy E2Stream jest w tle, dowolny klawisz pilota HID / IR przywołuje okno (pierwsze naciśnięcie). */
     val activateAnyRemoteKey: Boolean = true,
+    /** Synchronizacja ustawień i danych kanałów z dekoderem (wtyczka EPG Scan), jak w Androidzie. */
+    val channelSync: Boolean = true,
+    /** Nazwa tego komputera w profilach na dekoderze (pusta = nazwa komputera). */
+    val deviceName: String = "",
+    /** Dodatkowa podsieć do wyszukiwania dekoderów, np. 192.168.2.0/24. */
+    val discoverySubnet: String = "",
+    /** Przy braku komunikacji z dekoderem — okno blokujące zamiast samego komunikatu. */
+    val blockOnDisconnect: Boolean = false,
+    /** Śledzenie klawiszy pilota w logu. */
+    val remoteTrace: Boolean = false,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -212,6 +222,11 @@ data class DesktopConfig(
             setProperty("lastUpdateCheck", lastUpdateCheck.toString())
             setProperty("recMaxH", recMaxH.toString())
             setProperty("activateAnyRemoteKey", activateAnyRemoteKey.toString())
+            setProperty("channelSync", channelSync.toString())
+            setProperty("deviceName", deviceName)
+            setProperty("discoverySubnet", discoverySubnet)
+            setProperty("blockOnDisconnect", blockOnDisconnect.toString())
+            setProperty("remoteTrace", remoteTrace.toString())
     }
 
     companion object {
@@ -357,6 +372,11 @@ data class DesktopConfig(
                 lastUpdateCheck = properties.getProperty("lastUpdateCheck")?.toLongOrNull() ?: 0,
                 recMaxH = int("recMaxH", defaults.recMaxH, 1..6),
                 activateAnyRemoteKey = bool("activateAnyRemoteKey", defaults.activateAnyRemoteKey),
+                channelSync = bool("channelSync", defaults.channelSync),
+                deviceName = string("deviceName", ""),
+                discoverySubnet = string("discoverySubnet", ""),
+                blockOnDisconnect = bool("blockOnDisconnect", defaults.blockOnDisconnect),
+                remoteTrace = bool("remoteTrace", defaults.remoteTrace),
             )
         }
 

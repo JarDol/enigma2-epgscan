@@ -41,8 +41,25 @@ object ReceiverDiscovery {
     }
 
     /** mDNS (wtyczka EPG Scan, także poza siecią /24) i przeszukanie sieci /24 lokalnych interfejsów. */
-    fun scan(port: Int, pluginPort: Int): List<FoundReceiver> {
-        val ips = localPrefixes().flatMap { prefix -> (1..254).map { prefix + it } }
+    /** Adresy dodatkowej podsieci „a.b.c.d/24…30” (bez adresu sieci i rozgłoszeniowego); null — błędny zapis. */
+    fun subnetHosts(value: String): List<String>? {
+        val parts = value.trim().split('/')
+        if (parts.size != 2) return null
+        val octets = parts[0].split('.')
+        if (octets.size != 4 || octets.any { !it.matches(Regex("[0-9]{1,3}")) }) return null
+        val numbers = octets.map { it.toInt() }
+        if (numbers.any { it !in 0..255 } || numbers[0] == 0 || numbers[0] == 127 || numbers[0] >= 224) return null
+        val prefix = parts[1].toIntOrNull() ?: return null
+        if (prefix !in 24..30) return null
+        val address = numbers.fold(0L) { acc, part -> (acc shl 8) or part.toLong() }
+        val mask = (0xffffffffL shl (32 - prefix)) and 0xffffffffL
+        val network = address and mask
+        val broadcast = network or (0xffffffffL xor mask)
+        return (network + 1 until broadcast).map { ip -> listOf(24, 16, 8, 0).joinToString(".") { ((ip shr it) and 255).toString() } }
+    }
+
+    fun scan(port: Int, pluginPort: Int, extraSubnet: String = ""): List<FoundReceiver> {
+        val ips = (localPrefixes().flatMap { prefix -> (1..254).map { prefix + it } } + subnetHosts(extraSubnet).orEmpty()).distinct()
         val found = Collections.synchronizedList(mutableListOf<FoundReceiver>())
         val pool = Executors.newFixedThreadPool(48)
         val mdns = pool.submit<List<MdnsDiscovery.Service>> { runCatching { MdnsDiscovery.find() }.getOrDefault(emptyList()) }
