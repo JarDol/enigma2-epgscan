@@ -1105,7 +1105,8 @@ class ScanEngine(object):
 			log("Zapis EPG nieudany: %s" % e)
 		el = int(self.t_end - self.t_start) if self.t_start else 0
 		log("Koniec, czas calkowity %d:%02d" % (el // 60, el % 60))
-		self.popup("EPG Scan: " + self.summary)
+		from .i18n import display_scan_summary
+		self.popup("EPG Scan: " + display_scan_summary(self.summary))
 		self.notify()
 		self.bk_timer.start(5000, True)   # chwila na zapis pliku EPG, potem kopia i ew. gleboki sen
 

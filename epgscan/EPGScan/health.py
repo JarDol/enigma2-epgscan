@@ -7,6 +7,7 @@ import time
 from enigma import eTimer
 
 from .common import cfg, log, save_cfg
+from .i18n import _
 
 _rss_base = [0]
 
@@ -145,7 +146,7 @@ class NightNotice(object):
 		try:
 			from Tools import Notifications
 			from Screens.MessageBox import MessageBox
-			Notifications.AddPopup("EPG Scan - podsumowanie nocy:\n" + text.replace(" | ", "\n"), MessageBox.TYPE_INFO, 30,
+			Notifications.AddPopup(_("EPG Scan - podsumowanie nocy:\n") + text.replace(" | ", "\n"), MessageBox.TYPE_INFO, 30,
 				"EPGScanNight")
 		except Exception:
 			pass
@@ -204,8 +205,8 @@ def tuner_hung(engine, t):
 				log("Restart Enigma2 na zyczenie uzytkownika (tuner %s zawieszony)" % t)
 				engine.session.open(Screens.Standby.TryQuitMainloop, 3)
 		Notifications.AddNotificationWithCallback(answer, MessageBox,
-			"EPG Scan: tuner %s nie stroi kilku transponderow z rzedu - prawdopodobnie zawieszony.\n"
-			"Zwykle pomaga restart Enigma2. Zrestartowac teraz?\n(skan trzeba bedzie potem uruchomic ponownie)" % t,
+			_("EPG Scan: tuner %s nie stroi kilku transponderow z rzedu - prawdopodobnie zawieszony.\n"
+			"Zwykle pomaga restart Enigma2. Zrestartowac teraz?\n(skan trzeba bedzie potem uruchomic ponownie)") % t,
 			MessageBox.TYPE_YESNO, timeout=60, default=False)
 	except Exception as e:
 		log("Tuner %s: %s" % (t, e))

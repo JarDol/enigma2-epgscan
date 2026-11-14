@@ -1,0 +1,4071 @@
+# English translations for EPG Scan.
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\nLanguage: en\n"
+
+msgid "%d/%d transponderow, %d bledow%s, czas %d:%02d"
+msgstr "%d/%d transponders, %d errors%s, time %d:%02d"
+
+msgid ", %d pominietych"
+msgstr ", %d skipped"
+
+msgid "doczytywanie: %d/%d transponderow, zasieg wydluzony na %d (maks. +%.1f h), czas %d:%02d"
+msgstr "top-up: %d/%d transponders, coverage extended on %d (max. +%.1f h), time %d:%02d"
+
+msgid "import XMLTV"
+msgstr "XMLTV import"
+
+msgid "Skan parametrow podczas EPG nieudany: "
+msgstr "Parameter scan during EPG failed: "
+
+msgid "Skan parametrow nieudany: "
+msgstr "Parameter scan failed: "
+
+msgid "Zapis czesciowych wynikow PAT/PMT nieudany: "
+msgstr "Saving partial PAT/PMT results failed: "
+
+msgid "Kopia EPG: "
+msgstr "EPG backup: "
+
+msgid "Import XMLTV: "
+msgstr "XMLTV import: "
+
+msgid "Skan parametrow przerwany"
+msgstr "Parameter scan stopped"
+
+msgid "Skan przerwany"
+msgstr "Scan stopped"
+
+msgid "SatWatch przerwany"
+msgstr "SatWatch stopped"
+
+msgid "Czyszczenie pojedynczych kanalow nieobslugiwane - skan scala dane"
+msgstr "Clearing individual channels is unsupported; the scan merges data"
+
+msgid "Kopia EPG nieudana - szczegoly w logu"
+msgstr "EPG backup failed; see the log"
+
+msgid "\n\nBledy pobierania (%s, %d prob):\n%s"
+msgstr "\n\nDownload errors (%s, %d attempts):\n%s"
+
+msgid "\n\nDekoder wysle teraz na serwer swoje ustawienia i porowna dopasowanie kanalow."
+msgstr "\n\nThe receiver will send its settings to the server and compare channel mappings."
+
+msgid "\n\nDotychczasowe EPG zostaje - zabraknie tylko odswiezenia pozostalych transponderow."
+msgstr "\n\nExisting EPG will remain; only the remaining transponders will not be refreshed."
+
+msgid "\n\nOK: podmien na ten kanal   |   zielony: podglad w okienku obok (po wyjsciu wraca poprzedni kanal)"
+msgstr "\n\nOK: replace with this channel   |   green: preview in the adjacent window (the previous channel returns on exit)"
+
+msgid "\n\nOstatnie pelne odswiezenie: %s"
+msgstr "\n\nLast complete refresh: %s"
+
+msgid "\n\nPo zakonczeniu pojawi sie powiadomienie (okno mozna zamknac)."
+msgstr "\n\nA notification will appear when finished (you can close this window)."
+
+msgid "\n\nPobieranie programu na dekoderze tez zostanie przerwane (plik programu zostaje poprzedni)."
+msgstr "\n\nThe receiver download will also stop; the previous programme file will remain."
+
+msgid "\n\nTo doczytywanie brakow - dotychczasowe EPG zostaje."
+msgstr "\n\nThis is a top-up scan; existing EPG data will remain."
+
+msgid "\n\nUWAGA: kanaly ze zeskanowanych juz transponderow maja nowe EPG, ale reszta pozostanie bez odswiezenia."
+msgstr "\n\nWARNING: Channels on scanned transponders have new EPG, but the rest will not be refreshed."
+
+msgid "\n\nUWAGA: na poczatku skanu EPG zostalo wyczyszczone. Po przerwaniu EPG bedzie niepelne - tylko to, co zebrano do tej pory."
+msgstr "\n\nWARNING: EPG was cleared at the start. If stopped, only data collected so far will be available."
+
+msgid "\n(ustawienie: Roznice w dopasowaniu)"
+msgstr "\n(setting: Mapping differences)"
+
+msgid "\nInfo/EPG: raport zrodla"
+msgstr "\nInfo/EPG: source report"
+
+msgid "\nNajnowsza kopia EPG: %s (zolty przycisk = odtworzenie)"
+msgstr "\nLatest EPG backup: %s (yellow button = restore)"
+
+msgid "\nNie przeniesione (%d):\n%s"
+msgstr "\nNot transferred (%d):\n%s"
+
+msgid "\nPominieto istniejace wartosci z konfliktem: %s"
+msgstr "\nSkipped conflicting existing values: %s"
+
+msgid "\nPominieto wartosci z powodu konfliktu: %s"
+msgstr "\nValues skipped because of conflicts: %s"
+
+msgid "\nPotem import XMLTV%s."
+msgstr "\nThen XMLTV import%s."
+
+msgid "\nSerwer epgpl starszy niz 0.13.3 - dopasowuje wszystkie bukiety (zaktualizuj serwer)"
+msgstr "\nepgpl server older than 0.13.3 - maps all bouquets (update server)"
+
+msgid "\nSzczegoly bledow: %sbledy.txt"
+msgstr "\nError details: %sbledy.txt"
+
+msgid "\nTo wydanie testowe."
+msgstr "\nThis is a test release."
+
+msgid "\nUwaga: to starsza wersja."
+msgstr "\nWarning: this is an older version."
+
+msgid "             (mniejszy niz AUTO - Enigma bierze B na koncu). Przy Unicable kazdy tuner ma wlasny SCR."
+msgstr "             (lower than AUTO - Enigma uses B last). With Unicable each tuner has its own SCR."
+
+msgid "     \"%s\" poz. %d: %s"
+msgstr "     \"%s\" pos. %d: %s"
+
+msgid "    Godzina"
+msgstr "    Time"
+
+msgid "   (nazwa i SID nie pasuja - kanal z tego samego TP / nadawcy)"
+msgstr "   (name and SID do not match - channel from the same transponder / provider)"
+
+msgid "   (pobrane teraz, tylko podglad)"
+msgstr "   (downloaded now, preview only)"
+
+msgid "   (poza wspolna mapa)"
+msgstr "   (outside common map)"
+
+msgid "   (program kandydatow z nocy, tylko podglad)"
+msgstr "   (overnight candidate guide, preview only)"
+
+msgid "   (radio)"
+msgstr "   (radio)"
+
+msgid "   (z serwera epgpl, tylko podglad)"
+msgstr "   (from epgpl server, preview only)"
+
+msgid "   Pobieranie programu..."
+msgstr "   Download guide..."
+
+msgid "   Ty masz, automat nie: %s"
+msgstr "   you have, automatic result does not: %s"
+
+msgid "   Wybierz bukiety..."
+msgstr "   Select bouquets..."
+
+msgid "   [obecne]"
+msgstr "   [current]"
+
+msgid "   [podglad]"
+msgstr "   [preview]"
+
+msgid "   [propozycja]"
+msgstr "   [suggested]"
+
+msgid "   [w programie]"
+msgstr "   [in guide]"
+
+msgid "   automat ma, Ty nie:  %s%s"
+msgstr "   automatic result has, you do not:  %s%s"
+
+msgid "  ! %d TP niezeskanowanych: %s"
+msgstr "  ! %d transponders not scanned: %s"
+
+msgid "  %s  %s -> %s   w: %s"
+msgstr "  %s  %s -> %s   in: %s"
+
+msgid "  %s  ref %s   w: %s"
+msgstr "  %s  ref %s   in: %s"
+
+msgid "  %s -> %s   w: %s"
+msgstr "  %s -> %s   in: %s"
+
+msgid "  (PODMIANA)"
+msgstr "  (REPLACEMENT)"
+
+msgid "  (dawniej %s)"
+msgstr "  (previously %s)"
+
+msgid "  (kanaly z bukietow wsrod nich trafiaja do podmiany / decyzji jak zgubione)"
+msgstr "  (bouquet channels among them are considered for replacement / decision like lost channels)"
+
+msgid "  (mapa dekodera nieuzywana - Ustawienia -> Program z internetu)"
+msgstr "  (receiver map not used - Settings -> Online programme data)"
+
+msgid "  (ostatnio blad pobierania)"
+msgstr "  (last download failed)"
+
+msgid "  (pakiet zrodel EPG Import)"
+msgstr "  (EPG Import sources package)"
+
+msgid "  (roznice moga wynikac tez z Twoich wlasnych zmian - przestawien, dodanych kanalow)"
+msgstr "  (differences may also result from your own changes - rearranged or added channels)"
+
+msgid "  (ustawienia po zakonczeniu pracy)"
+msgstr "  (settings available after completion)"
+
+msgid "  (uzupelnianie z XMLTV wylaczone)"
+msgstr "  (XMLTV filling disabled)"
+
+msgid "  (uzywana przez dekoder)"
+msgstr "  (used by the receiver)"
+
+msgid "  (w lamedb: nowych serwisow %d, usunietych %d)"
+msgstr "  (in lamedb: new services %d, removed %d)"
+
+msgid "  (wybrany %s niedostępny!)"
+msgstr "  (selected %s unavailable!)"
+
+msgid "  (zakres: %s - wybor nie jest teraz uzywany)"
+msgstr "  (scope: %s - selection is not currently used)"
+
+msgid "  - od 2 h wstecz do 4 h naprzod"
+msgstr "  - from 2 h ago to 4 h ahead"
+
+msgid "  -> brak kandydata"
+msgstr "  -> no candidate"
+
+msgid "  ... i %d kandydatow wiecej"
+msgstr "  ... and %d more candidates"
+
+msgid "  ... i %d wiecej"
+msgstr "  ... and %d more"
+
+msgid "  ? %s - znaleziono %d z %d znanych serwisow, nic nie usunieto"
+msgstr "  ? %s - found %d of %d known services, nothing removed"
+
+msgid "  Audycja zastepcza w przerwach"
+msgstr "  Placeholder programme in gaps"
+
+msgid "  Co ile godzin"
+msgstr "  Every how many hours"
+
+msgid "  Co ile minut"
+msgstr "  Every how many minutes"
+
+msgid "  Co uzupelniac"
+msgstr "  What to fill"
+
+msgid "  Codziennie program kandydatow (okno wyboru stacji)"
+msgstr "  Daily listings for candidates (station selection)"
+
+msgid "  Czekaj, gdy trwa nagrywanie"
+msgstr "  Wait while recording"
+
+msgid "  Dane dla aplikacji po skanach (EPG, ikony, referencje)"
+msgstr "  App data after scans (EPG, icons, references)"
+
+msgid "  Doczytaj, gdy EPG konczy sie za mniej niz"
+msgstr "  Top up when EPG ends within"
+
+msgid "  Dodatkowo raz dziennie o stalej godzinie"
+msgstr "  Also once daily at a fixed time"
+
+msgid "  EPG Scan:  Rezerwa wolnych tunerow = 0, harmonogram w nocy, 'Czekaj, gdy trwa nagrywanie' wlaczone."
+msgstr "  EPG Scan:  Free tuner reserve = 0, schedule at night, 'Wait during recording' enabled."
+
+msgid "  EPG Scan:  Rezerwa wolnych tunerow = 1 (przy 2 tunerach skan EPG zajmie najwyzej 1)."
+msgstr "  EPG Scan:  Free tuner reserve = 1 (with 2 tuners, EPG scanning uses at most 1)."
+
+msgid "  EPG Scan:  Rezerwa wolnych tunerow = 1."
+msgstr "  EPG Scan:  Free tuner reserve = 1."
+
+msgid "  Gdy wolnej pamieci mniej niz [MB]"
+msgstr "  When free memory is below [MB]"
+
+msgid "  Godzina"
+msgstr "  Time"
+
+msgid "  Jezyki, kolejnosc (np. pol,eng)"
+msgstr "  Languages, in order (e.g. pol,eng)"
+
+msgid "  Kanaly z bukietow (OK - lista)"
+msgstr "  Channels from bouquets (OK - list)"
+
+msgid "  Katalogi (OK - lista)"
+msgstr "  Directories (OK - list)"
+
+msgid "  Kiedy"
+msgstr "  When"
+
+msgid "  Kiedy uruchamiac"
+msgstr "  When to run"
+
+msgid "  Kolejnosc serwisow (pierwszenstwo stacji)"
+msgstr "  Site order (station priority)"
+
+msgid "  Kolejnosc zrodel (po satelicie)"
+msgstr "  Source order (after satellite)"
+
+msgid "  Maks. polaczen lacznie"
+msgstr "  Maximum total connections"
+
+msgid "  Mapa kanalow dla dekodera"
+msgstr "  Receiver channel map"
+
+msgid "  Pełna porada: Kanały -> SatWatch -> Konfiguracja tunerów."
+msgstr "  Full advice: Channels -> SatWatch -> Tuner configuration."
+
+msgid "  Po skanie wroc do glebokiego czuwania"
+msgstr "  Return to deep standby after scan"
+
+msgid "  Pobieranie w jednym miejscu (kto pierwszy)"
+msgstr "  Download in one place (first to start)"
+
+msgid "  Polaczen: WP Pilot"
+msgstr "  Connections: WP Pilot"
+
+msgid "  Polaczen: naziemna"
+msgstr "  Connections: naziemna"
+
+msgid "  Polaczen: onet"
+msgstr "  Connections: onet"
+
+msgid "  Polaczen: teleman"
+msgstr "  Connections: teleman"
+
+msgid "  Port"
+msgstr "  Port"
+
+msgid "  Profilaktycznie co [dni]"
+msgstr "  Preventively every [days]"
+
+msgid "  Przerwa miedzy stronami"
+msgstr "  Delay between pages"
+
+msgid "  Przygotuj dane teraz"
+msgstr "  Prepare data now"
+
+msgid "  Roznice w dopasowaniu (dekoder / serwer)"
+msgstr "  Matching differences (receiver / server)"
+
+msgid "  SatWatch:  Rezerwa wolnych tunerow = 0, preferowany tuner: automatycznie."
+msgstr "  SatWatch:  Free tuner reserve = 0, preferred tuner: automatic."
+
+msgid "  SatWatch:  preferowany tuner = %s, rezerwa 1."
+msgstr "  SatWatch:  preferred tuner = %s, reserve 1."
+
+msgid "  SatWatch:  preferowany tuner = B, rezerwa 1."
+msgstr "  SatWatch:  preferred tuner = B, reserve 1."
+
+msgid "  Sprawdzaj co [h]"
+msgstr "  Check every [h]"
+
+msgid "  Sprawdzaj je ponownie co [dni]"
+msgstr "  Recheck every [days]"
+
+msgid "  System:    nic do zmiany."
+msgstr "  System:    nothing to change."
+
+msgid "  System:    tuner %s -> priorytet 1 (mniejszy niz AUTO), pozostale AUTO - Enigma bierze %s na koncu."
+msgstr "  System:    tuner %s -> priority 1 (lower than AUTO), others AUTO - Enigma uses %s last."
+
+msgid "  System:    tuner A + polaczone C..H -> priorytet AUTO; tuner B bez polaczonych -> priorytet 1"
+msgstr "  System:    tuner A + linked C..H -> priority AUTO; tuner B without links -> priority 1"
+
+msgid "  System:    tuner A + polaczone C..H -> priorytet AUTO; tuner B bez polaczonych -> priorytet 1."
+msgstr "  System:    tuner A + linked C..H -> priority AUTO; tuner B without links -> priority 1."
+
+msgid "  Takze kopie kanalow spoza bukietow"
+msgstr "  Also copies of channels outside bouquets"
+
+msgid "  Timeshift starszy niz [h]"
+msgstr "  Timeshift older than [h]"
+
+msgid "  Token (puste = bez, siec lokalna)"
+msgstr "  Token (empty = none, local network)"
+
+msgid "  Tryb"
+msgstr "  Mode"
+
+msgid "  Tryb aktualizacji"
+msgstr "  Update mode"
+
+msgid "  UWAGA: pod tym refem jest teraz inny kanal: %s"
+msgstr "  WARNING: another channel now has this reference: %s"
+
+msgid "  Wybudzaj z glebokiego czuwania"
+msgstr "  Wake from deep standby"
+
+msgid "  Wymuszaj wlaczenie EIT"
+msgstr "  Force EIT on"
+
+msgid "  Wymuszaj wylaczenie EIT"
+msgstr "  Force EIT off"
+
+msgid "  Wznowienie: %d TP zostanie zeskanowanych, gdy tunery beda wolne (do 24 h)."
+msgstr "  Resume: %d transponders will be scanned when tuners are free (within 24 hours)."
+
+msgid "  Zapisuj bledy pobierania"
+msgstr "  Log download errors"
+
+msgid "  Zostaw crash logow"
+msgstr "  Crash logs to keep"
+
+msgid "  Zrzuty TS z E2Stream starsze niz [dni]"
+msgstr "  E2Stream TS dumps older than [days]"
+
+msgid "  [SID przejal: %s]"
+msgstr "  [SID taken over by: %s]"
+
+msgid "  [automat]"
+msgstr "  [automatic]"
+
+msgid "  [bukiet: %s]"
+msgstr "  [bouquet: %s]"
+
+msgid "  [kopia pakietu]"
+msgstr "  [package copy]"
+
+msgid "  [nierozwiazany od wczesniej]"
+msgstr "  [previously unresolved]"
+
+msgid "  [reczne]"
+msgstr "  [manual]"
+
+msgid "  [wlasne]\nAdres nieznany - niebieski: ustaw adres, wtedy lista bedzie aktualizowana sama"
+msgstr "  [custom]\nAddress unknown - blue: set address for automatic updates"
+
+msgid "  [wlasne]\nAdres: %s\nZmieniona: %s, sprawdzona: %s%s"
+msgstr "  [custom]\nAddress: %s\nUpdated: %s, checked: %s%s"
+
+msgid "  [zainstalowana]"
+msgstr "  [installed]"
+
+msgid "  automat: podmienilby na %s (%s)"
+msgstr "  automatic: would replace with %s (%s)"
+
+msgid "  dzień"
+msgstr "  day"
+
+msgid "  nowy:  %s  (%s)"
+msgstr "  new: %s  (%s)"
+
+msgid "  powod: %s"
+msgstr "  reason: %s"
+
+msgid "  stary: %s  (%s)"
+msgstr "  old: %s  (%s)"
+
+msgid "  w:     %s"
+msgstr "  in:    %s"
+
+msgid " (%d%%, zostalo ok. %s)"
+msgstr " (%d%%, about %s remaining)"
+
+msgid " (UWAGA: program z internetu wylaczony)"
+msgstr " (WARNING: online programme data is disabled)"
+
+msgid " (bez pobierania)"
+msgstr " (no download)"
+
+msgid " (bledow %d)"
+msgstr " (%d errors)"
+
+msgid " (harmonogram)"
+msgstr " (scheduled)"
+
+msgid " (plik zaktualizowany)"
+msgstr " (file updated)"
+
+msgid " (wbudowanego nie mozna zmienic)"
+msgstr " (built-in addresses cannot be changed)"
+
+msgid " (wylaczony recznie)"
+msgstr " (disabled manually)"
+
+msgid " (wylaczony w aliases.txt)"
+msgstr " (disabled in aliases.txt)"
+
+msgid " (wznowienie)"
+msgstr " (resumed)"
+
+msgid " (zapas)"
+msgstr " (fallback)"
+
+msgid " - NIE ruszyl (trwa skan albo brak zrodel)"
+msgstr " - did NOT start (scan in progress or no sources)"
+
+msgid " - STARSZY NIZ 30 h, uzywany bedzie serwer"
+msgstr " - OLDER THAN 30 h; the server will be used"
+
+msgid " - identyczna"
+msgstr " - identical"
+
+msgid " - inne pierwsze slowo"
+msgstr " - different first word"
+
+msgid " - proponowana: %s: %s"
+msgstr " - suggested: %s: %s"
+
+msgid " - ta sama po pominieciu HD/spacji"
+msgstr " - same after ignoring HD/spaces"
+
+msgid " Czyszczenie pojedynczych kanalow jest niedostepne w tym obrazie."
+msgstr " Clearing individual channels is unavailable in this image."
+
+msgid " Import XMLTV po skanie z satelity."
+msgstr " XMLTV import after satellite scan."
+
+msgid " Odbiornik wezmie go przy najblizszym imporcie XMLTV."
+msgstr " The receiver will use it at the next XMLTV import."
+
+msgid " Pelna porada: Info/EPG -> Raporty -> Konfiguracja tunerow."
+msgstr " Full advice: Info/EPG -> Reports -> Tuner configuration."
+
+msgid " Pominiete konflikty: %s"
+msgstr " Skipped conflicts: %s"
+
+msgid " UWAGA: program z internetu jest wylaczony - nic nie bedzie importowane."
+msgstr " WARNING: internet listings are disabled; nothing will be imported."
+
+msgid " Zainstalowana %s czeka na restart Enigma2."
+msgstr " Installed version %s awaits an Enigma2 restart."
+
+msgid " na serwerze"
+msgstr " on server"
+
+msgid " po wyczyszczeniu EPG"
+msgstr " after clearing EPG"
+
+msgid " wspoldz."
+msgstr " shared"
+
+msgid " | następne %s"
+msgstr " | next %s"
+
+msgid " | pełny skan %s"
+msgstr " | full scan %s"
+
+msgid "\"%s\" poz. %d"
+msgstr "\"%s\" pos. %d"
+
+msgid "\"%s\" poz. %d%s"
+msgstr "\"%s\" pos. %d%s"
+
+msgid "\"%s\": brak takiego pliku w aktualnej liscie - pomijam"
+msgstr "\"%s\": no such file in the current list - skipping"
+
+msgid "\"%s\": te same pozycje %d z %d; kanaly tylko u automatu %d, tylko u Ciebie %d"
+msgstr "\"%s\": same entries %d of %d; channels only in the automatic result %d, only in yours %d"
+
+msgid "%.1f dni"
+msgstr "%.1f days"
+
+msgid "%d kandydatow: %s"
+msgstr "%d candidates: %s"
+
+msgid "%d katalogi"
+msgstr "%d directories"
+
+msgid "%d katalogow"
+msgstr "%d directories"
+
+msgid "%d podobnych kandydatow"
+msgstr "%d similar candidates"
+
+msgid "%d tunery: tuner %s z priorytetem 1 w systemie, w SatWatch preferowany %s."
+msgstr "%d tuners: tuner %s with priority 1 in the system, preferred %s in SatWatch."
+
+msgid "%d z %d"
+msgstr "%d of %d"
+
+msgid "%s\nOK - ustaw jako domyslny (* = uzywany). Zolty - dodaj adres (sprawdzany przed zapisem). Zielony / niebieski - popraw / usun dopisany%s."
+msgstr "%s\nOK - set as default (* = in use). Yellow - add address (validated before saving). Green / blue - edit / remove an added address%s."
+
+msgid "%s\nPo zakonczeniu: %s"
+msgstr "%s\nAfterwards: %s"
+
+msgid "%s  (%s, %s) nazwa %d%%%s"
+msgstr "%s  (%s, %s) name %d%%%s"
+
+msgid "%s  (kanalow %d, wszystkich %d)"
+msgstr "%s  (channels %d, all %d)"
+
+msgid "%s  -  %s%s  (kandydatow: %d)"
+msgstr "%s  -  %s%s  (candidates: %d)"
+
+msgid "%s (%d/%d): mapa kanalow"
+msgstr "%s (%d/%d): channel map"
+
+msgid "%s (%d/%d): pobieranie"
+msgstr "%s (%d/%d): downloading"
+
+msgid "%s (%d/%d): przetwarzanie"
+msgstr "%s (%d/%d): processing"
+
+msgid "%s (zostalo bledow: %d)"
+msgstr "%s (errors remaining: %d)"
+
+msgid "%s PID %s | %s | jezyki: %s%s"
+msgstr "%s PID %s | %s | languages: %s%s"
+
+msgid "%s dane audio i PMT w %d wybranych odbiornikach?\nPMT w profilach nie sa uzywane przez E2Stream; aktualne PMT pobiera on z danych wspolnych.\nPMT z kolizja SID zostana pominiete. Przed zapisem powstana kopie."
+msgstr "%s audio and PMT data in %d selected receivers?\nE2Stream does not use PMT in device profiles; it reads current PMT from shared data.\nPMT with conflicting SIDs will be skipped. Backups will be created before saving."
+
+msgid "%s dane audio i PMT w %d wybranych odbiornikach?\nPMT z kolizja SID zostana pominiete. Przed zapisem powstana kopie."
+msgstr "%s audio and PMT data on %d selected receivers?\nPMTs with SID collisions will be skipped. Backups will be created before saving."
+
+msgid "%s dane domyslne audio i PMT w common.json?\nPrzed zapisem powstanie kopia."
+msgstr "%s default audio and PMT data in common.json?\nA backup will be created before saving."
+
+msgid "%s dni"
+msgstr "%s days"
+
+msgid "%s | Obecnie: %s | Audio: %d sciezek | Video: %s\nOK: wybor kanalu/audio   Menu: sortowanie/skan   Info/EPG: synchronizacja"
+msgstr "%s | Current: %s | Audio: %d tracks | Video: %s\nOK: channel/audio selection   Menu: sorting/scan   Info/EPG: synchronization"
+
+msgid "%s%s\nDekoder:  %s\nSerwer:   %s\nZielony - zrodlo z dekodera (zapis na serwerze), zolty - z serwera (zapis na dekoderze), niebieski - wszystkie naraz."
+msgstr "%s%s\nReceiver:  %s\nServer:   %s\nGreen - receiver source (save to server), yellow - server source (save to receiver), blue - all at once."
+
+msgid "%s: %d"
+msgstr "%s: %d"
+
+msgid "%s: %s\nOK: otworz modul lub wybierz tryb.  Zielony: uruchom profil.\nInfo/EPG: pelny opis.  Menu: harmonogram.  Zolty: zapisz jako domyslne."
+msgstr "%s: %s\nOK: open the module or choose a mode.  Green: run the profile.\nInfo/EPG: full description.  Menu: schedule.  Yellow: save as default."
+
+msgid "%s: %s   (identyfikator: %s)"
+msgstr "%s: %s   (identifier: %s)"
+
+msgid "%sCale EPG zostanie wyczyszczone przed %s.\nKontynuowac?"
+msgstr "%sAll EPG will be cleared before %s.\nContinue?"
+
+msgid "(bez nazwy)"
+msgstr "(unnamed)"
+
+msgid "(brak kandydatow - usun kanal albo zostaw)"
+msgstr "(no candidates - remove the channel or leave it)"
+
+msgid "(brak opisu)"
+msgstr "(no description)"
+
+msgid "(nazwy menu moga sie roznic w zaleznosci od obrazu)."
+msgstr "(menu names may vary by image)."
+
+msgid "(np. w nocy w czuwaniu). Skan EPG dziala normalnie."
+msgstr "(e.g. at night in standby). EPG scanning works normally."
+
+msgid "(ogladanie, szybkie przelaczanie FCC, stream do klienta) - skan ruszy dopiero, gdy tunery beda wolne"
+msgstr "(viewing, FCC fast channel change, streaming to a client) - the scan starts when tuners are free"
+
+msgid "(pusty)"
+msgstr "(empty)"
+
+msgid ", brak"
+msgstr ", missing"
+
+msgid ", bukiety: podmieniono %d, do decyzji %d"
+msgstr ", bouquets: replaced %d, pending decision %d"
+
+msgid ", kopii na satelicie %d"
+msgstr ", satellite copies %d"
+
+msgid ", pominietych %d"
+msgstr ", skipped %d"
+
+msgid ", rozstrzyga: "
+msgstr ", tie-break: "
+
+msgid ", serwer pobiera teraz"
+msgstr ", server downloading now"
+
+msgid ", serwer spoza sieci lokalnej - tylko plik programu"
+msgstr ", server outside local network - listings file only"
+
+msgid ", spoza pakietow z Twoich bukietow"
+msgstr ", outside providers in your bouquets"
+
+msgid ", w uzyciu"
+msgstr ", in use"
+
+msgid "--  brak podobnych stacji - niebieski: szukaj  --"
+msgstr "--  no similar stations - blue: search  --"
+
+msgid "--  wspolne slowo w nazwie  --"
+msgstr "--  common word in name  --"
+
+msgid "--  wyniki: %s  (niebieski: nowe szukanie, czerwony: wroc)  --"
+msgstr "--  results: %s  (blue: new search, red: back)  --"
+
+msgid "-> %s | %s | SID %X | nazwa %d%%%s"
+msgstr "-> %s | %s | SID %X | name %d%%%s"
+
+msgid "0,3 s"
+msgstr "0.3 s"
+
+msgid "0,5 s"
+msgstr "0.5 s"
+
+msgid "1 dni"
+msgstr "1 day"
+
+msgid "1 dzien"
+msgstr "1 day"
+
+msgid "1 tuner: rezerwa 0 (EPG Scan i SatWatch), skan w nocy w czuwaniu."
+msgstr "1 tuner: reserve 0 (EPG Scan and SatWatch), scan at night in standby."
+
+msgid "1. Zastap domyslne"
+msgstr "1. Replace defaults"
+
+msgid "1. jezyk"
+msgstr "1st language"
+
+msgid "2 dni"
+msgstr "2 days"
+
+msgid "2. Dopisz braki"
+msgstr "2. Add missing defaults"
+
+msgid "2. jezyk"
+msgstr "2nd language"
+
+msgid "3 dni"
+msgstr "3 days"
+
+msgid "3. Zastap na klientach"
+msgstr "3. Replace on clients"
+
+msgid "4 dni"
+msgstr "4 days"
+
+msgid "4. Dopisz braki na klientach"
+msgstr "4. Add missing on clients"
+
+msgid "5 dni"
+msgstr "5 days"
+
+msgid "5. Popraw nieistniejace na klientach"
+msgstr "5. Repair invalid entries on clients"
+
+msgid "6 dni"
+msgstr "6 days"
+
+msgid "7 dni"
+msgstr "7 days"
+
+msgid ":  nowe %d, usuniete %d, zmienione %d, przesuniete %d"
+msgstr ":  added %d, removed %d, changed %d, shifted %d"
+
+msgid ": bez zmian"
+msgstr ": no changes"
+
+msgid "; import czeka na koniec."
+msgstr "; import waits for completion."
+
+msgid "AKTYWNE: %s - %s"
+msgstr "ACTIVE: %s - %s"
+
+msgid "Adres listy"
+msgstr "List address"
+
+msgid "Adres listy zrodel (*.sources.xml)"
+msgstr "Source list address (*.sources.xml)"
+
+msgid "Adres pliku satellites.xml"
+msgstr "satellites.xml file address"
+
+msgid "Adres satellites.xml (OK - lista)"
+msgstr "satellites.xml address (OK - list)"
+
+msgid "Akceptuj obecny stan (wyczysc liste DO DECYZJI)"
+msgstr "Accept current state (clear decisions list)"
+
+msgid "Akceptuj obecny stan (wyczyść listę DO DECYZJI)"
+msgstr "Accept current state (clear PENDING DECISION list)"
+
+msgid "Akcja przy zmianach satellites.xml"
+msgstr "Action on satellites.xml changes"
+
+msgid "Akcje"
+msgstr "Actions"
+
+msgid "Aktualizacja WSTRZYMANA - plik zdalny nie przeszedl kontroli."
+msgstr "Update HELD - remote file failed validation."
+
+msgid "Aktualizacja automatyczna"
+msgstr "Automatic updates"
+
+msgid "Aktualizacja satelitarna w ciagu dnia"
+msgstr "Satellite updates during the day"
+
+msgid "Aktualizacje i informacje o wtyczce"
+msgstr "Updates and plugin information"
+
+msgid "Aktualizuj %s teraz"
+msgstr "Update %s now"
+
+msgid "Aktualizuj teraz (wybierz wydanie GitHub)"
+msgstr "Update now (choose GitHub release)"
+
+msgid "Aktualizuj wszystkie wlasne listy"
+msgstr "Update all custom lists"
+
+msgid "Aktywna usluga nie udostepnia PID %d"
+msgstr "The active service does not provide PID %d"
+
+msgid "Anuluj"
+msgstr "Cancel"
+
+msgid "Aplikacja E2Stream (Android TV, tablet, telefon) pobiera z dekodera bukiety, kanaly z PID-ami i zapisuje tu swoje ustawienia i dane kanalow (czesc wspolna dla nowych odbiornikow + plik kazdego odbiornika). Dziala w sieci lokalnej; token - opcjonalne zabezpieczenie (ten sam wpisz w aplikacji). Stan: %s"
+msgstr "The E2Stream app (Android TV, tablet, phone) retrieves bouquets and channels with PIDs from the receiver and stores its settings and channel data here (shared defaults for new devices and a file per device). It works on the local network; the token is optional protection and must also be entered in the app. Status: %s"
+
+msgid "Audycji: %d, z opisem: %d.  Zrodlo podgladu: %s"
+msgstr "Programmes: %d, with description: %d.  Preview source: %s"
+
+msgid "Automat"
+msgstr "Automatic"
+
+msgid "Automat Enigma2"
+msgstr "Enigma2 automatic"
+
+msgid "Automatyczna synchronizacja po skanie, rowniez z harmonogramu, tylko z kanalow odczytanych w tym przebiegu. Wylaczona domyslnie. Klienci: wszystkie pliki device-*.json. Dopisz braki nie zmienia istniejacych wpisow; popraw nieistniejace zachowuje poprawny PID. Przed zmianami powstaja kopie."
+msgstr "Automatic synchronization after a scan, including scheduled scans, uses only channels read in the current run. Disabled by default. Clients: all device-*.json files. Add missing does not change existing entries; repair invalid retains a valid PID. Backups are made before changes."
+
+msgid "Avahi (mDNS): pytam o _epgpl._tcp..."
+msgstr "Avahi (mDNS): querying _epgpl._tcp..."
+
+msgid "BLAD   %s: %s"
+msgstr "ERROR   %s: %s"
+
+msgid "BLAD %s: %s\n%s"
+msgstr "ERROR %s: %s\n%s"
+
+msgid "BLAD: %s"
+msgstr "ERROR: %s"
+
+msgid "Bez programu"
+msgstr "No guide"
+
+msgid "Bez satelity: sam import XMLTV. %s"
+msgstr "Without satellite: XMLTV import only. %s"
+
+msgid "Bez sciezki audio"
+msgstr "Without audio track"
+
+msgid "Blad pobierania"
+msgstr "Download error"
+
+msgid "Blad pobierania: %s"
+msgstr "Download error: %s"
+
+msgid "Blad przywracania: %s"
+msgstr "Restore error: %s"
+
+msgid "Blad szukania: %s"
+msgstr "Search error: %s"
+
+msgid "Blad zapisu common.json: %s"
+msgstr "Error saving common.json: %s"
+
+msgid "Blad zapisu profili: %s"
+msgstr "Error saving profiles: %s"
+
+msgid "Blad: %s"
+msgstr "Error: %s"
+
+msgid "Bledy"
+msgstr "Errors"
+
+msgid "Bledy (pierwsze 40):"
+msgstr "Errors (first 40):"
+
+msgid "Bledy i konflikty synchronizacji. Szczegoly: Info/EPG -> Raporty"
+msgstr "Errors and synchronization conflicts. Details: Info/EPG -> Reports"
+
+msgid "Bledy ostatniego skanu"
+msgstr "Last scan errors"
+
+msgid "Brak aktywnych sciezek audio"
+msgstr "No active audio tracks"
+
+msgid "Brak audycji od %s do %s (%s)."
+msgstr "No programmes from %s to %s (%s)."
+
+msgid "Brak dostepnych ustawien: %s."
+msgstr "No available settings: %s."
+
+msgid "Brak kanalow - sprawdz zakres skanowania i bukiety w ustawieniach"
+msgstr "No channels: check the scan scope and bouquets in settings"
+
+msgid "Brak kanalow DVB w wybranych bukietach albo skaner jest zajety."
+msgstr "No DVB channels in the selected bouquets, or the scanner is busy."
+
+msgid "Brak kanalow do decyzji."
+msgstr "No channels pending decision."
+
+msgid "Brak kandydatow w lamedb. Zolty: usun kanal z bukietow, niebieski: zostaw."
+msgstr "No candidates in lamedb. Yellow: remove channel from bouquets; blue: leave it."
+
+msgid "Brak kopii %s."
+msgstr "No backup of %s."
+
+msgid "Brak kopii EPG w katalogu %s"
+msgstr "No EPG backups in %s"
+
+msgid "Brak kopii bukietów."
+msgstr "No bouquet backup."
+
+msgid "Brak kopii."
+msgstr "No backup."
+
+msgid "Brak list z zapamietanym adresem"
+msgstr "No lists with saved addresses"
+
+msgid "Brak list zrodel XMLTV (/etc/epgimport).\nZainstalowac pakiet enigma2-plugin-extensions-epgimport-sources?"
+msgstr "No XMLTV source lists (/etc/epgimport).\nInstall enigma2-plugin-extensions-epgimport-sources?"
+
+msgid "Brak lokalnego satellites.xml - zostanie odtworzony z pliku zdalnego (bez skanu transponderow)."
+msgstr "No local satellites.xml - it will be restored from the remote file (without scanning transponders)."
+
+msgid "Brak mapy kanalow (serwer nie odpowiada, brak kopii)."
+msgstr "No channel map (server not responding and no backup)."
+
+msgid "Brak modulu dla wybranej pozycji."
+msgstr "No module for the selected item."
+
+msgid "Brak nakladajacych sie audycji w kanalach z bukietow.\n\nPlik: %s"
+msgstr "No overlapping programmes in bouquet channels.\n\nFile: %s"
+
+msgid "Brak odczytanych sciezek audio"
+msgstr "No audio tracks found"
+
+msgid "Brak opisu: %s"
+msgstr "No description: %s"
+
+msgid "Brak pasujacej sciezki dla automatycznych preferencji Enigma2."
+msgstr "No track matches Enigma2 automatic preferences."
+
+msgid "Brak pliku %s (%s)"
+msgstr "Missing file %s (%s)"
+
+msgid "Brak prawidlowych PMT lub potwierdzonych sciezek audio do synchronizacji."
+msgstr "No valid PMTs or confirmed audio tracks to synchronize."
+
+msgid "Brak raportu skanu parametrow."
+msgstr "No channel parameter scan report."
+
+msgid "Brak raportu."
+msgstr "No report."
+
+msgid "Brak raportu. Kanały -> SatWatch -> Sprawdź teraz."
+msgstr "No report. Channels -> SatWatch -> Check now."
+
+msgid "Brak referencji kanalu. Nie mozna ponowic odczytu."
+msgstr "No channel reference. Cannot retry."
+
+msgid "Brak referencji kanalu; nie mozna ponowic odczytu."
+msgstr "No channel reference; cannot retry."
+
+msgid "Brak sciezki audio w jezyku %s."
+msgstr "No audio track in language %s."
+
+msgid "Brak serwera epgpl - nie ma z czym porownac (zrodlo XMLTV z serwera: Ustawienia -> Program z internetu)."
+msgstr "No epgpl server to compare with (server XMLTV source: Settings -> Internet guide)."
+
+msgid "Brak skonfigurowanego serwera epgpl w zrodlach XMLTV."
+msgstr "No epgpl server is configured in the XMLTV sources."
+
+msgid "Brak wynikow dla wybranego filtra."
+msgstr "No results for the selected filter."
+
+msgid "Brak zapisanych raportow SatWatch (%s)."
+msgstr "No saved SatWatch reports (%s)."
+
+msgid "Brak zrzutu referencyjnego - najpierw zapisz zrzut."
+msgstr "No reference snapshot - save a snapshot first."
+
+msgid "Bukiety / XMLTV"
+msgstr "Bouquets / XMLTV"
+
+msgid "Bukiety do skanowania"
+msgstr "Bouquets to scan"
+
+msgid "Bukiety vs zrzut z %s:  zgubione %d (podmienione %d, do decyzji %d), zmiana nazwy %d, zmiana TP %d, martwe od dawna %d"
+msgstr "SatWatch: Bouquets vs snapshot from %s:  lost %d (replaced %d, pending decision %d), name changes %d, transponder changes %d, long-dead %d"
+
+msgid "Bukiety: %s"
+msgstr "Bouquets: %s"
+
+msgid "Bukiety: %s.  Plik EPG: %s"
+msgstr "Bouquets: %s.  EPG file: %s"
+
+msgid "Bukiety: pierwszy zrzut - porownanie przy nastepnym sprawdzeniu."
+msgstr "SatWatch: Bouquets: first snapshot - comparison at the next check."
+
+msgid "Bukiety: podmieniono %d, do decyzji %d"
+msgstr "Bouquets: replaced %d, pending decision %d"
+
+msgid "Bukiety: pominiete (zajete)"
+msgstr "Bouquets: skipped (busy)"
+
+msgid "Bylo:   %s  |  %s\n            %s\n            SID %04X  |  %s\nGdzie: %s\nPowod: %s"
+msgstr "Was:    %s  |  %s\n            %s\n            SID %04X  |  %s\nWhere: %s\nReason: %s"
+
+msgid "Błąd przywracania: %s"
+msgstr "Restore error: %s"
+
+msgid "Błąd: %s"
+msgstr "Error: %s"
+
+msgid "Cala pamiec EPG: kanalow na liscie %d, z EPG %d, audycji %d"
+msgstr "Entire EPG cache: %d channels listed, %d with EPG, %d programmes"
+
+msgid "Co podana liczbe minut wtyczka usuwa z zaznaczonych katalogow pliki timeshift starsze niz podana liczba godzin (aktywny timeshift jest pomijany) i nadmiar plikow enigma2_crash_*.log - zostaje tyle najnowszych (lacznie), ile ustawiono, oraz zrzuty TS aplikacji E2Stream (stall-*.ts w jej katalogu na dekoderze) starsze niz podana liczba dni. Katalogi: OK - lista (nosniki, katalog timeshift i crash logow z ustawien Enigma2, wlasne). Kazde usuniecie jest zapisywane w logu EPG Scan. %s"
+msgstr "At the specified interval, remove timeshift files older than the specified hours from selected directories (active timeshift is skipped), excess enigma2_crash_*.log files while retaining the configured number of newest logs, and E2Stream TS dumps (stall-*.ts in its receiver directory) older than the specified days. OK opens directory selection (media, Enigma2 timeshift and crash-log directories, custom). Every deletion is logged. %s"
+
+msgid "Co zrobić, gdy satellites.xml w repozytorium OpenPLi różni się od lokalnego dla monitorowanych pozycji. Tylko raport: zapis w raporcie, plik bez zmian. Raport + aktualizacja: zapis /etc/enigma2/satellites.xml (z kopią; /etc/tuxbox/satellites.xml nie jest zmieniany) i skan zmienionych TP."
+msgstr "What to do when satellites.xml in the OpenPLi repository differs from the local file for monitored positions. Report only: record in the report, leave the file unchanged. Report + update: write /etc/enigma2/satellites.xml (with a backup; /etc/tuxbox/satellites.xml is not changed) and scan changed transponders."
+
+msgid "Cykliczny skan satelity w ciagu dnia bez czyszczenia EPG, wolnymi tunerami z rezerwa. Jest niezalezny od harmonogramu nocnego. Po skanie przygotowuje nowa paczke dla E2Stream, gdy wlaczono dane dla aplikacji."
+msgstr "Periodic daytime satellite scans without clearing EPG, using free tuners and the reserve. Independent of the overnight schedule. After scanning, prepares a new E2Stream package when app data is enabled."
+
+msgid "Czas na skan mimo zajętych tunerów"
+msgstr "Time allowed to scan while tuners are busy"
+
+msgid "Czas odczytu: sredni %.2f s, maksymalny %.2f s"
+msgstr "Read time: average %.2f s, maximum %.2f s"
+
+msgid "Czekam na pobranie programu przed importem XMLTV:\n%s"
+msgstr "Waiting for programme download before XMLTV import:\n%s"
+
+msgid "Czekanie na serwer przerwane - pobieranie na serwerze trwa dalej, import nie zostanie uruchomiony"
+msgstr "Waiting for server stopped - server download continues, import will not start"
+
+msgid "Czwartek"
+msgstr "Thursday"
+
+msgid "Czysc EPG przed startem"
+msgstr "Clear EPG before starting"
+
+msgid "DO DECYZJI"
+msgstr "PENDING DECISION"
+
+msgid "Dane dla E2Stream sa wlasnie przygotowywane."
+msgstr "E2Stream data is already being prepared."
+
+msgid "Dane dla E2Stream: %s"
+msgstr "E2Stream data: %s"
+
+msgid "Dane kanalu: %s"
+msgstr "Channel details: %s"
+
+msgid "Decyzja (recznie): %s -> %s"
+msgstr "SatWatch: Decision (manual): %s -> %s"
+
+msgid "Dekoder (program pobierany przez dekoder)"
+msgstr "Receiver (programme data downloaded by receiver)"
+
+msgid "Dekoder i serwer epgpl - wlaczane w Akcjach (zielony na ekranie glownym)"
+msgstr "Receiver and epgpl server - enabled in Actions (green on main screen)"
+
+msgid "Dekoder pobiera program (ok. 5-10 min). Postep na ekranie glownym EPG Scan."
+msgstr "Receiver is downloading the guide (about 5-10 min). Progress is on the EPG Scan main screen."
+
+msgid "Dekoder pobiera program stacji z serwisu (2 dni, kilka sekund)..."
+msgstr "Receiver is downloading the station guide from the service (2 days, a few seconds)..."
+
+msgid "Dekoder pobiera sam teleman, onet, naziemna i WP (od wczoraj, %d dni, polaczen %s), potem porownuje wynik z plikiem programu serwera. Serwisy rownolegle.\nZamkniecie okna przerywa test.\n\nWynik bedzie tez w pliku: %s"
+msgstr "The receiver downloads teleman, onet, terrestrial and WP itself (from yesterday, %d days, connections %s), then compares the result with the server guide. Services run in parallel.\nClosing the window cancels the test.\n\nThe result will also be saved to: %s"
+
+msgid "Dekoder: dni do przodu"
+msgstr "Receiver: days ahead"
+
+msgid "Dekoder: pobierz program i importuj XMLTV (bez czyszczenia EPG)"
+msgstr "Receiver: download guide and import XMLTV (without clearing EPG)"
+
+msgid "Dekoder: pobierz program teraz (bez importu)"
+msgstr "Receiver: download guide now (without import)"
+
+msgid "Do decyzji"
+msgstr "Pending decision"
+
+msgid "Do decyzji - wybierz kandydata"
+msgstr "Pending decision - choose a candidate"
+
+msgid "Do ponowienia z poprzedniego skanu: %d TP"
+msgstr "To retry from previous scan: %d transponders"
+
+msgid "Doczytywanie brakow: %d/%d gotowe, aktywne %d, czas %d:%02d   %s"
+msgstr "Topping up missing data: %d/%d complete, %d active, time %d:%02d   %s"
+
+msgid "Dodaj adres"
+msgstr "Add address"
+
+msgid "Dodaj katalog"
+msgstr "Add directory"
+
+msgid "Dodaj liste z adresu"
+msgstr "Add list from address"
+
+msgid "Dodaj nowa liste z adresu"
+msgstr "Add new list from address"
+
+msgid "Dodano %d wartosci jako domyslne dla nowych urzadzen."
+msgstr "Added %d default values for new devices."
+
+msgid "Domyslnie w profilu (OK, harmonogram; zmiana takze w Akcjach). Satelita jest zawsze pierwszym zrodlem - EIT ma w Enigma2 pierwszenstwo przed importem, XMLTV uzupelnia tylko braki i dalsze dni. Wylaczone: sam import XMLTV, bez strojenia tunerow i doczytywania; przy \"Wymuszaj wylaczenie EIT\" = Tak EIT jest wylaczane, wiec EPG pochodzi tylko z XMLTV."
+msgstr "Default in the profile (OK, schedule; also changeable in Actions). Satellite is always the first source: Enigma2 gives EIT priority over imports, while XMLTV fills gaps and later days only. Disabled: XMLTV import only, without tuner scans or top-ups; if Force EIT off is Yes, EIT is disabled and EPG comes only from XMLTV."
+
+msgid "Dopasowanie kanalow"
+msgstr "Channel mapping"
+
+msgid "Dopasowanie kanalow (%s)"
+msgstr "Channel matching (%s)"
+
+msgid "Dopasowanie kanalow - %s"
+msgstr "Channel mapping - %s"
+
+msgid "Dopasowanie kanalow: dekoder%s"
+msgstr "Channel mapping: receiver%s"
+
+msgid "Dopasowanie kanalow: serwer - %s%s"
+msgstr "Channel mapping: server - %s%s"
+
+msgid "Dopasowanie na dekoderze i na serwerze jest takie samo"
+msgstr "Receiver and server mappings are identical"
+
+msgid "Dopasowanie rozni sie od %s w %d kanalach"
+msgstr "Mapping differs from %s for %d channels"
+
+msgid "Dopisac braki"
+msgstr "Add missing"
+
+msgid "Dotyczy wybranych zrodel z serwera epgpl i skanu z harmonogramu. Gotowy plik: import tego, co serwer pobral sam. Pobieranie na serwerze: na starcie skanu dekoder uruchamia pobieranie na serwerze (ok. 10 min, rownolegle ze skanem satelity), XMLTV jest importowane po jego zakonczeniu. Dekoder zglasza serwerowi swoj harmonogram - serwer pomija wtedy wlasne pobieranie w oknie +-3 h (TUNER_WINDOW, epgpl 0.10.0+)."
+msgstr "Applies to selected epgpl server sources and scheduled scans. Ready file imports what the server already downloaded. Server download starts a server download at scan start (about 10 minutes, parallel to satellite scanning), then imports XMLTV. The receiver reports its schedule to the server, which skips its own download within +-3 hours (TUNER_WINDOW, epgpl 0.10.0+)."
+
+msgid "Duble - nakladajace sie audycje"
+msgstr "Duplicates - overlapping programmes"
+
+msgid "E2Stream - wybór odbiorników"
+msgstr "E2Stream - select receivers"
+
+msgid "EIT jest wylaczane (Ustawienia -> Satelita)."
+msgstr "EIT is disabled (Settings -> Satellite)."
+
+msgid "EIT wylaczone w ustawieniach EPG - skan %s"
+msgstr "EIT is disabled in EPG settings; the scan %s"
+
+msgid "EPG %d/%d, wszystkie %d/%d"
+msgstr "EPG %d/%d, all %d/%d"
+
+msgid "EPG Import Sources (pakiet zrodel)"
+msgstr "EPG Import Sources (sources package)"
+
+msgid "EPG Scan %s - akcje"
+msgstr "EPG Scan %s - actions"
+
+msgid "EPG Scan %s - ustawienia"
+msgstr "EPG Scan %s - settings"
+
+msgid "EPG Scan - kanaly z bukietow: program z internetu i dopasowanie kanalow"
+msgstr "EPG Scan - bouquet channels: internet listings and channel matching"
+
+msgid "EPG Scan - kanaly z bukietow: skan EPG z satelity"
+msgstr "EPG Scan - bouquet channels: satellite EPG scan"
+
+msgid "EPG Scan - katalogi sprzatania dysku"
+msgstr "EPG Scan - disk cleanup directories"
+
+msgid "EPG Scan - menu"
+msgstr "EPG Scan - menu"
+
+msgid "EPG Scan - parametry kanałów"
+msgstr "EPG Scan - channel parameters"
+
+msgid "EPG Scan - pobieranie na dekoderze (test porownawczy)"
+msgstr "EPG Scan - receiver download (comparison test)"
+
+msgid "EPG Scan - podsumowanie nocy:\n"
+msgstr "EPG Scan - overnight summary:\n"
+
+msgid "EPG Scan - zrodla XMLTV do uzupelniania"
+msgstr "EPG Scan - XMLTV sources"
+
+msgid "EPG Scan: tuner %s nie stroi kilku transponderow z rzedu - prawdopodobnie zawieszony.\nZwykle pomaga restart Enigma2. Zrestartowac teraz?\n(skan trzeba bedzie potem uruchomic ponownie)"
+msgstr "EPG Scan: tuner %s failed to tune several transponders in a row and may be stuck.\nRestarting Enigma2 usually helps. Restart now?\n(the scan will need to be started again)"
+
+msgid "EPG odtworzone z kopii."
+msgstr "EPG restored from backup."
+
+msgid "English"
+msgstr "English"
+
+msgid "Enigma2 nie przelaczyla kanalu. Sprobuj ponownie lub wybierz inny kanal."
+msgstr "Enigma2 did not change channels. Try again or select another channel."
+
+msgid "Exit / OK - powrót do listy SatWatch (praca trwa w tle).  Strzałki - przewijanie raportu."
+msgstr "Exit / OK - return to the SatWatch list (work continues in the background).  Arrows - scroll the report."
+
+msgid "FBC glowny"
+msgstr "FBC root"
+
+msgid "FBC główny"
+msgstr "FBC root"
+
+msgid "FBC polaczony"
+msgstr "FBC linked"
+
+msgid "FBC połączony"
+msgstr "FBC linked"
+
+msgid "FBC z jednym wejsciem: skan satelity zwykle tylko przy wolnych tunerach - zalecany 2. kabel na wejscie B."
+msgstr "FBC with one input: satellite scans usually require free tuners - a second cable to input B is recommended."
+
+msgid "FBC, DWA WEJSCIA"
+msgstr "FBC, TWO INPUTS"
+
+msgid "FBC, JEDNO WEJSCIE ANTENOWE"
+msgstr "FBC, ONE ANTENNA INPUT"
+
+msgid "FBC, dwa wejscia: B osobno z priorytetem 1, w SatWatch preferowany B."
+msgstr "FBC, two inputs: B separate with priority 1, preferred B in SatWatch."
+
+msgid "Gdy dopasowanie kanalow na dekoderze i na serwerze epgpl sie rozni (inna stacja albo reczne wskazanie tylko po jednej stronie). Wygrywa dekoder / serwer: przy otwarciu dopasowania druga strona dostaje te same wskazania. Wybor za kazdym razem: pytanie przy otwarciu. Pozostaw rozne: tylko licznik roznic. Recznie zawsze: Dopasowanie kanalow -> Info/EPG."
+msgstr "When channel mappings differ between receiver and epgpl (different station or a manual choice on only one side), receiver/server wins copies its choices to the other side when matching opens. Ask each time prompts on opening. Keep different only counts differences. Manual synchronization is always available in Channel matching -> Info/EPG."
+
+msgid "Gdy stacja jest w kilku serwisach, kanal bierze ja z pierwszego. Dekoder jest centrum ustawien: ta sama kolejnosc trafia na serwer epgpl (razem z wyborem bukietow) i zastepuje tam SITES z config.env. Teleman ma najlepsze opisy, naziemna - regionalne TVP3."
+msgstr "When a station appears on several sites, the channel uses the first one. The receiver is the settings hub: the same order and bouquet selection are sent to epgpl, replacing SITES in config.env. Teleman has the best descriptions; naziemna has regional TVP3 listings."
+
+msgid "Gdzie trzymać satwatch.log i historię raportów (30 ostatnich). Dysk/USB oszczędza pamięć flash; gdy nośnik jest niedostępny, log trafia do pamięci wewnętrznej. Raporty i log: Info/EPG -> Raporty."
+msgstr "Where to keep satwatch.log and report history (last 30). Disk/USB saves flash memory; when the device is unavailable, the log goes to internal storage. Reports and log: Info/EPG -> Reports."
+
+msgid "Gora/Dol, Lewo/Prawo: przewijanie     Exit/OK: zamknij     (%s)"
+msgstr "Up/Down, Left/Right: scroll     Exit/OK: close     (%s)"
+
+msgid "Gorna granica czasu na transponderze - skan przechodzi dalej, nawet jesli dane wciaz splywaja (w logu: \"gotowe (limit czasu)\")."
+msgstr "Maximum time on a transponder; the scan moves on even if data is still arriving (log: \"gotowe (limit czasu)\")."
+
+msgid "Gorna granica wlasnych skanow EPG i skanu parametrow naraz. Nowy tuner jest zajmowany tylko wtedy, gdy po tym zostanie rezerwa wolnych - liczone sa wszystkie zajete (ogladanie, nagrania, streamy, PiP). Np. 8 tunerow, limit 6, rezerwa 1, ogladanie + nagranie: skan zajmie najwyzej 5. Skan na transponderze ogladanego kanalu nie zajmuje dodatkowego tunera."
+msgstr "Maximum number of simultaneous EPG and parameter scans. A tuner is used only if the free reserve remains; all uses count (viewing, recordings, streams, PiP). For example, with 8 tuners, limit 6, reserve 1 and viewing plus recording, at most 5 are scanned. Scanning the currently viewed transponder needs no extra tuner."
+
+msgid "Gotowe"
+msgstr "Done"
+
+msgid "Gotowe: %d stron w %d:%02d (bez danych w serwisie %d), ponowionych %d, bledow po ponowieniu %d (%s), audycji %d dla %d stacji.%s"
+msgstr "Done: %d pages in %d:%02d (%d without service data), %d retried, %d errors after retry (%s), %d programmes for %d stations.%s"
+
+msgid "Gotowe: znaleziono serwerow epgpl: %d"
+msgstr "Done: found %d epgpl servers"
+
+msgid "Gotowy plik z serwera: %s.\nPostep na ekranie glownym EPG Scan."
+msgstr "Ready server file: %s.\nProgress is on the EPG Scan main screen."
+
+msgid "Gotowy plik z serwera: import XMLTV (bez czyszczenia EPG)"
+msgstr "Ready server file: import XMLTV (without clearing EPG)"
+
+msgid "Gotowy plik z serwera: skan satelity, potem XMLTV (bez czyszczenia EPG)"
+msgstr "Ready server file: scan satellite, then import XMLTV (without clearing EPG)"
+
+msgid "Gotowy plik z serwera: wyczysc cale EPG i importuj XMLTV"
+msgstr "Ready server file: clear all EPG and import XMLTV"
+
+msgid "Gotowy plik z serwera: wyczysc cale EPG, skan satelity, potem XMLTV"
+msgstr "Ready server file: clear all EPG, scan satellite, then import XMLTV"
+
+msgid "Grupa %s - OK: %s.\nZaznaczone: %s"
+msgstr "Group %s - OK: %s.\nSelected: %s"
+
+msgid "Grupowanie kanalow po transponderze"
+msgstr "Group channels by transponder"
+
+msgid "Harmonogram"
+msgstr "Schedule"
+
+msgid "Harmonogram wlaczony"
+msgstr "Schedule enabled"
+
+msgid "Harmonogram: %s"
+msgstr "Schedule: %s"
+
+msgid "Harmonogram: program pobiera tylko jedno miejsce. Gdy serwer epgpl pobral dzis pelny program, dekoder bierze jego gotowa paczke zamiast pobierac sam; gdy pierwszy byl dekoder - wysyla paczke na serwer, a serwer pomija swoje pobieranie. Paczka: program, mapa referencji i program kandydatow. Start profilu (harmonogram, OK, Akcje): wg \"Pobierz swieze dane\" - w jednym miejscu albo na nowo; \"Dekoder: pobierz program teraz\" zawsze pobiera. Wymaga epgpl 0.18.0."
+msgstr "Schedule: only one side downloads listings. If epgpl has today's complete guide, the receiver uses its package; if the receiver was first, it sends its package and the server skips downloading. The package contains listings, reference map and candidate listings. Profile starts follow the fresh-data choice: one place or download again. Receiver: download now always downloads. Requires epgpl 0.18.0."
+
+msgid "Ile dni do przodu (plus dzien poprzedni - trwajaca noc)."
+msgstr "How many days ahead to download (plus the previous day for the current night)."
+
+msgid "Ile kopii satellites.xml sprzed aktualizacji trzymać. Przywracanie: Kanały -> SatWatch -> Przywróć kopię satellites.xml."
+msgstr "How many pre-update satellites.xml backups to keep. Restore: Channels -> SatWatch -> Restore satellites.xml backup."
+
+msgid "Ile ostatnich kopii EPG trzymac. Tyle samo (min. 2) jest zachowywanych logow skanu. Kopii teraz: %d"
+msgstr "Number of recent EPG backups to keep. The same number of scan logs is retained (at least 2). Current backups: %d"
+
+msgid "Ile stron naraz z danego serwisu (serwisy pobierane rownolegle) i ile lacznie ze wszystkich. Wiecej = szybciej, ale wieksze ryzyko blokady (onet odpowiada wtedy 429 - strony sa ponawiane na koncu, wolniej)."
+msgstr "How many pages to fetch concurrently from each service (services run in parallel) and in total. More is faster but increases the risk of blocking; onet responds with 429 and failed pages are retried more slowly at the end."
+
+msgid "Import EPG z satelity (skan transponderow)"
+msgstr "Import satellite EPG (transponder scan)"
+
+msgid "Import XMLTV: %s   czas %d:%02d\nSatelita: bez skanu (sam import XMLTV)"
+msgstr "XMLTV import: %s   time %d:%02d\nSatellite: no scan (XMLTV import only)"
+
+msgid "Import XMLTV: przygotowanie..."
+msgstr "XMLTV import: preparing..."
+
+msgid "Informacje o wtyczce"
+msgstr "Plugin information"
+
+msgid "Inne zadanie EPG Scan juz trwa. Skan parametrow nie moze go przerwac."
+msgstr "Another EPG Scan task is running. The parameter scan cannot interrupt it."
+
+msgid "Instalacja nieudana: %s"
+msgstr "Installation failed: %s"
+
+msgid "Instalowanie pakietu list zrodel XMLTV (opkg)...\nSkan z satelity: %s"
+msgstr "Installing XMLTV source list package (opkg)...\nSatellite scan: %s"
+
+msgid "Instalowanie pakietu list zrodel XMLTV (opkg)... to moze potrwac do minuty."
+msgstr "Installing XMLTV source lists (opkg)... this can take up to a minute."
+
+msgid "JEDEN TUNER"
+msgstr "ONE TUNER"
+
+msgid "JUZ JEST w Twoich bukietach (podmiana zrobi dubel)"
+msgstr "ALREADY in your bouquets (replacement would create a duplicate)"
+
+msgid "Jak czesto uruchamiac aktualizacje. W trybie krotkiego EPG jest to podstawowy odstep miedzy skanami tego samego transpondera. Bez zysku odstep rosnie 2x: najwyzej do 2x podstawowego, jesli transponder dal dane w ostatnich 3 dniach, inaczej do 24 h. Po zysku wraca do podstawowego."
+msgstr "How often to run updates. In short EPG mode this is the base interval between scans of the same transponder. Without gains it doubles, capped at twice the base if the transponder had data in the last three days, otherwise at 24 hours. A gain resets it to the base interval."
+
+msgid "Jak długo skan czeka na wolny tuner (albo na zgodę Enigmy przy FBC), zanim zostanie przerwany. Nieskanowane TP mogą być dokończone później (opcja niżej)."
+msgstr "How long the scan waits for a free tuner (or Enigma permission with FBC) before stopping. Unscanned transponders can be completed later (option below)."
+
+msgid "Jezyk Enigma2"
+msgstr "Enigma2 language"
+
+msgid "Jezyk interfejsu wtyczki. Enigma2: automatycznie wedlug jezyka odbiornika; zmiana zaczyna dzialac po zapisaniu."
+msgstr "Plugin interface language. Enigma2 follows the receiver language automatically; the change takes effect after saving."
+
+msgid "Jezyk wtyczki"
+msgstr "Plugin language"
+
+msgid "KATALOG_WYNIKU musi byc inny niz stara lista i wzorzec"
+msgstr "KATALOG_WYNIKU must differ from the old list and reference"
+
+msgid "KILKA ZWYKLYCH TUNEROW"
+msgstr "SEVERAL REGULAR TUNERS"
+
+msgid "Kana? aktualizacji automatycznych"
+msgstr "Automatic update channel"
+
+msgid "Kanal %s bez programu z internetu?"
+msgstr "Leave channel %s without an internet guide?"
+
+msgid "Kanal %s nie ma recznego wskazania - zrodlo juz dobiera automat."
+msgstr "Channel %s has no manual selection - the source is already selected automatically."
+
+msgid "Kanal / audio"
+msgstr "Channel / audio"
+
+msgid "Kanal automatyczny: %s. Wybierz beta, aby automatycznie instalowac nowsze bety i wydania stabilne; stabilne sprawdza tylko wydania stabilne. 'Aktualizuj teraz' (OK) pokazuje wszystkie dostepne wydania GitHub z paczka ZIP, takze beta i starsze. Przy starszej wersji pojawi sie ostrzezenie przed instalacja."
+msgstr "Automatic channel: %s. Choose beta to automatically install newer beta and stable releases; stable checks only stable releases. Update now (OK) shows all available GitHub releases with ZIP packages, including beta and older releases. A warning appears before installing an older version."
+
+msgid "Kanal:    %s\nBukiet:   %s\nObecnie: %s\n%s"
+msgstr "Channel:    %s\nBouquet:   %s\nCurrent: %s\n%s"
+
+msgid "Kanal: %s"
+msgstr "Channel: %s"
+
+msgid "Kanal: %s\nAutomat Enigma2: %s\nPreferencje uzytkownika: %s"
+msgstr "Channel: %s\nEnigma2 automatic: %s\nUser preferences: %s"
+
+msgid "Kanalow: %d, bez dopasowania: %d, recznych wskazan: %d.  Kolejnosc serwisow: %s"
+msgstr "Channels: %d, unmatched: %d, manual selections: %d.  Service order: %s"
+
+msgid "Kanalu %s nie znaleziono w bukietach - okienko pokazuje biezacy kanal."
+msgstr "Channel %s was not found in bouquets - the window shows the current channel."
+
+msgid "Kanaly"
+msgstr "Channels"
+
+msgid "Kanaly - SatWatch, dopasowanie kanalow, raport mapy"
+msgstr "Channels - SatWatch, channel mapping, mapping report"
+
+msgid "Kanaly - zasieg EPG (od najkrotszego)"
+msgstr "Channels - EPG coverage (shortest first)"
+
+msgid "Kanaly do decyzji - wybor kandydata"
+msgstr "Channels requiring a decision - choose candidate"
+
+msgid "Kanaly od najkrotszego EPG, duble, pobieranie na dekoderze i raporty serwerow - w menu Info/EPG."
+msgstr "Channels by EPG coverage, duplicates, receiver downloads and server reports are in the Info/EPG menu."
+
+msgid "Kanaly wg serwisu (mapa z %s): %s"
+msgstr "Channels by service (map from %s): %s"
+
+msgid "Kanaly z bukietow (OK - lista)"
+msgstr "Channels from bouquets (OK - list)"
+
+msgid "Kanaly z bukietow (jak Satelita - EPG)"
+msgstr "Channels from bouquets (as in Satellite - EPG)"
+
+msgid "Kanaly z bukietow:"
+msgstr "Channels in bouquets:"
+
+msgid "Kanaly z bukietow: %d, bez EPG: %d, krocej niz 1 dzien: %d"
+msgstr "Channels in bouquets: %d, without EPG: %d, less than one day: %d"
+
+msgid "Kanały z bukietów (OK - lista)"
+msgstr "Channels from bouquets (OK - list)"
+
+msgid "Kandydat %d/%d:  %s"
+msgstr "Candidate %d/%d:  %s"
+
+msgid "Katalog %s jest niedostępny (nośnik niezamontowany?).\nDo czasu jego pojawienia się log zostaje w %s."
+msgstr "Directory %s is unavailable (storage not mounted?).\nUntil it becomes available, the log remains in %s."
+
+msgid "Katalog do sprzatania"
+msgstr "Directory to clean"
+
+msgid "Katalog kopii (OK = wybierz)"
+msgstr "Backup directory (OK = select)"
+
+msgid "Katalog kopii EPG"
+msgstr "EPG backup directory"
+
+msgid "Katalog kopii EPG (OK = wybor). Powinien lezec na dysku lub USB - nie w pamieci odbiornika. Teraz: %s"
+msgstr "EPG backup directory (OK = select). Use a disk or USB drive, not receiver internal memory. Now: %s"
+
+msgid "Katalog logu i historii raportów"
+msgstr "Log and report history directory"
+
+msgid "Kazda nieudana proba pobrania strony (kod, Retry-After, adres, poczatek odpowiedzi) trafia do %slokalne/bledy.txt (plik od nowa przy kazdym pobraniu)."
+msgstr "Each unsuccessful page download attempt (code, Retry-After, address, response start) is written to %slokalne/bledy.txt (recreated on each download)."
+
+msgid "Kilka minut po starcie Enigma2 sprawdza EPG; gdy jest w nim mniej niz 30%% zdarzen z ostatniego skanu, wczytuje najnowsza kopie. Kopii: %d"
+msgstr "A few minutes after startup Enigma2 checks EPG; if it contains less than 30%% of the events from the last scan, the newest backup is loaded. Backups: %d"
+
+msgid "Kolejnosc serwisow: "
+msgstr "Service order: "
+
+msgid "Kolejnosc zrodel XMLTV po satelicie: kanal bierze program z pierwszego, ktore go ma. Satelita zawsze pierwszy (EIT ma pierwszenstwo przed importem). Teraz: %s"
+msgstr "XMLTV source order after satellite: a channel uses the first source containing it. Satellite always comes first because EIT takes priority over imports. Now: %s"
+
+msgid "Kolejnosc: %s  (zmiana: Ustawienia -> Program z internetu)"
+msgstr "Order: %s  (change in Settings -> Online programme data)"
+
+msgid "Komunikat na ekranie po sprawdzeniu lub skanie: nigdy / tylko gdy coś się zmieniło / zawsze."
+msgstr "On-screen notification after a check or scan: never / only when something changed / always."
+
+msgid "Komunikat po skanie, gdy okno wtyczki jest zamkniete. Nie jest pokazywany w czuwaniu."
+msgstr "Show a notification after a scan when the plugin window is closed. Notifications are not shown in standby."
+
+msgid "Konfiguracja tunerow - co ustawic (system, EPG Scan, SatWatch)"
+msgstr "Tuner configuration - recommendations (system, EPG Scan, SatWatch)"
+
+msgid "Konfiguracja tunerów - co ustawić (system, EPG Scan, SatWatch)"
+msgstr "Tuner configuration - what to set (system, EPG Scan, SatWatch)"
+
+msgid "Konflikty synchronizacji. Szczegoly: Info/EPG -> Raporty"
+msgstr "Synchronization conflicts. Details: Info/EPG -> Reports"
+
+msgid "Koniec po braku nowych zdarzen [s]"
+msgstr "Stop after no new events [s]"
+
+msgid "Kopia %s (najnowsze na gorze)"
+msgstr "%s backup (newest first)"
+
+msgid "Kopia EPG po skanie"
+msgstr "Back up EPG after scan"
+
+msgid "Kopia EPG zapisana:\n%s"
+msgstr "EPG backup saved:\n%s"
+
+msgid "Kopia bukietów (sprzed podmiany)"
+msgstr "Bouquet backup (before replacement)"
+
+msgid "Kopia nieudana - szczegoly w %s"
+msgstr "Backup failed - see %s"
+
+msgid "Kopia nieudana - szczegoly w logu"
+msgstr "Backup failed; details in the log"
+
+msgid "Kopia satellites.xml"
+msgstr "satellites.xml backup"
+
+msgid "Kopie EPG"
+msgstr "EPG backups"
+
+msgid "Kopie, log, serwer E2Stream"
+msgstr "Backups, log, E2Stream server"
+
+msgid "Ktore bukiety dopasowywac? Te same kanaly dostana program z internetu (zmiana: niebieski tutaj albo Ustawienia -> Program z internetu)"
+msgstr "Which bouquets should be mapped? The same channels will receive the internet guide (change with blue here or Settings -> Internet guide)"
+
+msgid "Ktore bukiety dostaja program z internetu i sa dopasowywane w mapie kanalow dekodera. Wszystkie: takze bukiety, ktorych nie skanujesz z satelity (np. IPTV). Wybrane: tylko zaznaczone - OK otwiera liste (zapis ustawia 'wybrane bukiety'), strzalki - tryb (teraz %d bukietow). Do skanowania: jak w Satelita - EPG -> Kanaly z bukietow."
+msgstr "Choose which bouquets receive internet listings and are matched in the receiver channel map. All includes bouquets not scanned from satellite, such as IPTV. Selected includes only checked bouquets; OK opens the list and saving selects that mode, arrows select the mode (currently %d bouquets). Scan bouquets uses the Satellite - EPG channel selection."
+
+msgid "Ktore kanaly skanowac z satelity i skanem parametrow. OK - lista bukietow do zaznaczenia (zapis ustawia 'wybrane bukiety'); strzalki - tryb. Wszystkie bukiety: takze bukiety dodane w przyszlosci. Wybrane: tylko zaznaczone. Wszystkie transpondery: cala lista kanalow (lamedb) - skan kilka razy dluzszy, wiekszy plik EPG i zuzycie pamieci. Nowe kanaly sa wykrywane zawsze same."
+msgstr "Choose channels for satellite and parameter scanning. OK opens bouquet selection (saving selects 'selected bouquets'); arrows change mode. All bouquets includes future additions. Selected means only checked bouquets. All transponders scans the entire channel list (lamedb), taking several times longer and requiring more EPG storage and memory. New channels are always detected automatically."
+
+msgid "Liczba kopii satellites.xml"
+msgstr "Number of satellites.xml backups"
+
+msgid "Liczba zachowanych kopii"
+msgstr "Number of backups to keep"
+
+msgid "Liczenie..."
+msgstr "Calculating..."
+
+msgid "Lista kanalow do dopasowania"
+msgstr "Channels to map"
+
+msgid "Lista: %s"
+msgstr "List: %s"
+
+msgid "Listy z pakietu enigma2-plugin-extensions-epgimport-sources (Rytec i inne).\nPo odinstalowaniu pakietu dzialaja z kopii wtyczki."
+msgstr "Lists from enigma2-plugin-extensions-epgimport-sources (Rytec and others).\nAfter uninstalling the package, the plugin uses its copy."
+
+msgid "Listy zrodel z adresu"
+msgstr "Source lists from address"
+
+msgid "Log EPG Scan (najnowsze na gorze)"
+msgstr "EPG Scan log (newest first)"
+
+msgid "Log jest pusty."
+msgstr "The log is empty."
+
+msgid "Log: %s (zachowywanych logow: %d - tyle, ile kopii EPG, min. 2). W katalogu kopii log przetrwa restart dekodera i wybudzenie z glebokiego czuwania."
+msgstr "Log: %s (retained logs: %d, matching EPG backups, minimum 2). A log in the backup directory survives receiver restart and wake from deep standby."
+
+msgid "Maks. czas na transponderze [s]"
+msgstr "Maximum time per transponder [s]"
+
+msgid "Maks. rownoleglych skanow"
+msgstr "Maximum simultaneous scans"
+
+msgid "Mapa kanalow z dekodera (pierwszy raz: pobieranie list stacji serwisow, ok. 10 s)..."
+msgstr "Receiver channel map (first time: downloading station lists, about 10 s)..."
+
+msgid "Mapa kanalow z dekodera: przeliczanie dla wybranych bukietow..."
+msgstr "Receiver channel map: recalculating for selected bouquets..."
+
+msgid "Mapa kanalow..."
+msgstr "Channel map..."
+
+msgid "Mapa kanalow: brak kopii (%smapa.json)"
+msgstr "Channel map: no backup (%smapa.json)"
+
+msgid "Martwe wpisy (nie bylo ich w lamedb juz przy poprzednim zrzucie):"
+msgstr "Dead entries (already missing from lamedb in the previous snapshot):"
+
+msgid "Menu: otworz istniejace ustawienia harmonogramu. Czerwony: wroc."
+msgstr "Menu: open the existing schedule settings. Red: back."
+
+msgid "Min. czas na transponderze [s]"
+msgstr "Minimum time per transponder [s]"
+
+msgid "Monitorowane pozycje (OK - lista)"
+msgstr "Monitored positions (OK - list)"
+
+msgid "Multi EPG (Teraz/Nastepny/Wiecej) zaczyna od audycji trwajacej teraz - kanal bez niej jest pusty, choc ma program na pozniej (np. w nocy, ktorej serwis nie podaje). Od teraz do pierwszej audycji: kanal bez EPG z satelity dostaje audycje \"Brak programu do HH:MM\". Takze przerwy: to samo dla przerw od 30 min w srodku programu (np. noce kanalow sportowych)."
+msgstr "Multi EPG (Now/Next/More) starts with the current programme; a channel with only later listings appears empty. From now to first programme adds a placeholder for channels without satellite EPG. Also gaps adds placeholders for gaps of at least 30 minutes within the guide, such as overnight sports channels."
+
+msgid "NOWY"
+msgstr "NEW"
+
+msgid "NOWY w lamedb (pojawil sie od ostatniego sprawdzenia)"
+msgstr "NEW in lamedb (appeared since the last check)"
+
+msgid "Nadawca:      %s - %s"
+msgstr "Provider:     %s - %s"
+
+msgid "Nadawca:      %s - ten sam"
+msgstr "Provider:     %s - the same"
+
+msgid "Najkrotszy czas na transponderze, nawet jesli nie przychodza nowe dane. Daje czas na dalsze dni z karuzeli EPG, ktore nadawca wysyla rzadziej."
+msgstr "Minimum time on a transponder even if no new data arrives. This allows time for later days in the EPG carousel, which broadcasters send less frequently."
+
+msgid "Najpierw podglad programu"
+msgstr "Preview guide first"
+
+msgid "Najpierw wybierz, ktore bukiety dopasowywac."
+msgstr "First select which bouquets to map."
+
+msgid "Najpierw zatrzymaj skanowanie (czerwony)."
+msgstr "Stop the scan first (red)."
+
+msgid "Napraw bukiety teraz (podmiany wg regul)"
+msgstr "Repair bouquets now (replace according to rules)"
+
+msgid "Napraw bukiety teraz (podmiany wg reguł)"
+msgstr "Repair bouquets now (replace according to rules)"
+
+msgid "Naprawa bukietow (recznie):"
+msgstr "SatWatch: Bouquet repair (manual):"
+
+msgid "Naprawa bukietow uruchomiona."
+msgstr "Bouquet repair started."
+
+msgid "Nastepny skan z harmonogramu: %s. Tylko w czuwaniu: gdy o tej porze odbiornik jest uzywany, skan ruszy po przejsciu w czuwanie (do 12 h)."
+msgstr "Next scheduled scan: %s. Standby only: if the receiver is in use at that time, the scan starts when it enters standby (up to 12 hours)."
+
+msgid "Nazwa:        zgodnosc %d%%"
+msgstr "Name:         %d%% match"
+
+msgid "Nic do zrobienia - sprawdz profil (zielony) i ustawienia."
+msgstr "Nothing to do: check the profile (green) and settings."
+
+msgid "Nie czysc: nowe dane dopisywane. Tylko przy harmonogramie: nocny skan buduje EPG od zera, skany reczne i doczytywanie tylko dopisuja (zalecane). Przy kazdym skanie: pelny reset zawsze."
+msgstr "Do not clear: merge new data. Schedule only: the overnight scan rebuilds EPG, while manual scans and top-ups merge (recommended). Every scan: always reset completely."
+
+msgid "Nie mozna odczytac raportu skanu parametrow: %s"
+msgstr "Cannot read the channel parameter scan report: %s"
+
+msgid "Nie mozna odczytac serwerow epgpl:\n%s"
+msgstr "Cannot read epgpl servers:\n%s"
+
+msgid "Nie mozna odczytac wynikow: %s"
+msgstr "Cannot read results: %s"
+
+msgid "Nie mozna odczytac/uruchomic skanu: %s"
+msgstr "Cannot read or start scan: %s"
+
+msgid "Nie mozna pokazac kanalu %s:\nbrak wolnego tunera (nagrywanie, skan, inne urzadzenie) albo brak sygnalu.\nWybor stacji dziala normalnie."
+msgstr "Cannot show channel %s:\nno free tuner (recording, scan, other device) or no signal.\nStation selection still works."
+
+msgid "Nie mozna przelaczyc kanalu podczas innego skanu EPG."
+msgstr "Cannot change channels during another EPG scan."
+
+msgid "Nie mozna przelaczyc kanalu: %s"
+msgstr "Cannot change channel: %s"
+
+msgid "Nie mozna przelaczyc sciezki audio podgladu: %s"
+msgstr "Cannot change preview audio track: %s"
+
+msgid "Nie mozna uruchomic skanu parametrow: %s"
+msgstr "Cannot start the parameter scan: %s"
+
+msgid "Nie mozna uruchomic skanu. Sprawdz bukiety lub status EPG Scan."
+msgstr "Cannot start scan. Check bouquets or EPG Scan status."
+
+msgid "Nie udalo sie odczytac PAT/PMT: %s.\nMozesz sprawdzic audio z Enigma2 lub poprzedniego wyniku, ale PMT nie zostala ponownie odczytana."
+msgstr "Could not read PAT/PMT: %s.\nYou can check audio from Enigma2 or the previous result, but the PMT was not read again."
+
+msgid "Nie udalo sie odczytac tunerow (%s)."
+msgstr "Could not read tuners (%s)."
+
+msgid "Nie udalo sie odczytac tunerow: %s"
+msgstr "Could not read tuner information: %s"
+
+msgid "Nie udalo sie pobrac mapy z serwera %s:\n%s\n(wymagany epgpl 0.7.0 lub nowszy)"
+msgstr "Could not download map from server %s:\n%s\n(epgpl 0.7.0 or newer required)"
+
+msgid "Nie udalo sie pobrac opisu z serwera %s (%s).\nOpis jest na serwerze w /opt/epgpl/README.md (epgpl 0.19.4+ udostepnia go dekoderowi)."
+msgstr "Could not download the description from server %s (%s).\nIt is on the server at /opt/epgpl/README.md (epgpl 0.19.4+ makes it available to the receiver)."
+
+msgid "Nie udalo sie pobrac podgladu: %s"
+msgstr "Could not download preview: %s"
+
+msgid "Nie udalo sie pobrac raportu:\n%s\n\n%s"
+msgstr "Could not download report:\n%s\n\n%s"
+
+msgid "Nie udalo sie ponownie odczytac PAT/PMT: %s"
+msgstr "Could not reread PAT/PMT: %s"
+
+msgid "Nie udalo sie przelaczyc na kanal: %s"
+msgstr "Could not switch to channel: %s"
+
+msgid "Nie udalo sie przygotowac listy - szczegoly w logu %s"
+msgstr "Could not prepare the list; see the log at %s"
+
+msgid "Nie udalo sie rozpoczac skanu; sprawdz bukiety lub status skanera"
+msgstr "Could not start scan; check bouquets or scanner status"
+
+msgid "Nie udalo sie sprawdzic wydan (brak internetu lub GitHub). Szczegoly w logu."
+msgstr "Could not check releases (internet or GitHub unavailable). See log for details."
+
+msgid "Nie udalo sie usunac: %d"
+msgstr "Could not remove: %d"
+
+msgid "Nie udalo sie zapisac wynikow: %s"
+msgstr "Could not save results: %s"
+
+msgid "Nie udalo sie zbudowac mapy na dekoderze:\n%s"
+msgstr "Could not build receiver map:\n%s"
+
+msgid "Nie udalo sie: %s"
+msgstr "Failed: %s"
+
+msgid "Nie ustawiono %d. jezyka preferencji uzytkownika."
+msgstr "User language preference %d is not set."
+
+msgid "Nie wykonywano synchronizacji."
+msgstr "No synchronization was performed."
+
+msgid "Nie znaleziono sciezek audio w PAT/PMT tego kanalu."
+msgstr "No audio tracks found in this channel's PAT/PMT."
+
+msgid "Nie znaleziono serwera epgpl (Avahi i podsiec odbiornika, port %s).\nSprawdz, czy serwer dziala (http://<adres>:8088/epgpl.sources.xml), albo dodaj adres recznie."
+msgstr "No epgpl server found (Avahi and receiver subnet, port %s).\nCheck the server (http://<address>:8088/epgpl.sources.xml), or add its address manually."
+
+msgid "Nie znaleziono stacji: %s"
+msgstr "Station not found: %s"
+
+msgid "Nieaktualne - skan ich nie znalazl, nie usuniete (opcja wylaczona): %d"
+msgstr "Obsolete - not found by the scan, not removed (option disabled): %d"
+
+msgid "Niebieski: przelacz na kanal %s i porownaj z programem stacji."
+msgstr "Blue: switch to channel %s and compare with the station guide."
+
+msgid "Niedziela"
+msgstr "Sunday"
+
+msgid "Nowe bukiety (nie skanowane): %s - dodaj w ustawieniach"
+msgstr "New bouquets (not scanned): %s - add them in settings"
+
+msgid "OCZEKUJE: %s - %s"
+msgstr "WAITING: %s - %s"
+
+msgid "OK - lista adresów pliku satellites.xml do porównania: wbudowany (OpenPLi tuxbox-xml) i dopisane przez Ciebie (sprawdzane przed zapisem). Jeden ustawiasz jako domyślny."
+msgstr "OK - list of satellites.xml addresses to compare: built-in (OpenPLi tuxbox-xml) and those you add (validated before saving). Set one as the default."
+
+msgid "OK - lista bukietów TV i radio do zaznaczenia. SatWatch pilnuje zaznaczonych (raport, podmiany, decyzje); bukiet dodany później jest pilnowany od razu. Domyślnie odznaczony tylko Last Scanned."
+msgstr "OK - select TV and radio bouquets. SatWatch monitors selected bouquets (reports, replacements, decisions); a bouquet added later is monitored immediately. Only Last Scanned is deselected by default."
+
+msgid "OK - lista pozycji z satellites.xml (na górze te, które masz w tunerach) do zaznaczenia. Tylko zaznaczone pozycje są porównywane, aktualizowane i skanowane."
+msgstr "OK - select positions from satellites.xml (those configured in your tuners are at the top). Only selected positions are compared, updated and scanned."
+
+msgid "OK - opis zainstalowanej wersji"
+msgstr "OK - installed version description"
+
+msgid "OK - przygotuj teraz"
+msgstr "OK - prepare now"
+
+msgid "OK - wybierz wydanie GitHub"
+msgstr "OK - choose a GitHub release"
+
+msgid "OK: otworz modul zaznaczonej pozycji lub wybierz tryb. Zielony: uruchom profil."
+msgstr "OK: open the selected module or choose a mode. Green: run the profile."
+
+msgid "OK: ponow odczyt PAT/PMT i wybierz audio."
+msgstr "OK: retry PAT/PMT and select audio."
+
+msgid "OK: przelacz kanal i wybierz sciezke audio. Menu: sortowanie/skan kanalow. Info/EPG: synchronizacja."
+msgstr "OK: change channel and select an audio track. Menu: channel sorting/scan. Info/EPG: synchronization."
+
+msgid "OK: wybierz sciezke. Info/EPG: pelne dane PAT/PMT i strumieni."
+msgstr "OK: select a track. Info/EPG: full PAT/PMT and stream details."
+
+msgid "OK: zaznacz / odznacz.  Zielony: zapisz.  Czerwony: anuluj."
+msgstr "OK: select / deselect.  Green: save.  Red: cancel."
+
+msgid "OK: zaznacz / odznacz.  Zolty: dodaj wlasny katalog.  Niebieski: usun wlasny.  Zielony: zapisz."
+msgstr "OK: select / deselect.  Yellow: add custom directory.  Blue: remove custom directory.  Green: save."
+
+msgid "OK: zaznacz / odznacz. Kanal dostaje dane z pierwszego zrodla, ktore je ma.\n[wlasne] - Twoje listy (zostaja zawsze), [kopia pakietu] - z odinstalowanego pakietu zrodel."
+msgstr "OK: select / deselect. A channel uses the first source containing data.\n[custom] - your lists (always retained); [package copy] - from an uninstalled sources package."
+
+msgid "OK: zaznacz.  Zielony: dalej.  Czerwony: anuluj."
+msgstr "OK: select.  Green: continue.  Red: cancel."
+
+msgid "Obecnie w SatWatch preferowany: %s."
+msgstr "Currently preferred in SatWatch: %s."
+
+msgid "Obraz kanalu na zywo."
+msgstr "Live channel picture."
+
+msgid "Odbiornik %d"
+msgstr "Receiver %d"
+
+msgid "Odbiornik wstanie z glebokiego czuwania ok. 2 min przed skanem. Po skanie wroci do glebokiego czuwania, jesli nikt go nie uzywa i nie ma nagrania w ciagu 15 min."
+msgstr "The receiver wakes from deep standby about two minutes before the scan. Afterward it returns to deep standby if nobody is using it and no recording starts within 15 minutes."
+
+msgid "Odczyt PAT/PMT dla %s..."
+msgstr "Reading PAT/PMT for %s..."
+
+msgid "Odczyt PAT/PMT nie zwrocil sciezek audio dla %s."
+msgstr "PAT/PMT returned no audio tracks for %s."
+
+msgid "Odczytane kanaly: %d | Kanaly z audio: %d | Sciezki audio: %d | Wybrane: %d"
+msgstr "Channels read: %d | Channels with audio: %d | Audio tracks: %d | Selected: %d"
+
+msgid "Odswiez"
+msgstr "Refresh"
+
+msgid "Odtwarzanie EPG po starcie, gdy puste"
+msgstr "Restore EPG on startup if empty"
+
+msgid "Odtworz EPG z kopii"
+msgstr "Restore EPG from backup"
+
+msgid "Odtworz EPG z kopii:"
+msgstr "Restore EPG from backup:"
+
+msgid "Odtworzenie nieudane, szczegoly w %s"
+msgstr "Restore failed; details in %s"
+
+msgid "Opcje"
+msgstr "Options"
+
+msgid "Opcje audio"
+msgstr "Audio options"
+
+msgid "Opis"
+msgstr "Description"
+
+msgid "Opis serwera epgpl (README) - %s"
+msgstr "epgpl server description (README) - %s"
+
+msgid "Opis wtyczki (README)"
+msgstr "Plugin description (README)"
+
+msgid "Opisy: -   |   program: -   (%s)"
+msgstr "Descriptions: -   |   guide: -   (%s)"
+
+msgid "Opisy: srednio %d znakow   |   program na %s%s"
+msgstr "Descriptions: %d characters on average   |   guide for %s%s"
+
+msgid "Osobna wtyczka SatWatch dalej dziala z wlasnym harmonogramem. Odinstaluj ja:\nrm -rf %s; init 4; sleep 2; init 3\nUstawienia, raporty i kopie bukietow zostaja."
+msgstr "The separate SatWatch plugin still runs on its own schedule. Uninstall it:\nrm -rf %s; init 4; sleep 2; init 3\nSettings, reports and bouquet backups will remain."
+
+msgid "Ostatni skan: %s"
+msgstr "Last scan: %s"
+
+msgid "Ostatnie pobranie: %s"
+msgstr "Last download: %s"
+
+msgid "Ostatnie pobranie: %s\n  %s"
+msgstr "Last download: %s\n  %s"
+
+msgid "Otworz"
+msgstr "Open"
+
+msgid "PAT/PMT: %d kanalow, audio %d/%d sciezek, wybranych %d; bledow %d, pominietych %d, czas %d:%02d"
+msgstr "PAT/PMT: %d channels, audio %d/%d tracks, %d selected; %d errors, %d skipped, time %d:%02d"
+
+msgid "PMT pominieto z powodu kolizji SID; niczego nie zapisano."
+msgstr "PMT was skipped because of an SID conflict; nothing was saved."
+
+msgid "PODMIENIONO: %s -> %s  (%s)%s"
+msgstr "REPLACED: %s -> %s  (%s)%s"
+
+msgid "POMINIETY   %s: %s"
+msgstr "SKIPPED   %s: %s"
+
+msgid "Par nakladajacych sie audycji: %d (plik: %s)\n\n"
+msgstr "Overlapping programme pairs: %d (file: %s)\n\n"
+
+msgid "Parametry kanalow"
+msgstr "Channel parameters"
+
+msgid "Pelny skan teraz"
+msgstr "Full scan now"
+
+msgid "Pelny skan uruchomiony (jeden wolny tuner, kilka minut)."
+msgstr "Full scan started (one free tuner, a few minutes)."
+
+msgid "Pelny skan: nie moge odczytac satellites.xml: %s"
+msgstr "Full scan: cannot read satellites.xml: %s"
+
+msgid "Pełny skan raz w tygodniu (w harmonogramie EPG Scan)"
+msgstr "Full scan weekly (in EPG Scan schedule)"
+
+msgid "Pełny skan teraz"
+msgstr "Full scan now"
+
+msgid "Piatek"
+msgstr "Friday"
+
+msgid "Pierwsza pasujaca sciezka w kolejnosci preferencji jest wybierana automatycznie; reczny PID jest zachowywany, jesli nadal wystepuje. Synchronizacja E2Stream jest osobno konfigurowana."
+msgstr "The first track matching the language preference order is selected automatically; a manual PID is preserved if still available. E2Stream synchronization is configured separately."
+
+msgid "Pierwszy do próby, gdy wolny; zajęty - skan od razu bierze inny wolny. W systemie ustaw temu tunerowi niższy priorytet (1), żeby Enigma brała go do oglądania na końcu."
+msgstr "Tried first when free; if busy, the scan immediately uses another free tuner. Set this tuner to a lower priority (1) in the system so Enigma uses it last for viewing."
+
+msgid "Plik %s"
+msgstr "File %s"
+
+msgid "Plik lokalny: %s"
+msgstr "Local file: %s"
+
+msgid "Plik programu: %s  (%d kB, z %s, %.1f h temu%s)"
+msgstr "Programme file: %s  (%d kB, from %s, %.1f h ago%s)"
+
+msgid "Plik programu: brak (%s)"
+msgstr "No programme file (%s)"
+
+msgid "Plik wynikow skanu jest uszkodzony lub niedostepny: %s"
+msgstr "Scan results file is corrupt or unavailable: %s"
+
+msgid "Plik zdalny: %s (ETag %s)"
+msgstr "Remote file: %s (ETag %s)"
+
+msgid "Pliki: %s/raport.txt, %s/porownanie.txt (nic nie zmieniono w %s)"
+msgstr "Files: %s/raport.txt, %s/porownanie.txt (nothing changed in %s)"
+
+msgid "Po aktualizacji satellites.xml przeładowuje transpondery w Enigma2 bez restartu. Wyłączone: zmiana działa po restarcie GUI (może go zrobić 'Restart po nocnym przebiegu' w EPG Scan)."
+msgstr "After updating satellites.xml, reloads transponders in Enigma2 without restarting. When disabled, the change takes effect after a GUI restart (which EPG Scan can perform using 'Restart after nightly run')."
+
+msgid "Po aktualizacji satellites.xml skanuje tylko nowe i zmienione transpondery jednym wolnym tunerem. Sprawdzenie: w nocnym przebiegu EPG Scan albo Kanały -> SatWatch -> Sprawdź teraz."
+msgstr "After updating satellites.xml, scans only new and changed transponders using one free tuner. Check: during the nightly EPG Scan run or via Channels -> SatWatch -> Check now."
+
+msgid "Po kazdym pobraniu programu - program na dobe dla wszystkich stacji, ktore okno wyboru proponuje kanalom z bukietow (ok. 1000 stacji, kilka-kilkanascie minut, dodatkowe zapytania do serwisow). Tylko do podgladu w oknie wyboru, nie trafia do EPG. Bez tego: Menu w oknie wyboru stacji - program zaznaczonej stacji albo wszystkich kandydatow kanalu, na zadanie. Ustawienie obowiazuje tez na serwerze epgpl."
+msgstr "After each listings download, fetch one day for all candidates suggested for bouquet channels (about 1,000 stations, several to over ten minutes, extra requests). This is only for preview in station selection, not imported into EPG. Otherwise Menu in station selection fetches the highlighted station or all channel candidates on demand. This setting also applies to epgpl."
+
+msgid "Po kazdym skanie wtyczka zapisuje EPG na dysk i robi kopie pliku EPG do katalogu kopii. Kopia sluzy do odtworzenia EPG (zolty na ekranie glownym) i do kontroli po starcie."
+msgstr "After every scan, the plugin saves EPG to disk and backs up the EPG file. The backup can restore EPG (yellow on the main screen) and is used for startup checks."
+
+msgid "Po nocnym przebiegu (tylko w czuwaniu, bez nagrania w ciagu 15 min, najwyzej raz na dobe). Gdy potrzebny: tuner nie stroi (pelny restart), malo wolnej pamieci lub Enigma2 urosla o ponad 250 MB, SatWatch zmienil satellites.xml bez przeladowania (restart Enigma2), dekoder dziala dluzej niz podana liczba dni (pelny restart). Powod w logu i w podsumowaniu nocy. Teraz: wolne %d MB, dziala %.1f dnia."
+msgstr "After the overnight run (standby only, no recording within 15 minutes, at most once daily). When needed: tuner cannot tune (full restart); low free memory or Enigma2 grew over 250 MB; SatWatch changed satellites.xml without reloading (Enigma2 restart); or receiver uptime exceeds the specified days (full restart). The reason appears in the log and overnight summary. Now: %d MB free, uptime %.1f days."
+
+msgid "Po pobraniu na serwerze: "
+msgstr "After server download: "
+
+msgid "Po pracy z harmonogramu i po skanach cyklicznych w ciagu dnia: paczka dla E2Stream - EPG kanalow ze wszystkich bukietow TV, ikony kanalow i zamiany referencji (np. po zmianach SatWatch). Aplikacja pobiera ja przy pierwszym uruchomieniu w danym dniu i gdy pojawi sie nowsza. OK na 'Przygotuj dane teraz' - od razu. Katalog: %s. Ostatnio: %s"
+msgstr "After scheduled and daytime periodic scans: an E2Stream package containing EPG for all TV bouquets, channel icons and reference replacements (e.g. after SatWatch changes). The app downloads it on its first launch of the day and whenever a newer package appears. OK on Prepare data now creates it immediately. Directory: %s. Last: %s"
+
+msgid "Po skanie z satelity: kanaly bez EPG dostaja program z XMLTV, a w trybie \"dalsze dni\" takze luki miedzy istniejacymi audycjami i program po nich. Na czas importu EIT jest wylaczane, potem wraca do poprzedniego stanu. Zrodla wybierasz zoltym przyciskiem - wybrano %d."
+msgstr "After a satellite scan, channels without EPG receive XMLTV listings. In later-days mode it also fills gaps and listings after existing events. EIT is disabled for the import and restored afterward. Select sources with yellow; %d selected."
+
+msgid "Po skanie: wspolne ustawienia E2Stream"
+msgstr "After scan: shared E2Stream settings"
+
+msgid "Po skanie: wszystkie profile E2Stream"
+msgstr "After scan: all E2Stream profiles"
+
+msgid "Po zakonczeniu calego skanu wykonaj jedna dodatkowa probe tylko dla kanalow z bledem, takze w harmonogramie."
+msgstr "After the entire scan, retry only failed channels once, including scheduled scans."
+
+msgid "Po zakonczonym EPG uruchom skan parametrow PAT/PMT kanalow z wybranych bukietow."
+msgstr "After EPG completes, scan PAT/PMT channel parameters from the selected bouquets."
+
+msgid "Pobieranie %s ..."
+msgstr "Downloading %s ..."
+
+msgid "Pobieranie i instalacja EPG Scan %s..."
+msgstr "Downloading and installing EPG Scan %s..."
+
+msgid "Pobieranie listy wydan z GitHub..."
+msgstr "Downloading GitHub releases..."
+
+msgid "Pobieranie mapy kanalow z serwera..."
+msgstr "Downloading channel map from server..."
+
+msgid "Pobieranie na dekoderze - podsumowanie i bledy"
+msgstr "Receiver download - summary and errors"
+
+msgid "Pobieranie na dekoderze: %d / %d stron, bledow %d - %s\nczas %d:%02d, zostalo ok. %d:%02d"
+msgstr "Receiver download: %d / %d pages, %d errors - %s\nelapsed %d:%02d, about %d:%02d remaining"
+
+msgid "Pobieranie na serwerze (%d:%02d) - brak odpowiedzi serwera: %s"
+msgstr "Server download (%d:%02d) - no response from server: %s"
+
+msgid "Pobieranie na serwerze (%d:%02d): %s"
+msgstr "Server download (%d:%02d): %s"
+
+msgid "Pobieranie na serwerze nie ruszylo: %s"
+msgstr "Server download did not start: %s"
+
+msgid "Pobieranie na serwerze nieudane - EPG nie zmienione.\n%s"
+msgstr "Server download failed - EPG unchanged.\n%s"
+
+msgid "Pobieranie na serwerze trwa..."
+msgstr "Server download in progress..."
+
+msgid "Pobieranie na serwerze: brak odpowiedzi serwera od dluzszego czasu - przerywam czekanie"
+msgstr "Server download: no response for a long time - stopping wait"
+
+msgid "Pobieranie programu kandydatow (%s): %d/%d %s, %d:%02d\nMozna wybierac dalej albo zamknac okno - wynik bedzie pamietany 3 h."
+msgstr "Downloading candidate guide (%s): %d/%d %s, %d:%02d\nYou can continue choosing or close the window - the result is cached for 3 h."
+
+msgid "Pobieranie programu kandydatow juz trwa."
+msgstr "Candidate guide download is already running."
+
+msgid "Pobieranie programu kandydatow nieudane:\n%s"
+msgstr "Candidate guide download failed:\n%s"
+
+msgid "Pobieranie programu na dekoderze"
+msgstr "Downloading guide on receiver"
+
+msgid "Pobieranie programu na dekoderze (%d:%02d): %s"
+msgstr "Receiver programme download (%d:%02d): %s"
+
+msgid "Pobieranie programu na dekoderze (%d:%02d): mapa kanalow..."
+msgstr "Receiver programme download (%d:%02d): channel map..."
+
+msgid "Pobieranie programu na dekoderze: przerywanie (%d:%02d)..."
+msgstr "Receiver programme download: stopping (%d:%02d)..."
+
+msgid "Pobieranie programu na dekoderze: przerywanie..."
+msgstr "Receiver programme download: stopping..."
+
+msgid "Pobieranie programu na dekoderze: przygotowanie..."
+msgstr "Receiver programme download: preparing..."
+
+msgid "Pobieranie programu na dekoderze: serwer wlasnie pobiera - czekam na jego paczke (%d min)"
+msgstr "Receiver programme download: the server is downloading; waiting for its package (%d min)"
+
+msgid "Pobieranie programu stacji z serwera...\n(gdy stacji nie ma w pliku programu, serwer pobiera ja teraz z serwisu - do kilkudziesieciu sekund)"
+msgstr "Downloading station guide from server...\n(if the station is not in the guide file, the server downloads it now from the service - this can take several seconds)"
+
+msgid "Pobieranie: %s ..."
+msgstr "Downloading: %s ..."
+
+msgid "Pobierz i importuj XMLTV (bez czyszczenia EPG)"
+msgstr "Download and import XMLTV (without clearing EPG)"
+
+msgid "Pobierz na serwerze w trakcie skanu z harmonogramu"
+msgstr "Download on server during scheduled scan"
+
+msgid "Pobierz program"
+msgstr "Download guide"
+
+msgid "Pobierz program wszystkich kandydatow bez programu (%d stacji)"
+msgstr "Download guide for all candidates without one (%d stations)"
+
+msgid "Pobierz program zaznaczonej stacji: %s: %s"
+msgstr "Download guide for selected station: %s: %s"
+
+msgid "Pobierz swieze dane"
+msgstr "Download fresh data"
+
+msgid "Pobierz, skan satelity, potem XMLTV (bez czyszczenia EPG)"
+msgstr "Download, scan satellite, then import XMLTV (without clearing EPG)"
+
+msgid "Pobierz, wyczysc cale EPG i importuj XMLTV (EPG z satelity zniknie do nastepnego skanu)"
+msgstr "Download, clear all EPG and import XMLTV (satellite EPG will disappear until the next scan)"
+
+msgid "Pobierz, wyczysc cale EPG, skan satelity, potem XMLTV"
+msgstr "Download, clear all EPG, scan satellite, then import XMLTV"
+
+msgid "Pobrane (%d:%02d). Pobieranie pliku programu z serwera do porownania..."
+msgstr "Downloaded (%d:%02d). Downloading server guide for comparison..."
+
+msgid "Pobranie: "
+msgstr "Download: "
+
+msgid "Pobranie:   %s"
+msgstr "Download:   %s"
+
+msgid "Pobranie: nie - import z gotowych plikow; gdy pliku nie ma albo ma ponad 30 h, dekoder / serwer pobiera i tak."
+msgstr "Download: no - import existing files; if a file is missing or over 30 hours old, the receiver / server downloads it anyway."
+
+msgid "Poczatek: %s\nKoniec: %s\nCzas: %d:%02d"
+msgstr "Started: %s\nFinished: %s\nDuration: %d:%02d"
+
+msgid "Pod adresem nie ma poprawnego satellites.xml:\n%s\n\n%s"
+msgstr "The address does not contain a valid satellites.xml:\n%s\n\n%s"
+
+msgid "Podglad"
+msgstr "Preview"
+
+msgid "Podglad aktualnego kanalu. Wybierz kanal klawiszem OK."
+msgstr "Current channel preview. Select a channel with OK."
+
+msgid "Podglad bukietow - porownanie ze zrzutem"
+msgstr "Preview bouquets - compare with snapshot"
+
+msgid "Podglad programu"
+msgstr "Preview guide"
+
+msgid "Podglad: %s  (kanal: %s)%s"
+msgstr "Preview: %s  (channel: %s)%s"
+
+msgid "Podmiany automatu: %d, do decyzji: %d (szczegoly w raport.txt)"
+msgstr "Automatic replacements: %d, pending decision: %d (details in raport.txt)"
+
+msgid "Podmiany, ktore masz tez u siebie (trafione): %d"
+msgstr "Replacements also in your list (matched): %d"
+
+msgid "Podmiany, ktorych u siebie nie masz (do sprawdzenia): %d"
+msgstr "Replacements not in your list (to check): %d"
+
+msgid "Podmieniaj kanały w bukietach automatycznie"
+msgstr "Automatically replace channels in bouquets"
+
+msgid "Podmienic %s na %s (SID %04X, %s) we wszystkich bukietach?"
+msgstr "Replace %s with %s (SID %04X, %s) in all bouquets?"
+
+msgid "Podmieniono na %s (%s) w %d miejscach"
+msgstr "Replaced with %s (%s) in %d places"
+
+msgid "Podsiec %s: sprawdzono %d z %d adresow, znaleziono %d"
+msgstr "Subnet %s: checked %d of %d addresses, found %d"
+
+msgid "Pokaz kanaly"
+msgstr "Show channels"
+
+msgid "Pokaz roznice (%d)"
+msgstr "Show differences (%d)"
+
+msgid "Pokaz: %s"
+msgstr "Show: %s"
+
+msgid "Pokaż log (ostatnie 200 linii)"
+msgstr "Show log (last 200 lines)"
+
+msgid "Polski"
+msgstr "Polish"
+
+msgid "Pomijaj transpondery bez EPG"
+msgstr "Skip transponders without EPG"
+
+msgid "Pomin propozycje zmiany (wroci, gdy wskazanie sie zmieni)"
+msgstr "Skip suggested change (returns when selection changes)"
+
+msgid "Pominiete"
+msgstr "Skipped"
+
+msgid "Poniedzialek"
+msgstr "Monday"
+
+msgid "Ponow raz bledne kanaly po skanie"
+msgstr "Retry failed channels once after scanning"
+
+msgid "Popraw"
+msgstr "Edit"
+
+msgid "Poprawic nieistniejace"
+msgstr "Repair invalid"
+
+msgid "Porownaj ponownie"
+msgstr "Compare again"
+
+msgid "Porownanie dekoder / serwer (ostatni test)"
+msgstr "Receiver / server comparison (last test)"
+
+msgid "Porownanie: stara lista po automacie vs Twoja aktualna lista (%s)"
+msgstr "Comparison: old list after automatic replacement vs your current list (%s)"
+
+msgid "Porownywanie z %s..."
+msgstr "Comparing with %s..."
+
+msgid "Potwierdzic %d zapisanych propozycji sciezki audio? Niepewne kanaly pozostana bez wyboru."
+msgstr "Confirm %d saved audio track suggestions? Uncertain channels will remain unselected."
+
+msgid "Potwierdzone"
+msgstr "Confirmed"
+
+msgid "Powiadomienia, restart, sprzatanie dysku"
+msgstr "Notifications, restart, disk cleanup"
+
+msgid "Powiadomienie na ekranie"
+msgstr "On-screen notification"
+
+msgid "Powiadomienie po pracy w tle"
+msgstr "Notify after background work"
+
+msgid "Pozostale zrodla XMLTV"
+msgstr "Other XMLTV sources"
+
+msgid "Pozycja %s"
+msgstr "SatWatch: Position %s"
+
+msgid "Pozycja %s: BRAK w pliku zdalnym - pomijam"
+msgstr "Position %s: MISSING from remote file - skipping"
+
+msgid "Pozycja %s: brak w lokalnym pliku - zostanie dodana z pliku zdalnego (bez skanu)."
+msgstr "Position %s: missing from local file - it will be added from the remote file (without scanning)."
+
+msgid "Pozycja %s: plik zdalny ma podejrzanie malo TP (%d vs %d lokalnie)"
+msgstr "Position %s: remote file has suspiciously few transponders (%d vs %d locally)"
+
+msgid "Pracuję…"
+msgstr "Working…"
+
+msgid "Preferencje jezykow skanu kanalow"
+msgstr "Channel scan language preferences"
+
+msgid "Preferowany tuner do skanu (zajęty - inny wolny)"
+msgstr "Preferred scan tuner (another free tuner if busy)"
+
+msgid "Preferowany tuner zajety -> SatWatch bierze od razu inny wolny; gdy Enigma odmowi, probuje kolejnego."
+msgstr "If the preferred tuner is busy, SatWatch immediately uses another free one; if Enigma refuses, it tries the next."
+
+msgid "Priorytet tunera: menu Enigmy -> Ustawienia -> Tunery i skanowanie -> Konfiguracja tunerow -> wybrany tuner"
+msgstr "Tuner priority: Enigma menu -> Settings -> Tuners and scanning -> Tuner configuration -> select tuner"
+
+msgid "Proby z bledem: %d  (%s)  - 404 = dzien poza zasiegiem serwisu, '-' = polaczenie odrzucone/timeout"
+msgstr "Failed attempts: %d  (%s)  - 404 = day outside service range, '-' = connection refused / timeout"
+
+msgid "Profil"
+msgstr "Profile"
+
+msgid "Profil bez satelity - start i harmonogram robia sam import XMLTV%s"
+msgstr "Profile without satellite: manual and scheduled runs only import XMLTV%s"
+
+msgid "Profil domyslny (OK na ekranie glownym i harmonogram): %s"
+msgstr "Default profile (OK on the main screen and schedule): %s"
+
+msgid "Profil:     %s%s"
+msgstr "Profile:    %s%s"
+
+msgid "Profilaktycznie: pelny restart, gdy odbiornik dziala dluzej niz tyle dni (nie = wylaczone). Pamiec: restart Enigma2, gdy wolnej pamieci w systemie jest mniej niz prog."
+msgstr "Preventive: fully restart when the receiver uptime exceeds the specified days (no = disabled). Memory: restart Enigma2 when free system memory falls below the threshold."
+
+msgid "Prog: kanal trafia do doczytania, gdy jego EPG (takze z XMLTV) siega mniej niz tyle do przodu. Przy duzym progu (np. 3 dni) doczytywanie bedzie czestsze; Polsat Box nadaje zwykle ok. 1 doby, wiec przy progu ponad 1 dzien jego transpondery beda doczytywane przy kazdym sprawdzeniu."
+msgstr "A channel needs topping up when its EPG (including XMLTV) extends less than this threshold. A large threshold such as 3 days causes more frequent updates; Polsat Box usually broadcasts about one day, so a threshold over one day triggers its transponders on every check."
+
+msgid "Program kandydatow pobrany (%d:%02d). Stacje bez programu w serwisie zostaja z \"-\"."
+msgstr "Candidate guide downloaded (%d:%02d). Stations without a guide in the service remain marked \"-\"."
+
+msgid "Program na dekoderze: %s"
+msgstr "Receiver programme data: %s"
+
+msgid "Program na serwerze pobrany (%d:%02d)."
+msgstr "Guide downloaded on server (%d:%02d)."
+
+msgid "Program pobierany przez dekoder i serwer epgpl wlacza sie w Akcjach (zielony) - tam tez kolejnosc\ni zapas. Tutaj tylko data danych; niebieski na serwerze: dopasowanie kanalow, adres."
+msgstr "Listings downloaded by the receiver and epgpl server are enabled in Actions (green), including order and fallback.\nOnly the data date is shown here; blue on server: channel matching, address."
+
+msgid "Program z internetu (XMLTV)"
+msgstr "Internet listings (XMLTV)"
+
+msgid "Program z internetu - dekoder, serwer, zrodla XMLTV, kolejnosc"
+msgstr "Online programme data - receiver, server, XMLTV sources, order"
+
+msgid "Program z internetu: dekoder (pobiera sam), serwer epgpl, pozostale zaznaczone zrodla XMLTV (zolty). Ktore z nich biora udzial i czy pobierac swieze dane - w profilu (zielony na ekranie glownym -> Akcje)."
+msgstr "Internet listings: receiver (downloads itself), epgpl server and other selected XMLTV sources (yellow). Participation and fresh downloads are configured in the profile (green on the main screen -> Actions)."
+
+msgid "Program z serwera: pobranie na serwerze (ok. 10 min) albo gotowy plik"
+msgstr "Server guide: download on server (about 10 min) or ready file"
+
+msgid "Propozycje zmian [!]: %d"
+msgstr "Suggested changes [!]: %d"
+
+msgid "Przelacz na kanal"
+msgstr "Switch to channel"
+
+msgid "Przelaczanie na %s..."
+msgstr "Switching to %s..."
+
+msgid "Przeladowanie nie powiodlo sie - zrestartuj GUI."
+msgstr "Reload failed; restart the GUI."
+
+msgid "Przeladowanie transponderow nie powiodlo sie - zrestartuj GUI."
+msgstr "Could not reload transponders; restart the GUI."
+
+msgid "Przeladuj transpondery (bez restartu)"
+msgstr "Reload transponders (without restart)"
+
+msgid "Przenies wskazania z serwera do dekodera"
+msgstr "Transfer mappings from server to receiver"
+
+msgid "Przeniesc wskazania (reczne z tunera i aliasy) z mapy serwera %s do mapy dekodera?\nIstniejace wskazania dekodera dla tych samych kanalow zostana nadpisane."
+msgstr "Transfer mappings (manual tuner selections and aliases) from server map %s to the receiver map?\nExisting receiver mappings for the same channels will be overwritten."
+
+msgid "Przeniesiono %d wskazan. Mapa dekodera przeliczona."
+msgstr "Transferred %d mappings. The receiver map has been recalculated."
+
+msgid "Przerwa po kazdej stronie na kazdym polaczeniu - zeby nie obciazac serwisow. Gdy serwis odpowiada 429/503 (ogranicza zapytania), pobieranie samo wydluza przerwe (do 5 s), a nieudane strony ponawia na koncu, wolniej. 1 s: pelne pobieranie kilka - kilkanascie minut. 0,3 s szybciej, ale wieksze ryzyko blokady."
+msgstr "Delay after each page on each connection to avoid overloading services. On 429/503 rate limits, downloading automatically increases the delay to 5 seconds and retries failed pages more slowly at the end. At 1 s a full download takes several to over ten minutes; 0.3 s is faster but increases blocking risk."
+
+msgid "Przerwac czekanie na serwer?\n\nPobieranie na serwerze bedzie trwalo dalej (jego plik dostaniesz przy nastepnym imporcie), ale dekoder nie uruchomi teraz: %s."
+msgstr "Stop waiting for the server?\n\nThe server download will continue (its file will be used at the next import), but the receiver will not start: %s."
+
+msgid "Przerwac pobieranie programu na dekoderze?\n\nPlik programu nie zostanie podmieniony - zostaje poprzedni."
+msgstr "Stop downloading programme data on the receiver?\n\nThe existing programme file will not be replaced."
+
+msgid "Przerwac skan parametrow?"
+msgstr "Stop parameter scan?"
+
+msgid "Przerwany skan (brak tunera, użycie odbiornika) jest dokończony później, gdy tunery będą wolne - do 24 h."
+msgstr "A scan interrupted by unavailable tuners or receiver use is completed later when tuners are free, within 24 hours."
+
+msgid "Przerwij skan"
+msgstr "Stop scan"
+
+msgid "Przerwij skan (%s)"
+msgstr "Stop scan (%s)"
+
+msgid "Przeładowanie nie powiodło się - zrestartuj GUI."
+msgstr "Reload failed - restart the GUI."
+
+msgid "Przeładuj transpondery (bez restartu)"
+msgstr "Reload transponders (without restart)"
+
+msgid "Przeładuj transpondery po aktualizacji"
+msgstr "Reload transponders after update"
+
+msgid "Przy każdym sprawdzeniu: raport bukietów względem zrzutu referencyjnego (zgubione kanały, zmiany nazw i TP) i zapis nowego zrzutu. Ręcznie: Kanały -> SatWatch -> Zapisz zrzut / Podgląd bukietów."
+msgstr "At every check: report bouquets against the reference snapshot (lost channels, name and transponder changes) and save a new snapshot. Manually: Channels -> SatWatch -> Save snapshot / Preview bouquets."
+
+msgid "Przygotowanie listy kanalow..."
+msgstr "Preparing the channel list..."
+
+msgid "Przygotowywanie danych dla E2Stream (EPG, ikony, referencje)..."
+msgstr "Preparing E2Stream data (EPG, icons, references)..."
+
+msgid "Przyklad i wyniki testow (VU+ Uno 4K SE, FBC 8 tunerow, Unicable): README, rozdzial 'Konfiguracja tunerow'."
+msgstr "Example and test results (VU+ Uno 4K SE, FBC 8 tuners, Unicable): README, 'Tuner configuration' section."
+
+msgid "Przywroc kopie bukietow"
+msgstr "Restore bouquet backup"
+
+msgid "Przywroc kopie satellites.xml"
+msgstr "Restore satellites.xml backup"
+
+msgid "Przywrocono %d plikow bukietow z kopii %s. Listy kanalow przeladowane."
+msgstr "Restored %d bouquet files from backup %s. Channel lists reloaded."
+
+msgid "Przywrocono satellites.xml z kopii %s.\n%s"
+msgstr "Restored satellites.xml from backup %s.\n%s"
+
+msgid "Przywrócono %d plików bukietów z %s."
+msgstr "Restored %d bouquet files from %s."
+
+msgid "Przywrócono %s. Zrestartuj GUI lub przeładuj transpondery."
+msgstr "Restored %s. Restart the GUI or reload transponders."
+
+msgid "Przywróć kopię bukietów"
+msgstr "Restore bouquet backup"
+
+msgid "Przywróć kopię satellites.xml"
+msgstr "Restore satellites.xml backup"
+
+msgid "REZERWACJA TP: [%s] %s"
+msgstr "TP RESERVATION: [%s] %s"
+
+msgid "Raport ktorego serwera?"
+msgstr "Which server report?"
+
+msgid "Raport mapy kanalow dekodera"
+msgstr "Receiver channel mapping report"
+
+msgid "Raport serwera - %s"
+msgstr "Server report - %s"
+
+msgid "Raport: %s"
+msgstr "Report: %s"
+
+msgid "Raporty"
+msgstr "Reports"
+
+msgid "Raz dziennie o tej godzinie uruchamia wybrany tryb, bez wzgledu na odstepy i ich wydluzanie. Dobre do zlapania pory, o ktorej nadawca (np. Polsat Box) dosyla nowe dni - w logach widac ja po wpisach \"zasieg: +N h\"."
+msgstr "Once daily at this time, run the chosen mode regardless of intervals and backoff. Useful for the time a broadcaster such as Polsat Box sends additional days, identifiable in logs by \"zasieg: +N h\"."
+
+msgid "Raz w tygodniu, w wybrany dzien, nocny przebieg robi pelny skan satelity SatWatch (wszystkie TP monitorowanych pozycji, kilka minut, jeden wolny tuner); w pozostale dni SatWatch tylko sprawdza zmiany satellites.xml. To samo ustawienie: Ustawienia -> SatWatch."
+msgstr "Once weekly on the chosen day, the overnight run performs a full SatWatch satellite scan (all transponders at monitored positions; a few minutes on one free tuner). On other days SatWatch only checks satellites.xml changes. The same setting appears under Settings -> SatWatch."
+
+msgid "Raz w tygodniu, w wybrany dzień, nocny przebieg EPG Scan robi pełny skan wszystkich TP monitorowanych pozycji (13.0E: ok. 70 TP, kilka minut); w pozostałe dni - tylko sprawdzenie zmian. Harmonogram EPG Scan określa wyłącznie kiedy ten przebieg może się uruchomić."
+msgstr "Once a week, on the selected day, the nightly EPG Scan run performs a full scan of all transponders at monitored positions (13.0E: about 70 transponders, a few minutes); on other days it only checks for changes. The EPG Scan schedule determines only when this run may start."
+
+msgid "Restart po nocnym przebiegu"
+msgstr "Restart after overnight run"
+
+msgid "Rezerwa wolnych tunerow"
+msgstr "Free tuner reserve"
+
+msgid "Rezerwa wolnych tunerów"
+msgstr "Free tuner reserve"
+
+msgid "Rozni sie od %s: %d%s"
+msgstr "Differs from %s: %d%s"
+
+msgid "Roznice: dekoder / serwer (%d)"
+msgstr "Differences: receiver / server (%d)"
+
+msgid "SID zgodny"
+msgstr "matching SID"
+
+msgid "SID:          %04X - ZGODNY z dawnym (najmocniejsza wskazowka)"
+msgstr "SID:          %04X - MATCHES the old one (strongest clue)"
+
+msgid "SID:          %04X - inny niz dawny (%04X)"
+msgstr "SID:          %04X - differs from the old one (%04X)"
+
+msgid "Sam import XMLTV (bez skanu satelity) - szczegoly w Raportach (Info/EPG) i w logu."
+msgstr "XMLTV import only (no satellite scan): see Reports (Info/EPG) and the log."
+
+msgid "SatWatch %s  |  %s"
+msgstr "SatWatch %s  |  %s"
+
+msgid "SatWatch %s  |  %s  |  podglad (bez zmian)"
+msgstr "SatWatch %s  |  %s  |  preview (no changes)"
+
+msgid "SatWatch %s - SYMULACJA  |  %s"
+msgstr "SatWatch %s - SIMULATION  |  %s"
+
+msgid "SatWatch %s%s   (raporty i log: Info/EPG -> Raporty)"
+msgstr "SatWatch %s%s   (reports and log: Info/EPG -> Reports)"
+
+msgid "SatWatch (pelny)"
+msgstr "SatWatch (full scan)"
+
+msgid "SatWatch (przed skanem EPG, czas %d:%02d): %s"
+msgstr "SatWatch (before EPG scan, time %d:%02d): %s"
+
+msgid "SatWatch (zmiany)"
+msgstr "SatWatch (changes)"
+
+msgid "SatWatch - adres satellites.xml"
+msgstr "SatWatch - satellites.xml address"
+
+msgid "SatWatch - decyzja: %s"
+msgstr "SatWatch - decision: %s"
+
+msgid "SatWatch - do decyzji: %d"
+msgstr "SatWatch - pending decision: %d"
+
+msgid "SatWatch - kanały z bukietów"
+msgstr "SatWatch - bouquet channels"
+
+msgid "SatWatch - log (najnowsze na gorze)"
+msgstr "SatWatch - log (newest first)"
+
+msgid "SatWatch - monitorowane pozycje"
+msgstr "SatWatch - monitored positions"
+
+msgid "SatWatch - ostatni raport"
+msgstr "SatWatch - latest report"
+
+msgid "SatWatch - raport %s"
+msgstr "SatWatch - report %s"
+
+msgid "SatWatch - raporty (najnowsze na gorze)"
+msgstr "SatWatch - reports (newest first)"
+
+msgid "SatWatch - sprawdzenie, skan, kanaly do decyzji, zrzut, kopie"
+msgstr "SatWatch - check, scan, channels awaiting decision, snapshot, backups"
+
+msgid "SatWatch - transpondery - ustawienia"
+msgstr "SatWatch - transponders - settings"
+
+msgid "SatWatch - transpondery: zmiany na satelicie, skan, tunery, bukiety"
+msgstr "SatWatch - transponders: satellite changes, scan, tuners, bouquets"
+
+msgid "SatWatch - wczesniejsze raporty (historia)"
+msgstr "SatWatch - previous reports (history)"
+
+msgid "SatWatch najpierw (wolne tunery, najwyzej 15 min czekania); po zmianach w kanalach lista transponderow i mapa kanalow budowane od nowa."
+msgstr "SatWatch first (free tuners, wait up to 15 minutes); after channel changes, rebuild the transponder list and channel map."
+
+msgid "SatWatch niedostepny: %s"
+msgstr "SatWatch unavailable: %s"
+
+msgid "SatWatch pracuje (%s) - sprobuj pozniej."
+msgstr "SatWatch is busy (%s); try again later."
+
+msgid "SatWatch pracuje (%s) - sprobuj za chwile."
+msgstr "SatWatch is busy (%s) - try again shortly."
+
+msgid "SatWatch pracuje - sprobuj za chwile."
+msgstr "SatWatch is busy - try again shortly."
+
+msgid "SatWatch: satellites.xml %s"
+msgstr "SatWatch: satellites.xml %s"
+
+msgid "SatWatch: skan %s %d/%d TP OK, usunieto %d, podmieniono %d, do decyzji %d"
+msgstr "SatWatch: scan %s %d/%d transponders OK, removed %d, replaced %d, pending decision %d"
+
+msgid "SatWatch: zmian w transponderach: %d"
+msgstr "SatWatch: transponder changes: %d"
+
+msgid "SatWatch: zmiany na satelicie i bukiety"
+msgstr "SatWatch: satellite changes and bouquets"
+
+msgid "Satelita (skan transponderow)"
+msgstr "Satellite (transponder scan)"
+
+msgid "Satelita - EPG: skan transponderow, EIT, bukiety"
+msgstr "Satellite - EPG: transponder scan, EIT, bouquets"
+
+msgid "Satelita zawsze ma pierwszenstwo: XMLTV uzupelnia tylko to, czego nie dal satelita (EIT ma w Enigma2 wyzszy priorytet niz import)."
+msgstr "Satellite always has priority: XMLTV supplements only what satellite did not provide (Enigma2 gives EIT priority over imported data)."
+
+msgid "Satelita:   %s"
+msgstr "Satellite:  %s"
+
+msgid "Sciezki audio: %s"
+msgstr "Audio tracks: %s"
+
+msgid "Serwer dla aplikacji E2Stream"
+msgstr "Server for E2Stream app"
+
+msgid "Serwer epgpl"
+msgstr "epgpl server"
+
+msgid "Serwer epgpl liczy mape dla innych bukietow albo innej kolejnosci serwisow - wysylam ustawienia dekodera..."
+msgstr "epgpl server uses different bouquets or service order - sending receiver settings..."
+
+msgid "Serwer epgpl: wyslanie wyboru bukietow i przeliczenie mapy (kilka sekund)..."
+msgstr "epgpl server: sending bouquet selection and recalculating map (a few seconds)..."
+
+msgid "Serwer nie przyjal zmiany:\n%s"
+msgstr "Server rejected the change:\n%s"
+
+msgid "Serwisy, których skan nie znalazł na zeskanowanym TP, są usuwane z lamedb (TP z mniej niż połową znanych kanałów - nic nie usuwa). Wyłączone: zostają, ale raport je wypisuje, a kanały z bukietów na nich trafiają do podmiany / decyzji."
+msgstr "Services not found by the scan on a scanned transponder are removed from lamedb (nothing is removed if fewer than half the known channels were found). When disabled, they remain but are listed in the report, and bouquet channels among them are considered for replacement or decision."
+
+msgid "Skad dekoder wie, ktory kanal bierze program z ktorej stacji serwisu. Z serwera: mapa serwera epgpl (kopia na dysku). Na dekoderze: dekoder sam odswieza listy stacji i buduje mape z Twoich bukietow (te same reguly co serwer); wskazania w Kanaly -> Dopasowanie kanalow: dekoder (mozna przeniesc z serwera)."
+msgstr "Determines which site station supplies each channel. Server: epgpl map with a local copy. Receiver: the receiver refreshes station lists and builds a map from bouquets using the same rules as the server; adjust choices in Channels -> Channel matching: receiver (server choices can be imported)."
+
+msgid "Skan %d/%d - %d%%"
+msgstr "Scan %d/%d - %d%%"
+
+msgid "Skan %d/%d - %d%%, zostało ok. %s"
+msgstr "Scan %d/%d - %d%%, about %s remaining"
+
+msgid "Skan %d/%d - czeka na wolny tuner"
+msgstr "Scan %d/%d - waiting for a free tuner"
+
+msgid "Skan %s (tuner %s)"
+msgstr "Scan %s (tuner %s)"
+
+msgid "Skan %s: czekam - enigma nie daje tunera do skanu (%s odmowily; FBC zajety?)"
+msgstr "Scan %s: waiting - Enigma will not allocate a tuner (%s refused; FBC busy?)"
+
+msgid "Skan %s: czekam na wolny tuner (wolne %d, do skanu %d, rezerwa %d)"
+msgstr "Scan %s: waiting for a free tuner (free %d, available for scan %d, reserve %d)"
+
+msgid "Skan (%s): %d TP"
+msgstr "Scan (%s): %d transponders"
+
+msgid "Skan (%s): %d TP, poprawnie %d, nieudane %d"
+msgstr "SatWatch: Scan (%s): %d transponders, successful %d, failed %d"
+
+msgid "Skan EPG i skan satelity zajmuja jedyny tuner - w tym czasie nie obejrzysz ani nie nagrasz"
+msgstr "EPG and satellite scans use the only tuner - during this time you cannot watch or record"
+
+msgid "Skan PAT/PMT kanalow: aktywne %d, rezerwacje TP %d, w kolejce %d, czas %d:%02d   %s"
+msgstr "Channel PAT/PMT scan: active %d, TP reservations %d, queued %d, time %d:%02d   %s"
+
+msgid "Skan PAT/PMT uruchamia sie po zakonczonym przebiegu z glownego harmonogramu, nie czesciej niz co %s dni. Nadrzedne sa warunki z okna Harmonogram (czuwanie, nagrania i wybudzanie). Doczytywanie EPG nie uruchamia skanu parametrow. Teraz: %s."
+msgstr "The PAT/PMT scan starts after the main scheduled run, no more often than every %s days. Schedule conditions take precedence (standby, recordings and wakeup). EPG top-ups do not start a parameter scan. Now: %s."
+
+msgid "Skan jest zajety"
+msgstr "Scanner is busy"
+
+msgid "Skan kanalow (PAT/PMT)"
+msgstr "Channel scan (PAT/PMT)"
+
+msgid "Skan parametrow kanalow (PAT/PMT)"
+msgstr "Channel parameter scan (PAT/PMT)"
+
+msgid "Skan parametrow kanalow (PAT/PMT), wybor audio i E2Stream"
+msgstr "Channel parameter scan (PAT/PMT), audio selection and E2Stream"
+
+msgid "Skan parametrow kanalow - ostatni raport"
+msgstr "Channel parameter scan - latest report"
+
+msgid "Skan parametrow: jezyki, bukiety, tunery, czestotliwosc"
+msgstr "Parameter scan: languages, bouquets, tuners, frequency"
+
+msgid "Skan potrzebuje EPG z satelity (EIT). Gdy w ustawieniach EPG Enigma2 jest ono wylaczone: 'na czas skanu' - wlacza je tylko na czas skanu i doczytywania, potem wylacza; 'na stale' - wlacza i zapisuje w ustawieniach. Teraz EIT jest %s."
+msgstr "The scan needs satellite EPG (EIT). If disabled in Enigma2 EPG settings, 'during scan' enables it only for scanning and top-ups, then disables it; 'permanently' enables and saves it. EIT is currently %s."
+
+msgid "Skan przerwany."
+msgstr "Scan stopped."
+
+msgid "Skan ruszy dopiero po zakonczeniu nagrania. Przy wielu tunerach zwykle zbedne - tuneru pilnuje rezerwa, a nagrania maja pierwszenstwo. Przydatne przy 1-2 tunerach."
+msgstr "The scan starts only after recording ends. Usually unnecessary with multiple tuners: the reserve protects tuners and recordings have priority. Useful with one or two tuners."
+
+msgid "Skan satelity dziala podczas ogladania, gdy jedna grupa (wejscie) jest wolna."
+msgstr "Satellite scanning works while viewing when one group (input) is free."
+
+msgid "Skan zakonczony: %s"
+msgstr "Scan completed: %s"
+
+msgid "Skan zmienionych TP teraz (sprawdzenie + skan)"
+msgstr "Scan changed transponders now (check + scan)"
+
+msgid "Skan: zwalniam tuner %s dla uzytkownika, TP %s ponowie"
+msgstr "Scan: releasing tuner %s for the user, will retry transponder %s"
+
+msgid "Skanowanie PAT/PMT: aktywne %d, rezerwacje TP %d, w kolejce %d\nWyniki czesciowe: %d kanalow"
+msgstr "Scanning PAT/PMT: %d active, %d transponder reservations, %d queued\nPartial results: %d channels"
+
+msgid "Skanowanie%s: %d/%d gotowe, aktywne %d, bledy %d%s, czas %d:%02d   %s"
+msgstr "Scanning%s: %d/%d complete, %d active, %d errors%s, time %d:%02d   %s"
+
+msgid "Skanuj kanaly co"
+msgstr "Scan channels every"
+
+msgid "Skanuj zmienione TP automatycznie"
+msgstr "Automatically scan changed transponders"
+
+msgid "Skonfigurowany jest juz serwer epgpl:\n%s\n\nMoze byc tylko jeden serwer. Zastapic go serwerem:\n%s ?\n(reczne wskazania kanalow dla serwera sa na serwerze - nowy serwer ma wlasne)"
+msgstr "An epgpl server is already configured:\n%s\n\nOnly one server is supported. Replace it with:\n%s ?\n(Manual server channel choices are stored on the server; the new server has its own.)"
+
+msgid "Sobota"
+msgstr "Saturday"
+
+msgid "Sortowanie / skan"
+msgstr "Sort / scan"
+
+msgid "Sortowanie, pobieranie"
+msgstr "Sort, download"
+
+msgid "Sortowanie: "
+msgstr "Sort: "
+
+msgid "Sortowanie: %s"
+msgstr "Sort: %s"
+
+msgid "Sprawdz teraz (satellites.xml + skan zmienionych TP)"
+msgstr "Check now (satellites.xml + scan changed transponders)"
+
+msgid "Sprawdzam %s ..."
+msgstr "Checking %s ..."
+
+msgid "Sprawdzanie certyfikatu HTTPS przy pobieraniu pliku zdalnego. Wyłącz tylko, gdy pobieranie kończy się błędem SSL (nieaktualne certyfikaty w obrazie)."
+msgstr "Verify the HTTPS certificate when downloading the remote file. Disable only if the download fails with an SSL error (outdated image certificates)."
+
+msgid "Sprawdzanie uruchomione (satellites.xml, potem skan zmienionych i wczesniej nieudanych TP)."
+msgstr "Check started (satellites.xml, then scan changed and previously failed transponders)."
+
+msgid "Sprawdzenie: %s"
+msgstr "Check: %s"
+
+msgid "Sprzatanie dysku (timeshift, crash logi)"
+msgstr "Disk cleanup (timeshift, crash logs)"
+
+msgid "Sroda"
+msgstr "Wednesday"
+
+msgid "Start (profil)"
+msgstr "Start (profile)"
+
+msgid "Statystyka EPG"
+msgstr "EPG statistics"
+
+msgid "Statystyki: liczenie..."
+msgstr "Statistics: calculating..."
+
+msgid "Synchronizacja"
+msgstr "Synchronization"
+
+msgid "Synchronizacja (wygrywa %s): %d wskazan..."
+msgstr "Synchronizing (%s wins): %d selections..."
+
+msgid "Synchronizacja E2Stream:"
+msgstr "E2Stream synchronization:"
+
+msgid "Synchronizacja clients nieudana: "
+msgstr "Client synchronization failed: "
+
+msgid "Synchronizacja common nieudana: "
+msgstr "Shared data synchronization failed: "
+
+msgid "Synchronizacja nieudana: "
+msgstr "Synchronization failed: "
+
+msgid "Synchronizacja nieudana: %s"
+msgstr "Synchronization failed: %s"
+
+msgid "Synchronizacja profili E2Stream jest ustawiana w sekcji skanu parametrow."
+msgstr "E2Stream profile synchronization is configured in the channel parameter scan settings."
+
+msgid "Synchronizacja wspolnych wartosci E2Stream jest ustawiana w sekcji skanu parametrow."
+msgstr "Shared E2Stream values are synchronized according to the channel parameter scan settings."
+
+msgid "Synchronizacja: wygrywa %s - zmienionych wskazan: %d."
+msgstr "Synchronization: %s wins - selections changed: %d."
+
+msgid "Synchronizuj: wygrywa dekoder (serwer dostaje wskazania dekodera)"
+msgstr "Synchronize: receiver wins (server receives receiver selections)"
+
+msgid "Synchronizuj: wygrywa serwer (dekoder dostaje wskazania serwera)"
+msgstr "Synchronize: server wins (receiver receives server selections)"
+
+msgid "Szczegoly"
+msgstr "Details"
+
+msgid "Szczegoly bledow: Info/EPG -> Raporty"
+msgstr "Error details: Info/EPG -> Reports"
+
+msgid "Szczegoly skanu: Info/EPG -> Raporty"
+msgstr "Scan details: Info/EPG -> Reports"
+
+msgid "Szukaj serwera epgpl w sieci (Avahi i podsiec)"
+msgstr "Find epgpl server on network (Avahi and subnet)"
+
+msgid "Szukaj stacji"
+msgstr "Search stations"
+
+msgid "Szukaj stacji (fragment nazwy)"
+msgstr "Search stations (part of name)"
+
+msgid "Szukanie kandydatow..."
+msgstr "Searching for candidates..."
+
+msgid "Szukanie serwera epgpl..."
+msgstr "Searching for an epgpl server..."
+
+msgid "Ta sama stacja czesto nadaje na satelicie w kilku kopiach (np. wersja Polsat Box i Canal+). Wlaczone: program z XMLTV trafia do wszystkich kopii z listy kanalow odbiornika, nie tylko do tych z bukietow. Kopia bez EPG z satelity dostaje caly program z XMLTV."
+msgstr "The same station often broadcasts in several satellite copies (for example Polsat Box and Canal+). Enabled: XMLTV listings reach all copies in the receiver channel list, not just bouquets. A copy without satellite EPG receives the entire XMLTV guide."
+
+msgid "Tak: EIT w ustawieniach EPG Enigma2 jest wylaczane na stale - EPG pochodzi tylko z XMLTV, ogladany transponder go nie nadpisuje. Nie: ustawienie EIT zostaje jak w Enigma2. Teraz EIT jest %s."
+msgstr "Yes: EIT is permanently disabled in Enigma2 EPG settings, so EPG comes only from XMLTV and the viewed transponder does not overwrite it. No: leave the Enigma2 EIT setting unchanged. EIT is currently %s."
+
+msgid "Tak: jeden dostrojony kanal zbiera PAT i PMT calej grupy; brakujace kanaly sa sprawdzane osobno. Nie: kazdy kanal jest osobna grupa."
+msgstr "Yes: one tuned channel collects PAT and PMT for the whole group; missing channels are checked separately. No: each channel is a separate group."
+
+msgid "Tak: przy kazdym skanie / imporcie XMLTV dekoder sam pobiera program z teleman, onet, naziemna i WP (ok. 5-10 min, rownolegle ze skanem satelity), zapisuje go jako zrodlo \"EPG PL (dekoder)\" i dopiero potem importuje XMLTV. Zaznacz to zrodlo w Zrodlach XMLTV (przed EPG PL z serwera, ktore zostaje zapasem). Mapa kanalow - z serwera epgpl, z kopia na dysku."
+msgstr "Yes: during each scan / XMLTV import the receiver downloads listings from teleman, onet, naziemna and WP (about 5-10 minutes, in parallel with satellite scanning), saves them as the \"EPG PL (receiver)\" source and then imports XMLTV. Select this source in XMLTV Sources before the server source, which remains a fallback. The channel map comes from epgpl with a local copy."
+
+msgid "Teraz do usuniecia: %d plikow, %d MB."
+msgstr "Currently eligible for deletion: %d files, %d MB."
+
+msgid "Teraz: %s-%s  %s"
+msgstr "Now: %s-%s  %s"
+
+msgid "Teraz: -"
+msgstr "Now: -"
+
+msgid "Test porownuje z serwerem epgpl - nie ma zrodla XMLTV z serwera."
+msgstr "The test compares with an epgpl server, but there is no XMLTV source from the server."
+
+msgid "Test: pobierz na dekoderze i porownaj z serwerem"
+msgstr "Test: download on the receiver and compare with the server"
+
+msgid "To zrodlo nie udostepnia raportu."
+msgstr "This source does not provide a report."
+
+msgid "To zrodlo pochodzi z pakietu zrodel EPG Import - nie mozna go usunac.\nMozesz je tylko odznaczyc."
+msgstr "This source comes from the EPG Import sources package and cannot be removed.\nYou can only deselect it."
+
+msgid "Tolerancja częstotliwości [MHz]"
+msgstr "Frequency tolerance [MHz]"
+
+msgid "Transponder konczy sie, gdy przez tyle sekund nie przybedzie zadne zdarzenie EPG (po uplywie czasu minimalnego). Dluzej = pelniejsze dane, ale dluzszy skan."
+msgstr "A transponder finishes after this many seconds without a new EPG event, after the minimum time. Longer means more complete data but a slower scan."
+
+msgid "Transponder przesunięty o najwyżej tyle MHz jest uznawany za ten sam (bez skanu i bez zmiany TP kanałów); ta sama tolerancja przy przypisaniu serwisów do zeskanowanych TP."
+msgstr "A transponder shifted by at most this many MHz is considered the same (no scan or change to channel transponders); the same tolerance applies when matching services to scanned transponders."
+
+msgid "Transponder, ktory w 2 kolejnych skanach nie dal zadnego EPG, jest pomijany i sprawdzany ponownie po podanej liczbie dni."
+msgstr "A transponder producing no EPG in two consecutive scans is skipped and rechecked after the specified number of days."
+
+msgid "Transponder:  %s - inny niz dawny (%s)"
+msgstr "Transponder:  %s - differs from the old one (%s)"
+
+msgid "Transponder:  %s - ten sam strumien (TS) co dawniej"
+msgstr "Transponder:  %s - same transport stream (TS) as before"
+
+msgid "Transponderow: %d%s (kanalow w bukietach %d, wszystkich %d)   limit: %d (ustawienia)   %s"
+msgstr "Transponders: %d%s (channels in bouquets %d, all %d)   limit: %d (settings)   %s"
+
+msgid "Transpondery przeladowane."
+msgstr "Transponders reloaded."
+
+msgid "Transpondery przeładowane."
+msgstr "Transponders reloaded."
+
+msgid "Trwa pobieranie programu na serwerze uruchomione z dekodera.\nPo zakonczeniu: %s.\n\nCzerwony - przerwanie czekania."
+msgstr "A server download started by the receiver is in progress.\nAfterwards: %s.\n\nRed: stop waiting."
+
+msgid "Trwa pobieranie programu uruchomione z dekodera. Zakoncz je przed uruchomieniem skanu parametrow."
+msgstr "Programme data is being downloaded on the receiver. Finish it before starting the parameter scan."
+
+msgid "Trwa zadanie (%s). Poczekaj albo przerwij skan: Kanały -> SatWatch -> Przerwij skan."
+msgstr "A task is running (%s). Wait or stop the scan: Channels -> SatWatch -> Stop scan."
+
+msgid "Tryb 'tylko raport' - satellites.xml nie zostal zmieniony."
+msgstr "Report-only mode - satellites.xml was not changed."
+
+msgid "Twoje kanaly na zmienionych/usunietych TP:"
+msgstr "Your channels on changed/removed transponders:"
+
+msgid "Twoje listy (adres z niebieskiego albo pliki w /etc/enigma2/epgscan_sources/wlasne).\nSa sprawdzane jako pierwsze - maja pierwszenstwo przed listami pakietu."
+msgstr "Your lists (address from blue or files in /etc/enigma2/epgscan_sources/wlasne).\nChecked first and take priority over package lists."
+
+msgid "Tyle tunerów skan zawsze zostawia wolnych - na oglądanie, nagrania i streamy (1 tuner w dekoderze: ustaw 0)."
+msgstr "The scan always leaves this many tuners free for watching, recording and streams (set 0 on a receiver with one tuner)."
+
+msgid "Tylko pobierz program na serwerze"
+msgstr "Only download guide on server"
+
+msgid "Typ:          %s%s"
+msgstr "Type:         %s%s"
+
+msgid "UWAGA: brak danych satelity w lokalnym pliku - odtworz satellites.xml (np. z %s/backup)."
+msgstr "WARNING: satellite data missing from the local file - restore satellites.xml (e.g. from %s/backup)."
+
+msgid "UWAGA: brak list zrodel XMLTV - zostana doinstalowane przy skanie (lub w ustawieniach)"
+msgstr "WARNING: XMLTV source lists are missing; they will be installed during the scan (or in settings)"
+
+msgid "UWAGA: osobna wtyczka SatWatch jest zainstalowana - SatWatch jest juz czescia EPG Scan, odinstaluj ja"
+msgstr "WARNING: The separate SatWatch plugin is installed. SatWatch is part of EPG Scan; uninstall the separate plugin."
+
+msgid "UWAGA: osobna wtyczka SatWatch jest zainstalowana - odinstaluj ja"
+msgstr "WARNING: the separate SatWatch plugin is installed; uninstall it"
+
+msgid "UWAGA: program z internetu jest wylaczony w ustawieniach - bedzie tylko satelita."
+msgstr "WARNING: online programme data is disabled in settings; only satellite data will be used."
+
+msgid "UWAGA: wlaczony harmonogram EPG Refresh - obie wtyczki beda zajmowac tunery"
+msgstr "WARNING: EPG Refresh scheduling is enabled; both plugins will use tuners"
+
+msgid "Uruchamianie pobierania na serwerze..."
+msgstr "Starting download on server..."
+
+msgid "Uruchom"
+msgstr "Start"
+
+msgid "Uruchomic osobny skan PAT/PMT dla wszystkich kanalow z wybranych bukietow?\nEPG nie bedzie czyszczone ani modyfikowane. IPTV zostanie jawnie wykazane jako nieobslugiwane."
+msgstr "Start a separate PAT/PMT scan for all channels in the selected bouquets?\nEPG will not be cleared or modified. IPTV will be listed as unsupported."
+
+msgid "Uruchomic pelny skan monitorowanych pozycji?\nPotrwa kilka minut i zajmie jeden wolny tuner."
+msgstr "Start a full scan of monitored positions?\nIt will take a few minutes and use one free tuner."
+
+msgid "Uruchomić pełny skan monitorowanych pozycji?\nPotrwa kilkanaście minut, używa jednego wolnego tunera."
+msgstr "Start a full scan of monitored positions?\nIt takes several minutes and uses one free tuner."
+
+msgid "Ustaw adres listy %s (bedzie aktualizowana)"
+msgstr "Set address for list %s (it will be updated)"
+
+msgid "Ustawienia"
+msgstr "Settings"
+
+msgid "Ustawienia (satelita, program z internetu, harmonogram, kopie, SatWatch)"
+msgstr "Settings (satellite, online programme, schedule, backups, SatWatch)"
+
+msgid "Ustawienia SatWatch (też: EPG Scan -> Ustawienia)"
+msgstr "SatWatch settings (also: EPG Scan -> Settings)"
+
+msgid "Usun"
+msgstr "Remove"
+
+msgid "Usun wlasne"
+msgstr "Remove custom"
+
+msgid "Usun wlasny"
+msgstr "Remove custom"
+
+msgid "Usun wszystkie zapamietane adresy"
+msgstr "Remove all saved addresses"
+
+msgid "Usun z bukietow"
+msgstr "Remove from bouquets"
+
+msgid "Usun zapamietane adresy"
+msgstr "Remove saved addresses"
+
+msgid "Usun zapamietany adres"
+msgstr "Remove saved address"
+
+msgid "Usunac %s z bukietow (%s)?"
+msgstr "Remove %s from bouquets (%s)?"
+
+msgid "Usunac liste zrodel %s?\nZawiera: %s"
+msgstr "Remove source list %s?\nContains: %s"
+
+msgid "Usunac reczne wskazanie kanalu %s?\nZrodlo dobierze automat."
+msgstr "Remove the manual selection for channel %s?\nThe source will be selected automatically."
+
+msgid "Usunieto nieaktualne serwisy: %d"
+msgstr "Removed obsolete services: %d"
+
+msgid "Usunieto z bukietow (%d wpisow)"
+msgstr "Removed from bouquets (%d entries)"
+
+msgid "Usunieto zapamietanych adresow: %d\n(listy zrodel i ich aktualizacja sie nie zmieniaja)"
+msgstr "Removed saved addresses: %d\n(source lists and their updates are unchanged)"
+
+msgid "Usuwaj nieaktualne serwisy po skanie"
+msgstr "Remove obsolete services after scan"
+
+msgid "Uwaga: blad analizy bukietow: %s"
+msgstr "Warning: bouquet analysis error: %s"
+
+msgid "Uwaga: blad zrzutu bukietow: %s"
+msgstr "Warning: bouquet snapshot error: %s"
+
+msgid "Uwaga: nie moge odczytac lokalnego %s (%s)"
+msgstr "Warning: cannot read local %s (%s)"
+
+msgid "Uwagi:        "
+msgstr "Notes:        "
+
+msgid "Uznac obecne kanaly w bukietach za poprawne?\nPozycje DO DECYZJI przestana wracac w raportach."
+msgstr "Accept the current bouquet channels as correct?\nPENDING DECISION entries will stop reappearing in reports."
+
+msgid "Uznać obecne kanały w bukietach za poprawne?\nPozycje DO DECYZJI przestaną wracać w raportach."
+msgstr "Accept the current bouquet channels as correct?\nPENDING DECISION entries will no longer return in reports."
+
+msgid "Uzupelnianie z XMLTV: %s   czas %d:%02d\nSkan z satelity: %s"
+msgstr "Adding XMLTV data: %s   time %d:%02d\nSatellite scan: %s"
+
+msgid "W mapie serwera nie ma kanalow z obslugiwanych serwisow."
+msgstr "The server map has no channels from supported services."
+
+msgid "W okienku: %s (na zywo).\nPorownaj z biezaca audycja na liscie obok.\nPo wyjsciu z dopasowania wroci poprzedni kanal."
+msgstr "In the window: %s (live).\nCompare with the current programme in the list.\nThe previous channel returns when you leave mapping."
+
+msgid "W okienku: %s (na zywo).\nPorownaj z biezaca audycja pod lista."
+msgstr "In the window: %s (live).\nCompare with the current programme below the list."
+
+msgid "W okienku: %s (na zywo).\nPorownaj z biezaca audycja pod lista.\nPo wyjsciu wroci poprzedni kanal."
+msgstr "In the window: %s (live).\nCompare with the current programme below the list.\nThe previous channel returns when you exit."
+
+msgid "Wartosci wspolne juz istnieja; niczego nie nadpisano."
+msgstr "Shared values already exist; nothing was overwritten."
+
+msgid "Weryfikacja certyfikatu SSL"
+msgstr "Verify SSL certificate"
+
+msgid "Wez z dekodera"
+msgstr "Use receiver"
+
+msgid "Wez z dekodera (zapis na serwerze)"
+msgstr "Use receiver (save to server)"
+
+msgid "Wez z serwera"
+msgstr "Use server"
+
+msgid "Wez z serwera (zapis na dekoderze)"
+msgstr "Use server (save to receiver)"
+
+msgid "Wlasne zrodla"
+msgstr "Custom sources"
+
+msgid "Wlasne zrodla: brak - niebieski: dodaj liste z adresu"
+msgstr "No custom sources - blue: add list from address"
+
+msgid "Wpisy w logu (najnowsze na gorze):"
+msgstr "Log entries (newest first):"
+
+msgid "Wpisz nowy adres..."
+msgstr "Enter new address..."
+
+msgid "Wroc"
+msgstr "Back"
+
+msgid "Wskaz zrodlo"
+msgstr "Choose source"
+
+msgid "Wspolna rezerwa dla skanow EPG i skanu parametrow - tyle tunerow skan zostawia wolnych na zmiane kanalu lub nowy stream. Dodatkowo 2 min przed nagraniem z timera skan zwalnia/trzyma tyle tunerow, ile nagran ma ruszyc."
+msgstr "Shared reserve for EPG and parameter scans: free tuners left for channel changes or streams. Two minutes before a timer recording, the scan additionally releases or holds as many tuners as the recordings require."
+
+msgid "Wszyscy kandydaci z listy maja juz program."
+msgstr "All listed candidates already have a guide."
+
+msgid "Wszystkie"
+msgstr "All"
+
+msgid "Wszystkie kanaly skanowanych transponderow:"
+msgstr "All channels on scanned transponders:"
+
+msgid "Wszystkie roznice (%d)"
+msgstr "All differences (%d)"
+
+msgid "Wszystkie tunery sa w jednej grupie. Enigma moze odmawiac skanu satelity, gdy w grupie cos gra"
+msgstr "All tuners are in one group. Enigma may refuse a satellite scan while the group is in use"
+
+msgid "Wszystkie..."
+msgstr "All..."
+
+msgid "Wszystkie: skanuj wszystkie transpondery co podana liczbe godzin, niezaleznie od zasiegu EPG. Krotkie EPG: tylko transpondery z konczacym sie programem, z uwzglednieniem odstepow."
+msgstr "All: scan all transponders at the configured interval regardless of EPG coverage. Short EPG: only transponders with listings running out, respecting intervals."
+
+msgid "Wtorek"
+msgstr "Tuesday"
+
+msgid "Wybierz"
+msgstr "Select"
+
+msgid "Wybierz bukiety..."
+msgstr "Select bouquets..."
+
+msgid "Wybierz pozycje z listy."
+msgstr "Select an item from the list."
+
+msgid "Wybierz serwer epgpl"
+msgstr "Select an epgpl server"
+
+msgid "Wybierz stacje z listy (OK), zolty - kanal bez programu, niebieski - szukaj po nazwie."
+msgstr "Select a station (OK), yellow - channel without guide, blue - search by name."
+
+msgid "Wybierz wydanie. Lista zawiera tylko wersje z dostepna paczka ZIP."
+msgstr "Choose a release. Only versions with an available ZIP package are listed."
+
+msgid "Wybor sciezki anulowany: trwa nagrywanie."
+msgstr "Track selection cancelled: recording is in progress."
+
+msgid "Wybor sciezki audio: %s. Po zamknieciu wroci poprzedni kanal."
+msgstr "Select audio track: %s. The previous channel will return when closed."
+
+msgid "Wybor stacji: %s"
+msgstr "Select station: %s"
+
+msgid "Wybrana pozycja: %s | PID %s | %s\nOK: reczny wybor   Zielony: automat   Zolty/Niebieski: preferencje   Info/EPG: szczegoly PAT/PMT"
+msgstr "Selected: %s | PID %s | %s\nOK: manual selection   Green: automatic   Yellow/Blue: preferences   Info/EPG: PAT/PMT details"
+
+msgid "Wybrane pozycje: w lokalnym satellites.xml zmieniane są tylko sekcje monitorowanych pozycji, reszta zostaje. Cały plik: lokalny plik zastępowany w całości plikiem zdalnym."
+msgstr "Selected positions: only sections for monitored positions are changed in the local satellites.xml; the rest remain. Entire file: the local file is completely replaced by the remote file."
+
+msgid "Wybrane wydanie nie jest juz dostepne. Sprawdz ponownie."
+msgstr "The selected release is no longer available. Check again."
+
+msgid "Wyczyszczono %d pozycji DO DECYZJI."
+msgstr "Cleared %d PENDING DECISION entries."
+
+msgid "Wydania EPG Scan"
+msgstr "EPG Scan releases"
+
+msgid "Wygrywa dekoder (serwer dostaje wskazania dekodera)"
+msgstr "Receiver wins (server receives receiver selections)"
+
+msgid "Wygrywa serwer (dekoder dostaje wskazania serwera)"
+msgstr "Server wins (receiver receives server selections)"
+
+msgid "Wyjscie"
+msgstr "Exit"
+
+msgid "Wykryte tunery DVB-S: %d - %s"
+msgstr "Detected DVB-S tuners: %d - %s"
+
+msgid "Wykryto przerwany skan PAT/PMT; zostanie ponowiony po nastepnym EPG.\n"
+msgstr "An interrupted PAT/PMT scan was detected; it will be retried after the next EPG scan.\n"
+
+msgid "Wykryto przerwany skan harmonogramu; po starcie zostanie powtorzony.\n"
+msgstr "An interrupted scheduled scan was detected; it will be retried after startup.\n"
+
+msgid "Wylacznik harmonogramu - ustawienia ponizej zostaja zapisane. Nastepny start: %s. Co robi start z harmonogramu: profil domyslny (%s)."
+msgstr "Schedule switch: the settings below remain saved. Next start: %s. The scheduled start runs the default profile (%s)."
+
+msgid "Wyniki: %d kanalow | skan: %d odczytanych, %d z audio (%d sciezek), %d wybranych\nBledy: %d | nieobslugiwane: %d | czas %d:%02d"
+msgstr "Results: %d channels | scan: %d read, %d with audio (%d tracks), %d selected\nErrors: %d | unsupported: %d | time %d:%02d"
+
+msgid "Wyniki: %s"
+msgstr "Results: %s"
+
+msgid "Wznów przerwany skan, gdy tunery wolne"
+msgstr "Resume interrupted scan when tuners are free"
+
+msgid "ZGUBIONY"
+msgstr "LOST"
+
+msgid "Zainstalowac EPG Scan %s? (obecnie %s)%s"
+msgstr "Install EPG Scan %s? (currently %s)%s"
+
+msgid "Zainstalowano EPG Scan %s. Zrestartowac teraz Enigma2?\n(Nie - nowa wersja zadziala po najblizszym restarcie.)"
+msgstr "EPG Scan %s installed. Restart Enigma2 now?\n(No - the new version takes effect at the next restart.)"
+
+msgid "Zakonczono %s, czas %d:%02d"
+msgstr "Completed %s, time %d:%02d"
+
+msgid "Zakonczono: %d/%d gotowe, %d bledow%s, czas %d:%02d"
+msgstr "Completed: %d/%d done, %d errors%s, time %d:%02d"
+
+msgid "Zakres aktualizacji pliku"
+msgstr "File update scope"
+
+msgid "Zakres bukietow dla skanu kanalow"
+msgstr "Bouquet scope for channel scan"
+
+msgid "Zaktualizowano %s (kopia w %s/backup)."
+msgstr "Updated %s (backup in %s/backup)."
+
+msgid "Zalecane: drugi kabel na wejscie B i dwie grupy:"
+msgstr "Recommended: a second cable to input B and two groups:"
+
+msgid "Zamknij"
+msgstr "Close"
+
+msgid "Zamknij (przerywa)"
+msgstr "Close (cancels)"
+
+msgid "Zapas: gotowy plik serwera jako kolejne zrodlo - uzupelnia kanaly, ktorych dekoder nie ma, i zastepuje dekoder, gdy ten zawiedzie (blad pobrania albo plik starszy niz 30 h); serwer nie jest proszony o pobranie. Zawsze: to samo, ale przy pobieraniu swiezych danych serwer tez pobiera (import czeka na niego). Nie: bez serwera. Ustawienie domyslne - w Akcjach mozna je zmienic na jeden start."
+msgstr "Fallback: use the ready server file as the next source for channels missing on the receiver, or when the receiver download fails or is over 30 hours old; the server is not asked to download. Always also starts a server download for fresh data and waits for it. No excludes the server. This default can be changed for one run in Actions."
+
+msgid "Zapis EPG i kopia..."
+msgstr "Saving and backing up EPG..."
+
+msgid "Zapis raportu synchronizacji nieudany: "
+msgstr "Failed to save synchronization report: "
+
+msgid "Zapis wynikow nieudany: "
+msgstr "Failed to save results: "
+
+msgid "Zapisac aktualny stan lamedb i bukietow jako zrzut referencyjny?\nZrob to przed recznym skanem albo po recznych zmianach w bukietach."
+msgstr "Save the current lamedb and bouquet state as a reference snapshot?\nDo this before a manual scan or after manually changing bouquets."
+
+msgid "Zapisano jako domyslne (OK i harmonogram):\n%s"
+msgstr "Saved as default (OK and schedule):\n%s"
+
+msgid "Zapisano ustawienia w %d odbiornikach."
+msgstr "Saved settings on %d receivers."
+
+msgid "Zapisano zrzut (%s): %d serwisow w lamedb, %d wpisow w bukietach."
+msgstr "Snapshot saved (%s): %d services in lamedb, %d bouquet entries."
+
+msgid "Zapisano zrzut: %d serwisow w lamedb, %d wpisow w bukietach."
+msgstr "Snapshot saved: %d services in lamedb, %d bouquet entries."
+
+msgid "Zapisano: %s -> %s\nProgram z nowego zrodla bedzie po nastepnym %s."
+msgstr "Saved: %s -> %s\nThe new source's guide will be available after the next %s."
+
+msgid "Zapisać aktualny stan lamedb i bukietów jako zrzut referencyjny?\nZrób to przed ręcznym skanem."
+msgstr "Save the current lamedb and bouquet state as a reference snapshot?\nDo this before a manual scan."
+
+msgid "Zapisuj log"
+msgstr "Save log"
+
+msgid "Zapisywanie%s: %s ..."
+msgstr "Saving%s: %s ..."
+
+msgid "Zapisz"
+msgstr "Save"
+
+msgid "Zapisz jako domyslne"
+msgstr "Save as default"
+
+msgid "Zapisz na serwerze"
+msgstr "Save on server"
+
+msgid "Zapisz to zrodlo"
+msgstr "Save this source"
+
+msgid "Zapisz wybrane"
+msgstr "Save selected"
+
+msgid "Zapisz zrzut referencyjny (lamedb + bukiety)"
+msgstr "Save reference snapshot (lamedb + bouquets)"
+
+msgid "Zastapic"
+msgstr "Replace"
+
+msgid "Zatrzymac import XMLTV?\n\nDane z satelity zostaja. Kanaly, ktore mialy dostac program z XMLTV, zostana bez niego (lub bez dalszych dni) do nastepnego odswiezania."
+msgstr "Stop the XMLTV import?\n\nSatellite data will remain. Channels awaiting XMLTV data will have no programme data, or fewer days of it, until the next refresh."
+
+msgid "Zatrzymac skanowanie EPG?"
+msgstr "Stop the EPG scan?"
+
+msgid "Zawsze: korzysta tylko z wolnych tunerow i oddaje je, gdy zmienisz kanal. Tylko w czuwaniu: doczytywanie czeka, az odbiornik przejdzie w czuwanie."
+msgstr "Always: uses only free tuners and releases them when you change channels. Standby only: waits for the receiver to enter standby."
+
+msgid "Zaznacz co najmniej jeden katalog (albo wylacz sprzatanie)."
+msgstr "Select at least one directory (or disable cleanup)."
+
+msgid "Zaznacz co najmniej jedną pozycję."
+msgstr "Select at least one position."
+
+msgid "Zgubiony kanał w bukiecie jest podmieniany sam tylko przy pewnym kandydacie (ta sama nazwa, ta sama po pominięciu HD/spacji, jeden podobny). Reszta - do decyzji. Wyłączone: wszystko do decyzji. Przed zmianą kopia bukietów."
+msgstr "A lost bouquet channel is automatically replaced only when there is a certain candidate (same name, same after ignoring HD/spaces, or one similar candidate). The rest require a decision. When disabled, all require a decision. Bouquets are backed up before changes."
+
+msgid "Zmiana nazwy:"
+msgstr "Name change:"
+
+msgid "Zmiana transpondera (kanal dziala, ten sam ref):"
+msgstr "Transponder change (channel works, same reference):"
+
+msgid "Zmiana zrodla dziala od nastepnego %s.\n[auto] automat, [alias] wskazanie nazwa, [reczne] wskazane, [--] wylaczony, [ ?? ] brak dopasowania"
+msgstr "A source change takes effect after the next %s.\n[auto] automatic, [alias] name alias, [manual] manual, [--] disabled, [ ?? ] unmatched"
+
+msgid "Zmien adres listy %s"
+msgstr "Change address for list %s"
+
+msgid "Znalezione serwery epgpl - wybierz jeden (moze byc tylko jeden serwer)"
+msgstr "Found epgpl servers - select one (only one server is supported)"
+
+msgid "Zolty: zapisz ten profil jako domyslny dla OK i harmonogramu."
+msgstr "Yellow: save this profile as the default for OK and the schedule."
+
+msgid "Zostaw"
+msgstr "Leave unchanged"
+
+msgid "Zostaw jak jest"
+msgstr "Leave as is"
+
+msgid "Zostaw rozne"
+msgstr "Keep differences"
+
+msgid "Zostawiono bez zmian"
+msgstr "Left unchanged"
+
+msgid "Zrob kopie EPG teraz (zapis + kopia)"
+msgstr "Back up EPG now (save and copy)"
+
+msgid "Zrodla XMLTV"
+msgstr "XMLTV sources"
+
+msgid "Zrodlo dekodera jest czescia wtyczki - wylaczasz je w Akcjach (Dekoder: nie)."
+msgstr "The receiver source is part of the plugin; disable it in Actions (Receiver: no)."
+
+msgid "Zrodlo: %s"
+msgstr "Source: %s"
+
+msgid "Zrzut i raport bukietów przy sprawdzaniu"
+msgstr "Bouquet snapshot and report on checking"
+
+msgid "Zrzut zapisany."
+msgstr "Snapshot saved."
+
+msgid "[ ?? ]  %s  -  brak dopasowania"
+msgstr "[ ?? ]  %s  -  unmatched"
+
+msgid "[%s%s] %s %ds  zdarzen %d (bylo %d, %+d)  %s"
+msgstr "[%s%s] %s %ds  events %d (was %d, %+d)  %s"
+
+msgid "[--]  %s  -  bez programu%s"
+msgstr "[--]  %s  -  no guide%s"
+
+msgid "[uzywany] "
+msgstr "[in use] "
+
+msgid "aktualizacja list zrodel"
+msgstr "updating source lists"
+
+msgid "aktualizacje i informacje"
+msgstr "updates and information"
+
+msgid "aktualizuj wszystkie transpondery"
+msgstr "update all transponders"
+
+msgid "aktywna"
+msgstr "active"
+
+msgid "alfabetycznie"
+msgstr "alphabetically"
+
+msgid "audycji"
+msgstr "programmes"
+
+msgid "automat"
+msgstr "automatic"
+
+msgid "automatycznie"
+msgstr "automatically"
+
+msgid "automatycznie (najwyższy wolny)"
+msgstr "automatically (highest free tuner)"
+
+msgid "beta i stabilne"
+msgstr "beta and stable"
+
+msgid "bez audio"
+msgstr "without audio"
+
+msgid "bez danych satelity - odtworz plik!"
+msgstr "no satellite data - restore the file!"
+
+msgid "bez dopasowania"
+msgstr "unmatched"
+
+msgid "bez kodu"
+msgstr "no code"
+
+msgid "bez programu"
+msgstr "no guide"
+
+msgid "bez programu (wylaczony)"
+msgstr "no guide (disabled)"
+
+msgid "bez zmian od ostatniego pobrania"
+msgstr "unchanged since the last download"
+
+msgid "bierz gotowy plik z serwera"
+msgstr "use the file available on the server"
+
+msgid "blad"
+msgstr "error"
+
+msgid "blad skanu %s"
+msgstr "scan error %s"
+
+msgid "blad_strojenia"
+msgstr "tuning failed"
+
+msgid "bledy"
+msgstr "errors"
+
+msgid "brak"
+msgstr "none"
+
+msgid "brak danych video"
+msgstr "no video data"
+
+msgid "brak dopasowania"
+msgstr "unmatched"
+
+msgid "brak dostrojenia"
+msgstr "tuning failed"
+
+msgid "brak elementow <sat> w pliku"
+msgstr "no <sat> elements in the file"
+
+msgid "brak kandydata"
+msgstr "no candidate"
+
+msgid "brak odpowiedzi"
+msgstr "no response"
+
+msgid "brak pliku - zaznacz Dekoder w Akcjach i uruchom"
+msgstr "no file - select Receiver in Actions and start"
+
+msgid "brak pliku programu"
+msgstr "no programme file"
+
+msgid "brak potwierdzonej sciezki"
+msgstr "no confirmed track"
+
+msgid "brak programu tej stacji - Menu: pobierz program kandydatow, Info/EPG: podglad"
+msgstr "no guide for this station - Menu: download candidate guide, Info/EPG: preview"
+
+msgid "brak serwisow (brak sygnalu?)"
+msgstr "no services (no signal?)"
+
+msgid "brak statystyk - serwer starszy niz 0.15.0"
+msgstr "no statistics - server older than 0.15.0"
+
+msgid "brak tunera skonfigurowanego na %s"
+msgstr "no tuner configured for %s"
+
+msgid "brak w satellites.xml"
+msgstr "missing from satellites.xml"
+
+msgid "brak wskazania"
+msgstr "no selection"
+
+msgid "budowana na dekoderze"
+msgstr "built on receiver"
+
+msgid "bukiet"
+msgstr "bouquet"
+
+msgid "bukietow"
+msgstr "bouquets"
+
+msgid "bukietow (sprzed podmiany)"
+msgstr "bouquets (before replacement)"
+
+msgid "bukiety do skanowania"
+msgstr "bouquets to scan"
+
+msgid "cale EPG, przy kazdym skanie"
+msgstr "all EPG, every scan"
+
+msgid "cale EPG, tylko przy skanie z harmonogramu"
+msgstr "all EPG, scheduled scans only"
+
+msgid "cały plik"
+msgstr "entire file"
+
+msgid "co N godzin"
+msgstr "every N hours"
+
+msgid "crash logi"
+msgstr "crash logs"
+
+msgid "crash logi (Enigma2)"
+msgstr "crash logs (Enigma2)"
+
+msgid "czeka"
+msgstr "waiting"
+
+msgid "czeka (osobno)"
+msgstr "waiting (individual retry)"
+
+msgid "czeka (ostatnia proba)"
+msgstr "waiting (final retry)"
+
+msgid "czeka (ponownie)"
+msgstr "waiting (retry)"
+
+msgid "czeka na tuner"
+msgstr "waiting for a tuner"
+
+msgid "czw"
+msgstr "Thu"
+
+msgid "czwartek"
+msgstr "Thursday"
+
+msgid "czyszczenie EPG i import XMLTV"
+msgstr "clear EPG and import XMLTV"
+
+msgid "czyszczenie EPG, skan satelity, potem XMLTV"
+msgstr "clear EPG, scan satellite, then XMLTV"
+
+msgid "dawny nieznany"
+msgstr "previous provider unknown"
+
+msgid "dekoder"
+msgstr "receiver"
+
+msgid "dekoder bierze dzisiejsza pelna paczke serwera, gdy jest - inaczej pobiera sam i wysyla paczke na serwer"
+msgstr "the receiver uses today's full server package if available; otherwise it downloads and sends a package to the server"
+
+msgid "dekoder pobiera teraz (ok. 5 min)"
+msgstr "receiver downloads now (about 5 min)"
+
+msgid "dekoder, pozostale, serwer"
+msgstr "receiver, others, server"
+
+msgid "dekoder, serwer, pozostale"
+msgstr "receiver, server, others"
+
+msgid "dekodera"
+msgstr "receiver"
+
+msgid "dekoderem"
+msgstr "receiver"
+
+msgid "do decyzji"
+msgstr "pending decision"
+
+msgid "dopisz braki"
+msgstr "add missing entries"
+
+msgid "gdy potrzebny"
+msgstr "when needed"
+
+msgid "gotowe"
+msgstr "done"
+
+msgid "gotowe (limit czasu)"
+msgstr "done (time limit)"
+
+msgid "harmonogram"
+msgstr "schedule"
+
+msgid "import XMLTV (bez czyszczenia EPG)"
+msgstr "import XMLTV (without clearing EPG)"
+
+msgid "import XMLTV po skanie z harmonogramu"
+msgstr "import XMLTV after scheduled scan"
+
+msgid "import XMLTV%s"
+msgstr "XMLTV import%s"
+
+msgid "importem XMLTV - do nastepnego skanu bedzie tylko program z XMLTV"
+msgstr "XMLTV import - only the XMLTV guide will be available until the next scan"
+
+msgid "importu XMLTV (mapa przeliczana od razu)"
+msgstr "XMLTV import (map recalculated immediately)"
+
+msgid "inny niz dawny (%s)"
+msgstr "different from previous (%s)"
+
+msgid "inwersja"
+msgstr "inversion"
+
+msgid "jedyny kandydat za malo podobny (%d%%)"
+msgstr "only candidate is not similar enough (%d%%)"
+
+msgid "jedyny podobny kandydat"
+msgstr "only similar candidate"
+
+msgid "jest stacja o tej samej nazwie co kanal"
+msgstr "a station has the same name as the channel"
+
+msgid "jeszcze nie bylo"
+msgstr "not yet"
+
+msgid "jeszcze nie przygotowane"
+msgstr "not prepared yet"
+
+msgid "jezyk nieznany"
+msgstr "unknown language"
+
+msgid "juz w Twoich bukietach"
+msgstr "already in your bouquets"
+
+msgid "juz w bukietach"
+msgstr "already in bouquets"
+
+msgid "kanal"
+msgstr "channel"
+
+msgid "kanal nie jest obslugiwany"
+msgstr "channel is unsupported"
+
+msgid "kanalu"
+msgstr "channel"
+
+msgid "kanalu z innego transpondera. Dlatego pracuja w nocy, w czuwaniu."
+msgstr "a channel on another transponder. Therefore they run at night in standby."
+
+msgid "kanaly bez EPG + luki i dalsze dni pozostalych"
+msgstr "channels without EPG + gaps and later days of others"
+
+msgid "kanaly od najkrotszego EPG"
+msgstr "channels by shortest EPG coverage"
+
+msgid "konfiguracja tunerow"
+msgstr "tuner configuration"
+
+msgid "kopie, log, E2Stream"
+msgstr "backups, log, E2Stream"
+
+msgid "lamedb po 'skanie': %s (%d serwisow)"
+msgstr "lamedb after 'scan': %s (%d services)"
+
+msgid "limit czasu %d s"
+msgstr "timeout %d s"
+
+msgid "mapa kanalow dekodera"
+msgstr "receiver channel map"
+
+msgid "modulacja"
+msgstr "modulation"
+
+msgid "na czas skanu"
+msgstr "during scan"
+
+msgid "na stale"
+msgstr "permanently"
+
+msgid "nadpisz wszystko"
+msgstr "overwrite all"
+
+msgid "nakladajace sie audycje (duble)"
+msgstr "overlapping programmes (duplicates)"
+
+msgid "nastepny start %s"
+msgstr "next start %s"
+
+msgid "naziemna"
+msgstr "terrestrial"
+
+msgid "nazwa i SID nie pasuja - kanal z tego TP / nadawcy"
+msgstr "name and SID do not match - channel from this transponder / provider"
+
+msgid "nazwa i SID nie pasuja do niczego - %d kanalow z tego TP / nadawcy do wyboru"
+msgstr "name and SID match nothing - %d channels from this transponder / provider to choose from"
+
+msgid "nd"
+msgstr "Sun"
+
+msgid "nic"
+msgstr "nothing"
+
+msgid "nic (tylko pobranie na serwerze)"
+msgstr "nothing (server download only)"
+
+msgid "nic do pobrania"
+msgstr "nothing to download"
+
+msgid "nie"
+msgstr "no"
+
+msgid "nie czysc (scalanie z istniejacym)"
+msgstr "do not clear (merge with existing)"
+
+msgid "nie ma go w Twoich bukietach"
+msgstr "not in your bouquets"
+
+msgid "nie mozna zarezerwowac serwisu"
+msgstr "cannot reserve the service"
+
+msgid "nie udalo sie uruchomic: %s (sprawdz zrodla XMLTV)"
+msgstr "could not start: %s (check XMLTV sources)"
+
+msgid "nie usuwaj"
+msgstr "do not delete"
+
+msgid "niedostepne w tym obrazie"
+msgstr "unavailable in this image"
+
+msgid "niedziela"
+msgstr "Sunday"
+
+msgid "nieobslugiwany typ"
+msgstr "unsupported type"
+
+msgid "nigdy"
+msgstr "never"
+
+msgid "nosnik"
+msgstr "storage device"
+
+msgid "o godzinie, w wybrane dni"
+msgstr "at a set time on selected days"
+
+msgid "oczekuje na skan"
+msgstr "scan due"
+
+msgid "od teraz do pierwszej audycji"
+msgstr "from now until first programme"
+
+msgid "odczyt PAT/PMT: "
+msgstr "PAT/PMT read: "
+
+msgid "odczyt PID/demux: "
+msgstr "PID/demux read: "
+
+msgid "odczyt strumienia"
+msgstr "reading stream"
+
+msgid "odstep jeszcze nie uplynal"
+msgstr "interval has not elapsed"
+
+msgid "odtworzony z pliku zdalnego - potrzebny restart Enigma2"
+msgstr "restored from remote file - Enigma2 restart required"
+
+msgid "opis serwera epgpl"
+msgstr "epgpl server description"
+
+msgid "opis wtyczki %s"
+msgstr "plugin description %s"
+
+msgid "pamięć wewnętrzna (%s)"
+msgstr "internal storage (%s)"
+
+msgid "pelny"
+msgstr "full scan"
+
+msgid "pelny opis akcji"
+msgstr "full action description"
+
+msgid "pelny skan transponderow"
+msgstr "full transponder scan"
+
+msgid "piątek"
+msgstr "Friday"
+
+msgid "plik programu %s"
+msgstr "programme file %s"
+
+msgid "plik programu dekodera"
+msgstr "receiver guide file"
+
+msgid "plik serwera z %s%s%s"
+msgstr "server file from %s%s%s"
+
+msgid "plik z %s%s"
+msgstr "file from %s%s"
+
+msgid "plik zrodla z innym IP - uruchom sources.sh na serwerze"
+msgstr "source file has a different IP; run sources.sh on the server"
+
+msgid "pobiera teraz"
+msgstr "downloading now"
+
+msgid "pobieranie na dekoderze"
+msgstr "receiver download"
+
+msgid "pobrane teraz przez dekoder"
+msgstr "downloaded now by receiver"
+
+msgid "pobrania na serwerze"
+msgstr "server download"
+
+msgid "pobraniu i imporcie"
+msgstr "download and import"
+
+msgid "pobraniu na serwerze"
+msgstr "server download"
+
+msgid "pobrany"
+msgstr "downloaded"
+
+msgid "podsiec"
+msgstr "subnet"
+
+msgid "pominiety (brak EPG)"
+msgstr "skipped (no EPG)"
+
+msgid "pon"
+msgstr "Mon"
+
+msgid "ponawianie %d stron"
+msgstr "retrying %d pages"
+
+msgid "poniedziałek"
+msgstr "Monday"
+
+msgid "ponowienie"
+msgstr "retry"
+
+msgid "popraw nieistniejace"
+msgstr "repair invalid entries"
+
+msgid "porownanie dekoder / serwer"
+msgstr "receiver / server comparison"
+
+msgid "potwierdzone"
+msgstr "confirmed"
+
+msgid "powiadomienia, restart, sprzatanie"
+msgstr "notifications, restart, cleanup"
+
+msgid "poza wspolna mapa"
+msgstr "outside common map"
+
+msgid "pozostale"
+msgstr "other sources"
+
+msgid "pozostale, dekoder, serwer"
+msgstr "others, receiver, server"
+
+msgid "pozostale, serwer, dekoder"
+msgstr "others, server, receiver"
+
+msgid "pozostaw rozne"
+msgstr "keep differences"
+
+msgid "preferencje jezykow z Enigma2"
+msgstr "Enigma2 language preferences"
+
+msgid "program kandydatow z nocy"
+msgstr "overnight candidate guide"
+
+msgid "program z internetu"
+msgstr "internet listings"
+
+msgid "proponowana"
+msgstr "suggested"
+
+msgid "propozycje zmian"
+msgstr "suggested changes"
+
+msgid "przerwano"
+msgstr "stopped"
+
+msgid "przerwano - brak wolnego tunera przez %d min"
+msgstr "stopped - no free tuner for %d min"
+
+msgid "przerwano - tunery zajete (FBC) przez %d min"
+msgstr "stopped - tuners busy (FBC) for %d min"
+
+msgid "przerwany"
+msgstr "stopped"
+
+msgid "przesuniety: "
+msgstr "shifted: "
+
+msgid "przygotowanie"
+msgstr "preparing"
+
+msgid "przyszle %d, minione %d, kanalow z EPG %d, nakladajacych sie (duble) %d\nzasieg dni: min %.1f / mediana %.1f / maks %.1f (do %s)"
+msgstr "upcoming %d, past %d, channels with EPG %d, overlaps %d\ncoverage in days: min %.1f / median %.1f / max %.1f (until %s)"
+
+msgid "pt"
+msgstr "Fri"
+
+msgid "raport + aktualizacja satellites.xml"
+msgstr "report + update satellites.xml"
+
+msgid "reczne"
+msgstr "manual"
+
+msgid "rezerwa transpondera"
+msgstr "transponder reservation"
+
+msgid "rozni sie od %s"
+msgstr "differs from %s"
+
+msgid "rozni sie od drugiej mapy"
+msgstr "differs from other map"
+
+msgid "rozwin"
+msgstr "expand"
+
+msgid "satelita"
+msgstr "satellite"
+
+msgid "satelita - EPG"
+msgstr "satellite - EPG"
+
+msgid "serwer"
+msgstr "server"
+
+msgid "serwer (zapas)"
+msgstr "server (fallback)"
+
+msgid "serwer bez pliku programu"
+msgstr "server has no listings file"
+
+msgid "serwer nie jest proszony o pobranie (jedno miejsce)"
+msgstr "server is not asked to download (one location)"
+
+msgid "serwer nie odpowiada"
+msgstr "server not responding"
+
+msgid "serwer nie przyjal (wymagany epgpl 0.16.0)"
+msgstr "server rejected request (epgpl 0.16.0 required)"
+
+msgid "serwer pobiera teraz (ok. 3 min)"
+msgstr "server downloads now (about 3 min)"
+
+msgid "serwer tylko, gdy jego plik ma ponad 30 h"
+msgstr "server only if its file is over 30 hours old"
+
+msgid "serwer, dekoder, pozostale"
+msgstr "server, receiver, others"
+
+msgid "serwer, pozostale, dekoder"
+msgstr "server, others, receiver"
+
+msgid "serwera"
+msgstr "server"
+
+msgid "serwerem"
+msgstr "server"
+
+msgid "serwis nie zwrocil programu dla tej stacji"
+msgstr "the service returned no guide for this station"
+
+msgid "skan parametrow kanalow"
+msgstr "channel parameter scan"
+
+msgid "skan satelity%s, potem XMLTV"
+msgstr "satellite scan%s, then XMLTV"
+
+msgid "skan satelity, potem XMLTV"
+msgstr "satellite scan, then XMLTV"
+
+msgid "skanem satelity"
+msgstr "satellite scan"
+
+msgid "sob"
+msgstr "Sat"
+
+msgid "sobota"
+msgstr "Saturday"
+
+msgid "sprawdzam serwer..."
+msgstr "checking server..."
+
+msgid "sr"
+msgstr "Wed"
+
+msgid "stabilne"
+msgstr "stable"
+
+msgid "stacji"
+msgstr "stations"
+
+msgid "stara lista"
+msgstr "old list"
+
+msgid "stara lista: %s (%d serwisow, %d wpisow w bukietach)"
+msgstr "old list: %s (%d services, %d bouquet entries)"
+
+msgid "statystyka EPG"
+msgstr "EPG statistics"
+
+msgid "strojenie"
+msgstr "tuning"
+
+msgid "stron"
+msgstr "pages"
+
+msgid "ta sama nazwa"
+msgstr "same name"
+
+msgid "ta sama nazwa (bez HD/spacji)"
+msgstr "same name (ignoring HD/spaces)"
+
+msgid "tak - pobierz na nowo"
+msgstr "yes - download again"
+
+msgid "tak - w jednym miejscu (gotowa dzisiejsza paczka drugiej strony)"
+msgstr "yes - in one location (today's package from the other side, if available)"
+
+msgid "takze przerwy od 30 min"
+msgstr "also gaps of at least 30 min"
+
+msgid "ten sam SID"
+msgstr "same SID"
+
+msgid "ten sam TS"
+msgstr "same TS"
+
+msgid "ten sam nadawca"
+msgstr "same provider"
+
+msgid "timeout odczytu PAT/PMT"
+msgstr "PAT/PMT read timed out"
+
+msgid "timeout strojenia"
+msgstr "tuning timed out"
+
+msgid "tm %s, onet %s, naz %s, wp %s, lacznie maks. %d"
+msgstr "tm %s, onet %s, naz %s, wp %s, maximum total %d"
+
+msgid "to nie jest satellites.xml (root <%s>)"
+msgstr "not a satellites.xml file (root <%s>)"
+
+msgid "trwa skan EPG - import pominiety (zrobi go biezacy skan albo nastepny)"
+msgstr "EPG scan in progress - import skipped (the current or next scan will perform it)"
+
+msgid "tuner potrzebny uzytkownikowi (%dx)"
+msgstr "tuner needed by user (%dx)"
+
+msgid "tunery wolne %d/%d, rezerwa %d"
+msgstr "free tuners %d/%d, reserve %d"
+
+msgid "tylko kanaly bez EPG z satelity"
+msgstr "only channels without satellite EPG"
+
+msgid "tylko kanaly z konczacym sie EPG"
+msgstr "only channels whose EPG is running out"
+
+msgid "tylko przy zmianach"
+msgstr "only when changes occur"
+
+msgid "tylko raport"
+msgstr "report only"
+
+msgid "tylko reczne"
+msgstr "manual only"
+
+msgid "tylko skanowane kanaly"
+msgstr "scanned channels only"
+
+msgid "tylko w czuwaniu"
+msgstr "only in standby"
+
+msgid "tylko w czuwaniu (poczekaj na czuwanie)"
+msgstr "only in standby (wait for standby)"
+
+msgid "typ %X"
+msgstr "type %X"
+
+msgid "uruchom pobieranie na serwerze"
+msgstr "start download on server"
+
+msgid "uruchomiono: %s"
+msgstr "started: %s"
+
+msgid "ustawienia"
+msgstr "settings"
+
+msgid "usuniety: "
+msgstr "removed: "
+
+msgid "uzycie: core.py diff LOCAL REMOTE [poz...] | snapshot E2DIR OUT.json | compare OLD.json E2DIR [\"Bukiet1,Bukiet2\"]\n        core.py symuluj KATALOG_STAREJ_LISTY KATALOG_WYNIKU [KATALOG_WZORCA=/etc/enigma2]"
+msgstr "usage: core.py diff LOCAL REMOTE [poz...] | snapshot E2DIR OUT.json | compare OLD.json E2DIR [\"Bukiet1,Bukiet2\"]\n        core.py symuluj KATALOG_STAREJ_LISTY KATALOG_WYNIKU [KATALOG_WZORCA=/etc/enigma2]"
+
+msgid "w /tmp (znika przy restarcie dekodera)"
+msgstr "in /tmp (lost when receiver restarts)"
+
+msgid "w bukietach"
+msgstr "in bouquets"
+
+msgid "w katalogu kopii EPG"
+msgstr "in EPG backup directory"
+
+msgid "w tunerach"
+msgstr "configured in tuners"
+
+msgid "wbudowana"
+msgstr "built-in"
+
+msgid "wlaczone"
+msgstr "enabled"
+
+msgid "wlaczy je na czas pracy"
+msgstr "will enable it during the scan"
+
+msgid "wlaczy je na stale"
+msgstr "will enable it permanently"
+
+msgid "wlasna kolejnosc jezykow"
+msgstr "custom language order"
+
+msgid "wlasny"
+msgstr "custom"
+
+msgid "wskazana stacja nie dala programu w ostatnim pobraniu"
+msgstr "the selected station had no guide in the last download"
+
+msgid "wskazanej stacji nie ma juz w serwisie"
+msgstr "the selected station is no longer available in the service"
+
+msgid "wszystkie"
+msgstr "all"
+
+msgid "wszystkie (%d)"
+msgstr "all (%d)"
+
+msgid "wszystkie bukiety"
+msgstr "all bouquets"
+
+msgid "wszystkie bukiety (takze IPTV)"
+msgstr "all bouquets (including IPTV)"
+
+msgid "wszystkie transpondery"
+msgstr "all transponders"
+
+msgid "wszystkie transpondery (lamedb)"
+msgstr "all transponders (lamedb)"
+
+msgid "wszystkie wlasne listy"
+msgstr "all custom lists"
+
+msgid "wt"
+msgstr "Tue"
+
+msgid "wtorek"
+msgstr "Tuesday"
+
+msgid "wybor za kazdym razem"
+msgstr "choose every time"
+
+msgid "wybrane bukiety"
+msgstr "selected bouquets"
+
+msgid "wybrane bukiety (%d)"
+msgstr "selected bouquets (%d)"
+
+msgid "wybrane pozycje"
+msgstr "selected positions"
+
+msgid "wygrywa dekoder"
+msgstr "receiver wins"
+
+msgid "wygrywa serwer"
+msgstr "server wins"
+
+msgid "wylaczona"
+msgstr "disabled"
+
+msgid "wylaczone"
+msgstr "disabled"
+
+msgid "wylaczony"
+msgstr "disabled"
+
+msgid "z serwera epgpl (kopia na dysku)"
+msgstr "from epgpl server (local copy)"
+
+msgid "z tego TP"
+msgstr "from this transponder"
+
+msgid "zapas (gotowy plik serwera)"
+msgstr "fallback (server file)"
+
+msgid "zapis do EPG"
+msgstr "writing to EPG"
+
+msgid "zapis do EPG (%d kanalow zostalo)"
+msgstr "writing to EPG (%d channels remaining)"
+
+msgid "zapisana"
+msgstr "saved"
+
+msgid "zapytaj"
+msgstr "ask"
+
+msgid "zasieg"
+msgstr "coverage"
+
+msgid "zawsze"
+msgstr "always"
+
+msgid "zawsze (serwer tez pobiera)"
+msgstr "always (server also downloads)"
+
+msgid "zawsze (wolne tunery, z rezerwa)"
+msgstr "always (free tuners, with reserve)"
+
+msgid "zaznaczone %d z "
+msgstr "%d selected of "
+
+msgid "zaznaczony"
+msgstr "selected"
+
+msgid "zbiera"
+msgstr "collecting"
+
+msgid "zbieranie PAT/PMT"
+msgstr "collecting PAT/PMT"
+
+msgid "zgodnie z bukietami"
+msgstr "bouquet order"
+
+msgid "zmiany"
+msgstr "changes"
+
+msgid "zmiany (satellites.xml, zmienione TP, bukiety)"
+msgstr "changes (satellites.xml, changed transponders, bouquets)"
+
+msgid "zmienione TP"
+msgstr "changed transponders"
+
+msgid "zmieniony: "
+msgstr "changed: "
+
+msgid "zwin"
+msgstr "collapse"
+
+msgid "zwykly"
+msgstr "regular"
+
+msgid "środa"
+msgstr "Wednesday"

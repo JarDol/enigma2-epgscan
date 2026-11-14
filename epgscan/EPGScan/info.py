@@ -11,6 +11,7 @@ from enigma import eTimer
 
 from .common import VERSION, log, log_path, epg_stats, stats_text, all_refs, log_dups, export_dups, \
 	build_jobs, channel_table, whole_cache_stats, fmt_span, keys_skin, init_keys, set_keys
+from .i18n import _
 
 
 def _skin(title):
@@ -27,7 +28,7 @@ class _Base(Screen):
 	def __init__(self, session, title):
 		Screen.__init__(self, session)
 		self.setTitle("EPG Scan %s - %s" % (VERSION, title))
-		self["text"] = ScrollLabel("Liczenie...")
+		self["text"] = ScrollLabel(_("Liczenie..."))
 		init_keys(self)
 		self.timer = eTimer()
 		self.timer.callback.append(self.compute)
@@ -76,7 +77,7 @@ class EPGScanInfo(_Base):
 	skin = _skin("EPG Scan - statystyka EPG")
 
 	def __init__(self, session, engine):
-		_Base.__init__(self, session, "statystyka EPG")
+		_Base.__init__(self, session, _("statystyka EPG"))
 		self.engine = engine
 		acts = self.scroll_actions()
 		acts.update({"ok": self.close})
@@ -96,7 +97,7 @@ class EPGScanInfo(_Base):
 			self.session.open(EPGScanReport, desc, url)
 			return
 		from .common import EPGChoiceBox as ChoiceBox
-		self.session.openWithCallback(self.report_chosen, ChoiceBox, title="Raport ktorego serwera?",
+		self.session.openWithCallback(self.report_chosen, ChoiceBox, title=_("Raport ktorego serwera?"),
 			list=[(d, (d, u)) for d, u in self.reports])
 
 	def report_chosen(self, choice):
@@ -116,13 +117,12 @@ class EPGScanInfo(_Base):
 		log("Statystyka EPG (bukiety): " + stats_text(bq))
 		if al:
 			log("Statystyka EPG (wszystkie): " + stats_text(al))
-		nl = lambda s: s.replace(", zasieg", "\nzasieg")
-		t = ["Kanaly z bukietow:", nl(stats_text(bq)), ""]
+		t = [_("Kanaly z bukietow:"), stats_text(bq, localized=True), ""]
 		if al:
-			t += ["Wszystkie kanaly skanowanych transponderow:", nl(stats_text(al)), ""]
-		t += ["Cala pamiec EPG: kanalow na liscie %d, z EPG %d, audycji %d" % (nall, cov, nev),
-			"Plik %s" % finfo, "", "Log: %s" % log_path(), "",
-			"Kanaly od najkrotszego EPG, duble, pobieranie na dekoderze i raporty serwerow - w menu Info/EPG."]
+			t += [_("Wszystkie kanaly skanowanych transponderow:"), stats_text(al, localized=True), ""]
+		t += [_("Cala pamiec EPG: kanalow na liscie %d, z EPG %d, audycji %d") % (nall, cov, nev),
+			_("Plik %s") % finfo, "", "Log: %s" % log_path(), "",
+			_("Kanaly od najkrotszego EPG, duble, pobieranie na dekoderze i raporty serwerow - w menu Info/EPG.")]
 		self["text"].setText("\n".join(t))
 
 	def channels(self):
@@ -136,7 +136,7 @@ class EPGScanChannels(_Base):
 	skin = _skin("EPG Scan - kanaly od najkrotszego EPG")
 
 	def __init__(self, session):
-		_Base.__init__(self, session, "kanaly od najkrotszego EPG")
+		_Base.__init__(self, session, _("kanaly od najkrotszego EPG"))
 		acts = self.scroll_actions()
 		acts["ok"] = self.close
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions"], acts, -1)
@@ -145,8 +145,8 @@ class EPGScanChannels(_Base):
 		rows = channel_table()
 		empty = len([r for r in rows if r[0] == 0])
 		short = len([r for r in rows if 0 < r[0] < 86400])
-		t = ["Kanaly z bukietow: %d, bez EPG: %d, krocej niz 1 dzien: %d" % (len(rows), empty, short), "",
-			"%-10s %7s   %-16s %s" % ("zasieg", "audycji", "bukiet", "kanal")]
+		t = [_("Kanaly z bukietow: %d, bez EPG: %d, krocej niz 1 dzien: %d") % (len(rows), empty, short), "",
+			"%-10s %7s   %-16s %s" % (_("zasieg"), _("audycji"), _("bukiet"), _("kanal"))]
 		for sec, n, bqn, name in rows:
 			t.append("%-10s %7d   %-16s %s" % (fmt_span(sec), n, bqn[:16], name))
 		self["text"].setText("\n".join(t))
@@ -156,7 +156,7 @@ class EPGScanDups(_Base):
 	skin = _skin("EPG Scan - nakladajace sie audycje")
 
 	def __init__(self, session):
-		_Base.__init__(self, session, "nakladajace sie audycje (duble)")
+		_Base.__init__(self, session, _("nakladajace sie audycje (duble)"))
 		acts = self.scroll_actions()
 		acts["ok"] = self.close
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions"], acts, -1)
@@ -165,15 +165,15 @@ class EPGScanDups(_Base):
 		log_dups("(Info/EPG)")
 		path, pairs = export_dups(all_refs())
 		if not path:
-			self["text"].setText("Nie udalo sie przygotowac listy - szczegoly w logu %s" % log_path())
+			self["text"].setText(_("Nie udalo sie przygotowac listy - szczegoly w logu %s") % log_path())
 			return
 		if not pairs:
-			self["text"].setText("Brak nakladajacych sie audycji w kanalach z bukietow.\n\nPlik: %s" % path)
+			self["text"].setText(_("Brak nakladajacych sie audycji w kanalach z bukietow.\n\nPlik: %s") % path)
 			return
 		try:
 			with open(path, encoding="utf-8", errors="ignore") as f:
 				body = f.read()
 		except Exception:
 			body = ""
-		head = "Par nakladajacych sie audycji: %d (plik: %s)\n\n" % (pairs, path)
+		head = _("Par nakladajacych sie audycji: %d (plik: %s)\n\n") % (pairs, path)
 		self["text"].setText(head + body.split("\n\n", 1)[-1])

@@ -16,6 +16,7 @@ from enigma import eTimer, eEPGCache
 
 from .common import S, cfg, log, VERSION, profile_default, profile_text, log_path, log_count, save_cfg, list_bouquets, selected_bouquets, epg_path, copy_backup, list_backups, \
 	SCHED_DAYS, DAYS, next_run, fmt_ts, keys_skin, init_keys, set_keys, apply_clear_choices, single_flush_supported
+from .i18n import _, translate_choices
 
 
 def all_items():
@@ -28,7 +29,7 @@ def all_items():
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
 		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto, cfg.upd_channel,
 		cfg.cp_language_source, cfg.cp_languages, cfg.cp_group_tp, cfg.cp_retry_failed, cfg.cp_interval, cfg.cp_last_run, cfg.cp_auto_in_progress,
-		cfg.cp_sync_common, cfg.cp_sync_devices,
+		cfg.cp_sync_common, cfg.cp_sync_devices, cfg.ui_language,
 		cfg.cp_common_overwrite, cfg.cp_devices_overwrite,
 		cfg.topup, cfg.topup_mode, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
 
@@ -89,12 +90,12 @@ class EPGScanSetup(Screen, ConfigListScreen):
 	def __init__(self, session, section="sat"):
 		Screen.__init__(self, session)
 		self.section = section
-		self.setTitle("EPG Scan %s - %s" % (VERSION, self.TITLES.get(section, "ustawienia")))
+		self.setTitle("EPG Scan %s - %s" % (VERSION, _(self.TITLES.get(section, "ustawienia"))))
 		self["help"] = Label("")
 		init_keys(self)
-		self.p_pack = NoSave(ConfigSelection(choices=[("v", "OK - przygotuj teraz")]))   # paczka dla E2Stream recznie
-		self.p_upd = NoSave(ConfigSelection(choices=[("v", "OK - wybierz wydanie GitHub")]))   # reczna aktualizacja
-		self.p_about = NoSave(ConfigSelection(choices=[("v", "OK - opis zainstalowanej wersji")]))
+		self.p_pack = NoSave(ConfigSelection(choices=[("v", _("OK - przygotuj teraz"))]))   # paczka dla E2Stream recznie
+		self.p_upd = NoSave(ConfigSelection(choices=[("v", _("OK - wybierz wydanie GitHub"))]))   # reczna aktualizacja
+		self.p_about = NoSave(ConfigSelection(choices=[("v", _("OK - opis zainstalowanej wersji"))]))
 		self.p_cldirs = NoSave(ConfigSelection(choices=[("v", cl_dirs_text())]))   # katalogi sprzatania - wybor z listy (OK)
 		self.available_updates = {}
 		ConfigListScreen.__init__(self, [], session=session, on_change=self.changed)
@@ -137,14 +138,14 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			return
 		self._then = then
 		self.session.openWithCallback(self.install_answer, MessageBox,
-			"Brak list zrodel XMLTV (/etc/epgimport).\nZainstalowac pakiet enigma2-plugin-extensions-epgimport-sources?",
+			_("Brak list zrodel XMLTV (/etc/epgimport).\nZainstalowac pakiet enigma2-plugin-extensions-epgimport-sources?"),
 			MessageBox.TYPE_YESNO, default=True)
 
 	def install_answer(self, yes):
 		if not yes:
 			return
 		from .xmltv import install_sources
-		self["help"].setText("Instalowanie pakietu list zrodel XMLTV (opkg)... to moze potrwac do minuty.")
+		self["help"].setText(_("Instalowanie pakietu list zrodel XMLTV (opkg)... to moze potrwac do minuty."))
 		install_sources(self.install_done)
 
 	def install_done(self, ok, msg):
@@ -156,7 +157,10 @@ class EPGScanSetup(Screen, ConfigListScreen):
 	def build(self):
 		cur = self["config"].getCurrent() if self["config"].list else None
 		sec = self.section
-		e = getConfigListEntry
+		def e(label, element):
+			if all(element is not item for item in (self.p_pack, self.p_upd, self.p_about, self.p_cldirs)):
+				translate_choices(element)
+			return getConfigListEntry(_(label), element)
 		lst = []
 		if sec == "sat":
 			lst.append(e("Import EPG z satelity (skan transponderow)", cfg.sat_import))
@@ -217,7 +221,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			if cfg.sched_mode.value == "daily":
 				lst.append(e("  Godzina", cfg.sched_time))
 				for i, d in enumerate(SCHED_DAYS):
-					lst.append(e("  " + DAYS[i], d))
+					lst.append(e("  " + _(DAYS[i]), d))
 			elif cfg.sched_mode.value == "interval":
 				lst.append(e("  Co ile godzin", cfg.sched_interval))
 			if cfg.sched_mode.value != "off":
@@ -236,7 +240,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 					e("  Dane dla aplikacji po skanach (EPG, ikony, referencje)", cfg.cli_pack),
 					e("  Przygotuj dane teraz", self.p_pack)]
 		elif sec == "updates":
-			lst += [e("Aktualizacja automatyczna", cfg.upd_auto),
+			lst += [e("Jezyk wtyczki", cfg.ui_language),
+				e("Aktualizacja automatyczna", cfg.upd_auto),
 				e("Kanał aktualizacji automatycznych", cfg.upd_channel),
 				e("Aktualizuj teraz (wybierz wydanie GitHub)", self.p_upd),
 				e("Informacje o wtyczce", self.p_about)]
@@ -269,29 +274,31 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		item = cur[1] if cur else None
 		nb = len(selected_bouquets())
 		allb = len(list_bouquets())
-		txt = "Bukiety: %s.  Plik EPG: %s" % ("wszystkie (%d)" % allb if cfg.scope.value == "all" else "%d z %d" % (nb, allb), epg_path())
-		if item in (cfg.upd_auto, cfg.upd_channel, self.p_upd):
-			txt = "Kanal automatyczny: %s. Wybierz beta, aby automatycznie instalowac nowsze bety i wydania stabilne; " \
+		txt = _("Bukiety: %s.  Plik EPG: %s") % (_("wszystkie (%d)") % allb if cfg.scope.value == "all" else _("%d z %d") % (nb, allb), epg_path())
+		if item is cfg.ui_language:
+			txt = _("Jezyk interfejsu wtyczki. Enigma2: automatycznie wedlug jezyka odbiornika; zmiana zaczyna dzialac po zapisaniu.")
+		elif item in (cfg.upd_auto, cfg.upd_channel, self.p_upd):
+			txt = _("Kanal automatyczny: %s. Wybierz beta, aby automatycznie instalowac nowsze bety i wydania stabilne; " \
 				"stabilne sprawdza tylko wydania stabilne. 'Aktualizuj teraz' (OK) pokazuje wszystkie dostepne " \
-				"wydania GitHub z paczka ZIP, takze beta i starsze. Przy starszej wersji pojawi sie ostrzezenie przed instalacja."
-			txt = txt % ("beta i stabilne" if cfg.upd_channel.value == "beta" else "stabilne")
+				"wydania GitHub z paczka ZIP, takze beta i starsze. Przy starszej wersji pojawi sie ostrzezenie przed instalacja.")
+			txt = txt % (_("beta i stabilne") if cfg.upd_channel.value == "beta" else _("stabilne"))
 			if cfg.upd_pending.value and cfg.upd_pending.value != VERSION:
-				txt += " Zainstalowana %s czeka na restart Enigma2." % cfg.upd_pending.value
+				txt += _(" Zainstalowana %s czeka na restart Enigma2.") % cfg.upd_pending.value
 		elif item in (cfg.cli_pack, self.p_pack):
 			from .clientpack import last_text, pack_dir
-			txt = "Po pracy z harmonogramu i po skanach cyklicznych w ciagu dnia: paczka dla E2Stream - EPG kanalow " \
+			txt = _("Po pracy z harmonogramu i po skanach cyklicznych w ciagu dnia: paczka dla E2Stream - EPG kanalow " \
 				"ze wszystkich bukietow TV, ikony kanalow i zamiany referencji (np. po zmianach SatWatch). Aplikacja pobiera ja " \
 				"przy pierwszym uruchomieniu w danym dniu i gdy pojawi sie nowsza. OK na 'Przygotuj dane teraz' - od razu. " \
-				"Katalog: %s. Ostatnio: %s" % (pack_dir(), last_text())
+				"Katalog: %s. Ostatnio: %s") % (pack_dir(), _(last_text()))
 		elif item in (cfg.cli_api, cfg.cli_port, cfg.cli_token):
 			try:
 				from .clients import summary
 				st = summary()
 			except Exception:
 				st = "?"
-			txt = "Aplikacja E2Stream (Android TV, tablet, telefon) pobiera z dekodera bukiety, kanaly z PID-ami i zapisuje " \
+			txt = _("Aplikacja E2Stream (Android TV, tablet, telefon) pobiera z dekodera bukiety, kanaly z PID-ami i zapisuje " \
 				"tu swoje ustawienia i dane kanalow (czesc wspolna dla nowych odbiornikow + plik kazdego odbiornika). " \
-				"Dziala w sieci lokalnej; token - opcjonalne zabezpieczenie (ten sam wpisz w aplikacji). Stan: %s" % st
+				"Dziala w sieci lokalnej; token - opcjonalne zabezpieczenie (ten sam wpisz w aplikacji). Stan: %s") % st
 		elif item is cfg.cp_common_overwrite:
 			txt = "Synchronizacja wspolnych wartosci E2Stream jest ustawiana w sekcji skanu parametrow."
 		elif item is cfg.cp_devices_overwrite:
@@ -307,8 +314,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"Wszystkie transpondery: cala lista kanalow (lamedb) - skan kilka razy dluzszy, wiekszy plik EPG " \
 				"i zuzycie pamieci. Nowe kanaly sa wykrywane zawsze same."
 		elif item in (cfg.sched_mode, cfg.sched_time, cfg.sched_interval, cfg.sched_when) or item in SCHED_DAYS:
-			txt = "Nastepny skan z harmonogramu: %s. Tylko w czuwaniu: gdy o tej porze odbiornik jest uzywany, " \
-				"skan ruszy po przejsciu w czuwanie (do 12 h)." % fmt_ts(next_run())
+			txt = _("Nastepny skan z harmonogramu: %s. Tylko w czuwaniu: gdy o tej porze odbiornik jest uzywany, " \
+				"skan ruszy po przejsciu w czuwanie (do 12 h).") % fmt_ts(next_run())
 		elif item in (cfg.sched_wakeup, cfg.sched_deep_after):
 			txt = "Odbiornik wstanie z glebokiego czuwania ok. 2 min przed skanem. Po skanie wroci do glebokiego " \
 				"czuwania, jesli nikt go nie uzywa i nie ma nagrania w ciagu 15 min."
@@ -319,10 +326,10 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			txt = "Po zakonczeniu calego skanu wykonaj jedna dodatkowa probe tylko dla kanalow z bledem, takze w harmonogramie."
 		elif item is cfg.cp_interval:
 			from .channelparamscan import scan_due
-			txt = "Skan PAT/PMT uruchamia sie po zakonczonym przebiegu z glownego harmonogramu, nie czesciej niz co %s dni. " \
+			txt = _("Skan PAT/PMT uruchamia sie po zakonczonym przebiegu z glownego harmonogramu, nie czesciej niz co %s dni. " \
 				"Nadrzedne sa warunki z okna Harmonogram (czuwanie, nagrania i wybudzanie). Doczytywanie EPG nie uruchamia " \
-				"skanu parametrow. Teraz: %s." % (cfg.cp_interval.value,
-					"oczekuje na skan" if scan_due() else "odstep jeszcze nie uplynal")
+				"skanu parametrow. Teraz: %s.") % (cfg.cp_interval.value,
+					_("oczekuje na skan") if scan_due() else _("odstep jeszcze nie uplynal"))
 		elif item is cfg.cp_language_source:
 			txt = "Pierwsza pasujaca sciezka w kolejnosci preferencji jest wybierana automatycznie; reczny PID " \
 				"jest zachowywany, jesli nadal wystepuje. Synchronizacja E2Stream jest osobno konfigurowana."
@@ -335,20 +342,20 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"sam import XMLTV, bez strojenia tunerow i doczytywania; przy \"Wymuszaj wylaczenie EIT\" = Tak EIT jest " \
 				"wylaczane, wiec EPG pochodzi tylko z XMLTV."
 			if not cfg.sat_import.value and not cfg.xmltv.value:
-				txt += " UWAGA: program z internetu jest wylaczony - nic nie bedzie importowane."
+				txt = _(txt) + _(" UWAGA: program z internetu jest wylaczony - nic nie bedzie importowane.")
 		elif item is cfg.eit_force_off:
 			from .common import eit_on
 			st = eit_on()
-			txt = "Tak: EIT w ustawieniach EPG Enigma2 jest wylaczane na stale - EPG pochodzi tylko z XMLTV, ogladany " \
-				"transponder go nie nadpisuje. Nie: ustawienie EIT zostaje jak w Enigma2. Teraz EIT jest %s." % (
-				"wlaczone" if st else ("wylaczone" if st is False else "niedostepne w tym obrazie"))
+			txt = _("Tak: EIT w ustawieniach EPG Enigma2 jest wylaczane na stale - EPG pochodzi tylko z XMLTV, ogladany " \
+				"transponder go nie nadpisuje. Nie: ustawienie EIT zostaje jak w Enigma2. Teraz EIT jest %s.") % (
+				_("wlaczone") if st else (_("wylaczone") if st is False else _("niedostepne w tym obrazie")))
 		elif item is cfg.eit_mode:
 			from .common import eit_on
 			st = eit_on()
-			txt = "Skan potrzebuje EPG z satelity (EIT). Gdy w ustawieniach EPG Enigma2 jest ono wylaczone: " \
+			txt = _("Skan potrzebuje EPG z satelity (EIT). Gdy w ustawieniach EPG Enigma2 jest ono wylaczone: " \
 				"'na czas skanu' - wlacza je tylko na czas skanu i doczytywania, potem wylacza; 'na stale' - " \
-				"wlacza i zapisuje w ustawieniach. Teraz EIT jest %s." % (
-				"wlaczone" if st else ("wylaczone" if st is False else "niedostepne w tym obrazie"))
+				"wlacza i zapisuje w ustawieniach. Teraz EIT jest %s.") % (
+				_("wlaczone") if st else (_("wylaczone") if st is False else _("niedostepne w tym obrazie")))
 		elif item is cfg.xmltv_copies:
 			txt = "Ta sama stacja czesto nadaje na satelicie w kilku kopiach (np. wersja Polsat Box i Canal+). " \
 				"Wlaczone: program z XMLTV trafia do wszystkich kopii z listy kanalow odbiornika, nie tylko do tych " \
@@ -369,8 +376,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"1 s: pelne pobieranie kilka - kilkanascie minut. 0,3 s szybciej, ale wieksze ryzyko blokady."
 		elif item is cfg.local_errlog:
 			from .common import backup_dir
-			txt = "Kazda nieudana proba pobrania strony (kod, Retry-After, adres, poczatek odpowiedzi) trafia do %slokalne/bledy.txt " \
-				"(plik od nowa przy kazdym pobraniu)." % backup_dir()
+			txt = _("Kazda nieudana proba pobrania strony (kod, Retry-After, adres, poczatek odpowiedzi) trafia do %slokalne/bledy.txt " \
+				"(plik od nowa przy kazdym pobraniu).") % backup_dir()
 		elif item is cfg.xmltv_gaps:
 			txt = "Multi EPG (Teraz/Nastepny/Wiecej) zaczyna od audycji trwajacej teraz - kanal bez niej jest pusty, " \
 				"choc ma program na pozniej (np. w nocy, ktorej serwis nie podaje). Od teraz do pierwszej audycji: " \
@@ -378,10 +385,10 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"przerw od 30 min w srodku programu (np. noce kanalow sportowych)."
 		elif item is cfg.xmltv_bouquets:
 			from .common import xmltv_bouquet_files
-			txt = "Ktore bukiety dostaja program z internetu i sa dopasowywane w mapie kanalow dekodera. Wszystkie: " \
+			txt = _("Ktore bukiety dostaja program z internetu i sa dopasowywane w mapie kanalow dekodera. Wszystkie: " \
 				"takze bukiety, ktorych nie skanujesz z satelity (np. IPTV). Wybrane: tylko zaznaczone - OK otwiera liste " \
 				"(zapis ustawia 'wybrane bukiety'), strzalki - tryb " \
-				"(teraz %d bukietow). Do skanowania: jak w Satelita - EPG -> Kanaly z bukietow." % len(xmltv_bouquet_files())
+				"(teraz %d bukietow). Do skanowania: jak w Satelita - EPG -> Kanaly z bukietow.") % len(xmltv_bouquet_files())
 		elif item is cfg.epgpl_grab:
 			txt = "Dotyczy wybranych zrodel z serwera epgpl i skanu z harmonogramu. Gotowy plik: import tego, co serwer " \
 				"pobral sam. Pobieranie na serwerze: na starcie skanu dekoder uruchamia pobieranie na serwerze (ok. 10 min, " \
@@ -391,8 +398,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			txt = "Program z internetu: dekoder (pobiera sam), serwer epgpl, pozostale zaznaczone zrodla XMLTV (zolty). " \
 				"Ktore z nich biora udzial i czy pobierac swieze dane - w profilu (zielony na ekranie glownym -> Akcje)."
 		elif item is cfg.src_order:
-			txt = "Kolejnosc zrodel XMLTV po satelicie: kanal bierze program z pierwszego, ktore go ma. Satelita zawsze " \
-				"pierwszy (EIT ma pierwszenstwo przed importem). Teraz: %s" % profile_text(profile_default())
+			txt = _("Kolejnosc zrodel XMLTV po satelicie: kanal bierze program z pierwszego, ktore go ma. Satelita zawsze " \
+				"pierwszy (EIT ma pierwszenstwo przed importem). Teraz: %s") % profile_text(profile_default(), localized=True)
 		elif item is cfg.site_order:
 			txt = "Gdy stacja jest w kilku serwisach, kanal bierze ja z pierwszego. Dekoder jest centrum ustawien: ta sama " \
 				"kolejnosc trafia na serwer epgpl (razem z wyborem bukietow) i zastepuje tam SITES z config.env. " \
@@ -420,23 +427,23 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"Nie: bez serwera. Ustawienie domyslne - w Akcjach mozna je zmienic na jeden start."
 		elif item is cfg.rs_mode:
 			from .health import mem_available_mb, uptime_days
-			txt = "Po nocnym przebiegu (tylko w czuwaniu, bez nagrania w ciagu 15 min, najwyzej raz na dobe). Gdy potrzebny: " \
+			txt = _("Po nocnym przebiegu (tylko w czuwaniu, bez nagrania w ciagu 15 min, najwyzej raz na dobe). Gdy potrzebny: " \
 				"tuner nie stroi (pelny restart), malo wolnej pamieci lub Enigma2 urosla o ponad 250 MB, SatWatch zmienil " \
 				"satellites.xml bez przeladowania (restart Enigma2), dekoder dziala dluzej niz podana liczba dni (pelny restart). " \
-				"Powod w logu i w podsumowaniu nocy. Teraz: wolne %d MB, dziala %.1f dnia." % (
+				"Powod w logu i w podsumowaniu nocy. Teraz: wolne %d MB, dziala %.1f dnia.") % (
 				mem_available_mb(), uptime_days())
 		elif item in (cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, self.p_cldirs):
 			try:
 				from .cleanup import run_cleanup
-				n, mb, _ = run_cleanup(dry=True)
-				now = "Teraz do usuniecia: %d plikow, %d MB." % (n, mb)
+				n, mb, _ignored = run_cleanup(dry=True)
+				now = _("Teraz do usuniecia: %d plikow, %d MB.") % (n, mb)
 			except Exception:
 				now = ""
-			txt = "Co podana liczbe minut wtyczka usuwa z zaznaczonych katalogow pliki timeshift starsze niz podana liczba " \
+			txt = _("Co podana liczbe minut wtyczka usuwa z zaznaczonych katalogow pliki timeshift starsze niz podana liczba " \
 				"godzin (aktywny timeshift jest pomijany) i nadmiar plikow enigma2_crash_*.log - zostaje tyle najnowszych " \
 				"(lacznie), ile ustawiono, oraz zrzuty TS aplikacji E2Stream (stall-*.ts w jej katalogu na dekoderze) starsze niz " \
 				"podana liczba dni. Katalogi: OK - lista (nosniki, katalog timeshift i crash logow z ustawien Enigma2, " \
-				"wlasne). Kazde usuniecie jest zapisywane w logu EPG Scan. %s" % now
+				"wlasne). Kazde usuniecie jest zapisywane w logu EPG Scan. %s") % now
 		elif item in (cfg.rs_days, cfg.rs_mem):
 			txt = "Profilaktycznie: pelny restart, gdy odbiornik dziala dluzej niz tyle dni (nie = wylaczone). Pamiec: restart " \
 				"Enigma2, gdy wolnej pamieci w systemie jest mniej niz prog."
@@ -445,15 +452,15 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"(kopia na dysku). Na dekoderze: dekoder sam odswieza listy stacji i buduje mape z Twoich bukietow (te same " \
 				"reguly co serwer); wskazania w Kanaly -> Dopasowanie kanalow: dekoder (mozna przeniesc z serwera)."
 		elif item is cfg.sched_on:
-			txt = "Wylacznik harmonogramu - ustawienia ponizej zostaja zapisane. Nastepny start: %s. Co robi start z " \
-				"harmonogramu: profil domyslny (%s)." % (fmt_ts(next_run()), profile_text(profile_default()))
+			txt = _("Wylacznik harmonogramu - ustawienia ponizej zostaja zapisane. Nastepny start: %s. Co robi start z " \
+				"harmonogramu: profil domyslny (%s).") % (fmt_ts(next_run()), profile_text(profile_default(), localized=True))
 		elif item is cfg.notify:
 			txt = "Komunikat po skanie, gdy okno wtyczki jest zamkniete. Nie jest pokazywany w czuwaniu."
 		elif item is cfg.clear_mode:
 			txt = "Nie czysc: nowe dane dopisywane. Tylko przy harmonogramie: nocny skan buduje EPG od zera, " \
 				"skany reczne i doczytywanie tylko dopisuja (zalecane). Przy kazdym skanie: pelny reset zawsze."
 			if not single_flush_supported():
-				txt += " Czyszczenie pojedynczych kanalow jest niedostepne w tym obrazie."
+				txt = _(txt) + _(" Czyszczenie pojedynczych kanalow jest niedostepne w tym obrazie.")
 		elif item is cfg.topup:
 			txt = "Cykliczny skan satelity w ciagu dnia bez czyszczenia EPG, wolnymi tunerami z rezerwa. " \
 				"Jest niezalezny od harmonogramu nocnego. Po skanie przygotowuje nowa paczke dla E2Stream, gdy wlaczono dane dla aplikacji."
@@ -488,23 +495,23 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			txt = "Po kazdym skanie wtyczka zapisuje EPG na dysk i robi kopie pliku EPG do katalogu kopii. " \
 				"Kopia sluzy do odtworzenia EPG (zolty na ekranie glownym) i do kontroli po starcie."
 		elif item is cfg.backup_dir:
-			txt = "Katalog kopii EPG (OK = wybor). Powinien lezec na dysku lub USB - nie w pamieci odbiornika. " \
-				"Teraz: %s" % cfg.backup_dir.value
+			txt = _("Katalog kopii EPG (OK = wybor). Powinien lezec na dysku lub USB - nie w pamieci odbiornika. " \
+				"Teraz: %s") % cfg.backup_dir.value
 		elif item is cfg.backup_keep:
-			txt = "Ile ostatnich kopii EPG trzymac. Tyle samo (min. 2) jest zachowywanych logow skanu. " \
-				"Kopii teraz: %d" % len(list_backups())
+			txt = _("Ile ostatnich kopii EPG trzymac. Tyle samo (min. 2) jest zachowywanych logow skanu. " \
+				"Kopii teraz: %d") % len(list_backups())
 		elif item is cfg.restore:
-			txt = "Kilka minut po starcie Enigma2 sprawdza EPG; gdy jest w nim mniej niz 30%% zdarzen " \
-				"z ostatniego skanu, wczytuje najnowsza kopie. Kopii: %d" % len(list_backups())
+			txt = _("Kilka minut po starcie Enigma2 sprawdza EPG; gdy jest w nim mniej niz 30%% zdarzen " \
+				"z ostatniego skanu, wczytuje najnowsza kopie. Kopii: %d") % len(list_backups())
 		elif item in (cfg.xmltv, cfg.xmltv_mode):
 			n = len([x for x in cfg.xmltv_sources.value.split("|") if x])
-			txt = "Po skanie z satelity: kanaly bez EPG dostaja program z XMLTV, " \
+			txt = _("Po skanie z satelity: kanaly bez EPG dostaja program z XMLTV, " \
 				"a w trybie \"dalsze dni\" takze luki miedzy istniejacymi audycjami i program po nich. " \
 				"Na czas importu EIT jest wylaczane, potem wraca do poprzedniego stanu. " \
-				"Zrodla wybierasz zoltym przyciskiem - wybrano %d." % n
+				"Zrodla wybierasz zoltym przyciskiem - wybrano %d.") % n
 		elif item is cfg.log_place:
-			txt = "Log: %s (zachowywanych logow: %d - tyle, ile kopii EPG, min. 2). W katalogu kopii log przetrwa " \
-				"restart dekodera i wybudzenie z glebokiego czuwania." % (log_path(), log_count())
+			txt = _("Log: %s (zachowywanych logow: %d - tyle, ile kopii EPG, min. 2). W katalogu kopii log przetrwa " \
+				"restart dekodera i wybudzenie z glebokiego czuwania.") % (log_path(), log_count())
 		elif item is cfg.max_parallel:
 			txt = "Gorna granica wlasnych skanow EPG i skanu parametrow naraz. Nowy tuner jest zajmowany tylko wtedy, gdy po tym zostanie " \
 				"rezerwa wolnych - liczone sa wszystkie zajete (ogladanie, nagrania, streamy, PiP). Np. 8 tunerow, " \
@@ -515,7 +522,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"przed nagraniem z timera skan zwalnia/trzyma tyle tunerow, ile nagran ma ruszyc."
 			try:
 				from .satwatch.scanner import tuner_advice
-				txt += "\n" + tuner_advice()[0] + " Pelna porada: Info/EPG -> Raporty -> Konfiguracja tunerow."
+				txt = _(txt) + "\n" + tuner_advice()[0] + _(" Pelna porada: Info/EPG -> Raporty -> Konfiguracja tunerow.")
 			except Exception:
 				pass
 		elif self.is_sw_full(item):
@@ -525,7 +532,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		elif item is cfg.sched_skip_rec:
 			txt = "Skan ruszy dopiero po zakonczeniu nagrania. Przy wielu tunerach zwykle zbedne - tuneru " \
 				"pilnuje rezerwa, a nagrania maja pierwszenstwo. Przydatne przy 1-2 tunerach."
-		self["help"].setText(txt)
+		# Static help paragraphs use whole-message lookup; dynamic templates are translated before formatting.
+		self["help"].setText(_(txt))
 		set_keys(self, red="Anuluj", green="Zapisz", yellow={
 			"net": "Pozostale zrodla XMLTV"}.get(self.section, ""))
 
@@ -546,31 +554,31 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			try:
 				body = readme_text()
 			except OSError as e:
-				self.session.open(MessageBox, "Brak opisu: %s" % e, MessageBox.TYPE_ERROR)
+				self.session.open(MessageBox, _("Brak opisu: %s") % e, MessageBox.TYPE_ERROR)
 				return
-			self.session.open(EPGScanText, "opis wtyczki %s" % VERSION, text=body)
+			self.session.open(EPGScanText, _("opis wtyczki %s") % VERSION, text=body)
 			return
 		if cur and cur[1] is self.p_pack:
 			from .clientpack import build
-			if build(lambda res: (self.session.open(MessageBox, "Dane dla E2Stream: %s" % res, MessageBox.TYPE_INFO, timeout=10),
+			if build(lambda res: (self.session.open(MessageBox, _("Dane dla E2Stream: %s") % res, MessageBox.TYPE_INFO, timeout=10),
 					self.update_help())):
-				self["help"].setText("Przygotowywanie danych dla E2Stream (EPG, ikony, referencje)...")
+				self["help"].setText(_("Przygotowywanie danych dla E2Stream (EPG, ikony, referencje)..."))
 			else:
-				self.session.open(MessageBox, "Dane dla E2Stream sa wlasnie przygotowywane.", MessageBox.TYPE_INFO, timeout=5)
+				self.session.open(MessageBox, _("Dane dla E2Stream sa wlasnie przygotowywane."), MessageBox.TYPE_INFO, timeout=5)
 			return
 		if cur and cur[1] is cfg.backup_dir:
 			from Screens.LocationBox import LocationBox
-			self.session.openWithCallback(self.dir_cb, LocationBox, text="Katalog kopii EPG", currDir=cfg.backup_dir.value)
+			self.session.openWithCallback(self.dir_cb, LocationBox, text=_("Katalog kopii EPG"), currDir=cfg.backup_dir.value)
 
 	# ------------------------------------------------------------ aktualizacja reczna
 	def upd_check(self):
 		from .updater import releases_async
-		self["help"].setText("Pobieranie listy wydan z GitHub...")
+		self["help"].setText(_("Pobieranie listy wydan z GitHub..."))
 		releases_async(self.upd_checked)
 
 	def upd_checked(self, releases):
 		if not releases:
-			self.session.open(MessageBox, "Nie udalo sie sprawdzic wydan (brak internetu lub GitHub). Szczegoly w logu.",
+			self.session.open(MessageBox, _("Nie udalo sie sprawdzic wydan (brak internetu lub GitHub). Szczegoly w logu."),
 				MessageBox.TYPE_ERROR, timeout=8)
 			self.update_help()
 			return
@@ -578,11 +586,11 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		options = []
 		for ver, _url, prerelease in releases:
 			label = "%s%s%s" % (ver, " (beta)" if prerelease else "",
-				"  [zainstalowana]" if ver == VERSION else "")
+				_("  [zainstalowana]") if ver == VERSION else "")
 			options.append((label, ver))
 		self.available_updates = {item[0]: item for item in releases}
-		self["help"].setText("Wybierz wydanie. Lista zawiera tylko wersje z dostepna paczka ZIP.")
-		self.session.openWithCallback(self.upd_release_chosen, ChoiceBox, title="Wydania EPG Scan", list=options)
+		self["help"].setText(_("Wybierz wydanie. Lista zawiera tylko wersje z dostepna paczka ZIP."))
+		self.session.openWithCallback(self.upd_release_chosen, ChoiceBox, title=_("Wydania EPG Scan"), list=options)
 
 	def upd_release_chosen(self, choice):
 		if not choice:
@@ -592,29 +600,29 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		from .updater import newer
 		release = self.available_updates.get(ver)
 		if not release:
-			self.session.open(MessageBox, "Wybrane wydanie nie jest juz dostepne. Sprawdz ponownie.", MessageBox.TYPE_ERROR, timeout=8)
+			self.session.open(MessageBox, _("Wybrane wydanie nie jest juz dostepne. Sprawdz ponownie."), MessageBox.TYPE_ERROR, timeout=8)
 			self.update_help()
 			return
 		ver, url, prerelease = release
 		older = newer(VERSION, ver)
-		q = "Zainstalowac EPG Scan %s? (obecnie %s)%s" % (
-			ver, VERSION, "\nUwaga: to starsza wersja." if older else ("\nTo wydanie testowe." if prerelease else ""))
+		q = _("Zainstalowac EPG Scan %s? (obecnie %s)%s") % (
+			ver, VERSION, _("\nUwaga: to starsza wersja.") if older else (_("\nTo wydanie testowe.") if prerelease else ""))
 		self.update_help()
 		self.session.openWithCallback(lambda yes: yes and self.upd_install(url, ver), MessageBox, q,
 			MessageBox.TYPE_YESNO, default=not older)
 
 	def upd_install(self, url, ver):
 		from .updater import install_async
-		self["help"].setText("Pobieranie i instalacja EPG Scan %s..." % ver)
+		self["help"].setText(_("Pobieranie i instalacja EPG Scan %s...") % ver)
 		install_async(url, ver, lambda err: self.upd_done(err, ver))
 
 	def upd_done(self, err, ver):
 		self.update_help()
 		if err:
-			self.session.open(MessageBox, "Instalacja nieudana: %s" % err, MessageBox.TYPE_ERROR, timeout=10)
+			self.session.open(MessageBox, _("Instalacja nieudana: %s") % err, MessageBox.TYPE_ERROR, timeout=10)
 			return
 		self.session.openWithCallback(self.upd_restart, MessageBox,
-			"Zainstalowano EPG Scan %s. Zrestartowac teraz Enigma2?\n(Nie - nowa wersja zadziala po najblizszym restarcie.)" % ver,
+			_("Zainstalowano EPG Scan %s. Zrestartowac teraz Enigma2?\n(Nie - nowa wersja zadziala po najblizszym restarcie.)") % ver,
 			MessageBox.TYPE_YESNO, default=True)
 
 	def upd_restart(self, yes):
@@ -658,19 +666,19 @@ class EPGScanSetup(Screen, ConfigListScreen):
 	def bouquets(self):
 		"""Zolty: wybor - bukiety do skanowania, zrodla XMLTV, dopasowanie kanalow (serwer epgpl)."""
 		from .common import EPGChoiceBox as ChoiceBox
-		scope = {"all": "wszystkie bukiety", "tps": "wszystkie transpondery"}.get(cfg.scope.value)
-		opts = [("Bukiety do skanowania" + ("  (zakres: %s - wybor nie jest teraz uzywany)" % scope if scope else ""), "bouquets"),
-			("Zrodla XMLTV" + ("" if cfg.xmltv.value else "  (uzupelnianie z XMLTV wylaczone)"), "xmltv")]
+		scope = {"all": _("wszystkie bukiety"), "tps": _("wszystkie transpondery")}.get(cfg.scope.value)
+		opts = [(_("Bukiety do skanowania") + (_("  (zakres: %s - wybor nie jest teraz uzywany)") % scope if scope else ""), "bouquets"),
+			(_("Zrodla XMLTV") + ("" if cfg.xmltv.value else _("  (uzupelnianie z XMLTV wylaczone)")), "xmltv")]
 		try:
 			from .xmltv import load_sources
 			seen = set()
 			for src in load_sources()[0]:
 				if src.epgpl and src.epgpl not in seen:
 					seen.add(src.epgpl)
-					opts.append(("Dopasowanie kanalow - %s" % src.desc, ("mapping", src.epgpl, src.desc)))
+					opts.append((_("Dopasowanie kanalow - %s") % src.desc, ("mapping", src.epgpl, src.desc)))
 		except Exception:
 			pass
-		self.session.openWithCallback(self.yellow_choice, ChoiceBox, title="Bukiety / XMLTV", list=opts)
+		self.session.openWithCallback(self.yellow_choice, ChoiceBox, title=_("Bukiety / XMLTV"), list=opts)
 
 	def yellow_choice(self, choice):
 		if not choice:
@@ -693,12 +701,12 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			eEPGCache.getInstance().save()
 		except Exception:
 			pass
-		self["help"].setText("Zapis EPG i kopia...")
+		self["help"].setText(_("Zapis EPG i kopia..."))
 		self.bk_timer.start(5000, True)
 
 	def backup_done(self):
 		dst = copy_backup()
-		self.session.open(MessageBox, ("Kopia EPG zapisana:\n%s" % dst) if dst else ("Kopia nieudana - szczegoly w %s" % log_path()),
+		self.session.open(MessageBox, (_("Kopia EPG zapisana:\n%s") % dst) if dst else (_("Kopia nieudana - szczegoly w %s") % log_path()),
 			MessageBox.TYPE_INFO if dst else MessageBox.TYPE_ERROR, timeout=6)
 		self.update_help()
 
@@ -715,6 +723,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		for x in all_items():
 			x.save()
 		save_cfg()
+		from .common import apply_ui_language
+		apply_ui_language()
 		try:
 			from .common import apply_eit_policy
 			apply_eit_policy()
@@ -758,13 +768,13 @@ class EPGScanBouquets(Screen):
 		"""target: "scan" - bukiety do skanowania satelity, "xmltv" - bukiety dla programu z internetu i mapy kanalow."""
 		Screen.__init__(self, session)
 		self.target = target
-		self.setTitle("EPG Scan - kanaly z bukietow: skan EPG z satelity" if target == "scan" else
-			"EPG Scan - kanaly z bukietow: program z internetu i dopasowanie kanalow")
+		self.setTitle(_("EPG Scan - kanaly z bukietow: skan EPG z satelity") if target == "scan" else
+			_("EPG Scan - kanaly z bukietow: program z internetu i dopasowanie kanalow"))
 		sel = [x for x in (cfg.bouquets if target == "scan" else cfg.xmltv_bq_sel).value.split(",") if x]
 		items = [SelectionEntryComponent(name, fname, i, fname in sel) for i, (fname, name) in enumerate(list_bouquets())]
 		self["list"] = SelectionList(items)
 		big_list(self["list"])
-		self["keys"] = Label("OK: zaznacz / odznacz.  Zielony: zapisz.  Czerwony: anuluj.")
+		self["keys"] = Label(_("OK: zaznacz / odznacz.  Zielony: zapisz.  Czerwony: anuluj."))
 		init_keys(self)
 		# uwaga: onLayoutFinish przyjmuje tylko metody ekranu (inne obiekty Enigma2 wykonuje przez exec)
 		self.onLayoutFinish.append(self.layout_done)
@@ -805,8 +815,8 @@ def cl_dirs():
 def cl_dirs_text():
 	d = cl_dirs()
 	if not d:
-		return "brak"
-	return d[0] if len(d) == 1 else "%d katalogi" % len(d) if len(d) < 5 else "%d katalogow" % len(d)
+		return _("brak")
+	return d[0] if len(d) == 1 else _("%d katalogi") % len(d) if len(d) < 5 else _("%d katalogow") % len(d)
 
 
 def cl_candidates():
@@ -831,26 +841,26 @@ def cl_candidates():
 	for attr in ("debug_path", "log_path"):
 		try:
 			from Components.config import config
-			add(getattr(config.crash, attr).value, "crash logi (Enigma2)")
+			add(getattr(config.crash, attr).value, _("crash logi (Enigma2)"))
 			break
 		except Exception:
 			pass
 	for d in ("/media/hdd", "/media/usb", "/media/mmc"):
 		if os.path.isdir(d):
-			add(d, "nosnik")
+			add(d, _("nosnik"))
 	try:
 		for d in sorted(os.listdir("/media")):
 			p = os.path.join("/media", d)
 			if d not in ("net", "autofs") and os.path.ismount(p):
-				add(p, "nosnik")
+				add(p, _("nosnik"))
 	except Exception:
 		pass
-	add("/home/root/logs", "crash logi") if os.path.isdir("/home/root/logs") else None
+	add("/home/root/logs", _("crash logi")) if os.path.isdir("/home/root/logs") else None
 	for d in (cfg.cl_dirs_own.value or "").split("|"):
 		if d.strip():
-			add(d, "wlasny")
+			add(d, _("wlasny"))
 	for d in cl_dirs():
-		add(d, "zaznaczony")
+		add(d, _("zaznaczony"))
 	return out
 
 
@@ -865,10 +875,10 @@ class EPGScanDirs(Screen):
 
 	def __init__(self, session):
 		Screen.__init__(self, session)
-		self.setTitle("EPG Scan - katalogi sprzatania dysku")
+		self.setTitle(_("EPG Scan - katalogi sprzatania dysku"))
 		self.own = [d.rstrip("/") for d in (cfg.cl_dirs_own.value or "").split("|") if d.strip()]
 		self["list"] = SelectionList([])
-		self["keys"] = Label("OK: zaznacz / odznacz.  Zolty: dodaj wlasny katalog.  Niebieski: usun wlasny.  Zielony: zapisz.")
+		self["keys"] = Label(_("OK: zaznacz / odznacz.  Zolty: dodaj wlasny katalog.  Niebieski: usun wlasny.  Zielony: zapisz."))
 		init_keys(self)
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
 			"ok": self.toggle,
@@ -889,7 +899,7 @@ class EPGScanDirs(Screen):
 		cfg.cl_dirs_own.value = "|".join(self.own)
 		cands = cl_candidates()
 		cfg.cl_dirs_own.value = saved
-		items = [SelectionEntryComponent("%s   [%s%s]" % (p, w, "" if os.path.isdir(p) else ", brak"), p, i, p in chosen)
+		items = [SelectionEntryComponent("%s   [%s%s]" % (p, w, "" if os.path.isdir(p) else _(", brak")), p, i, p in chosen)
 			for i, (p, w) in enumerate(cands)]
 		self["list"].setList(items)
 		big_list(self["list"])
@@ -907,7 +917,7 @@ class EPGScanDirs(Screen):
 
 	def add(self):
 		from Screens.LocationBox import LocationBox
-		self.session.openWithCallback(self.added, LocationBox, text="Katalog do sprzatania", currDir="/media/")
+		self.session.openWithCallback(self.added, LocationBox, text=_("Katalog do sprzatania"), currDir="/media/")
 
 	def added(self, path):
 		if not path:
@@ -933,7 +943,7 @@ class EPGScanDirs(Screen):
 	def save(self):
 		ch = [x[1] for x in self["list"].getSelectionsList()]
 		if not ch:
-			self.session.open(MessageBox, "Zaznacz co najmniej jeden katalog (albo wylacz sprzatanie).", MessageBox.TYPE_INFO, timeout=5)
+			self.session.open(MessageBox, _("Zaznacz co najmniej jeden katalog (albo wylacz sprzatanie)."), MessageBox.TYPE_INFO, timeout=5)
 			return
 		cfg.cl_dir.value = "|".join(ch)
 		cfg.cl_dir.save()
@@ -956,11 +966,11 @@ class EPGScanXmltvSources(Screen):
 
 	def __init__(self, session):
 		Screen.__init__(self, session)
-		self.setTitle("EPG Scan - zrodla XMLTV do uzupelniania")
+		self.setTitle(_("EPG Scan - zrodla XMLTV do uzupelniania"))
 		self["list"] = SelectionList([])
 		big_list(self["list"])
 		self["info"] = Label("")
-		self["keys"] = Label(self.HELP)
+		self["keys"] = Label(_(self.HELP))
 		init_keys(self)
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
 			"ok": self.toggle,
@@ -1017,19 +1027,19 @@ class EPGScanXmltvSources(Screen):
 			lab = state_label(s.desc, st)
 			org = ""
 			if s.origin == "pakiet" and s.file and not os.path.exists(os.path.join(SOURCES_DIR, s.file)):
-				org = "  [kopia pakietu]"
+				org = _("  [kopia pakietu]")
 			name = s.desc if indent else "%s - %s" % (s.cat, s.desc)
 			return wide_entry(SelectionEntryComponent("%s%s%s%s" % ("      " if indent else "", name, org,
 				("   [%s]" % lab) if lab else ""), s.desc, i, s.desc in self.sel_set))
 
-		items.append(self.header("Dekoder i serwer epgpl - wlaczane w Akcjach (zielony na ekranie glownym)", "ctl"))
+		items.append(self.header(_("Dekoder i serwer epgpl - wlaczane w Akcjach (zielony na ekranie glownym)"), "ctl"))
 		for i, s in ctl:
 			items.append(self.ctl_row(i, s, st))
-		items.append(self.header("Wlasne zrodla" if own else "Wlasne zrodla: brak - niebieski: dodaj liste z adresu", "own"))
+		items.append(self.header(_("Wlasne zrodla") if own else _("Wlasne zrodla: brak - niebieski: dodaj liste z adresu"), "own"))
 		for i, s in own:
 			items.append(entry(i, s, False))
 		if pkg:
-			items.append(self.header("EPG Import Sources (pakiet zrodel)", "pkg"))
+			items.append(self.header(_("EPG Import Sources (pakiet zrodel)"), "pkg"))
 			groups = []
 			for i, s in pkg:
 				if not groups or groups[-1][0] != s.cat:
@@ -1061,22 +1071,22 @@ class EPGScanXmltvSources(Screen):
 				from .localrun import out_dir
 				f = out_dir() + "pl.xml.xz"
 				if os.path.exists(f):
-					return "plik z %s%s" % (time.strftime("%d.%m %H:%M", time.localtime(os.path.getmtime(f))),
+					return _("plik z %s%s") % (time.strftime("%d.%m %H:%M", time.localtime(os.path.getmtime(f))),
 						("; import: %s" % lab) if lab else "")
 			except Exception:
 				pass
-			return "brak pliku - zaznacz Dekoder w Akcjach i uruchom"
+			return _("brak pliku - zaznacz Dekoder w Akcjach i uruchom")
 		inf = self.srv_info.get(s.epgpl)
 		if inf is None:
-			txt = "sprawdzam serwer..."
+			txt = _("sprawdzam serwer...")
 		elif inf.get("err"):
-			txt = "serwer nie odpowiada"
+			txt = _("serwer nie odpowiada")
 		elif inf.get("guide"):
-			txt = "plik serwera z %s%s%s" % (time.strftime("%d.%m %H:%M", time.localtime(inf["guide"])),
-				", serwer pobiera teraz" if inf.get("running") else "",
-				", serwer spoza sieci lokalnej - tylko plik programu" if inf.get("remote") else "")
+			txt = _("plik serwera z %s%s%s") % (time.strftime("%d.%m %H:%M", time.localtime(inf["guide"])),
+				_(", serwer pobiera teraz") if inf.get("running") else "",
+				_(", serwer spoza sieci lokalnej - tylko plik programu") if inf.get("remote") else "")
 		else:
-			txt = "serwer bez pliku programu"
+			txt = _("serwer bez pliku programu")
 		return txt + (("; import: %s" % lab) if lab else "")
 
 	def ctl_row(self, i, s, st):
@@ -1130,7 +1140,7 @@ class EPGScanXmltvSources(Screen):
 		"""Grupa zrodel (sourcecat) - OK rozwija / zwija."""
 		from Components.MultiContent import MultiContentEntryText
 		from enigma import RT_HALIGN_LEFT, RT_VALIGN_CENTER
-		txt = "%s  %s   (%s%d)" % ("[-]" if opened else "[+]", cat, ("zaznaczone %d z " % nsel) if nsel else "", total)
+		txt = "%s  %s   (%s%d)" % ("[-]" if opened else "[+]", cat, (_("zaznaczone %d z ") % nsel) if nsel else "", total)
 		return [(cat, None, "grp:" + cat, False),
 			MultiContentEntryText(pos=(S(15), 0), size=(S(1410), S(ROW_H)), font=0, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
 				text=txt, color=0x0080c8ff if nsel else 0x00c0c0c0)]
@@ -1173,35 +1183,35 @@ class EPGScanXmltvSources(Screen):
 			if isinstance(hdr, str) and hdr.startswith("grp:"):
 				cat = hdr[4:]
 				on = [x.desc for x in self.srcs if x.cat == cat and x.desc in self.sel_set]
-				self["info"].setText("Grupa %s - OK: %s.\nZaznaczone: %s" % (cat,
-					"zwin" if cat in self.opened else "rozwin", ", ".join(on) if on else "brak"))
+				self["info"].setText(_("Grupa %s - OK: %s.\nZaznaczone: %s") % (cat,
+					_("zwin") if cat in self.opened else _("rozwin"), ", ".join(on) if on else _("brak")))
 				return
-			self["info"].setText({
+			self["info"].setText(_({
 				"hdr_ctl": "Program pobierany przez dekoder i serwer epgpl wlacza sie w Akcjach (zielony) - tam tez kolejnosc\n"
 					"i zapas. Tutaj tylko data danych; niebieski na serwerze: dopasowanie kanalow, adres.",
 				"hdr_own": "Twoje listy (adres z niebieskiego albo pliki w /etc/enigma2/epgscan_sources/wlasne).\n"
 					"Sa sprawdzane jako pierwsze - maja pierwszenstwo przed listami pakietu.",
 				"hdr_pkg": "Listy z pakietu enigma2-plugin-extensions-epgimport-sources (Rytec i inne).\n"
-					"Po odinstalowaniu pakietu dzialaja z kopii wtyczki."}.get(hdr, ""))
+					"Po odinstalowaniu pakietu dzialaja z kopii wtyczki."}.get(hdr, "")))
 			return
-		txt = "Lista: %s" % (s.file or "wbudowana")
+		txt = _("Lista: %s") % (s.file or _("wbudowana"))
 		if s.origin == "wlasne":
 			e = own_meta().get(s.file, {})
 			if e.get("url"):
-				txt += "  [wlasne]\nAdres: %s\nZmieniona: %s, sprawdzona: %s%s" % (e["url"], fmt_age(e.get("updated")),
-					fmt_age(e.get("checked")), "  (ostatnio blad pobierania)" if e.get("status") == "blad" else "")
+				txt += _("  [wlasne]\nAdres: %s\nZmieniona: %s, sprawdzona: %s%s") % (e["url"], fmt_age(e.get("updated")),
+					fmt_age(e.get("checked")), _("  (ostatnio blad pobierania)") if e.get("status") == "blad" else "")
 			else:
-				txt += "  [wlasne]\nAdres nieznany - niebieski: ustaw adres, wtedy lista bedzie aktualizowana sama"
+				txt += _("  [wlasne]\nAdres nieznany - niebieski: ustaw adres, wtedy lista bedzie aktualizowana sama")
 		elif s.origin == "pakiet":
-			txt += "  (pakiet zrodel EPG Import)"
+			txt += _("  (pakiet zrodel EPG Import)")
 		if s.report:
-			txt += "\nInfo/EPG: raport zrodla"
+			txt += _("\nInfo/EPG: raport zrodla")
 		self["info"].setText(txt)
 
 	def report(self):
 		s = self.current()
 		if not s or not s.report:
-			self.session.open(MessageBox, "To zrodlo nie udostepnia raportu.", MessageBox.TYPE_INFO, timeout=4)
+			self.session.open(MessageBox, _("To zrodlo nie udostepnia raportu."), MessageBox.TYPE_INFO, timeout=4)
 			return
 		self.session.open(EPGScanReport, s.desc, s.report)
 
@@ -1223,16 +1233,16 @@ class EPGScanXmltvSources(Screen):
 			return
 		from .xmltv import DEK_DESC
 		if s.desc == DEK_DESC:
-			self.session.open(MessageBox, "Zrodlo dekodera jest czescia wtyczki - wylaczasz je w Akcjach (Dekoder: nie).",
+			self.session.open(MessageBox, _("Zrodlo dekodera jest czescia wtyczki - wylaczasz je w Akcjach (Dekoder: nie)."),
 				MessageBox.TYPE_INFO, timeout=6)
 			return
 		if s.origin != "wlasne":
-			self.session.open(MessageBox, "To zrodlo pochodzi z pakietu zrodel EPG Import - nie mozna go usunac.\n"
-				"Mozesz je tylko odznaczyc.", MessageBox.TYPE_INFO, timeout=6)
+			self.session.open(MessageBox, _("To zrodlo pochodzi z pakietu zrodel EPG Import - nie mozna go usunac.\n"
+				"Mozesz je tylko odznaczyc."), MessageBox.TYPE_INFO, timeout=6)
 			return
 		inside = [x.desc for x in self.srcs if x.file == s.file]
 		self.to_delete = s.file
-		self.session.openWithCallback(self.delete_cb, MessageBox, "Usunac liste zrodel %s?\nZawiera: %s" % (
+		self.session.openWithCallback(self.delete_cb, MessageBox, _("Usunac liste zrodel %s?\nZawiera: %s") % (
 			s.file, ", ".join(inside)), MessageBox.TYPE_YESNO, default=False)
 
 	def delete_cb(self, yes):
@@ -1251,22 +1261,22 @@ class EPGScanXmltvSources(Screen):
 		from .xmltv import own_meta
 		s = self.current()
 		meta = own_meta()
-		opts = [("Dodaj nowa liste z adresu", "new"), ("Szukaj serwera epgpl w sieci (Avahi i podsiec)", "find")]
+		opts = [(_("Dodaj nowa liste z adresu"), "new"), (_("Szukaj serwera epgpl w sieci (Avahi i podsiec)"), "find")]
 		if s and s.epgpl:
-			opts.insert(0, ("Dopasowanie kanalow (%s)" % s.desc, "mapping"))
+			opts.insert(0, (_("Dopasowanie kanalow (%s)") % s.desc, "mapping"))
 		if s and s.origin == "wlasne":
 			url = meta.get(s.file, {}).get("url")
 			if url:
-				opts.append(("Aktualizuj %s teraz" % s.file, "upd"))
-				opts.append(("Zmien adres listy %s" % s.file, "set"))
+				opts.append((_("Aktualizuj %s teraz") % s.file, "upd"))
+				opts.append((_("Zmien adres listy %s") % s.file, "set"))
 			else:
-				opts.append(("Ustaw adres listy %s (bedzie aktualizowana)" % s.file, "set"))
+				opts.append((_("Ustaw adres listy %s (bedzie aktualizowana)") % s.file, "set"))
 		if any(e.get("url") for e in meta.values()):
-			opts.append(("Aktualizuj wszystkie wlasne listy", "all"))
+			opts.append((_("Aktualizuj wszystkie wlasne listy"), "all"))
 		from .xmltv import url_history
 		if url_history():
-			opts.append(("Usun zapamietane adresy", "forget"))
-		self.session.openWithCallback(self.add_choice, ChoiceBox, title="Listy zrodel z adresu", list=opts)
+			opts.append((_("Usun zapamietane adresy"), "forget"))
+		self.session.openWithCallback(self.add_choice, ChoiceBox, title=_("Listy zrodel z adresu"), list=opts)
 
 	def add_choice(self, choice):
 		if not choice:
@@ -1286,14 +1296,14 @@ class EPGScanXmltvSources(Screen):
 			h = url_history()
 			if h:
 				used = set(e.get("url") for e in own_meta().values())
-				lst = [("Wpisz nowy adres...", "")] + [("%s   (%s, %s%s)" % (x["url"], x.get("file", ""), fmt_age(x.get("used")),
-					", w uzyciu" if x["url"] in used else ""), x["url"]) for x in h]
-				self.session.openWithCallback(self.history_choice, ChoiceBox, title="Dodaj liste z adresu", list=lst)
+				lst = [(_("Wpisz nowy adres..."), "")] + [("%s   (%s, %s%s)" % (x["url"], x.get("file", ""), fmt_age(x.get("used")),
+					_(", w uzyciu") if x["url"] in used else ""), x["url"]) for x in h]
+				self.session.openWithCallback(self.history_choice, ChoiceBox, title=_("Dodaj liste z adresu"), list=lst)
 				return
 		if act == "forget":
 			from .xmltv import url_history
-			lst = [("Usun wszystkie zapamietane adresy", None)] + [(x["url"], x["url"]) for x in url_history()]
-			self.session.openWithCallback(self.forget_choice, ChoiceBox, title="Usun zapamietany adres", list=lst)
+			lst = [(_("Usun wszystkie zapamietane adresy"), None)] + [(x["url"], x["url"]) for x in url_history()]
+			self.session.openWithCallback(self.forget_choice, ChoiceBox, title=_("Usun zapamietany adres"), list=lst)
 			return
 		if act == "upd":
 			self.run_download("upd", own_meta()[s.file]["url"], s.file)
@@ -1303,7 +1313,7 @@ class EPGScanXmltvSources(Screen):
 			from Screens.VirtualKeyBoard import VirtualKeyBoard
 			self.target = s.file if act == "set" else None
 			cur = own_meta().get(s.file, {}).get("url") if act == "set" else None
-			self.session.openWithCallback(self.add_cb, VirtualKeyBoard, title="Adres listy zrodel (*.sources.xml)",
+			self.session.openWithCallback(self.add_cb, VirtualKeyBoard, title=_("Adres listy zrodel (*.sources.xml)"),
 				text=cur or "http://")
 
 	# --- szukanie serwera epgpl w sieci (2.3.1) ---
@@ -1333,19 +1343,19 @@ class EPGScanXmltvSources(Screen):
 		if not f.done:
 			return
 		self.find_timer.stop()
-		self["keys"].setText(self.HELP)
+		self["keys"].setText(_(self.HELP))
 		from .netfind import label
 		if not f.found:
-			self.session.open(MessageBox, "Nie znaleziono serwera epgpl (Avahi i podsiec odbiornika, port %s).\n"
-				"Sprawdz, czy serwer dziala (http://<adres>:8088/epgpl.sources.xml), albo dodaj adres recznie." %
+			self.session.open(MessageBox, _("Nie znaleziono serwera epgpl (Avahi i podsiec odbiornika, port %s).\n"
+				"Sprawdz, czy serwer dziala (http://<adres>:8088/epgpl.sources.xml), albo dodaj adres recznie.") %
 				", ".join(str(p) for p in f.ports), MessageBox.TYPE_INFO)
 			return
 		from .common import EPGChoiceBox as ChoiceBox
 		from .xmltv import epgpl_current
 		cur = epgpl_current().rstrip("/")
 		self.session.openWithCallback(self.find_choice, ChoiceBox,
-			title="Znalezione serwery epgpl - wybierz jeden (moze byc tylko jeden serwer)",
-			list=[(("[uzywany] " if i["base"].rstrip("/") == cur else "") + label(i), i["url"]) for i in f.found])
+			title=_("Znalezione serwery epgpl - wybierz jeden (moze byc tylko jeden serwer)"),
+			list=[(_("[uzywany] ") + label(i) if i["base"].rstrip("/") == cur else label(i), i["url"]) for i in f.found])
 
 	def find_choice(self, choice):
 		if choice and choice[1]:
@@ -1360,8 +1370,8 @@ class EPGScanXmltvSources(Screen):
 		base = url.rsplit("/", 1)[0] + "/"
 		if cur and cur.rstrip("/") != base.rstrip("/"):
 			self.session.openWithCallback(lambda yes: yes and self.run_download("new", url, None), MessageBox,
-				"Skonfigurowany jest juz serwer epgpl:\n%s\n\nMoze byc tylko jeden serwer. Zastapic go serwerem:\n%s ?\n"
-				"(reczne wskazania kanalow dla serwera sa na serwerze - nowy serwer ma wlasne)" % (cur, base),
+				_("Skonfigurowany jest juz serwer epgpl:\n%s\n\nMoze byc tylko jeden serwer. Zastapic go serwerem:\n%s ?\n"
+				"(reczne wskazania kanalow dla serwera sa na serwerze - nowy serwer ma wlasne)") % (cur, base),
 				MessageBox.TYPE_YESNO, default=False)
 			return
 		self.run_download("new", url, None)
@@ -1376,7 +1386,7 @@ class EPGScanXmltvSources(Screen):
 		else:
 			from Screens.VirtualKeyBoard import VirtualKeyBoard
 			self.target = None
-			self.session.openWithCallback(self.add_cb, VirtualKeyBoard, title="Adres listy zrodel (*.sources.xml)",
+			self.session.openWithCallback(self.add_cb, VirtualKeyBoard, title=_("Adres listy zrodel (*.sources.xml)"),
 				text="http://")
 
 	def forget_choice(self, choice):
@@ -1384,7 +1394,7 @@ class EPGScanXmltvSources(Screen):
 			return self.add()
 		from .xmltv import forget_url
 		n = forget_url(choice[1])
-		self.session.open(MessageBox, "Usunieto zapamietanych adresow: %d\n(listy zrodel i ich aktualizacja sie nie zmieniaja)" % n,
+		self.session.open(MessageBox, _("Usunieto zapamietanych adresow: %d\n(listy zrodel i ich aktualizacja sie nie zmieniaja)") % n,
 			MessageBox.TYPE_INFO, timeout=5)
 
 	def add_cb(self, url):
@@ -1405,7 +1415,7 @@ class EPGScanXmltvSources(Screen):
 			from .xmltv import download_source, refresh_own
 			if act == "all":
 				res = refresh_own()
-				self.dl["res"] = (True, "\n".join("%s: %s" % r for r in res) or "Brak list z zapamietanym adresem")
+				self.dl["res"] = (True, "\n".join("%s: %s" % r for r in res) or _("Brak list z zapamietanym adresem"))
 			else:
 				self.dl["res"] = download_source(url, name)
 		self.dl_thread = threading.Thread(target=work)
@@ -1414,21 +1424,21 @@ class EPGScanXmltvSources(Screen):
 		self.dl_timer = eTimer()
 		self.dl_timer.callback.append(self.add_poll)
 		self.dl_timer.start(300, False)
-		self["keys"].setText("Pobieranie: %s ..." % (url or "wszystkie wlasne listy"))
+		self["keys"].setText(_("Pobieranie: %s ...") % (url or _("wszystkie wlasne listy")))
 
 	def add_poll(self):
 		if self.dl_thread.is_alive():
 			return
 		self.dl_timer.stop()
-		ok, msg = self.dl.get("res", (False, "Blad pobierania"))
-		self["keys"].setText(self.HELP)
+		ok, msg = self.dl.get("res", (False, _("Blad pobierania")))
+		self["keys"].setText(_(self.HELP))
 		if ok:
 			self.fill(self.sel_now)
 		self.show_info()
 		if ok and (self.url or "").endswith("epgpl.sources.xml"):
 			# nowy serwer: ustawienia dekodera na serwer i porownanie recznych wskazan (po zamknieciu komunikatu)
 			url = self.url
-			msg += "\n\nDekoder wysle teraz na serwer swoje ustawienia i porowna dopasowanie kanalow."
+			msg += _("\n\nDekoder wysle teraz na serwer swoje ustawienia i porowna dopasowanie kanalow.")
 
 			def after(*a):
 				from .sync import new_server
@@ -1455,10 +1465,10 @@ class EPGScanReport(Screen):
 	def __init__(self, session, desc, url):
 		Screen.__init__(self, session)
 		from Components.ScrollLabel import ScrollLabel
-		self.setTitle("Raport: %s" % desc)
+		self.setTitle(_("Raport: %s") % desc)
 		self.url = url
-		self["text"] = ScrollLabel("Pobieranie %s ..." % url)
-		self["keys"] = Label("Gora/Dol, Lewo/Prawo: przewijanie     Exit/OK: zamknij     (%s)" % url)
+		self["text"] = ScrollLabel(_("Pobieranie %s ...") % url)
+		self["keys"] = Label(_("Gora/Dol, Lewo/Prawo: przewijanie     Exit/OK: zamknij     (%s)") % url)
 		self["actions"] = ActionMap(["OkCancelActions", "DirectionActions"], {
 			"ok": self.close,
 			"cancel": self.close,
@@ -1484,7 +1494,7 @@ class EPGScanReport(Screen):
 			with urllib.request.urlopen(req, timeout=20) as r:
 				self.res["text"] = r.read(1024 * 1024).decode("utf-8", "replace")
 		except Exception as e:
-			self.res["text"] = "Nie udalo sie pobrac raportu:\n%s\n\n%s" % (self.url, e)
+			self.res["text"] = _("Nie udalo sie pobrac raportu:\n%s\n\n%s") % (self.url, e)
 
 	def poll(self):
 		if self.th.is_alive():

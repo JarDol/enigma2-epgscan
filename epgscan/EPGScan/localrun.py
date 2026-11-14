@@ -14,6 +14,7 @@ from enigma import eTimer
 
 from .common import cfg, log, backup_dir
 from .localgrab import LocalGrab, PARSERS, write_xmltv
+from .i18n import _
 
 SRC_FILE = "/etc/enigma2/epgscan_sources/wlasne/dekoder.sources.xml"
 DESC = "EPG PL (dekoder)"
@@ -85,7 +86,7 @@ class LocalJob(object):
 		self.cancelled = True
 		if self.grab is not None:
 			self.grab.cancel = True
-		self.text = "Pobieranie programu na dekoderze: przerywanie..."
+		self.text = _("Pobieranie programu na dekoderze: przerywanie...")
 		log("Dekoder: pobieranie przerwane przez uzytkownika")
 		self.changed()
 		return True
@@ -115,7 +116,7 @@ class LocalJob(object):
 		self.ok = False
 		self.grab = None
 		self.t0 = time.time()
-		self.text = "Pobieranie programu na dekoderze: przygotowanie..."
+		self.text = _("Pobieranie programu na dekoderze: przygotowanie...")
 		self.msgs = []
 		log("Dekoder: pobieranie programu%s" % ((" (%s)" % reason) if reason else ""))
 		days = int(cfg.local_days.value) + 1
@@ -212,7 +213,7 @@ class LocalJob(object):
 				return None
 			if not st.get("running"):
 				break
-			self.text = "Pobieranie programu na dekoderze: serwer wlasnie pobiera - czekam na jego paczke (%d min)" % (
+			self.text = _("Pobieranie programu na dekoderze: serwer wlasnie pobiera - czekam na jego paczke (%d min)") % (
 				(time.time() - t0) // 60)
 			time.sleep(30)
 		full = st.get("full") or {}
@@ -243,20 +244,20 @@ class LocalJob(object):
 		if self.th.is_alive():
 			g = self.grab
 			if getattr(self, "cancelled", False):
-				self.text = "Pobieranie programu na dekoderze: przerywanie (%d:%02d)..." % (el // 60, el % 60)
+				self.text = _("Pobieranie programu na dekoderze: przerywanie (%d:%02d)...") % (el // 60, el % 60)
 			elif g and g.total:
-				self.text = "Pobieranie programu na dekoderze (%d:%02d): %s" % (el // 60, el % 60, g.progress())
+				self.text = _("Pobieranie programu na dekoderze (%d:%02d): %s") % (el // 60, el % 60, g.progress(localized=True))
 				if getattr(self, "scheduled", False) and cfg.one_place.value and el - getattr(self, "beat", 0) > 600:
 					self.beat = el                     # co 10 min: serwer nadal ma czekac
 					announce_bg(time.time() + 20 * 60)
 			else:
-				self.text = "Pobieranie programu na dekoderze (%d:%02d): mapa kanalow..." % (el // 60, el % 60)
+				self.text = _("Pobieranie programu na dekoderze (%d:%02d): mapa kanalow...") % (el // 60, el % 60)
 			self.changed()
 			return
 		self.timer.stop()
 		for m in self.msgs:
 			log("Dekoder: %s" % m)
-		self.text = "Program na dekoderze: %s" % (self.msgs[-1] if self.msgs else "?")
+		self.text = _("Program na dekoderze: %s") % (self.msgs[-1] if self.msgs else "?")
 		self.last_ok = bool(self.ok)
 		try:
 			cfg.last_fetch.value = "%d|%s" % (int(time.time()), (self.msgs[-1] if self.msgs else "?")[:200])

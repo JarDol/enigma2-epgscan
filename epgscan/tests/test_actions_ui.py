@@ -4,7 +4,7 @@ import sys
 import types
 import unittest
 import xml.etree.ElementTree as ET
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -195,6 +195,8 @@ class ActionsWindowTests(unittest.TestCase):
 						self.assertLessEqual(x + width, screen_width)
 						self.assertGreater(y, help_y + help_height)
 						self.assertLessEqual(y + height, key_y)
+						if index == 2 and prefix == "hint_txt":
+							self.assertGreaterEqual(width, int((len("Description") * 15 + 12) * scale) - 1)
 		with patch.object(menus, "satwatch_menu") as satwatch:
 			self.press_ok(0)
 		satwatch.assert_called_once_with(self.session)
@@ -278,6 +280,53 @@ class ActionsWindowTests(unittest.TestCase):
 			self.screen["actions"].actions["yellow"]()
 			self.assertEqual(common.cfg.clear_mode.value, "all")
 			save.assert_called_once()
+
+
+class ParameterReportMenuTests(unittest.TestCase):
+	def setUp(self):
+		self.session = FakeSession()
+		self.info = types.ModuleType(PACKAGE + ".info")
+		self.info.report_sources = lambda: []
+		self.scanner = types.ModuleType(PACKAGE + ".channelparamscan")
+		self.scanner.load_results = Mock(return_value={"results": {}})
+		self.scanner.format_report = Mock(side_effect=lambda report: "report: %s" % report)
+		self.modules = dict(destinations, **{
+			PACKAGE + ".info": self.info,
+			PACKAGE + ".channelparamscan": self.scanner,
+		})
+
+	def open_report(self, engine):
+		menus.reports_menu(self.session, engine)
+		choice = self.session.calls[-1]
+		option = next(option for option in choice[3]["list"] if option[1] == "params")
+		choice[4](option)
+		return self.session.calls[-1][3]["text"]
+
+	def test_uses_live_report_even_if_results_cannot_be_read(self):
+		report = {"errors": [{"error": "disk full"}]}
+		self.scanner.load_results.side_effect = OSError("disk full")
+		with patch.dict(sys.modules, self.modules):
+			text = self.open_report(types.SimpleNamespace(channelparams_report=report))
+		self.assertIn("disk full", text)
+		self.scanner.load_results.assert_not_called()
+		self.scanner.format_report.assert_called_once_with(report)
+
+	def test_uses_latest_persisted_retry_or_empty_report(self):
+		retry = {"scanned": 1}
+		with patch.dict(sys.modules, self.modules):
+			self.scanner.load_results.return_value = {"last_scan": {"scanned": 20, "last_retry": retry}}
+			self.open_report(types.SimpleNamespace(channelparams_report=None))
+			self.scanner.format_report.assert_called_with(retry)
+			self.scanner.load_results.return_value = {"results": {}}
+			self.open_report(types.SimpleNamespace(channelparams_report=None))
+			self.scanner.format_report.assert_called_with({})
+
+	def test_report_read_errors_are_visible_and_logged(self):
+		self.scanner.load_results.side_effect = OSError("unreadable results")
+		with patch.dict(sys.modules, self.modules), patch.object(menus, "log") as log:
+			text = self.open_report(types.SimpleNamespace(channelparams_report=None))
+		self.assertIn("unreadable results", text)
+		log.assert_called_once()
 
 
 if __name__ == "__main__":

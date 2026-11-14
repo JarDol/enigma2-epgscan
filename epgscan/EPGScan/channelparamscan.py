@@ -11,6 +11,7 @@ from enigma import eServiceReference, eTimer, iRecordableService
 import NavigationInstance
 
 from . import channelparams
+from .i18n import _
 from .common import CHANNEL_PARAMS_FILE, NO_TUNER_WAIT, TUNE_GAP, TUNE_TIMEOUT, \
 	channel_params_bouquet_channels, cfg, configured_tuners, frontend_of, log, same_tp, selected_bouquets, service_name, tp_key, tp_params, save_cfg
 
@@ -52,6 +53,60 @@ def save_results(data):
 		except OSError:
 			pass
 		raise
+
+
+def display_error(reason):
+	if not isinstance(reason, str):
+		return str(reason)
+	for prefix in ("brak dostrojenia", "timeout strojenia", "timeout odczytu PAT/PMT",
+			"odczyt PID/demux: ", "odczyt PAT/PMT: ", "nie mozna zarezerwowac serwisu",
+			"Zapis wynikow nieudany: ", "Zapis raportu synchronizacji nieudany: ",
+			"Synchronizacja common nieudana: ", "Synchronizacja clients nieudana: ",
+			"Synchronizacja nieudana: "):
+		if reason.startswith(prefix):
+			return _(prefix) + reason[len(prefix):]
+	return reason
+
+
+def display_state(state):
+	if state.startswith("BLAD: "):
+		return _("BLAD: %s") % display_error(state[len("BLAD: "):])
+	return _(state)
+
+
+def format_report(report):
+	if not report:
+		return _("Brak raportu skanu parametrow.")
+	def timestamp(value):
+		return time.strftime("%d.%m.%Y %H:%M:%S", time.localtime(value)) if value else "-"
+	duration = int(report.get("duration", 0))
+	lines = [
+		_("Skan parametrow kanalow (PAT/PMT)"),
+		_("Poczatek: %s\nKoniec: %s\nCzas: %d:%02d") % (
+			timestamp(report.get("started")), timestamp(report.get("finished")), duration // 60, duration % 60),
+		_("Odczytane kanaly: %d | Kanaly z audio: %d | Sciezki audio: %d | Wybrane: %d") % (
+			report.get("scanned", 0), report.get("audio_channels", 0),
+			report.get("audio_tracks", 0), report.get("selected_audio", 0)),
+		_("Czas odczytu: sredni %.2f s, maksymalny %.2f s") % (
+			report.get("read_average", 0), report.get("read_max", 0)),
+	]
+	sync = report.get("sync", [])
+	lines += ["", _("Synchronizacja E2Stream:")]
+	if sync:
+		from .channelparamsstore import display_message
+		lines.extend(display_message(message) for message in sync)
+	else:
+		lines.append(_("Nie wykonywano synchronizacji."))
+	for key, title in (("errors", _("Bledy")), ("unsupported", _("Pominiete"))):
+		rows = report.get(key, [])
+		lines.extend(["", _("%s: %d") % (title, len(rows))])
+		for row in rows:
+			name = row.get("name", row.get("ref", "-"))
+			reason = display_error(row.get("error", row.get("reason", "")))
+			ref = row.get("ref")
+			lines.append("%s%s%s" % (name, " [%s]" % ref if ref else "",
+				": %s" % reason if reason else ""))
+	return "\n".join(lines)
 
 
 def preferred_languages():
@@ -656,6 +711,7 @@ class ChannelParamsScan(object):
 		from . import channelparamsstore as store
 		results = {ref: self.results[ref] for ref in self.scanned_refs if ref in self.results}
 		report["sync"] = []
+		report["sync_conflicts"] = {}
 		for target, mode in (("common", common_mode), ("clients", device_mode)):
 			if mode == "off":
 				continue
@@ -665,6 +721,7 @@ class ChannelParamsScan(object):
 				else:
 					message, conflicts = store.apply_to_devices(results, store.device_profiles(), mode=mode)
 				if conflicts:
+					report["sync_conflicts"][target] = list(conflicts)
 					message += " Pominiete konflikty: " + ", ".join(conflicts)
 				report["sync"].append(message)
 				log("Synchronizacja PAT/PMT %s: %s" % (target, message))
@@ -708,6 +765,7 @@ class ChannelParamsScan(object):
 				errors.append(retry_errors.pop(ref, row))
 			errors.extend(retry_errors.values())
 			last_scan["errors"] = errors
+			last_scan["last_retry"] = report
 		saved = False
 		try:
 			self._merge_latest_results()
@@ -728,6 +786,7 @@ class ChannelParamsScan(object):
 				if last_scan is not report:
 					last_scan["errors"].extend(row for row in report["errors"] if not row.get("ref"))
 					last_scan["sync"] = report.get("sync", [])
+					last_scan["sync_conflicts"] = report.get("sync_conflicts", {})
 				try:
 					save_results(data)
 				except Exception as e:

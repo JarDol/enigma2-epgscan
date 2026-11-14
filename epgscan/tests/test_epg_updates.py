@@ -81,7 +81,10 @@ class CoverageTests(unittest.TestCase):
 		key = (1, 2, 3, 4)
 		job = xmltv.XmltvImport.__new__(xmltv.XmltvImport)
 		job.cancelled = False
-		job.queue = [(key, [(100, 10, "collision", "", "", 0), (120, 10, "safe", "", "", 0)])]
+		job.queue = [
+			(key, [(100, 10, "collision", "", "", 0), (120, 10, "safe", "", "", 0)]),
+			(key, [(130, 10, "next", "", "", 0)]),
+		]
 		job.targets = {key: 1}
 		job.coverage = {key: []}
 		job.event_ids = {key: {100}}
@@ -92,9 +95,11 @@ class CoverageTests(unittest.TestCase):
 		written = []
 		cache = types.SimpleNamespace(importEvents=lambda refs, events: written.extend(events))
 		with patch.object(xmltv.eEPGCache, "getInstance", return_value=cache, create=True), \
-				patch.object(xmltv.cfg, "xmltv_gaps", types.SimpleNamespace(value="off"), create=True):
+				patch.object(xmltv.cfg, "xmltv_gaps", types.SimpleNamespace(value="off"), create=True), \
+				patch.object(xmltv, "_", return_value="saved (%d)"):
 			job.import_step()
-		self.assertEqual([event[2] for event in written], ["safe"])
+		self.assertEqual([event[2] for event in written], ["safe", "next"])
+		self.assertEqual(job.status, "saved (0)")
 
 
 class PackTests(unittest.TestCase):

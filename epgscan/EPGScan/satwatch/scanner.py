@@ -13,6 +13,7 @@ import time
 
 from enigma import eComponentScan, eDVBFrontendParametersSatellite, eTimer
 
+from ..i18n import _
 from . import core
 
 TP_TIMEOUT = 240        # maks. czas na jeden TP (strojenie Unicable + SDT) [s]
@@ -69,7 +70,7 @@ def read_log(lines=200):
                 out += f.read().decode("utf-8", "replace").splitlines()
         except Exception:
             pass
-    return "\n".join(out[-lines:]) if out else "Log jest pusty."
+    return "\n".join(out[-lines:]) if out else _("Log jest pusty.")
 
 
 def root2gold(root):
@@ -234,12 +235,12 @@ class TPScanner(object):
         self.pollTimer.callback.append(self.poll)
 
     # ---------------------------------------------------------------
-    def progress(self, text, quiet=False):
+    def progress(self, text, quiet=False, display=None):
         if not quiet:
             log(text)
         if self.on_progress:
             try:
-                self.on_progress(text)
+                self.on_progress(text if display is None else display)
             except Exception:
                 pass
 
@@ -274,7 +275,7 @@ class TPScanner(object):
         self.finish()
 
     # ---------------------------------------------------------------
-    def eta(self):
+    def eta(self, display=False):
         """' (26%, zostalo ok. 4 min)' - postep i szacowany czas do konca."""
         n = len(self.tps)
         if not n:
@@ -283,7 +284,8 @@ class TPScanner(object):
         if self.idx < 3:
             return " (%d%%)" % pct
         left = (time.time() - self.t0) / self.idx * (n - self.idx)
-        return " (%d%%, zostalo ok. %s)" % (pct, ("%d min" % round(left / 60.0)) if left >= 90 else ("%d s" % left))
+        template = _(" (%d%%, zostalo ok. %s)") if display else " (%d%%, zostalo ok. %s)"
+        return template % (pct, ("%d min" % round(left / 60.0)) if left >= 90 else ("%d s" % left))
 
     def order(self, free):
         """Kolejnosc proby: preferowany (gdy wolny), potem pozostale od najwyzszego. Preferowany zajety -
@@ -312,6 +314,7 @@ class TPScanner(object):
             return
         tp = self.tps[self.idx]
         desc = "%d/%d%s %s" % (self.idx + 1, len(self.tps), self.eta(), core.tp_str(tp))
+        display_desc = "%d/%d%s %s" % (self.idx + 1, len(self.tps), self.eta(display=True), core.tp_str(tp))
         if not eligible_slots(tp["position"]):
             # zaden tuner nie ma tej pozycji: od razu wszystkie TP tej pozycji, bez prob co 3 s
             pos = tp["position"]
@@ -333,7 +336,9 @@ class TPScanner(object):
                 return
             self.waited += WAIT_STEP
             self.progress("Skan %s: czekam na wolny tuner (wolne %d, do skanu %d, rezerwa %d)"
-                          % (desc, len(total), len(free), self.reserve), quiet=(self.waited - WAIT_STEP) % 600 != 0)
+                          % (desc, len(total), len(free), self.reserve), quiet=(self.waited - WAIT_STEP) % 600 != 0,
+                          display=_("Skan %s: czekam na wolny tuner (wolne %d, do skanu %d, rezerwa %d)")
+                          % (display_desc, len(total), len(free), self.reserve))
             self.stepTimer.start(WAIT_STEP * 1000, True)
             return
         for slot in self.order(free):
@@ -353,12 +358,15 @@ class TPScanner(object):
                 return
             self.waited += WAIT_STEP
             self.progress("Skan %s: czekam - enigma nie daje tunera do skanu (%s odmowily; FBC zajety?)"
-                          % (desc, ", ".join(tuner_name(x) for x in self.order(free))), quiet=(self.waited - WAIT_STEP) % 600 != 0)
+                          % (desc, ", ".join(tuner_name(x) for x in self.order(free))), quiet=(self.waited - WAIT_STEP) % 600 != 0,
+                          display=_("Skan %s: czekam - enigma nie daje tunera do skanu (%s odmowily; FBC zajety?)")
+                          % (display_desc, ", ".join(tuner_name(x) for x in self.order(free))))
             self.stepTimer.start(WAIT_STEP * 1000, True)
             return
         self.cur_found = set()
         self.t_start = time.time()
-        self.progress("Skan %s (tuner %s)" % (desc, tuner_name(self.slot)))
+        self.progress("Skan %s (tuner %s)" % (desc, tuner_name(self.slot)),
+                      display=_("Skan %s (tuner %s)") % (display_desc, tuner_name(self.slot)))
         self.wdTimer.start(TP_TIMEOUT * 1000, True)
         self.pollTimer.start(POLL * 1000, False)
 
@@ -440,7 +448,8 @@ class TPScanner(object):
             self.record(tp, False, "tuner potrzebny uzytkownikowi (%dx)" % MAX_PREEMPT, 0, slot)
             self.next()
             return
-        self.progress("Skan: zwalniam tuner %s dla uzytkownika, TP %s ponowie" % (tuner_name(slot), core.tp_str(tp)))
+        self.progress("Skan: zwalniam tuner %s dla uzytkownika, TP %s ponowie" % (tuner_name(slot), core.tp_str(tp)),
+                      display=_("Skan: zwalniam tuner %s dla uzytkownika, TP %s ponowie") % (tuner_name(slot), core.tp_str(tp)))
         self.stepTimer.start(WAIT_STEP * 1000, True)
 
     # ---------------------------------------------------------------
@@ -497,51 +506,52 @@ def tuner_advice(pref=None):
     try:
         lay = tuner_layout()
     except Exception as e:
-        return ("Nie udalo sie odczytac tunerow (%s)." % e, "Nie udalo sie odczytac tunerow (%s)." % e)
-    names = {"fbc_root": "FBC glowny", "fbc_link": "FBC polaczony", "zwykly": "zwykly"}
-    desc = ", ".join("%s (%s, %s)" % (tuner_name(s), names[r], m) for s, r, m in lay) or "brak"
+        message = _("Nie udalo sie odczytac tunerow (%s).") % e
+        return message, message
+    names = {"fbc_root": _("FBC glowny"), "fbc_link": _("FBC polaczony"), "zwykly": _("zwykly")}
+    desc = ", ".join("%s (%s, %s)" % (tuner_name(s), names[r], m) for s, r, m in lay) or _("brak")
     n = len(lay)
     roots = [s for s, r, m in lay if r == "fbc_root"]
     fed = [s for s, r, m in lay if r == "fbc_root" and m not in ("nothing", "loopthrough")]
-    L = ["Wykryte tunery DVB-S: %d - %s" % (n, desc), ""]
+    L = [_("Wykryte tunery DVB-S: %d - %s") % (n, desc), ""]
     if n <= 1:
-        short = "1 tuner: rezerwa 0 (EPG Scan i SatWatch), skan w nocy w czuwaniu."
-        L += ["JEDEN TUNER",
-              "Skan EPG i skan satelity zajmuja jedyny tuner - w tym czasie nie obejrzysz ani nie nagrasz",
-              "kanalu z innego transpondera. Dlatego pracuja w nocy, w czuwaniu.",
-              "  System:    nic do zmiany.",
-              "  EPG Scan:  Rezerwa wolnych tunerow = 0, harmonogram w nocy, 'Czekaj, gdy trwa nagrywanie' wlaczone.",
-              "  SatWatch:  Rezerwa wolnych tunerow = 0, preferowany tuner: automatycznie."]
+        short = _("1 tuner: rezerwa 0 (EPG Scan i SatWatch), skan w nocy w czuwaniu.")
+        L += [_("JEDEN TUNER"),
+              _("Skan EPG i skan satelity zajmuja jedyny tuner - w tym czasie nie obejrzysz ani nie nagrasz"),
+              _("kanalu z innego transpondera. Dlatego pracuja w nocy, w czuwaniu."),
+              _("  System:    nic do zmiany."),
+              _("  EPG Scan:  Rezerwa wolnych tunerow = 0, harmonogram w nocy, 'Czekaj, gdy trwa nagrywanie' wlaczone."),
+              _("  SatWatch:  Rezerwa wolnych tunerow = 0, preferowany tuner: automatycznie.")]
     elif roots and len(fed) < 2:
-        short = "FBC z jednym wejsciem: skan satelity zwykle tylko przy wolnych tunerach - zalecany 2. kabel na wejscie B."
-        L += ["FBC, JEDNO WEJSCIE ANTENOWE",
-              "Wszystkie tunery sa w jednej grupie. Enigma moze odmawiac skanu satelity, gdy w grupie cos gra",
-              "(ogladanie, szybkie przelaczanie FCC, stream do klienta) - skan ruszy dopiero, gdy tunery beda wolne",
-              "(np. w nocy w czuwaniu). Skan EPG dziala normalnie.",
-              "Zalecane: drugi kabel na wejscie B i dwie grupy:",
-              "  System:    tuner A + polaczone C..H -> priorytet AUTO; tuner B bez polaczonych -> priorytet 1",
-              "             (mniejszy niz AUTO - Enigma bierze B na koncu). Przy Unicable kazdy tuner ma wlasny SCR.",
-              "  EPG Scan:  Rezerwa wolnych tunerow = 1.",
-              "  SatWatch:  preferowany tuner = B, rezerwa 1."]
+        short = _("FBC z jednym wejsciem: skan satelity zwykle tylko przy wolnych tunerach - zalecany 2. kabel na wejscie B.")
+        L += [_("FBC, JEDNO WEJSCIE ANTENOWE"),
+              _("Wszystkie tunery sa w jednej grupie. Enigma moze odmawiac skanu satelity, gdy w grupie cos gra"),
+              _("(ogladanie, szybkie przelaczanie FCC, stream do klienta) - skan ruszy dopiero, gdy tunery beda wolne"),
+              _("(np. w nocy w czuwaniu). Skan EPG dziala normalnie."),
+              _("Zalecane: drugi kabel na wejscie B i dwie grupy:"),
+              _("  System:    tuner A + polaczone C..H -> priorytet AUTO; tuner B bez polaczonych -> priorytet 1"),
+              _("             (mniejszy niz AUTO - Enigma bierze B na koncu). Przy Unicable kazdy tuner ma wlasny SCR."),
+              _("  EPG Scan:  Rezerwa wolnych tunerow = 1."),
+              _("  SatWatch:  preferowany tuner = B, rezerwa 1.")]
     elif roots:
-        short = "FBC, dwa wejscia: B osobno z priorytetem 1, w SatWatch preferowany B."
-        L += ["FBC, DWA WEJSCIA",
-              "Skan satelity dziala podczas ogladania, gdy jedna grupa (wejscie) jest wolna.",
-              "  System:    tuner A + polaczone C..H -> priorytet AUTO; tuner B bez polaczonych -> priorytet 1.",
-              "  EPG Scan:  Rezerwa wolnych tunerow = 1.",
-              "  SatWatch:  preferowany tuner = B, rezerwa 1."]
+        short = _("FBC, dwa wejscia: B osobno z priorytetem 1, w SatWatch preferowany B.")
+        L += [_("FBC, DWA WEJSCIA"),
+              _("Skan satelity dziala podczas ogladania, gdy jedna grupa (wejscie) jest wolna."),
+              _("  System:    tuner A + polaczone C..H -> priorytet AUTO; tuner B bez polaczonych -> priorytet 1."),
+              _("  EPG Scan:  Rezerwa wolnych tunerow = 1."),
+              _("  SatWatch:  preferowany tuner = B, rezerwa 1.")]
     else:
         last = tuner_name(max(s for s, r, m in lay))
-        short = "%d tunery: tuner %s z priorytetem 1 w systemie, w SatWatch preferowany %s." % (n, last, last)
-        L += ["KILKA ZWYKLYCH TUNEROW",
-              "  System:    tuner %s -> priorytet 1 (mniejszy niz AUTO), pozostale AUTO - Enigma bierze %s na koncu." % (last, last),
-              "  EPG Scan:  Rezerwa wolnych tunerow = 1 (przy 2 tunerach skan EPG zajmie najwyzej 1).",
-              "  SatWatch:  preferowany tuner = %s, rezerwa 1." % last]
+        short = _("%d tunery: tuner %s z priorytetem 1 w systemie, w SatWatch preferowany %s.") % (n, last, last)
+        L += [_("KILKA ZWYKLYCH TUNEROW"),
+              _("  System:    tuner %s -> priorytet 1 (mniejszy niz AUTO), pozostale AUTO - Enigma bierze %s na koncu.") % (last, last),
+              _("  EPG Scan:  Rezerwa wolnych tunerow = 1 (przy 2 tunerach skan EPG zajmie najwyzej 1)."),
+              _("  SatWatch:  preferowany tuner = %s, rezerwa 1.") % last]
     L += ["",
-          "Priorytet tunera: menu Enigmy -> Ustawienia -> Tunery i skanowanie -> Konfiguracja tunerow -> wybrany tuner",
-          "(nazwy menu moga sie roznic w zaleznosci od obrazu).",
-          "Preferowany tuner zajety -> SatWatch bierze od razu inny wolny; gdy Enigma odmowi, probuje kolejnego.",
-          "Przyklad i wyniki testow (VU+ Uno 4K SE, FBC 8 tunerow, Unicable): README, rozdzial 'Konfiguracja tunerow'."]
+          _("Priorytet tunera: menu Enigmy -> Ustawienia -> Tunery i skanowanie -> Konfiguracja tunerow -> wybrany tuner"),
+          _("(nazwy menu moga sie roznic w zaleznosci od obrazu)."),
+          _("Preferowany tuner zajety -> SatWatch bierze od razu inny wolny; gdy Enigma odmowi, probuje kolejnego."),
+          _("Przyklad i wyniki testow (VU+ Uno 4K SE, FBC 8 tunerow, Unicable): README, rozdzial 'Konfiguracja tunerow'.")]
     if pref is not None:
-        L.append("Obecnie w SatWatch preferowany: %s." % (tuner_name(pref) if pref >= 0 else "automatycznie"))
+        L.append(_("Obecnie w SatWatch preferowany: %s.") % (tuner_name(pref) if pref >= 0 else _("automatycznie")))
     return short, "\n".join(L)

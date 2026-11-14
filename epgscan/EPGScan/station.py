@@ -18,6 +18,7 @@ from Components.ActionMap import ActionMap
 from Components.Label import Label
 from Components.MenuList import MenuList
 
+from .i18n import _
 from .common import keys_skin, init_keys, set_keys, hints_skin, init_hints, log
 
 CAND = {}        # pobieranie programu kandydatow na zadanie (jedno naraz, trwa po zamknieciu okna)
@@ -286,20 +287,20 @@ class EPGScanStation(Screen):
 		Screen.__init__(self, session)
 		self.chan, self.stations, self.names, self.base, self.ref, self.side = chan, stations, site_names, base, ref, side
 		self.order = {t: i for i, t in enumerate(order)}
-		self.setTitle("Wybor stacji: %s" % chan["name"])
-		cur = ("%s: %s  (%s)" % (self.site_name(chan["tag"]), chan["sname"], "reczne" if chan.get("manual") else
-			("alias" if "alias" in (chan.get("how") or "") else "automat"))) if chan.get("tag") else \
-			("bez programu" + (" (wylaczony recznie)" if chan.get("manual") else "") if chan.get("off") else "brak dopasowania")
+		self.setTitle(_("Wybor stacji: %s") % chan["name"])
+		cur = ("%s: %s  (%s)" % (self.site_name(chan["tag"]), chan["sname"], _("reczne") if chan.get("manual") else
+			("alias" if "alias" in (chan.get("how") or "") else _("automat")))) if chan.get("tag") else \
+			(_("bez programu") + (_(" (wylaczony recznie)") if chan.get("manual") else "") if chan.get("off") else _("brak dopasowania"))
 		pr = chan.get("propose")
-		self["head"] = Label("Kanal:    %s\nBukiet:   %s\nObecnie: %s\n%s" % (
-			chan["name"], chan.get("bq") or "?", cur, ("[!] " + pr[0]) if pr else
-			"Kolejnosc serwisow: " + ", ".join(self.site_name(t) for t in order)))
+		self["head"] = Label(_("Kanal:    %s\nBukiet:   %s\nObecnie: %s\n%s") % (
+			chan["name"], chan.get("bq") or "?", cur, ("[!] " + _(pr[0])) if pr else
+			_("Kolejnosc serwisow: ") + ", ".join(self.site_name(t) for t in order)))
 		self["list"] = MenuList([])
 		self["pig_info"] = Label("")
-		self["info"] = Label("Szukanie kandydatow...")
+		self["info"] = Label(_("Szukanie kandydatow..."))
 		init_hints(self, HINTS)
 		init_keys(self)
-		set_keys(self, red="Wroc", green="Automat", yellow="Bez programu", blue="Szukaj stacji")
+		set_keys(self, red=_("Wroc"), green=_("Automat"), yellow=_("Bez programu"), blue=_("Szukaj stacji"))
 		self.stats = {}
 		self.stats_state = "wait"
 		self.search_text = ""
@@ -346,11 +347,11 @@ class EPGScanStation(Screen):
 		mark = ""
 		c = self.chan
 		if c.get("tag") == tag and c.get("site_id") == sid:
-			mark = "   [obecne]"
+			mark = _("   [obecne]")
 		elif self.chan.get("propose") and self.chan["propose"][1] == "%s:%s" % (tag, sid):
-			mark = "   [propozycja]"
+			mark = _("   [propozycja]")
 		elif self.stats.get("%s:%s" % (tag, sid)):
-			mark = "   [w programie]" if self.stats["%s:%s" % (tag, sid)].get("src", "plik") == "plik" else "   [podglad]"
+			mark = _("   [w programie]") if self.stats["%s:%s" % (tag, sid)].get("src", "plik") == "plik" else _("   [podglad]")
 		return ("%s: %s%s" % (self.site_name(tag), name, mark), (tag, sid, name))
 
 	def fill(self, keep=None):
@@ -358,7 +359,7 @@ class EPGScanStation(Screen):
 		rows = []
 		if self.search_text:
 			q = self.search_text
-			rows.append(("--  wyniki: %s  (niebieski: nowe szukanie, czerwony: wroc)  --" % q, None))
+			rows.append((_("--  wyniki: %s  (niebieski: nowe szukanie, czerwony: wroc)  --") % q, None))
 			rows += [self.row(*x) for x in self.found]
 		else:
 			best = list(self.strong)
@@ -372,10 +373,10 @@ class EPGScanStation(Screen):
 				self.weak = [x for x in self.weak if (x[0], x[1]) != (c["tag"], c["site_id"])]
 			rows += [self.row(*x) for x in best]
 			if self.weak:
-				rows.append(("--  wspolne slowo w nazwie  --", None))
+				rows.append((_("--  wspolne slowo w nazwie  --"), None))
 				rows += [self.row(*x) for x in self.weak]
 			if not best and not self.weak:
-				rows.append(("--  brak podobnych stacji - niebieski: szukaj  --", None))
+				rows.append((_("--  brak podobnych stacji - niebieski: szukaj  --"), None))
 		self["list"].setList(rows)
 		idx = 0
 		for i, r in enumerate(rows):
@@ -395,26 +396,26 @@ class EPGScanStation(Screen):
 	def show_info(self):
 		x = self.current()
 		if not x:
-			self["info"].setText("Wybierz stacje z listy (OK), zolty - kanal bez programu, niebieski - szukaj po nazwie.")
+			self["info"].setText(_("Wybierz stacje z listy (OK), zolty - kanal bez programu, niebieski - szukaj po nazwie."))
 			return
 		tag, sid, name = x
 		t = "%s:%s" % (tag, sid)
-		lines = ["%s: %s   (identyfikator: %s)" % (self.site_name(tag), name, sid)]
+		lines = [_("%s: %s   (identyfikator: %s)") % (self.site_name(tag), name, sid)]
 		s = self.stats.get(t)
 		if self.stats_state == "wait":
-			lines.append("Statystyki: liczenie...")
+			lines.append(_("Statystyki: liczenie..."))
 		elif s:
-			span = ("%s dni" % ("%.1f" % s["days"]).replace(".", ",")) if s["days"] >= 1 else ("%d h" % max(1, round(s["days"] * 24)))
-			lines.append("Opisy: srednio %d znakow   |   program na %s%s" % (s["avg"], span, {
-				"kandydaci": "   (program kandydatow z nocy, tylko podglad)", "teraz": "   (pobrane teraz, tylko podglad)",
-				"serwer": "   (z serwera epgpl, tylko podglad)"}.get(s.get("src"), "")))
+			span = (_("%s dni") % ("%.1f" % s["days"]).replace(".", ",")) if s["days"] >= 1 else ("%d h" % max(1, round(s["days"] * 24)))
+			lines.append(_("Opisy: srednio %d znakow   |   program na %s%s") % (s["avg"], span, {
+				"kandydaci": _("   (program kandydatow z nocy, tylko podglad)"), "teraz": _("   (pobrane teraz, tylko podglad)"),
+				"serwer": _("   (z serwera epgpl, tylko podglad)")}.get(s.get("src"), "")))
 			p = s.get("now")
-			lines.append("Teraz: %s-%s  %s" % (time.strftime("%H:%M", time.localtime(p[0])),
-				time.strftime("%H:%M", time.localtime(p[1])) if p[1] else "?", p[2]) if p else "Teraz: -")
+			lines.append(_("Teraz: %s-%s  %s") % (time.strftime("%H:%M", time.localtime(p[0])),
+				time.strftime("%H:%M", time.localtime(p[1])) if p[1] else "?", p[2]) if p else _("Teraz: -"))
 		else:
-			lines.append("Opisy: -   |   program: -   (%s)" % (
-				"brak statystyk - serwer starszy niz 0.15.0" if self.stats_state == "none" else
-				"brak programu tej stacji - Menu: pobierz program kandydatow, Info/EPG: podglad"))
+			lines.append(_("Opisy: -   |   program: -   (%s)") % (
+				_("brak statystyk - serwer starszy niz 0.15.0") if self.stats_state == "none" else
+				_("brak programu tej stacji - Menu: pobierz program kandydatow, Info/EPG: podglad")))
 		self["info"].setText("\n".join(lines))
 
 	# --- statystyki w tle ---
@@ -465,22 +466,22 @@ class EPGScanStation(Screen):
 	# --- okienko z kanalem ---
 	def zap(self):
 		if not self.ref:
-			self["pig_info"].setText("Kanalu %s nie znaleziono w bukietach - okienko pokazuje biezacy kanal." % self.chan["name"])
+			self["pig_info"].setText(_("Kanalu %s nie znaleziono w bukietach - okienko pokazuje biezacy kanal.") % self.chan["name"])
 			return
 		try:
 			from enigma import eServiceReference
 			cur = self.session.nav.getCurrentlyPlayingServiceOrGroup()
 			if cur and cur.toString().startswith(self.ref.rstrip(":")):
-				self["pig_info"].setText("W okienku: %s (na zywo).\nPorownaj z biezaca audycja pod lista." % self.chan["name"])
+				self["pig_info"].setText(_("W okienku: %s (na zywo).\nPorownaj z biezaca audycja pod lista.") % self.chan["name"])
 				return
 			self.orig = cur
 			self.session.nav.playService(eServiceReference(self.ref))
 			self.zapped = True
-			self["pig_info"].setText("Przelaczanie na %s..." % self.chan["name"])
+			self["pig_info"].setText(_("Przelaczanie na %s...") % self.chan["name"])
 			self.check_timer.start(2500, True)
 		except Exception as e:
 			log("Wybor stacji - przelaczenie na %s: %s" % (self.ref, e))
-			self["pig_info"].setText("Nie udalo sie przelaczyc na kanal: %s" % e)
+			self["pig_info"].setText(_("Nie udalo sie przelaczyc na kanal: %s") % e)
 
 	def check_tuner(self):
 		ok = False
@@ -492,11 +493,11 @@ class EPGScanStation(Screen):
 		except Exception:
 			ok = False
 		if ok:
-			self["pig_info"].setText("W okienku: %s (na zywo).\nPorownaj z biezaca audycja pod lista.\n"
-				"Po wyjsciu wroci poprzedni kanal." % self.chan["name"])
+			self["pig_info"].setText(_("W okienku: %s (na zywo).\nPorownaj z biezaca audycja pod lista.\n"
+				"Po wyjsciu wroci poprzedni kanal.") % self.chan["name"])
 		else:
-			self["pig_info"].setText("Nie mozna pokazac kanalu %s:\nbrak wolnego tunera (nagrywanie, skan, inne urzadzenie) "
-				"albo brak sygnalu.\nWybor stacji dziala normalnie." % self.chan["name"])
+			self["pig_info"].setText(_("Nie mozna pokazac kanalu %s:\nbrak wolnego tunera (nagrywanie, skan, inne urzadzenie) "
+				"albo brak sygnalu.\nWybor stacji dziala normalnie.") % self.chan["name"])
 
 	def restore(self):
 		try:
@@ -528,7 +529,7 @@ class EPGScanStation(Screen):
 
 	def no_prog(self):
 		self.session.openWithCallback(lambda yes: yes and self.close("-"), MessageBox,
-			"Kanal %s bez programu z internetu?" % self.chan["name"], MessageBox.TYPE_YESNO, default=False)
+			_("Kanal %s bez programu z internetu?") % self.chan["name"], MessageBox.TYPE_YESNO, default=False)
 
 	def back(self):
 		if self.search_text:
@@ -540,19 +541,19 @@ class EPGScanStation(Screen):
 	def menu(self):
 		"""Menu: program zaznaczonej stacji albo wszystkich kandydatow bez programu; przy propozycji - jej pominiecie."""
 		if self.cand_busy():
-			self.session.open(MessageBox, "Pobieranie programu kandydatow juz trwa.", MessageBox.TYPE_INFO, timeout=3)
+			self.session.open(MessageBox, _("Pobieranie programu kandydatow juz trwa."), MessageBox.TYPE_INFO, timeout=3)
 			return
 		missing = self.missing_targets()
 		x = self.current()
 		opts = []
 		if x and "%s:%s" % (x[0], x[1]) not in self.stats:
-			opts.append(("Pobierz program zaznaczonej stacji: %s: %s" % (self.site_name(x[0]), x[2]), "one"))
+			opts.append((_("Pobierz program zaznaczonej stacji: %s: %s") % (self.site_name(x[0]), x[2]), "one"))
 		if missing:
-			opts.append(("Pobierz program wszystkich kandydatow bez programu (%d stacji)" % len(missing), "grab"))
+			opts.append((_("Pobierz program wszystkich kandydatow bez programu (%d stacji)") % len(missing), "grab"))
 		if self.chan.get("propose"):
-			opts.append(("Pomin propozycje zmiany (wroci, gdy wskazanie sie zmieni)", "skip"))
+			opts.append((_("Pomin propozycje zmiany (wroci, gdy wskazanie sie zmieni)"), "skip"))
 		if not opts:
-			self.session.open(MessageBox, "Wszyscy kandydaci z listy maja juz program.", MessageBox.TYPE_INFO, timeout=3)
+			self.session.open(MessageBox, _("Wszyscy kandydaci z listy maja juz program."), MessageBox.TYPE_INFO, timeout=3)
 			return
 		from .common import EPGChoiceBox as ChoiceBox
 		self.session.openWithCallback(self.menu_done, ChoiceBox, title=self.chan["name"], list=opts)
@@ -560,18 +561,18 @@ class EPGScanStation(Screen):
 	def auto(self):
 		"""Zielony: automat - usuniecie recznego wskazania kanalu."""
 		if not self.chan.get("manual"):
-			self.session.open(MessageBox, "Kanal %s nie ma recznego wskazania - zrodlo juz dobiera automat." % self.chan["name"],
+			self.session.open(MessageBox, _("Kanal %s nie ma recznego wskazania - zrodlo juz dobiera automat.") % self.chan["name"],
 				MessageBox.TYPE_INFO, timeout=4)
 			return
 		self.session.openWithCallback(lambda yes: yes and self.close(""), MessageBox,
-			"Usunac reczne wskazanie kanalu %s?\nZrodlo dobierze automat." % self.chan["name"], MessageBox.TYPE_YESNO, default=False)
+			_("Usunac reczne wskazanie kanalu %s?\nZrodlo dobierze automat.") % self.chan["name"], MessageBox.TYPE_YESNO, default=False)
 
 	def menu_done(self, c):
 		if not c:
 			return
 		if c[1] == "auto":
 			self.session.openWithCallback(lambda yes: yes and self.close(""), MessageBox,
-				"Usunac reczne wskazanie kanalu %s?\nZrodlo dobierze automat." % self.chan["name"], MessageBox.TYPE_YESNO, default=False)
+				_("Usunac reczne wskazanie kanalu %s?\nZrodlo dobierze automat.") % self.chan["name"], MessageBox.TYPE_YESNO, default=False)
 		elif c[1] == "skip":
 			from .sync import skip
 			skip(self.side, self.chan)
@@ -603,7 +604,7 @@ class EPGScanStation(Screen):
 					from .mapping import http_post_json, http_get_json
 					r = http_post_json(base + "api/kandydaci", {"targets": ["%s:%s" % (t, s) for t, s, n in stations]})
 					if not r.get("ok"):
-						raise Exception(r.get("error") or "serwer nie przyjal (wymagany epgpl 0.16.0)")
+						raise Exception(r.get("error") or _("serwer nie przyjal (wymagany epgpl 0.16.0)"))
 					while True:
 						time.sleep(3)
 						st = http_get_json(base + "api/kandydaci", timeout=15)
@@ -634,15 +635,15 @@ class EPGScanStation(Screen):
 		total = g.total if g is not None else CAND.get("total", 0)
 		el = int(time.time() - CAND.get("t0", time.time()))
 		if CAND.get("busy"):
-			self["pig_info"].setText("Pobieranie programu kandydatow (%s): %d/%d %s, %d:%02d\nMozna wybierac dalej albo zamknac okno - "
-				"wynik bedzie pamietany 3 h." % ("serwer" if self.base else "dekoder", done, total,
-				"stacji" if self.base else "stron", el // 60, el % 60))
+			self["pig_info"].setText(_("Pobieranie programu kandydatow (%s): %d/%d %s, %d:%02d\nMozna wybierac dalej albo zamknac okno - "
+				"wynik bedzie pamietany 3 h.") % (_("serwer") if self.base else _("dekoder"), done, total,
+				_("stacji") if self.base else _("stron"), el // 60, el % 60))
 			return
 		self.cand_timer.stop()
 		if CAND.get("err"):
-			self["pig_info"].setText("Pobieranie programu kandydatow nieudane:\n%s" % CAND["err"])
+			self["pig_info"].setText(_("Pobieranie programu kandydatow nieudane:\n%s") % CAND["err"])
 			return
-		self["pig_info"].setText("Program kandydatow pobrany (%d:%02d). Stacje bez programu w serwisie zostaja z \"-\"." % (el // 60, el % 60))
+		self["pig_info"].setText(_("Program kandydatow pobrany (%d:%02d). Stacje bez programu w serwisie zostaja z \"-\".") % (el // 60, el % 60))
 		x = self.current()
 		if self.base:
 			self.load_stats([(t, s) for t, s, n in self.strong + self.weak + (self.found if self.search_text else [])])
@@ -661,7 +662,7 @@ class EPGScanStation(Screen):
 
 	def search(self):
 		from Screens.VirtualKeyBoard import VirtualKeyBoard
-		self.session.openWithCallback(self.searched, VirtualKeyBoard, title="Szukaj stacji (fragment nazwy)",
+		self.session.openWithCallback(self.searched, VirtualKeyBoard, title=_("Szukaj stacji (fragment nazwy)"),
 			text=self.search_text)
 
 	def searched(self, text):
@@ -672,7 +673,7 @@ class EPGScanStation(Screen):
 		low = text.strip().lower()
 		found = [(t, s, n) for t, s, n in self.stations if (q and q in norm(n)) or low in n.lower()]
 		if not found:
-			self.session.open(MessageBox, "Nie znaleziono stacji: %s" % text, MessageBox.TYPE_INFO, timeout=4)
+			self.session.open(MessageBox, _("Nie znaleziono stacji: %s") % text, MessageBox.TYPE_INFO, timeout=4)
 			return
 		found.sort(key=lambda x: (self.order.get(x[0], 9), x[2].lower()))
 		self.found = found[:60]

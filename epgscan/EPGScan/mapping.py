@@ -22,6 +22,7 @@ from Components.ActionMap import ActionMap
 from Components.Label import Label
 from Components.MenuList import MenuList
 
+from .i18n import _
 from .common import keys_skin, init_keys, set_keys, hints_skin, init_hints, log, cfg
 
 DROP = {"hd", "uhd", "4k", "sd", "fhd", "poland", "channel", "tv"}
@@ -310,14 +311,14 @@ def start_import(session, mode):
 	m = mode[1:] if mode.startswith("r") else mode
 	clear = m.endswith("c")
 	if eng.running:
-		return False, "trwa skan EPG - import pominiety (zrobi go biezacy skan albo nastepny)"
+		return False, _("trwa skan EPG - import pominiety (zrobi go biezacy skan albo nastepny)")
 	if m.startswith("x") or not cfg.sat_import.value:
 		ok = eng.start_xmltv_only(clear=clear, local=False)
-		what = "import XMLTV%s" % (" po wyczyszczeniu EPG" if clear else "")
+		what = _("import XMLTV%s") % (_(" po wyczyszczeniu EPG") if clear else "")
 	else:
 		ok = eng.start(clear=clear, force_xmltv=True, local=False)
-		what = "skan satelity%s, potem XMLTV" % (" po wyczyszczeniu EPG" if clear else "")
-	return ok, ("uruchomiono: %s" % what) if ok else ("nie udalo sie uruchomic: %s (sprawdz zrodla XMLTV)" % what)
+		what = _("skan satelity%s, potem XMLTV") % (_(" po wyczyszczeniu EPG") if clear else "")
+	return ok, (_("uruchomiono: %s") % what) if ok else (_("nie udalo sie uruchomic: %s (sprawdz zrodla XMLTV)") % what)
 
 
 def epgpl_servers():
@@ -383,7 +384,7 @@ class ServerGrab(object):
 		self.active = True
 		self.seen_running = False
 		self.t0 = time.time()
-		self.text = "Uruchamianie pobierania na serwerze..."
+		self.text = _("Uruchamianie pobierania na serwerze...")
 		self.changed()
 
 		def job():
@@ -395,7 +396,7 @@ class ServerGrab(object):
 
 	def started(self, data, err):
 		if err or not data:
-			return self.end("Pobieranie na serwerze nie ruszylo: %s" % (err or "brak odpowiedzi"), True)
+			return self.end(_("Pobieranie na serwerze nie ruszylo: %s") % (err or _("brak odpowiedzi")), True)
 		self.before, res = data
 		if res.get("fresh"):
 			self.timer.stop()
@@ -406,10 +407,10 @@ class ServerGrab(object):
 			self.changed()
 			return
 		if not res.get("ok") and not res.get("running"):
-			return self.end("Pobieranie na serwerze nie ruszylo: %s" % res.get("error", "?"), True)
+			return self.end(_("Pobieranie na serwerze nie ruszylo: %s") % res.get("error", "?"), True)
 		log("Serwer %s: pobieranie programu %s (%s)" % (self.desc, "juz trwalo - czekam na koniec" if res.get("running") else "uruchomione",
 			dict(GRAB_MODES)[self.mode]))
-		self.text = "Pobieranie na serwerze trwa..."
+		self.text = _("Pobieranie na serwerze trwa...")
 		self.changed()
 		self.timer.start(10000, False)
 
@@ -424,14 +425,14 @@ class ServerGrab(object):
 	def checked(self, st, err):
 		el = int(time.time() - self.t0)
 		if err or not st:
-			self.text = "Pobieranie na serwerze (%d:%02d) - brak odpowiedzi serwera: %s" % (el // 60, el % 60, err)
+			self.text = _("Pobieranie na serwerze (%d:%02d) - brak odpowiedzi serwera: %s") % (el // 60, el % 60, err)
 			self.changed()
 			if el > 3 * 3600:
-				self.end("Pobieranie na serwerze: brak odpowiedzi serwera od dluzszego czasu - przerywam czekanie", True)
+				self.end(_("Pobieranie na serwerze: brak odpowiedzi serwera od dluzszego czasu - przerywam czekanie"), True)
 			return
 		if st.get("running"):
 			self.seen_running = True
-			self.text = "Pobieranie na serwerze (%d:%02d): %s" % (el // 60, el % 60, st.get("line", ""))
+			self.text = _("Pobieranie na serwerze (%d:%02d): %s") % (el // 60, el % 60, st.get("line", ""))
 			self.changed()
 			return
 		if not self.seen_running and el < 60 and st.get("guide", 0) <= self.before:
@@ -440,14 +441,14 @@ class ServerGrab(object):
 		if st.get("guide", 0) > self.before:
 			self.finished_ok(el)
 		else:
-			self.end("Pobieranie na serwerze nieudane - EPG nie zmienione.\n%s" % st.get("result", ""), True)
+			self.end(_("Pobieranie na serwerze nieudane - EPG nie zmienione.\n%s") % st.get("result", ""), True)
 
 	def finished_ok(self, el):
-		msg = "Program na serwerze pobrany (%d:%02d)." % (el // 60, el % 60)
+		msg = _("Program na serwerze pobrany (%d:%02d).") % (el // 60, el % 60)
 		if self.mode == "wait":
-			return self.end(msg + " Import XMLTV po skanie z satelity.")
+			return self.end(msg + _(" Import XMLTV po skanie z satelity."))
 		if self.mode == "only":
-			return self.end(msg + " Odbiornik wezmie go przy najblizszym imporcie XMLTV.")
+			return self.end(msg + _(" Odbiornik wezmie go przy najblizszym imporcie XMLTV."))
 		ok, what = start_import(self.session, self.mode)
 		self.end("%s %s." % (msg, what[0].upper() + what[1:]), not ok)
 
@@ -458,16 +459,16 @@ class ServerGrab(object):
 		self.bg.stop()
 		self.timer.stop()
 		self.active = False
-		self.text = "Czekanie na serwer przerwane - pobieranie na serwerze trwa dalej, import nie zostanie uruchomiony"
+		self.text = _("Czekanie na serwer przerwane - pobieranie na serwerze trwa dalej, import nie zostanie uruchomiony")
 		log("Serwer %s: %s" % (self.desc, self.text))
 		self.changed()
 
 	def plan(self):
 		"""Co dekoder zrobi po pobraniu (do ekranu glownego)."""
-		return {"only": "nic (tylko pobranie na serwerze)", "x": "import XMLTV (bez czyszczenia EPG)",
-			"xc": "czyszczenie EPG i import XMLTV", "s": "skan satelity, potem XMLTV",
-			"sc": "czyszczenie EPG, skan satelity, potem XMLTV",
-			"wait": "import XMLTV po skanie z harmonogramu"}.get(self.mode, "")
+		return {"only": _("nic (tylko pobranie na serwerze)"), "x": _("import XMLTV (bez czyszczenia EPG)"),
+			"xc": _("czyszczenie EPG i import XMLTV"), "s": _("skan satelity, potem XMLTV"),
+			"sc": _("czyszczenie EPG, skan satelity, potem XMLTV"),
+			"wait": _("import XMLTV po skanie z harmonogramu")}.get(self.mode, "")
 
 	def end(self, text, error=False):
 		self.timer.stop()
@@ -501,12 +502,13 @@ class EPGScanLocalTest(Screen):
 
 	def __init__(self, session, base, mapa):
 		Screen.__init__(self, session)
+		self.setTitle(_("EPG Scan - pobieranie na dekoderze (test porownawczy)"))
 		from Components.ScrollLabel import ScrollLabel
 		self.base, self.mapa = base, mapa
 		self["status"] = Label("")
 		self["text"] = ScrollLabel("")
 		init_keys(self)
-		set_keys(self, red="Zamknij (przerywa)")
+		set_keys(self, red=_("Zamknij (przerywa)"))
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions"], {
 			"cancel": self.close, "red": self.close, "ok": self.close,
 			"up": self["text"].pageUp, "down": self["text"].pageDown,
@@ -530,15 +532,15 @@ class EPGScanLocalTest(Screen):
 					st.append((c["tag"], c["site_id"], xid, names[xid]))
 		self.names = names
 		if not st:
-			self["status"].setText("W mapie serwera nie ma kanalow z obslugiwanych serwisow.")
+			self["status"].setText(_("W mapie serwera nie ma kanalow z obslugiwanych serwisow."))
 			return
 		from .common import local_conns
 		self.grab = LocalGrab(st, days=int(cfg.local_days.value) + 1, conns=local_conns(), max_total=int(cfg.local_conn_max.value),
 			pause=float(cfg.local_pause.value), errlog=(self.out_dir() + "bledy.txt") if cfg.local_errlog.value else None)
 		log("Pobieranie na dekoderze (test): stacji %d" % len(st))
-		self["text"].setText("Dekoder pobiera sam teleman, onet, naziemna i WP (od wczoraj, %d dni, polaczen %s), potem "
-			"porownuje wynik z plikiem programu serwera. Serwisy rownolegle.\nZamkniecie okna przerywa test.\n\nWynik bedzie tez w pliku: %s" % (
-			self.grab.days, "tm %s, onet %s, naz %s, wp %s, lacznie maks. %d" % (cfg.local_conn_tm.value, cfg.local_conn_onet.value,
+		self["text"].setText(_("Dekoder pobiera sam teleman, onet, naziemna i WP (od wczoraj, %d dni, polaczen %s), potem "
+			"porownuje wynik z plikiem programu serwera. Serwisy rownolegle.\nZamkniecie okna przerywa test.\n\nWynik bedzie tez w pliku: %s") % (
+			self.grab.days, _("tm %s, onet %s, naz %s, wp %s, lacznie maks. %d") % (cfg.local_conn_tm.value, cfg.local_conn_onet.value,
 			cfg.local_conn_naz.value, cfg.local_conn_wp.value, self.grab.max_total), self.out_dir() + "porownanie.txt"))
 
 		def work():
@@ -573,23 +575,23 @@ class EPGScanLocalTest(Screen):
 		el = int(time.time() - g.t0)
 		if self.th.is_alive():
 			if self.res.get("phase") == "serwer":
-				self["status"].setText("Pobrane (%d:%02d). Pobieranie pliku programu z serwera do porownania..." % (el // 60, el % 60))
+				self["status"].setText(_("Pobrane (%d:%02d). Pobieranie pliku programu z serwera do porownania...") % (el // 60, el % 60))
 			else:
 				tot = getattr(g, "total", 0)
 				left = (el * (tot - g.done) // g.done) if g.done else 0
-				self["status"].setText("Pobieranie na dekoderze: %d / %d stron, bledow %d - %s\nczas %d:%02d, zostalo ok. %d:%02d" % (
-					g.done, tot, g.errors, g.progress(), el // 60, el % 60, left // 60, left % 60))
+				self["status"].setText(_("Pobieranie na dekoderze: %d / %d stron, bledow %d - %s\nczas %d:%02d, zostalo ok. %d:%02d") % (
+					g.done, tot, g.errors, g.progress(localized=True), el // 60, el % 60, left // 60, left % 60))
 			return
 		self.timer.stop()
 		if self.res.get("error"):
-			self["status"].setText("Blad: %s" % self.res["error"])
+			self["status"].setText(_("Blad: %s") % self.res["error"])
 			log("Pobieranie na dekoderze (test): blad %s" % self.res["error"])
 			return
 		took = int(g.t_end - g.t0)
 		n = sum(len(v) for v in g.result.values())
-		head = "Gotowe: %d stron w %d:%02d (bez danych w serwisie %d), ponowionych %d, bledow po ponowieniu %d (%s), audycji %d dla %d stacji.%s" % (
-			g.total, took // 60, took % 60, g.missing, g.retried, g.errors, g.progress(), n, len(g.result),
-			("\nSzczegoly bledow: %sbledy.txt" % self.out_dir()) if g.retried and cfg.local_errlog.value else "")
+		head = _("Gotowe: %d stron w %d:%02d (bez danych w serwisie %d), ponowionych %d, bledow po ponowieniu %d (%s), audycji %d dla %d stacji.%s") % (
+			g.total, took // 60, took % 60, g.missing, g.retried, g.errors, g.progress(localized=True), n, len(g.result),
+			(_("\nSzczegoly bledow: %sbledy.txt") % self.out_dir()) if g.retried and cfg.local_errlog.value else "")
 		self["status"].setText(head)
 		rep = self.res.get("report", "")
 		self["text"].setText(rep)
@@ -599,7 +601,7 @@ class EPGScanLocalTest(Screen):
 				f.write(time.strftime("%d.%m.%Y %H:%M\n") + head + "\n\n" + rep + "\n")
 		except Exception:
 			pass
-		set_keys(self, red="Zamknij")
+		set_keys(self, red=_("Zamknij"))
 
 	def stop(self):
 		self.timer.stop()
@@ -641,15 +643,15 @@ class EPGScanPreview(Screen):
 		Screen.__init__(self, session)
 		self.base, self.target, self.can_save, self.window = base, target, can_save, window
 		self.zapper, self.chan_ref, self.chan = zapper, chan_ref, chan
-		self["pig_info"] = Label(("Niebieski: przelacz na kanal %s i porownaj z programem stacji." % chan)
+		self["pig_info"] = Label((_("Niebieski: przelacz na kanal %s i porownaj z programem stacji.") % chan)
 			if (zapper and chan_ref) else "")
-		self.setTitle("Podglad: %s  (kanal: %s)%s" % (label, chan, "  - od 2 h wstecz do 4 h naprzod" if window else ""))
+		self.setTitle(_("Podglad: %s  (kanal: %s)%s") % (label, chan, _("  - od 2 h wstecz do 4 h naprzod") if window else ""))
 		self["list"] = MenuList([])
-		self["info"] = Label(("Pobieranie programu stacji z serwera...\n(gdy stacji nie ma w pliku programu, serwer pobiera ja teraz z "
-			"serwisu - do kilkudziesieciu sekund)") if base else "Dekoder pobiera program stacji z serwisu (2 dni, kilka sekund)...")
+		self["info"] = Label((_("Pobieranie programu stacji z serwera...\n(gdy stacji nie ma w pliku programu, serwer pobiera ja teraz z "
+			"serwisu - do kilkudziesieciu sekund)")) if base else _("Dekoder pobiera program stacji z serwisu (2 dni, kilka sekund)..."))
 		init_keys(self)
-		set_keys(self, red="Wroc", green="Zapisz to zrodlo" if can_save else "",
-			blue="Przelacz na kanal" if (zapper and chan_ref) else "")
+		set_keys(self, red=_("Wroc"), green=_("Zapisz to zrodlo") if can_save else "",
+			blue=_("Przelacz na kanal") if (zapper and chan_ref) else "")
 		self.progs = []
 		self.bg = Background()
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
@@ -680,8 +682,8 @@ class EPGScanPreview(Screen):
 
 	def zap(self):
 		if self.zapper and self.chan_ref and self.zapper.zap(self.chan_ref):
-			self["pig_info"].setText("W okienku: %s (na zywo).\nPorownaj z biezaca audycja na liscie obok.\n"
-				"Po wyjsciu z dopasowania wroci poprzedni kanal." % self.chan)
+			self["pig_info"].setText(_("W okienku: %s (na zywo).\nPorownaj z biezaca audycja na liscie obok.\n"
+				"Po wyjsciu z dopasowania wroci poprzedni kanal.") % self.chan)
 
 	def local_preview(self):
 		"""Podglad bez serwera: dekoder pobiera stacje na 2 dni (od dzis)."""
@@ -707,29 +709,30 @@ class EPGScanPreview(Screen):
 		progs = [{"start": a, "stop": b, "title": t, "sub": "", "desc": d[:500]} for a, b, t, d in g.result.get(xid, [])
 			if b > now - 3600 and a < now + 2 * 86400][:120]
 		if not progs:
-			return {"ok": False, "error": "serwis nie zwrocil programu dla tej stacji"}
+			return {"ok": False, "error": _("serwis nie zwrocil programu dla tej stacji")}
 		return {"ok": True, "from": "pobrane teraz przez dekoder", "programmes": progs}
 
 	def loaded(self, data, err):
 		if err or not data or not data.get("ok"):
-			self["info"].setText("Nie udalo sie pobrac podgladu: %s" % ((data or {}).get("error") or err or "brak odpowiedzi"))
+			self["info"].setText(_("Nie udalo sie pobrac podgladu: %s") % ((data or {}).get("error") or err or _("brak odpowiedzi")))
 			return
 		if not cached_preview(self.base, self.target):
 			PREVIEW_CACHE[(self.base or "", self.target)] = (time.time(), data)
-		self.src = data.get("from", "")
+		source = data.get("from") or ""
+		self.src = source if self.base else _(source)
 		self.progs = fill_stops([dict(p) for p in data.get("programmes", [])])
 		if self.window:
 			now = time.time()
 			a, b = now + self.window[0], now + self.window[1]
 			self.progs = [p for p in self.progs if (p.get("stop") or p["start"] + 1800) > a and p["start"] < b]
 			if not self.progs:
-				self["info"].setText("Brak audycji od %s do %s (%s)." % (time.strftime("%H:%M", time.localtime(a)),
-					time.strftime("%H:%M", time.localtime(b)), data.get("from", "")))
+				self["info"].setText(_("Brak audycji od %s do %s (%s).") % (time.strftime("%H:%M", time.localtime(a)),
+					time.strftime("%H:%M", time.localtime(b)), self.src))
 				return
 		rows = []
 		for p in self.progs:
 			lt = time.localtime(p["start"])
-			t = "%s %s  %s%s" % (DAYS[lt.tm_wday], time.strftime("%d.%m %H:%M", lt), p["title"],
+			t = "%s %s  %s%s" % (_(DAYS[lt.tm_wday]), time.strftime("%d.%m %H:%M", lt), p["title"],
 				("  - " + p["sub"]) if p.get("sub") else "")
 			rows.append((t, p))
 		self["list"].setList(rows)
@@ -748,12 +751,12 @@ class EPGScanPreview(Screen):
 		cur = self["list"].getCurrent()
 		n = len(self.progs)
 		with_desc = len([1 for p in self.progs if p.get("desc")])
-		head = "Audycji: %d, z opisem: %d.  Zrodlo podgladu: %s" % (n, with_desc, getattr(self, "src", ""))
+		head = _("Audycji: %d, z opisem: %d.  Zrodlo podgladu: %s") % (n, with_desc, getattr(self, "src", ""))
 		if not cur:
 			self["info"].setText(head)
 			return
 		p = cur[1]
-		self["info"].setText(head + "\n" + (p.get("desc") or "(brak opisu)"))
+		self["info"].setText(head + "\n" + (p.get("desc") or _("(brak opisu)")))
 
 	def save(self):
 		if self.can_save:
@@ -776,14 +779,14 @@ class EPGScanDiffs(Screen):
 	def __init__(self, session, items, site_names, local):
 		Screen.__init__(self, session)
 		self.drows, self.names = items, site_names
-		self.setTitle("Roznice: dekoder / serwer (%d)" % len(items))
+		self.setTitle(_("Roznice: dekoder / serwer (%d)") % len(items))
 		rows = []
 		for d in items:
-			rows.append(("%s%s" % (d["name"], "   (poza wspolna mapa)" if d.get("pins_only") else ""), d))
+			rows.append(("%s%s" % (d["name"], _("   (poza wspolna mapa)") if d.get("pins_only") else ""), d))
 		self["list"] = MenuList(rows)
 		self["info"] = Label("")
 		init_keys(self)
-		set_keys(self, red="Zamknij", green="Wez z dekodera", yellow="Wez z serwera", blue="Wszystkie...")
+		set_keys(self, red=_("Zamknij"), green=_("Wez z dekodera"), yellow=_("Wez z serwera"), blue=_("Wszystkie..."))
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
 			"ok": self.ask_one, "cancel": self.close, "red": self.close,
 			"green": lambda: self.one("dekoder"), "yellow": lambda: self.one("serwer"), "blue": self.all_menu,
@@ -802,20 +805,32 @@ class EPGScanDiffs(Screen):
 		return c[1] if c else None
 
 	def show_info(self):
-		from .sync import side_text
 		d = self.current()
 		if not d:
 			self["info"].setText("")
 			return
-		self["info"].setText("%s%s\nDekoder:  %s\nSerwer:   %s\nZielony - zrodlo z dekodera (zapis na serwerze), zolty - z serwera (zapis na dekoderze), "
-			"niebieski - wszystkie naraz." % (d["name"], "  [bukiet: %s]" % d["bq"] if d.get("bq") else "",
-			side_text(d, "dek", self.names), side_text(d, "srv", self.names)))
+		self["info"].setText(_("%s%s\nDekoder:  %s\nSerwer:   %s\nZielony - zrodlo z dekodera (zapis na serwerze), zolty - z serwera (zapis na dekoderze), "
+			"niebieski - wszystkie naraz.") % (d["name"], _("  [bukiet: %s]") % (_("poza wspolna mapa") if d.get("pins_only") else d["bq"]) if d.get("bq") else "",
+			self.side_text(d, "dek"), self.side_text(d, "srv")))
+
+	def side_text(self, d, side):
+		c = d[side]
+		if d.get("pins_only"):
+			p = c.get("pin")
+			return _("brak wskazania") if p is None else (_("bez programu") if p == "-" else p)
+		if c.get("off"):
+			text = _("bez programu")
+		elif not c.get("tag"):
+			text = _("brak dopasowania")
+		else:
+			text = "%s: %s" % (self.names.get(c["tag"], c["tag"]), c.get("sname") or c["site_id"])
+		return text + (_("  [reczne]") if c.get("manual") else _("  [automat]"))
 
 	def ask_one(self):
 		d = self.current()
 		if d:
 			self.session.openWithCallback(lambda a: a and a[1] and self.one(a[1]), ChoiceBox, title=d["name"], list=[
-				("Wez z dekodera (zapis na serwerze)", "dekoder"), ("Wez z serwera (zapis na dekoderze)", "serwer"), ("Zostaw", None)])
+				(_("Wez z dekodera (zapis na serwerze)"), "dekoder"), (_("Wez z serwera (zapis na dekoderze)"), "serwer"), (_("Zostaw"), None)])
 
 	def one(self, winner):
 		d = self.current()
@@ -824,9 +839,9 @@ class EPGScanDiffs(Screen):
 
 	def all_menu(self):
 		self.session.openWithCallback(lambda a: a and a[1] and self.close((a[1], self.drows)), ChoiceBox,
-			title="Wszystkie roznice (%d)" % len(self.drows), list=[
-				("Wygrywa dekoder (serwer dostaje wskazania dekodera)", "dekoder"),
-				("Wygrywa serwer (dekoder dostaje wskazania serwera)", "serwer"), ("Anuluj", None)])
+			title=_("Wszystkie roznice (%d)") % len(self.drows), list=[
+				(_("Wygrywa dekoder (serwer dostaje wskazania dekodera)"), "dekoder"),
+				(_("Wygrywa serwer (dekoder dostaje wskazania serwera)"), "serwer"), (_("Anuluj"), None)])
 
 
 class EPGScanMapping(Screen):
@@ -844,13 +859,13 @@ class EPGScanMapping(Screen):
 		Screen.__init__(self, session)
 		self.local = not base
 		self.base = None if self.local else (base if base.endswith("/") else base + "/")
-		self.setTitle("Dopasowanie kanalow - %s" % desc)
+		self.setTitle(_("Dopasowanie kanalow - %s") % (_("dekoder") if self.local and desc == "dekoder" else desc))
 		self["list"] = MenuList([])
 		self.zapper = Zapper(session)
-		self["info"] = Label("Mapa kanalow...")
-		self["keys"] = Label(("Zmiana zrodla dziala od nastepnego %s.\n"
-			"[auto] automat, [alias] wskazanie nazwa, [reczne] wskazane, [--] wylaczony, [ ?? ] brak dopasowania") % (
-			"importu XMLTV (mapa przeliczana od razu)" if self.local else "pobrania na serwerze"))
+		self["info"] = Label(_("Mapa kanalow..."))
+		self["keys"] = Label((_("Zmiana zrodla dziala od nastepnego %s.\n"
+			"[auto] automat, [alias] wskazanie nazwa, [reczne] wskazane, [--] wylaczony, [ ?? ] brak dopasowania")) % (
+			_("importu XMLTV (mapa przeliczana od razu)") if self.local else _("pobrania na serwerze")))
 		init_hints(self, MAP_HINTS)
 		init_keys(self)
 		self.filter = 0
@@ -902,7 +917,7 @@ class EPGScanMapping(Screen):
 			pass
 		if not cfg.xmltv_bq_asked.value:
 			self.show_keys()
-			self["info"].setText("Najpierw wybierz, ktore bukiety dopasowywac.")
+			self["info"].setText(_("Najpierw wybierz, ktore bukiety dopasowywac."))
 			# okno wyboru dopiero po pokazaniu ekranu (w onLayoutFinish ekran nie jest jeszcze modalny)
 			self.ask_timer = eTimer()
 			self.ask_timer.callback.append(self.ask_first)
@@ -911,18 +926,20 @@ class EPGScanMapping(Screen):
 		self.load()
 
 	def show_keys(self):
-		from .common import xmltv_bouquets_text
-		set_keys(self, red="Zamknij", green="Odswiez", yellow="Pokaz: %s" % FILTERS[self.filter][1],
-			blue="Bukiety: %s" % xmltv_bouquets_text())
+		from .common import XB_CHOICES, xmltv_bouquet_files
+		mode = cfg.xmltv_bouquets.value
+		bouquets = _("wybrane bukiety (%d)") % len(xmltv_bouquet_files()) if mode == "selected" else _(dict(XB_CHOICES).get(mode, mode))
+		set_keys(self, red=_("Zamknij"), green=_("Odswiez"), yellow=_("Pokaz: %s") % _(FILTERS[self.filter][1]),
+			blue=_("Bukiety: %s") % bouquets)
 
 	# --- ktore bukiety dopasowywac (wspolne z Ustawienia -> Program z internetu -> Kanaly z bukietow) ---
 	def bq_menu(self, first=False):
 		from .common import XB_CHOICES
 		cur = cfg.xmltv_bouquets.value
-		opts = [(("* " if k == cur else "   ") + t, k) for k, t in XB_CHOICES]
-		opts.append(("   Wybierz bukiety...", "pick"))
-		title = ("Ktore bukiety dopasowywac? Te same kanaly dostana program z internetu (zmiana: niebieski tutaj "
-			"albo Ustawienia -> Program z internetu)") if first else "Lista kanalow do dopasowania"
+		opts = [(("* " if k == cur else "   ") + _(t), k) for k, t in XB_CHOICES]
+		opts.append((_("   Wybierz bukiety..."), "pick"))
+		title = (_("Ktore bukiety dopasowywac? Te same kanaly dostana program z internetu (zmiana: niebieski tutaj "
+			"albo Ustawienia -> Program z internetu)")) if first else _("Lista kanalow do dopasowania")
 		self.session.openWithCallback(lambda c: self.bq_chosen(c, first), ChoiceBox, title=title, list=opts)
 
 	def server_sites_differ(self):
@@ -958,11 +975,11 @@ class EPGScanMapping(Screen):
 		save_cfg()
 		self.show_keys()
 		if self.local:
-			self["info"].setText("Mapa kanalow z dekodera: przeliczanie dla wybranych bukietow...")
+			self["info"].setText(_("Mapa kanalow z dekodera: przeliczanie dla wybranych bukietow..."))
 			self.run(lambda: local_map_job(rebuild=True), self.loaded)
 		else:
 			self.bq_pushed = True
-			self["info"].setText("Serwer epgpl: wyslanie wyboru bukietow i przeliczenie mapy (kilka sekund)...")
+			self["info"].setText(_("Serwer epgpl: wyslanie wyboru bukietow i przeliczenie mapy (kilka sekund)..."))
 			base = self.base
 			self.run(lambda: server_bq_job(base), self.loaded)
 
@@ -990,10 +1007,10 @@ class EPGScanMapping(Screen):
 	def load(self):
 		self.show_keys()
 		if self.local:
-			self["info"].setText("Mapa kanalow z dekodera (pierwszy raz: pobieranie list stacji serwisow, ok. 10 s)...")
+			self["info"].setText(_("Mapa kanalow z dekodera (pierwszy raz: pobieranie list stacji serwisow, ok. 10 s)..."))
 			self.run(local_map_job, self.loaded)
 			return
-		self["info"].setText("Pobieranie mapy kanalow z serwera...")
+		self["info"].setText(_("Pobieranie mapy kanalow z serwera..."))
 
 		def job():
 			return http_get_json(self.base + "mapa.json"), http_get_json(self.base + "stacje.json")
@@ -1001,8 +1018,8 @@ class EPGScanMapping(Screen):
 
 	def loaded(self, data, err):
 		if err or not data:
-			self["info"].setText(("Nie udalo sie zbudowac mapy na dekoderze:\n%s" % err) if self.local else
-				"Nie udalo sie pobrac mapy z serwera %s:\n%s\n(wymagany epgpl 0.7.0 lub nowszy)" % (self.base, err))
+			self["info"].setText((_("Nie udalo sie zbudowac mapy na dekoderze:\n%s") % err) if self.local else
+				_("Nie udalo sie pobrac mapy z serwera %s:\n%s\n(wymagany epgpl 0.7.0 lub nowszy)") % (self.base, err))
 			return
 		self.mapa, self.stacje = data
 		if not self.local and self.mapa is not None:
@@ -1012,7 +1029,7 @@ class EPGScanMapping(Screen):
 			elif (self.mapa.get("bouquet_filter") != bq_desired() or self.server_sites_differ()) \
 					and not getattr(self, "bq_pushed", False):
 				self.bq_pushed = True
-				self["info"].setText("Serwer epgpl liczy mape dla innych bukietow albo innej kolejnosci serwisow - wysylam ustawienia dekodera...")
+				self["info"].setText(_("Serwer epgpl liczy mape dla innych bukietow albo innej kolejnosci serwisow - wysylam ustawienia dekodera..."))
 				base = self.base
 				self.run(lambda: server_bq_job(base), self.loaded)
 				return
@@ -1034,11 +1051,11 @@ class EPGScanMapping(Screen):
 				continue
 			none = not c["tag"] and not c["off"]
 			if c["off"]:
-				txt = "[--]  %s  -  bez programu%s" % (c["name"], " (wylaczony recznie)" if c["manual"] else " (wylaczony w aliases.txt)")
+				txt = _("[--]  %s  -  bez programu%s") % (c["name"], _(" (wylaczony recznie)") if c["manual"] else _(" (wylaczony w aliases.txt)"))
 			elif none:
-				txt = "[ ?? ]  %s  -  brak dopasowania" % c["name"]
+				txt = _("[ ?? ]  %s  -  brak dopasowania") % c["name"]
 			else:
-				kind = "reczne" if c["manual"] else ("alias" if "alias" in c["how"] else "auto")
+				kind = _("reczne") if c["manual"] else ("alias" if "alias" in c["how"] else "auto")
 				txt = "[%s]  %s  ->  %s: %s" % (kind, c["name"], self.site_name(c["tag"]), c["sname"])
 			if c["name"] in self.props:
 				txt = "[!] " + txt
@@ -1072,29 +1089,29 @@ class EPGScanMapping(Screen):
 		n = len(self.mapa.get("channels", []))
 		bad = len([1 for x in self.mapa["channels"] if not x["tag"] and not x["off"]])
 		man = len([1 for x in self.mapa["channels"] if x["manual"]])
-		head = "Kanalow: %d, bez dopasowania: %d, recznych wskazan: %d.  Kolejnosc serwisow: %s" % (
+		head = _("Kanalow: %d, bez dopasowania: %d, recznych wskazan: %d.  Kolejnosc serwisow: %s") % (
 			n, bad, man, ", ".join(self.site_name(t) for t in self.mapa.get("sites", [])))
 		extra = []                                  # jedna linia: propozycje i roznice (miejsce na szczegoly kanalu)
 		if self.props:
-			extra.append("Propozycje zmian [!]: %d" % len(self.props))
+			extra.append(_("Propozycje zmian [!]: %d") % len(self.props))
 		if self.diff is not None:
-			extra.append("Rozni sie od %s: %d%s" % ("serwera" if self.local else "dekodera", len(self.diff),
+			extra.append(_("Rozni sie od %s: %d%s") % (_("serwera") if self.local else _("dekodera"), len(self.diff),
 				" (Info/EPG)" if self.diff else ""))
 		if extra:
 			head += "\n" + "   |   ".join(extra)
 		if getattr(self, "old_server", False) and cfg.xmltv_bouquets.value != "all":
-			head += "\nSerwer epgpl starszy niz 0.13.3 - dopasowuje wszystkie bukiety (zaktualizuj serwer)"
+			head += _("\nSerwer epgpl starszy niz 0.13.3 - dopasowuje wszystkie bukiety (zaktualizuj serwer)")
 		if not c:
 			self["info"].setText(head)
 			return
 		if c["tag"]:
 			det = "%s [%s] -> %s: %s (%s)%s" % (c["name"], c["bq"], self.site_name(c["tag"]), c["sname"], c["site_id"],
-				", kopii na satelicie %d" % c["copies"] if c["copies"] > 1 else "")
+				_(", kopii na satelicie %d") % c["copies"] if c["copies"] > 1 else "")
 		else:
-			det = "%s [%s] - %s" % (c["name"], c["bq"], "bez programu (wylaczony)" if c["off"] else "brak dopasowania")
+			det = "%s [%s] - %s" % (c["name"], c["bq"], _("bez programu (wylaczony)") if c["off"] else _("brak dopasowania"))
 		pr = self.props.get(c["name"])
 		if pr:
-			det += "\n[!] %s%s" % (pr[0], (" - proponowana: %s: %s" % (self.site_name(pr[1].split(":")[0]), pr[2])) if pr[1] else "")
+			det += "\n[!] %s%s" % (_(pr[0]), (_(" - proponowana: %s: %s") % (self.site_name(pr[1].split(":")[0]), pr[2])) if pr[1] else "")
 		self["info"].setText(head + "\n" + det)
 
 	@staticmethod
@@ -1126,9 +1143,11 @@ class EPGScanMapping(Screen):
 				continue
 			n = len([1 for c in chans if self.passes(c, k, dn, self.props)])
 			if k == "diff":
-				t = "rozni sie od %s" % ("serwera" if self.local else "dekodera")
+				t = _("rozni sie od %s") % (_("serwera") if self.local else _("dekodera"))
+			else:
+				t = _(t)
 			opts.append(("%s%s  (%d)" % ("* " if i == self.filter else "   ", t, n), i))
-		self.session.openWithCallback(self.filter_chosen, ChoiceBox, title="Pokaz kanaly", list=opts)
+		self.session.openWithCallback(self.filter_chosen, ChoiceBox, title=_("Pokaz kanaly"), list=opts)
 
 	def filter_chosen(self, c):
 		if not c:
@@ -1141,9 +1160,9 @@ class EPGScanMapping(Screen):
 	def sort_menu(self):
 		"""Menu: sortowanie listy i pobieranie programu (na serwerze / na dekoderze / gotowy plik)."""
 		cur = cfg.map_sort.value
-		opts = [(("* " if k == cur else "   ") + "Sortowanie: " + t, k) for k, t in (("bq", "zgodnie z bukietami"), ("abc", "alfabetycznie"))]
-		opts.append(("   Pobieranie programu...", "grab"))
-		self.session.openWithCallback(self.sort_chosen, ChoiceBox, title="Dopasowanie kanalow", list=opts)
+		opts = [(("* " if k == cur else "   ") + _("Sortowanie: ") + t, k) for k, t in (("bq", _("zgodnie z bukietami")), ("abc", _("alfabetycznie")))]
+		opts.append((_("   Pobieranie programu..."), "grab"))
+		self.session.openWithCallback(self.sort_chosen, ChoiceBox, title=_("Dopasowanie kanalow"), list=opts)
 
 	def sort_chosen(self, c):
 		if c and c[1] == "grab":
@@ -1195,7 +1214,7 @@ class EPGScanMapping(Screen):
 
 	def diff_done(self, data, err):
 		if err or data is None:
-			log("Dopasowanie kanalow - porownanie z %s: %s" % ("serwerem" if self.local else "dekoderem", err))
+			log("Dopasowanie kanalow - porownanie z %s: %s" % (_("serwerem") if self.local else _("dekoderem"), err))
 			self.diff = None
 			return
 		self.diff = data
@@ -1217,27 +1236,27 @@ class EPGScanMapping(Screen):
 
 	def sync_menu(self, first=False):
 		if not self.other_base():
-			self.session.open(MessageBox, "Brak serwera epgpl - nie ma z czym porownac (zrodlo XMLTV z serwera: Ustawienia -> "
-				"Program z internetu).", MessageBox.TYPE_INFO, timeout=6)
+			self.session.open(MessageBox, _("Brak serwera epgpl - nie ma z czym porownac (zrodlo XMLTV z serwera: Ustawienia -> "
+				"Program z internetu)."), MessageBox.TYPE_INFO, timeout=6)
 			return
 		if self.diff is None:
-			self["info"].setText("Porownywanie z %s..." % ("serwerem" if self.local else "dekoderem"))
+			self["info"].setText(_("Porownywanie z %s...") % (_("serwerem") if self.local else _("dekoderem")))
 			self.diff_want = True
 			self.diff_start()
 			return
 		n = len(self.diff)
 		if not n:
-			self.session.openWithCallback(self.sync_chosen, ChoiceBox, title="Dopasowanie na dekoderze i na serwerze jest takie samo",
-				list=[("Porownaj ponownie", "again")])
+			self.session.openWithCallback(self.sync_chosen, ChoiceBox, title=_("Dopasowanie na dekoderze i na serwerze jest takie samo"),
+				list=[(_("Porownaj ponownie"), "again")])
 			return
-		opts = [("Pokaz roznice (%d)" % n, "show"),
-			("Synchronizuj: wygrywa dekoder (serwer dostaje wskazania dekodera)", "dekoder"),
-			("Synchronizuj: wygrywa serwer (dekoder dostaje wskazania serwera)", "serwer"),
-			("Porownaj ponownie", "again")]
+		opts = [(_("Pokaz roznice (%d)") % n, "show"),
+			(_("Synchronizuj: wygrywa dekoder (serwer dostaje wskazania dekodera)"), "dekoder"),
+			(_("Synchronizuj: wygrywa serwer (dekoder dostaje wskazania serwera)"), "serwer"),
+			(_("Porownaj ponownie"), "again")]
 		if first:
-			opts.append(("Zostaw rozne", None))
-		self.session.openWithCallback(self.sync_chosen, ChoiceBox, title="Dopasowanie rozni sie od %s w %d kanalach" % (
-			"serwera" if self.local else "dekodera", n), list=opts)
+			opts.append((_("Zostaw rozne"), None))
+		self.session.openWithCallback(self.sync_chosen, ChoiceBox, title=_("Dopasowanie rozni sie od %s w %d kanalach") % (
+			_("serwera") if self.local else _("dekodera"), n), list=opts)
 
 	def sync_chosen(self, c):
 		if not c or not c[1]:
@@ -1268,7 +1287,7 @@ class EPGScanMapping(Screen):
 			return
 		ch = dict(for_srv if winner == "dekoder" else for_dek)
 		base = self.other_base() if self.local else self.base
-		self["info"].setText("Synchronizacja (wygrywa %s): %d wskazan..." % (winner, len(for_dek) + len(for_srv)))
+		self["info"].setText(_("Synchronizacja (wygrywa %s): %d wskazan...") % (_(winner), len(for_dek) + len(for_srv)))
 
 		def job():
 			res = {"ok": True, "applied": 0, "errors": []}
@@ -1285,13 +1304,13 @@ class EPGScanMapping(Screen):
 			errs = (data or {}).get("errors") or []
 			log("Synchronizacja dopasowania (wygrywa %s%s): %s, bledow %d" % (winner, ", automatycznie" if auto else "",
 				", ".join("%s=%s" % (k, v or "auto") for k, v in ch.items()), len(errs)))
-			msg = "Synchronizacja: wygrywa %s - zmienionych wskazan: %d." % (winner, (data or {}).get("applied", 0))
+			msg = _("Synchronizacja: wygrywa %s - zmienionych wskazan: %d.") % (_(winner), (data or {}).get("applied", 0))
 			if err:
-				msg = "Synchronizacja nieudana: %s" % err
+				msg = _("Synchronizacja nieudana: %s") % err
 			elif errs:
-				msg += "\nNie przeniesione (%d):\n%s" % (len(errs), "\n".join("%s - %s" % (e["name"], e["error"]) for e in errs[:8]))
+				msg += _("\nNie przeniesione (%d):\n%s") % (len(errs), "\n".join("%s - %s" % (e["name"], e["error"]) for e in errs[:8]))
 			if auto:
-				msg += "\n(ustawienie: Roznice w dopasowaniu)"
+				msg += _("\n(ustawienie: Roznice w dopasowaniu)")
 			self.session.open(MessageBox, msg, MessageBox.TYPE_ERROR if err else MessageBox.TYPE_INFO, timeout=8)
 			self.diff = None
 			# mapa serwera przeliczana w tle - odswiezenie po chwili
@@ -1339,7 +1358,7 @@ class EPGScanMapping(Screen):
 			return
 		if choice[1] == "search":
 			from Screens.VirtualKeyBoard import VirtualKeyBoard
-			self.session.openWithCallback(self.search, VirtualKeyBoard, title="Szukaj stacji (fragment nazwy)", text="")
+			self.session.openWithCallback(self.search, VirtualKeyBoard, title=_("Szukaj stacji (fragment nazwy)"), text="")
 			return
 		if choice[1] == "zap":
 			self.zapper.zap(self.chan_ref)
@@ -1354,9 +1373,9 @@ class EPGScanMapping(Screen):
 			return
 		self.pick = choice
 		self.session.openWithCallback(self.pick_action, ChoiceBox, title="%s -> %s" % (self.chan["name"], choice[0]), list=[
-			("Zapisz" if self.local else "Zapisz na serwerze", "save"),
-			("Najpierw podglad programu", "preview"),
-			("Anuluj", None)])
+			(_("Zapisz") if self.local else _("Zapisz na serwerze"), "save"),
+			(_("Najpierw podglad programu"), "preview"),
+			(_("Anuluj"), None)])
 
 	def pick_action(self, ans):
 		if not ans or not ans[1]:
@@ -1379,20 +1398,20 @@ class EPGScanMapping(Screen):
 	# --- pobieranie na serwerze ---
 	def grab_menu(self):
 		if self.grab.active:
-			self.session.open(MessageBox, self.grab.text + "\n\nPo zakonczeniu pojawi sie powiadomienie (okno mozna zamknac).",
+			self.session.open(MessageBox, self.grab.text + _("\n\nPo zakonczeniu pojawi sie powiadomienie (okno mozna zamknac)."),
 				MessageBox.TYPE_INFO, timeout=8)
 			return
 		sat = cfg.sat_import.value
 		opts = []
 		if not self.local:                         # pobieranie na serwerze i gotowy plik - tylko w dopasowaniu serwera
-			opts += [(t, m) for m, t in GRAB_MODES if m != "wait" and (sat or m not in SAT_MODES)]
-			opts += [(t, m) for m, t in READY_MODES if sat or m not in SAT_MODES]
-		opts.append(("Dekoder: pobierz program teraz (bez importu)", "lonly"))
-		opts.append(("Dekoder: pobierz program i importuj XMLTV (bez czyszczenia EPG)", "lx"))
+			opts += [(_(t), m) for m, t in GRAB_MODES if m != "wait" and (sat or m not in SAT_MODES)]
+			opts += [(_(t), m) for m, t in READY_MODES if sat or m not in SAT_MODES]
+		opts.append((_("Dekoder: pobierz program teraz (bez importu)"), "lonly"))
+		opts.append((_("Dekoder: pobierz program i importuj XMLTV (bez czyszczenia EPG)"), "lx"))
 		if not self.local:
-			opts.append(("Test: pobierz na dekoderze i porownaj z serwerem", "localtest"))
+			opts.append((_("Test: pobierz na dekoderze i porownaj z serwerem"), "localtest"))
 		self.session.openWithCallback(self.grab_chosen, ChoiceBox,
-			title="Pobieranie programu na dekoderze" if self.local else "Program z serwera: pobranie na serwerze (ok. 10 min) albo gotowy plik", list=opts)
+			title=_("Pobieranie programu na dekoderze") if self.local else _("Program z serwera: pobranie na serwerze (ok. 10 min) albo gotowy plik"), list=opts)
 
 	def grab_chosen(self, ans):
 		if not ans:
@@ -1406,10 +1425,10 @@ class EPGScanMapping(Screen):
 				self.session.open(MessageBox, j.text, MessageBox.TYPE_INFO, timeout=6)
 				return
 			j.start("recznie z dopasowania kanalow")
-			msg = "Dekoder pobiera program (ok. 5-10 min). Postep na ekranie glownym EPG Scan."
+			msg = _("Dekoder pobiera program (ok. 5-10 min). Postep na ekranie glownym EPG Scan.")
 			if ans[1] == "lx":
 				ok = get_engine(self.session).start_xmltv_only(clear=False, local=False)
-				msg += "\nPotem import XMLTV%s." % ("" if ok else " - NIE ruszyl (trwa skan albo brak zrodel)")
+				msg += _("\nPotem import XMLTV%s.") % ("" if ok else _(" - NIE ruszyl (trwa skan albo brak zrodel)"))
 			self.session.open(MessageBox, msg, MessageBox.TYPE_INFO, timeout=6)
 			return
 		if ans[1] == "localtest":
@@ -1419,9 +1438,9 @@ class EPGScanMapping(Screen):
 			return
 		if ans[1] in CLEAR_MODES:
 			self.session.openWithCallback(self.grab_confirm, MessageBox,
-				"%sCale EPG zostanie wyczyszczone przed %s.\nKontynuowac?" % (
-					"" if ans[1].startswith("r") else "Po pobraniu na serwerze: ",
-					"importem XMLTV - do nastepnego skanu bedzie tylko program z XMLTV" if "x" in ans[1] else "skanem satelity"),
+				_("%sCale EPG zostanie wyczyszczone przed %s.\nKontynuowac?") % (
+					"" if ans[1].startswith("r") else _("Po pobraniu na serwerze: "),
+					_("importem XMLTV - do nastepnego skanu bedzie tylko program z XMLTV") if "x" in ans[1] else _("skanem satelity")),
 				MessageBox.TYPE_YESNO, default=False)
 		else:
 			self.grab_confirm(True)
@@ -1432,7 +1451,7 @@ class EPGScanMapping(Screen):
 		if self.grab_mode.startswith("r"):
 			ok, what = start_import(self.session, self.grab_mode)
 			log("Gotowy plik z serwera %s: %s" % (self.desc, what))
-			self.session.open(MessageBox, "Gotowy plik z serwera: %s.\nPostep na ekranie glownym EPG Scan." % what,
+			self.session.open(MessageBox, _("Gotowy plik z serwera: %s.\nPostep na ekranie glownym EPG Scan.") % what,
 				MessageBox.TYPE_INFO if ok else MessageBox.TYPE_ERROR, timeout=6)
 			return
 		self.grab.start(self.session, self.base, self.grab_mode, self.desc)
@@ -1444,14 +1463,14 @@ class EPGScanMapping(Screen):
 		low = text.strip().lower()
 		found = [(t, s, n) for t, s, n in self.all_stations() if q in norm(n) or low in n.lower()]
 		if not found:
-			self.session.open(MessageBox, "Nie znaleziono stacji: %s" % text, MessageBox.TYPE_INFO, timeout=4)
+			self.session.open(MessageBox, _("Nie znaleziono stacji: %s") % text, MessageBox.TYPE_INFO, timeout=4)
 			return
-		self.session.openWithCallback(self.chosen, ChoiceBox, title="Wyniki: %s" % text,
+		self.session.openWithCallback(self.chosen, ChoiceBox, title=_("Wyniki: %s") % text,
 			list=[self.entry(t, s, n) for t, s, n in found[:60]])
 
 	def send(self, target):
 		name = self.chan["name"]
-		self["info"].setText("Zapisywanie%s: %s ..." % ("" if self.local else " na serwerze", name))
+		self["info"].setText(_("Zapisywanie%s: %s ...") % ("" if self.local else _(" na serwerze"), name))
 
 		def job():
 			if self.local:
@@ -1462,13 +1481,13 @@ class EPGScanMapping(Screen):
 
 	def sent(self, data, err):
 		if err or not data or not data.get("ok"):
-			msg = (data or {}).get("error") or err or "brak odpowiedzi"
-			self.session.open(MessageBox, "Serwer nie przyjal zmiany:\n%s" % msg, MessageBox.TYPE_ERROR)
+			msg = (data or {}).get("error") or err or _("brak odpowiedzi")
+			self.session.open(MessageBox, _("Serwer nie przyjal zmiany:\n%s") % msg, MessageBox.TYPE_ERROR)
 			self.show_info()
 			return
 		log("Dopasowanie kanalow (%s): %s -> %s" % ("dekoder" if self.local else "serwer", self.chan["name"], self.target or "automatycznie"))
-		self.session.open(MessageBox, "Zapisano: %s -> %s\nProgram z nowego zrodla bedzie po nastepnym %s." % (
-			self.chan["name"], self.target or "automatycznie", "pobraniu i imporcie" if self.local else "pobraniu na serwerze"),
+		self.session.open(MessageBox, _("Zapisano: %s -> %s\nProgram z nowego zrodla bedzie po nastepnym %s.") % (
+			self.chan["name"], self.target or _("automatycznie"), _("pobraniu i imporcie") if self.local else _("pobraniu na serwerze")),
 			MessageBox.TYPE_INFO, timeout=5)
 		if self.local:
 			self.load()

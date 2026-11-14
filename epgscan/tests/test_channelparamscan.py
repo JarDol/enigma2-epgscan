@@ -8,6 +8,7 @@ import tempfile
 import time
 import types
 import unittest
+import xml.etree.ElementTree as ET
 from unittest.mock import Mock, patch
 
 
@@ -995,6 +996,49 @@ class ChannelParamScanTests(unittest.TestCase):
 		self.assertEqual(report["scanned"], 1)
 		self.assertEqual(report["read_average"], 2)
 
+	def test_parameter_report_retains_full_conflicts_and_errors(self):
+		conflicts = ["pmts_%d" % index for index in range(500)]
+		report = {"started": 100, "finished": 160, "duration": 60, "scanned": 4,
+			"audio_channels": 3, "audio_tracks": 5, "selected_audio": 3,
+			"errors": [{"ref": "service-error", "name": "Channel", "error": "read failed"}],
+			"unsupported": [{"ref": "service-skip", "name": "IPTV", "reason": "unsupported"}],
+			"sync": ["Pominiete konflikty: " + ", ".join(conflicts)]}
+		text = scanner_module.format_report(report)
+		self.assertIn(conflicts[0], text)
+		self.assertIn(conflicts[-1], text)
+		self.assertIn("service-error", text)
+		self.assertIn("read failed", text)
+		self.assertIn("service-skip", text)
+		self.assertIn("unsupported", text)
+		self.assertIn("Brak raportu", scanner_module.format_report(None))
+
+	def test_main_screen_keeps_long_parameter_report_out_of_status(self):
+		conflicts = ["pmts_%d" % index for index in range(500)]
+		report = {"scanned": 4, "audio_channels": 3, "audio_tracks": 5, "selected_audio": 3,
+			"duration": 60, "errors": [{"name": "Channel", "error": "read failed"}],
+			"unsupported": [], "sync": ["Pominiete konflikty: " + ", ".join(conflicts)],
+			"sync_conflicts": {"common": conflicts}}
+		engine = types.SimpleNamespace(stats=lambda: (0, 0, 60), free_tuners=lambda: 1,
+			total_tuners=2, reserve=1, jobs=[], active=[], running=False, finished=True,
+			channelparams_report=report, note=report["sync"][0], changes="")
+		screen = scan_module.EPGScanScreen.__new__(scan_module.EPGScanScreen)
+		dict.__init__(screen)
+		screen.engine, screen.ljob, screen.grab = engine, None, None
+		screen.sw_scanning = lambda: False
+		screen.stage_lines = lambda: []
+		screen["status"] = types.SimpleNamespace(setText=Mock())
+		screen["list"] = types.SimpleNamespace(setText=Mock())
+		with patch.object(common.cfg, "xmltv", setting(False), create=True), \
+				patch.object(common.cfg, "sat_import", setting(True), create=True):
+			screen.redraw()
+		status = screen["status"].setText.call_args.args[0]
+		self.assertIn("PAT/PMT: 4", status)
+		self.assertIn("bledow 1", status)
+		self.assertIn("konflikt", status.lower())
+		self.assertIn("Raporty", status)
+		self.assertNotIn(conflicts[-1], status)
+		self.assertLess(len(status), 300)
+
 	def test_single_channel_retry_preserves_other_last_scan_errors(self):
 		ref = "1:0:1:428F:1:1:13E:0:0:0:"
 		other_ref = "1:0:1:9999:1:1:13E:0:0:0:"
@@ -1017,6 +1061,7 @@ class ChannelParamScanTests(unittest.TestCase):
 					scan._finish()
 				saved_report = save.call_args.args[0]["last_scan"]
 				self.assertEqual((saved_report["scanned"], saved_report["duration"]), (141, 644))
+				self.assertEqual(saved_report["last_retry"]["scanned"], 1 if succeeds else 0)
 				self.assertIn(previous["errors"][1], saved_report["errors"])
 				self.assertEqual([error["error"] for error in saved_report["errors"] if error.get("ref") == ref],
 					[] if succeeds else ["new error"])
@@ -1430,6 +1475,22 @@ class SyncModeTests(unittest.TestCase):
 		self.assertEqual(set(self.read("common.json")), {"pmts_17039"})
 		self.assertEqual(set(self.read("device-test.json")), {"pmts_17039"})
 
+	def test_automatic_repair_also_fills_audio_from_existing_common(self):
+		self.write("common.json", {"audio_shared": {"v": "123|pol|aac", "t": 1}})
+		self.write("device-test.json", {})
+		engine = types.SimpleNamespace(active=[], channel_params_scan=None)
+		reports = []
+		with patch.object(scanner_module, "load_results", return_value={"results": {}}), \
+				patch.object(scanner_module, "save_results"), \
+				patch.object(common.cfg.cp_sync_common, "value", "off"), \
+				patch.object(common.cfg.cp_sync_devices, "value", "repair"):
+			scan = scanner_module.ChannelParamsScan(engine, done=reports.append)
+			scan.results = self.results
+			scan.scanned_refs = {self.ref}
+			scan._finish()
+		self.assertEqual(reports[0]["errors"], [])
+		self.assertEqual(self.read("device-test.json")["audio_shared"]["v"], "123|pol|aac")
+
 	def test_automatic_sync_reports_collision_when_only_pmts_are_available(self):
 		engine = types.SimpleNamespace(active=[], channel_params_scan=None)
 		first = dict(self.result, selectedAudioPid=None, selectedConfirmed=False, streams=[])
@@ -1448,6 +1509,7 @@ class SyncModeTests(unittest.TestCase):
 			scan._finish()
 		self.assertIn("pmts_17039", reports[0]["sync"][0])
 		self.assertIn("koliz", reports[0]["sync"][0].lower())
+		self.assertIn("pmts_17039", reports[0]["sync_conflicts"]["common"])
 		self.assertEqual(reports[0]["errors"], [])
 		self.assertFalse(os.path.exists(clients.COMMON))
 
@@ -1508,6 +1570,25 @@ class SyncModeTests(unittest.TestCase):
 		self.assertEqual(data["audio_existing"]["v"], "789|pol|aac")
 		self.assertNotIn("pmts_123", data)
 		self.assertNotIn("other", data)
+
+	def test_repair_checks_common_choice_against_current_pmt(self):
+		self.write("common.json", {self.key: {"v": "999|und|old", "t": 1}})
+		self.write("device-test.json", {})
+		store_module.apply_to_devices(self.results, ["device-test.json"], mode="repair")
+		self.assertTrue(self.read("device-test.json")[self.key]["v"].startswith("536|"))
+
+	def test_missing_mode_does_not_copy_other_common_audio(self):
+		self.write("common.json", {"audio_shared": {"v": "123|pol|aac", "t": 1}})
+		self.write("device-test.json", {})
+		store_module.apply_to_devices(self.results, ["device-test.json"], mode="missing")
+		self.assertNotIn("audio_shared", self.read("device-test.json"))
+
+	def test_repair_reports_invalid_common_data_without_modifying_profile(self):
+		self.write("common.json", {"audio_shared": {"v": ""}})
+		self.write("device-test.json", {"audio_existing": {"v": "123|pol|aac"}})
+		with self.assertRaisesRegex(ValueError, "audio_shared"):
+			store_module.apply_to_devices(self.results, ["device-test.json"], mode="repair")
+		self.assertEqual(self.read("device-test.json"), {"audio_existing": {"v": "123|pol|aac"}})
 
 	def test_repair_does_not_guess_when_current_pmt_is_missing(self):
 		self.write("device-test.json", {self.key: {"v": "999|und|bad"}})
@@ -2302,6 +2383,44 @@ class BatchScanTests(unittest.TestCase):
 		self.assertIs(self.scan.results[self.rows[0]["ref"]], old)
 		self.assertEqual(reports[0]["scanned"], 0)
 		self.assertEqual([row["ref"] for row in reports[0]["errors"]], [self.rows[0]["ref"]])
+
+
+class ChannelParamsLayoutTests(unittest.TestCase):
+	def test_audio_hints_and_device_buttons_fit_at_fhd_and_hd(self):
+		import test_actions_ui
+		real = test_actions_ui.common
+		path = os.path.join(ROOT, "EPGScan", "channelparamsui.py")
+		spec = importlib.util.spec_from_file_location(PACKAGE + ".layout_probe", path)
+		module = importlib.util.module_from_spec(spec)
+		with patch.dict(sys.modules, ui_modules), \
+				patch.object(common, "keys_skin", real.keys_skin), \
+				patch.object(common, "hints_skin", real.hints_skin):
+			spec.loader.exec_module(module)
+		for scale in (1.0, 2.0 / 3.0):
+			with self.subTest(scale=scale), patch.object(real, "UI_SCALE", scale):
+				audio = ET.fromstring(real.scale_skin(module.ChannelAudioScreen.skin))
+				names = {w.get("name") for w in audio.findall("widget")}
+				for index in range(3):
+					self.assertIn("hint_cap%d" % index, names)
+					self.assertIn("hint_txt%d" % index, names)
+				screen = ET.fromstring(real.scale_skin(module.ChannelParamsDevicesScreen.skin))
+				width, height = (int(value) for value in screen.get("size").split(","))
+				for widget in screen.findall("widget"):
+					x, y = (int(value) for value in widget.get("position").split(","))
+					w, h = (int(value) for value in widget.get("size").split(","))
+					self.assertLessEqual(x + w, width, widget.get("name"))
+					self.assertLessEqual(y + h, height, widget.get("name"))
+
+	def test_audio_menu_dispatches_real_actions(self):
+		screen = channelparamsui.ChannelAudioScreen.__new__(channelparamsui.ChannelAudioScreen)
+		screen.choose_automatic = Mock()
+		screen.choose_user = Mock()
+		screen.options_selected(("Automat", "automatic"))
+		screen.options_selected(("1. jezyk", 0))
+		screen.options_selected(("2. jezyk", 1))
+		screen.options_selected(None)
+		screen.choose_automatic.assert_called_once_with()
+		self.assertEqual(screen.choose_user.call_args_list, [unittest.mock.call(0), unittest.mock.call(1)])
 
 
 if __name__ == "__main__":

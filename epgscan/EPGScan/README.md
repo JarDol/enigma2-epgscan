@@ -564,6 +564,7 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 **Info/EPG** na ekranie głównym:
 
 - **SatWatch** – ostatni raport, historia (30 ostatnich), log,
+- **Skan parametrów kanałów – ostatni raport** – wyniki PAT/PMT, błędy, pominięte kanały oraz pełne szczegóły synchronizacji i konfliktów,
 - **Statystyka EPG** – liczba audycji, kanały z EPG, zasięg w dniach, duble,
 - **Kanały – zasięg EPG** (od najkrótszego), **Duble** – nakładające się audycje,
 - **Pobieranie na dekoderze** – ostatni wynik, plik, stacje według serwisu, błędy,
@@ -574,6 +575,13 @@ OK na pozycji zaznacza / odznacza, zielony zapisuje, czerwony anuluje.
 ---
 
 ## 13. Wszystkie ustawienia
+
+W grupie **Aktualizacje i informacje** opcja **Język wtyczki** wybiera język Enigma2
+(domyślnie, automatycznie), polski albo angielski. Wybór jest zapisywany zielonym przyciskiem;
+otwierane później okna używają wybranego języka. Przy wyborze Enigma2 używany jest polski dla
+języka polskiego odbiornika, a angielski dla pozostałych. Logi, starsze raporty, niektóre szczegóły
+techniczne i dane ze źródeł zewnętrznych mogą pozostać w języku oryginału. Opis wtyczki na ekranie
+pochodzi z lokalnego pliku README zainstalowanej wersji, odpowiedniego dla wybranego języka.
 
 **Niebieski → Ustawienia**. Główne grupy: *Satelita – EPG*, *Skan parametrów kanałów*, *Program z internetu*,
 *Harmonogram*, *Powiadomienia, restart, sprzątanie*, *Kopie, log, E2Stream* i *Aktualizacje i informacje o wtyczce*. SatWatch ma osobne

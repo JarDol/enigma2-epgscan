@@ -9,6 +9,7 @@ from Components.MenuList import MenuList
 from Components.SelectionList import SelectionList, SelectionEntryComponent
 
 from ..common import keys_skin, init_keys, set_keys
+from ..i18n import _
 from . import core
 
 # ten sam uklad co lista bukietow EPG Scan (setup.EPGScanBouquets)
@@ -57,9 +58,9 @@ def position_items(current):
             n = n[len(core.pos_str(p)):].strip()
         tag = []
         if p in tun:
-            tag.append("w tunerach")
+            tag.append(_("w tunerach"))
         if p not in names:
-            tag.append("brak w satellites.xml")
+            tag.append(_("brak w satellites.xml"))
         return "%s  %s%s" % (core.pos_str(p), n, ("   [%s]" % ", ".join(tag)) if tag else "")
 
     def west_east(p):
@@ -100,8 +101,8 @@ def bouquets_text(ignore_value):
     ign = core.parse_ignore(ignore_value)
     on = [n for n in names if n.lower() not in ign]
     if not names:
-        return "wszystkie"
-    return "wszystkie (%d)" % len(names) if len(on) == len(names) else "%d z %d" % (len(on), len(names))
+        return _("wszystkie")
+    return _("wszystkie (%d)") % len(names) if len(on) == len(names) else _("%d z %d") % (len(on), len(names))
 
 
 def ignore_from_selection(ignore_value, chosen):
@@ -148,7 +149,7 @@ class SatWatchPick(Screen):
         Screen.__init__(self, session)
         self.setTitle(title)
         self["list"] = SelectionList([SelectionEntryComponent(t, v, i, s) for i, (t, v, s) in enumerate(items)])
-        self["info"] = Label(info or "OK: zaznacz / odznacz.  Zielony: zapisz.  Czerwony: anuluj.")
+        self["info"] = Label(info or _("OK: zaznacz / odznacz.  Zielony: zapisz.  Czerwony: anuluj."))
         init_keys(self)
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
             "ok": self["list"].toggleSelection,
@@ -164,7 +165,7 @@ class SatWatchPick(Screen):
             big_list(self["list"])
         except Exception:
             pass
-        set_keys(self, red="Anuluj", green="Zapisz")
+        set_keys(self, red=_("Anuluj"), green=_("Zapisz"))
 
     def save(self):
         self.close([x[1] for x in self["list"].getSelectionsList()])
@@ -186,7 +187,7 @@ class SatWatchUrls(Screen):
 
     def __init__(self, session, current, custom):
         Screen.__init__(self, session)
-        self.setTitle("SatWatch - adres satellites.xml")
+        self.setTitle(_("SatWatch - adres satellites.xml"))
         self.current = current
         self.edit_of = None
         self.custom = [u for u in (custom or "").split("|") if u.strip()]
@@ -220,7 +221,7 @@ class SatWatchUrls(Screen):
                 if x[1] == keep:
                     self["list"].moveToIndex(i)
                     break
-        set_keys(self, red="Gotowe", green="Popraw", yellow="Dodaj adres", blue="Usun")
+        set_keys(self, red=_("Gotowe"), green=_("Popraw"), yellow=_("Dodaj adres"), blue=_("Usun"))
         self.show_info()
 
     def cur(self):
@@ -232,9 +233,9 @@ class SatWatchUrls(Screen):
         if not u:
             return
         builtin = u in [x[1] for x in BUILTIN_URLS]
-        self["info"].setText("%s\nOK - ustaw jako domyslny (* = uzywany). Zolty - dodaj adres (sprawdzany przed zapisem). "
-                             "Zielony / niebieski - popraw / usun dopisany%s." % (
-                                 u, " (wbudowanego nie mozna zmienic)" if builtin else ""))
+        self["info"].setText(_("%s\nOK - ustaw jako domyslny (* = uzywany). Zolty - dodaj adres (sprawdzany przed zapisem). "
+                             "Zielony / niebieski - popraw / usun dopisany%s.") % (
+                                 u, _(" (wbudowanego nie mozna zmienic)") if builtin else ""))
 
     def set_default(self):
         u = self.cur()
@@ -245,7 +246,7 @@ class SatWatchUrls(Screen):
     def add(self, text="https://"):
         from Screens.VirtualKeyBoard import VirtualKeyBoard
         self.edit_of = None
-        self.session.openWithCallback(self.typed, VirtualKeyBoard, title="Adres pliku satellites.xml", text=text)
+        self.session.openWithCallback(self.typed, VirtualKeyBoard, title=_("Adres pliku satellites.xml"), text=text)
 
     def edit(self):
         u = self.cur()
@@ -253,7 +254,7 @@ class SatWatchUrls(Screen):
             return
         from Screens.VirtualKeyBoard import VirtualKeyBoard
         self.edit_of = u
-        self.session.openWithCallback(self.typed, VirtualKeyBoard, title="Adres pliku satellites.xml", text=u)
+        self.session.openWithCallback(self.typed, VirtualKeyBoard, title=_("Adres pliku satellites.xml"), text=u)
 
     def remove(self):
         u = self.cur()
@@ -268,7 +269,7 @@ class SatWatchUrls(Screen):
         url = (url or "").strip()
         if not url or url in ("http://", "https://"):
             return
-        self["info"].setText("Sprawdzam %s ..." % url)
+        self["info"].setText(_("Sprawdzam %s ...") % url)
         from twisted.internet import threads
         d = threads.deferToThread(check_url, url)
         d.addCallback(lambda res: self.checked(url, res))
@@ -276,7 +277,7 @@ class SatWatchUrls(Screen):
 
     def checked(self, url, res):
         if res is not True:
-            self.session.open(MessageBox, "Pod adresem nie ma poprawnego satellites.xml:\n%s\n\n%s" % (url, res),
+            self.session.open(MessageBox, _("Pod adresem nie ma poprawnego satellites.xml:\n%s\n\n%s") % (url, res),
                               MessageBox.TYPE_ERROR, timeout=10)
             self.show_info()
             return

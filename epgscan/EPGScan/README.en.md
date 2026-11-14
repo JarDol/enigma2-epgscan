@@ -19,8 +19,11 @@ Everything can run at night in standby on a schedule; in the morning you get a s
 The plugin was built with Polish channels on Hotbird 13.0E in mind, but the satellite scan, XMLTV import and
 SatWatch work with any orbital position and any bouquets.
 
-**Language of the user interface:** the on-screen texts are in Polish. This document gives the Polish menu
-names in *italics* followed by an English translation, so you can find each item on screen.
+**Interface language:** select Enigma2 language (default), Polish or English under **Settings →
+Updates and plugin information** and save with green. The Enigma2 setting uses Polish for a Polish
+receiver language and English otherwise. Logs, older reports, some technical details and external
+data may remain in their original language. This document includes Polish menu names.
+The on-screen plugin description is read from the installed version's bundled README in the selected language.
 Polish version of this description: [README.md](README.md).
 
 ---
@@ -540,6 +543,7 @@ item ticks/unticks it, green saves, red cancels.
 **Info/EPG** on the main screen:
 
 - **SatWatch** – latest report, history (last 30), log,
+- **Channel parameter scan – latest report** – PAT/PMT results, errors, skipped channels and full synchronization details and conflicts,
 - **EPG statistics** – number of events, channels with EPG, coverage in days, duplicates,
 - **Channels – EPG coverage** (shortest first), **Duplicates** – overlapping events,
 - **Download on the receiver** – last result, file, stations per website, errors,
@@ -700,8 +704,9 @@ watch: [chapter 8.4](#84-tuner-setup--what-to-set-in-the-system-and-what-in-the-
 **Where are the logs?** Info/EPG → *Log EPG Scan* and *SatWatch – log*; files in `/media/hdd/epgscan/` and
 `/media/hdd/satwatch/`.
 
-**Is the interface available in English?** Not yet – the on-screen texts are Polish. This document maps the menu
-items to English.
+**Is the interface available in English?** Choose English under **Settings → Updates and plugin
+information**. Logs, older reports, some technical details and external data may remain in their
+original language.
 
 ## Support
 

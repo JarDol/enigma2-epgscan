@@ -23,6 +23,7 @@ from enigma import eTimer, eEPGCache
 
 from .common import cfg, log, E2
 from .epgintervals import uncovered_event
+from .i18n import _
 
 SOURCES_DIR = "/etc/epgimport"
 TMP = "/tmp/epgscan_xmltv"
@@ -683,7 +684,7 @@ class XmltvImport(object):
 		self.event_ids = event_ids or {}
 		self.names = names or {}        # {key: nazwa kanalu} - do logu
 		self.done_cb = done_cb
-		self.status = "przygotowanie"
+		self.status = _("przygotowanie")
 		self.cancelled = False
 		self.force = False              # bez pomijania zrodel oznaczonych jako nieaktualne/niedostepne
 		self.results = {}               # key -> [events]
@@ -718,7 +719,7 @@ class XmltvImport(object):
 	# --- watek roboczy (bez wywolan Enigma2) ---
 	def prepare_and_work(self):
 		"""W watku: aktualizacja wlasnych list z zapamietanych adresow, potem import."""
-		self.status = "aktualizacja list zrodel"
+		self.status = _("aktualizacja list zrodel")
 		try:
 			for name, res in refresh_own():
 				log("XMLTV: lista %s: %s" % (name, res))
@@ -729,7 +730,7 @@ class XmltvImport(object):
 			log("XMLTV: listy zrodel z kopii wtyczki (brak w /etc/epgimport): %s" % ", ".join(from_cache))
 		if not srcs:
 			log("XMLTV: zadne z wybranych zrodel nie jest dostepne")
-			self.status = "zapis do EPG"
+			self.status = _("zapis do EPG")
 			return
 		self.work(srcs, maps)
 
@@ -748,7 +749,7 @@ class XmltvImport(object):
 						"nieaktualne" if prev.get("state") == "stale" else "niedostepne",
 						time.strftime("%d.%m %H:%M", time.localtime(prev.get("time", 0) + RECHECK_BAD))))
 					continue
-				self.status = "%s (%d/%d): mapa kanalow" % (s.desc, i + 1, len(srcs))
+				self.status = _("%s (%d/%d): mapa kanalow") % (s.desc, i + 1, len(srcs))
 				ids = chmaps.get(s.channels)
 				if ids is None:
 					ids = self.load_map(s.channels, maps)
@@ -773,10 +774,10 @@ class XmltvImport(object):
 					u = queue.pop(0)
 					if self.cancelled:
 						break
-					self.status = "%s (%d/%d): pobieranie" % (s.desc, i + 1, len(srcs))
+					self.status = _("%s (%d/%d): pobieranie") % (s.desc, i + 1, len(srcs))
 					if not fetch([u], dest):
 						continue
-					self.status = "%s (%d/%d): przetwarzanie" % (s.desc, i + 1, len(srcs))
+					self.status = _("%s (%d/%d): przetwarzanie") % (s.desc, i + 1, len(srcs))
 					try:
 						res, maxend, cnt = self.parse(dest, name, need, now)
 					except Exception as e:
@@ -828,7 +829,7 @@ class XmltvImport(object):
 			except Exception as e:
 				log("XMLTV: %s - blad: %s" % (s.desc, e))
 		save_state(self.state)
-		self.status = "zapis do EPG"
+		self.status = _("zapis do EPG")
 
 	def load_map(self, channels, maps):
 		urls = maps.get(channels)
@@ -921,7 +922,7 @@ class XmltvImport(object):
 
 	def _import_step(self):
 		cache = eEPGCache.getInstance()
-		for _ in range(10):
+		for _batch_index in range(10):
 			if not self.queue or self.cancelled:
 				self.imp_timer.stop()
 				self.finish()
@@ -952,7 +953,7 @@ class XmltvImport(object):
 				self.imported += len(evs)
 			except Exception as e:
 				log("XMLTV: zapis do EPG nieudany (%s): %s" % (ref, e))
-			self.status = "zapis do EPG (%d kanalow zostalo)" % len(self.queue)
+			self.status = _("zapis do EPG (%d kanalow zostalo)") % len(self.queue)
 
 	def finish(self):
 		log("XMLTV: koniec, zapisano %d audycji dla %d kanalow%s" % (self.imported, len(self.results),

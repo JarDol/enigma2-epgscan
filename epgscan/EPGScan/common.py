@@ -12,13 +12,14 @@ from Components.config import config, ConfigSubsection, ConfigSelection, ConfigY
 	ConfigText, ConfigDirectory, ConfigInteger, ConfigSelectionNumber, ConfigClock
 from enigma import eServiceReference, eServiceCenter, eEPGCache, iServiceInformation
 from .bouquetchannels import read_bouquet_channels
+from .i18n import _, configure as configure_language
 
 try:
 	from Components.NimManager import nimmanager
 except Exception:
 	nimmanager = None
 
-VERSION = "2.18.0-beta.10"
+VERSION = "2.18.0-beta.11"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
@@ -45,6 +46,17 @@ RESTORE_RATIO = 0.3 # odtworz kopie, gdy w EPG jest mniej niz 30% zdarzen z osta
 
 config.plugins.epgscan = ConfigSubsection()
 cfg = config.plugins.epgscan
+cfg.ui_language = ConfigSelection(default="enigma", choices=[
+	("enigma", "Jezyk Enigma2"), ("pl", "Polski"), ("en", "English")])
+_active_language = cfg.ui_language.value
+configure_language(lambda: _active_language)
+
+
+def apply_ui_language():
+	global _active_language
+	_active_language = cfg.ui_language.value
+
+
 cfg.max_parallel = ConfigSelectionNumber(1, 8, 1, default=4)
 cfg.reserve = ConfigSelectionNumber(0, 8, 1, default=1)
 cfg.min_time = ConfigSelectionNumber(10, 600, 10, default=30)
@@ -273,14 +285,15 @@ def profile_default():
 		"one": bool(cfg.p_one.value and cfg.one_place.value), "channelparams": bool(cfg.p_channelparams.value)}
 
 
-def profile_text(p):
-	order = {"d": "dekoder", "s": "serwer", "o": "pozostale"}
+def profile_text(p, localized=False):
+	tr = _ if localized else lambda text: text
+	order = {"d": tr("dekoder"), "s": tr("serwer"), "o": tr("pozostale")}
 	on = {"d": p["dek"], "s": p["srv"] != "nie", "o": p["other"]}
-	parts = (["SatWatch (%s)" % p["sw"]] if p.get("sw", "nie") != "nie" else []) + (["satelita"] if p["sat"] else []) + ["%s%s" % (order[c], " (zapas)" if c == "s" and p["srv"] == "zapas" else "")
+	parts = (["SatWatch (%s)" % tr(p["sw"])] if p.get("sw", "nie") != "nie" else []) + ([tr("satelita")] if p["sat"] else []) + ["%s%s" % (order[c], tr(" (zapas)") if c == "s" and p["srv"] == "zapas" else "")
 		for c in cfg.src_order.value if on[c]]
 	if p.get("channelparams"):
-		parts.append("skan parametrow kanalow")
-	return " -> ".join(parts) or "nic"
+		parts.append(tr("skan parametrow kanalow"))
+	return " -> ".join(parts) or tr("nic")
 
 
 def xmltv_in_profile(p):
@@ -1229,7 +1242,7 @@ def hints_skin(x, y, width, height=50, hints=None):
 		out.append('<widget name="hint_cap%d" position="%d,%d" size="%d,%d" font="Regular;24" halign="center" '
 			'valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />' % (i, x0 + 1, y + 8, cw - 2, kh - 2))
 		out.append('<widget name="hint_txt%d" position="%d,%d" size="%d,%d" font="Regular;28" valign="center" '
-			'foregroundColor="#ffffff" transparent="1" zPosition="4" />' % (i, x0 + cw + 14, y + 2, min(tw + 20, bx + w - x0 - cw - 18), height - 4))
+			'foregroundColor="#ffffff" transparent="1" zPosition="4" />' % (i, x0 + cw + 14, y + 2, bx + w - x0 - cw - 18, height - 4))
 	return "\n".join(out)
 
 
@@ -1237,7 +1250,7 @@ def init_hints(screen, hints=None):
 	from Components.Label import Label
 	for i, (cap, txt) in enumerate(hints or HINTS):
 		screen["hint_cap%d" % i] = Label(cap)
-		screen["hint_txt%d" % i] = Label(txt)
+		screen["hint_txt%d" % i] = Label(_(txt))
 
 
 def init_keys(screen, exit_key=False):
@@ -1266,7 +1279,7 @@ def set_keys(screen, red="", green="", yellow="", blue="", exit=None):
 		items.append(("exit", exit))
 	for name, txt in items:
 		w = screen["key_" + name]
-		w.setText(txt)
+		w.setText(_(txt))
 		try:
 			if txt:
 				w.show()
@@ -1319,8 +1332,12 @@ def epg_stats(refs):
 	}
 
 
-def stats_text(st):
-	return "przyszle %d, minione %d, kanalow z EPG %d, nakladajacych sie (duble) %d, zasieg dni: min %.1f / mediana %.1f / maks %.1f (do %s)" % (
+def stats_text(st, localized=False):
+	if localized:
+		template = _("przyszle %d, minione %d, kanalow z EPG %d, nakladajacych sie (duble) %d\nzasieg dni: min %.1f / mediana %.1f / maks %.1f (do %s)")
+	else:
+		template = "przyszle %d, minione %d, kanalow z EPG %d, nakladajacych sie (duble) %d, zasieg dni: min %.1f / mediana %.1f / maks %.1f (do %s)"
+	return template % (
 		st["future"], st["past"], st["channels"], st["dups"], st["min"], st["median"], st["max"], st["until"])
 
 
@@ -1604,9 +1621,9 @@ def bouquet_channels():
 
 def fmt_span(sec):
 	if sec <= 0:
-		return "brak"
+		return _("brak")
 	h = sec / 3600.0
-	return "%.1f h" % h if h < 24 else "%.1f dni" % (h / 24.0)
+	return "%.1f h" % h if h < 24 else _("%.1f dni") % (h / 24.0)
 
 
 def channel_table():

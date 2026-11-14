@@ -10,6 +10,25 @@ import shutil
 import time
 
 from .channelparams import parse_pmt
+from .i18n import _
+
+
+def display_message(message):
+	base, separator, conflicts = message.partition(" Pominiete konflikty: ")
+	patterns = (
+		(r"^Dodano (\d+) wartosci jako domyslne dla nowych urzadzen\.$",
+			_("Dodano %d wartosci jako domyslne dla nowych urzadzen.")),
+		(r"^Zapisano ustawienia w (\d+) odbiornikach\.$",
+			_("Zapisano ustawienia w %d odbiornikach.")),
+	)
+	for pattern, template in patterns:
+		match = re.match(pattern, base)
+		if match:
+			base = template % int(match.group(1))
+			break
+	else:
+		base = _(base)
+	return base + (_(" Pominiete konflikty: %s") % conflicts if separator else "")
 
 
 def _audio(result, pid):

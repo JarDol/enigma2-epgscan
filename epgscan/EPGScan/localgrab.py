@@ -18,6 +18,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
+from .i18n import _
+
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 LI = re.compile(r'<li id="prog\d+"[^>]*>(.*?)</li>', re.S)
 EM = re.compile(r"<em>\s*(\d{1,2}):(\d{2})\s*</em>")
@@ -380,11 +382,14 @@ class LocalGrab(object):
 			except Exception:
 				pass
 
-	def progress(self):
+	def progress(self, localized=False):
 		if getattr(self, "phase", ""):
-			return "%s (zostalo bledow: %d)" % (self.phase, self.errors)
+			phase = _("ponawianie %d stron") % self.retried if localized else self.phase
+			template = _("%s (zostalo bledow: %d)") if localized else "%s (zostalo bledow: %d)"
+			return template % (phase, self.errors)
+		errors = _(" (bledow %d)") if localized else " (bledow %d)"
 		return ", ".join("%s %d%%%s" % (SITE_NAMES.get(t, t), 100 * self.site_done.get(t, 0) // max(1, n),
-			(" (bledow %d)" % self.site_err[t]) if self.site_err.get(t) else "")
+			(errors % self.site_err[t]) if self.site_err.get(t) else "")
 			for t, n in sorted(self.site_total.items(), key=lambda x: -x[1]))
 
 
