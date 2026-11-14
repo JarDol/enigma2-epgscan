@@ -193,6 +193,7 @@ class SettingsActivity : Activity() {
         }),
     ) + (if (p.eitStream) listOf<Item>(
         Item.Toggle(getString(R.string.setting_eit_replace_epg), { p.eitReplace }, { p.eitReplace = it }),
+    ) + (if (BuildConfig.BETA) listOf<Item>(
         Item.Toggle(getString(R.string.setting_eit_only), { p.eitOnly }, { v ->
             p.eitOnly = v
             if (v) {
@@ -201,7 +202,7 @@ class SettingsActivity : Activity() {
                 toast(getString(R.string.message_eit_only_on, n))
             }
         }),
-    ) else emptyList()) + listOf(
+    ) else emptyList()) else emptyList()) + listOf(
         Item.Toggle(getString(R.string.setting_channel_picons_from_receiver), { p.picons }, { p.picons = it }),
         Item.Toggle(getString(R.string.setting_replace_missing_picons_with_e2stream_logo), { p.missingPiconLogo }, { p.missingPiconLogo = it }),
         Item.Text(getString(R.string.setting_picon_directory_on_receiver), { p.piconDir }, { p.piconDir = it.trim().trimEnd('/') },

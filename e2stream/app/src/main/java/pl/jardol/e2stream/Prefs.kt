@@ -286,7 +286,7 @@ class Prefs(ctx: Context) {
         set(v) = putB("eitOnly", v)
 
     /** Tryb testowy EIT aktywny (wymaga włączonego EIT ze strumienia). */
-    val eitOnlyActive: Boolean get() = eitStream && eitOnly
+    val eitOnlyActive: Boolean get() = BuildConfig.BETA && eitStream && eitOnly
 
     /** Godzina codziennego pobierania EPG "HH:MM". */
     var epgHour: String
