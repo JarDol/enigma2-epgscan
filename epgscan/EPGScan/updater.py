@@ -111,6 +111,14 @@ def install(url, ver):
 		return str(e)
 
 
+def releases_for_channel(releases, channel):
+	"""Lista reczna: kanal stabilny pokazuje tylko wydania stabilne (i zainstalowana wersje),
+	kanal beta - bety i wydania stabilne."""
+	if channel == "beta":
+		return list(releases)
+	return [item for item in releases if not item[2] or item[0] == VERSION]
+
+
 def check_async(callback, include_beta=False):
 	"""callback(info) na watku glownym; info = (wersja, url) albo None."""
 	from twisted.internet import threads

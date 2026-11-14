@@ -192,6 +192,13 @@ class UpdaterChannelTests(unittest.TestCase):
 			self.assertEqual(updater.latest(), ("2.17.5", "stable.zip"))
 			self.assertEqual(updater.latest(include_beta=True), ("2.18.0-beta.4", "beta.zip"))
 
+	def test_manual_list_follows_update_channel(self):
+		releases = [("2.18.2-beta.1", "b1.zip", True), ("2.18.1", "s.zip", False), ("2.18.0-beta.15", "b15.zip", True)]
+		with patch.object(updater, "VERSION", "2.18.0-beta.15"):
+			self.assertEqual([item[0] for item in updater.releases_for_channel(releases, "stable")],
+				["2.18.1", "2.18.0-beta.15"])
+			self.assertEqual(updater.releases_for_channel(releases, "beta"), releases)
+
 	def test_automatic_update_passes_selected_channel_to_release_check(self):
 		config = types.SimpleNamespace(
 			upd_pending=types.SimpleNamespace(value=""),

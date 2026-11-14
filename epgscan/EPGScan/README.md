@@ -66,7 +66,7 @@ rm -rf /usr/lib/enigma2/python/Plugins/Extensions/EPGScan;cd /tmp && unzip -o ep
 ```
 
 **Aktualizacja**: *Ustawienia → Aktualizacje → Aktualizuj teraz* (OK) pokazuje dostępne wydania GitHub
-(także beta i starsze) i pyta o instalację oraz restart Enigma2 – działa zawsze. Opcja *Aktualizacja automatyczna* (domyślnie nie) sprawdza raz na dobę,
+z wybranego kanału (*stabilne* – tylko stabilne; *beta* – bety i stabilne; także starsze) i pyta o instalację oraz restart Enigma2 – działa zawsze. Opcja *Aktualizacja automatyczna* (domyślnie nie) sprawdza raz na dobę,
 instaluje nową wersję z wybranego kanału (*stabilne* albo *beta i stabilne*), a Enigma2 restartuje dopiero w czuwaniu,
 gdy nic nie nagrywa i nie trwa praca wtyczki.
 Poprzednia wersja zostaje w `/tmp/EPGScan.poprzednia` (do restartu dekodera).
@@ -247,9 +247,9 @@ Wybór ścieżki jest
 zapisywany od razu; zamknięcie głównego okna nie pyta o zapis.
 
 W ustawieniach **Skan parametrów kanałów (PAT/PMT)** wybiera się języki, bukiety, limit równoległości,
-rezerwę tunerów, grupowanie po transponderze i odstęp 1/2/4/7 dni. Opcjonalnie po całym skanie (także
-automatycznym) wykonywana jest dokładnie jedna dodatkowa próba tylko kanałów z błędem; bez tej opcji
-nie ma ponowień błędów po skanie. Odrębnie brakujące dane z transpondera są najpierw sprawdzane indywidualnie.
+rezerwę tunerów, grupowanie po transponderze i odstęp 1/2/4/7 dni. Domyślnie po całym skanie (także
+automatycznym) wykonywana jest dokładnie jedna dodatkowa próba tylko kanałów z błędem – bezpiecznie: po jednym
+kanale i co najmniej 2 s między strojeniami; bez tej opcji nie ma ponowień błędów po skanie. Odrębnie brakujące dane z transpondera są najpierw sprawdzane indywidualnie.
 Automatyczny odczyt odbywa się w głównym przebiegu EPG z harmonogramu, jeśli minął ustawiony odstęp;
 brakujące kanały są skanowane po EPG. Nadrzędne są warunki z **Harmonogramu**
 (czuwanie, nagrania i wybudzanie). Doczytywanie EPG nie uruchamia skanu parametrów.
@@ -659,7 +659,7 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Kanały z bukietów | te same wybrane bukiety co w skanie satelitarnym |
 | Maks. równoległych skanów / rezerwa wolnych tunerów | wspólne ustawienia z *Satelita – EPG* |
 | Grupowanie kanałów po transponderze | zalecane; PAT/PMT grupy z jednego dostrojenia, brakujące kanały osobno |
-| Ponów raz błędne kanały po skanie | opcjonalna dodatkowa próba po całym skanie (nie) |
+| Ponów raz błędne kanały po skanie | jedna dodatkowa próba po całym skanie, pojedynczo, odstęp min. 2 s (tak) |
 | Odstęp między strojeniami (Unicable) | 0,5 / 1 / 1,5 / 2 / 3 s – krótszy = szybszy skan; przy błędach strojenia wróć do 2 s (2 s) |
 | Skanuj kanały co | 1 / 2 / 4 / 7 dni; skan po głównym przebiegu harmonogramu EPG |
 
@@ -703,8 +703,8 @@ Każda opcja ma opis pod listą ustawień (w EPG Scan i w SatWatch).
 | Odtwarzanie EPG po starcie, gdy puste | wyłączone / zapytaj / automatycznie (automatycznie) |
 | Zapisuj log | w katalogu kopii / w `/tmp` (w katalogu kopii) |
 | Aktualizacja automatyczna | (nie); sprawdza raz na dobę, instaluje i restartuje tylko w bezpiecznym czuwaniu |
-| Kanał aktualizacji automatycznych | stabilne (domyślnie) albo beta i stabilne; ręczna lista nadal zawiera wszystkie dostępne wydania |
-| Aktualizuj teraz | OK – lista dostępnych wydań z ZIP-em, także beta i starszych; instalacja wymaga potwierdzenia |
+| Kanał aktualizacji automatycznych | stabilne (domyślnie) albo beta i stabilne; dotyczy też ręcznej listy *Aktualizuj teraz* |
+| Aktualizuj teraz | OK – lista wydań z ZIP-em z wybranego kanału (także starszych); instalacja wymaga potwierdzenia |
 | Dane dla aplikacji po skanach | (tak) paczka EPG (wszystkie bukiety TV), ikon i zamian referencji po pracy z harmonogramu oraz po cyklicznym skanie satelity; *Przygotuj dane teraz* (OK) – od razu |
 | Serwer dla aplikacji E2Stream | (tak) API dla klientów streamingu w sieci lokalnej: bukiety, kanały z PID-ami z `lamedb`, synchronizacja ustawień i danych kanałów odbiorników; port (8770), token (puste = bez) |
 | Informacje o wtyczce | opis dołączony do zainstalowanej wersji, dostępny bez internetu |

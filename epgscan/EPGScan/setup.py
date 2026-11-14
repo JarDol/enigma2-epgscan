@@ -279,9 +279,9 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		if item is cfg.ui_language:
 			txt = _("Jezyk interfejsu wtyczki. Enigma2: automatycznie wedlug jezyka odbiornika; zmiana zaczyna dzialac po zapisaniu.")
 		elif item in (cfg.upd_auto, cfg.upd_channel, self.p_upd):
-			txt = _("Kanal automatyczny: %s. Wybierz beta, aby automatycznie instalowac nowsze bety i wydania stabilne; " \
-				"stabilne sprawdza tylko wydania stabilne. 'Aktualizuj teraz' (OK) pokazuje wszystkie dostepne " \
-				"wydania GitHub z paczka ZIP, takze beta i starsze. Przy starszej wersji pojawi sie ostrzezenie przed instalacja.")
+			txt = _("Kanal: %s. Kanal decyduje o aktualizacjach automatycznych i o liscie 'Aktualizuj teraz' (OK): " \
+				"stabilne - tylko wydania stabilne; beta - bety i wydania stabilne. Lista reczna zawiera tez starsze " \
+				"wersje z paczka ZIP; przy starszej wersji pojawi sie ostrzezenie przed instalacja.")
 			txt = txt % (_("beta i stabilne") if cfg.upd_channel.value == "beta" else _("stabilne"))
 			if cfg.upd_pending.value and cfg.upd_pending.value != VERSION:
 				txt += _(" Zainstalowana %s czeka na restart Enigma2.") % cfg.upd_pending.value
@@ -328,7 +328,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				"na dostrojonych tunerach trwa rownolegle. Krotszy odstep = szybszy skan. Przy Unicable/JESS zbyt krotki " \
 				"odstep moze dawac bledy strojenia - wtedy wroc do 2 s."
 		elif item is cfg.cp_retry_failed:
-			txt = "Po zakonczeniu calego skanu wykonaj jedna dodatkowa probe tylko dla kanalow z bledem, takze w harmonogramie."
+			txt = "Po zakonczeniu calego skanu wykonaj jedna dodatkowa probe tylko dla kanalow z bledem, takze w harmonogramie. " \
+				"Ponowienie idzie bezpiecznie: po jednym kanale i co najmniej 2 s miedzy strojeniami."
 		elif item is cfg.cp_interval:
 			from .channelparamscan import scan_due
 			txt = _("Skan PAT/PMT uruchamia sie po zakonczonym przebiegu z glownego harmonogramu, nie czesciej niz co %s dni. " \
@@ -590,6 +591,8 @@ class EPGScanSetup(Screen, ConfigListScreen):
 			return
 		from .common import EPGChoiceBox as ChoiceBox
 		options = []
+		from .updater import releases_for_channel
+		releases = releases_for_channel(releases, cfg.upd_channel.value)
 		for ver, _url, prerelease in releases:
 			label = "%s%s%s" % (ver, " (beta)" if prerelease else "",
 				_("  [zainstalowana]") if ver == VERSION else "")

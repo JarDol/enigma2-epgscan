@@ -933,6 +933,11 @@ class ChannelParamsScan(object):
 		# nic nie stroja. Nowy transponder: jedno strojenie na odstep (Unicable - polecenia do konwertera
 		# nie moga isc jednoczesnie); odczyt PAT/PMT na dostrojonych tunerach trwa w tym czasie rownolegle.
 		gap = tune_gap()
+		max_parallel = engine.max_parallel
+		if self.final_retry_started:
+			# Ostatnia proba blednych kanalow: bezpiecznie - po jednym tunerze i co najmniej 2 s miedzy strojeniami.
+			gap = max(gap, float(TUNE_GAP))
+			max_parallel = 1
 		can_tune = now - self.last_tune >= gap
 		ready_groups = self._ready_groups(now)
 		new_groups = [item for item in ready_groups if item.reservation is None]
@@ -941,7 +946,7 @@ class ChannelParamsScan(object):
 			candidate = candidate_group.pending[0]
 			if candidate_group.reservation or engine.on_busy_tp(candidate):
 				shared = True
-			elif can_tune and not engine.timer_hold and own_groups < engine.max_parallel \
+			elif can_tune and not engine.timer_hold and own_groups < max_parallel \
 					and engine.free_tuners() - engine.eff_reserve() > 0:
 				shared = False
 			else:
@@ -960,6 +965,8 @@ class ChannelParamsScan(object):
 		if not self.queue and not self.active and not self.final_retry_started:
 			self.final_retry_started = True
 			if cfg.cp_retry_failed.value and self.failed_jobs:
+				log("Skan parametrow: ponawiam %d blednych kanalow pojedynczo (odstep %.1f s)"
+					% (len(self.failed_jobs), max(tune_gap(), float(TUNE_GAP))))
 				for job in self.failed_jobs:
 					job.individual = True
 					job.not_before = 0

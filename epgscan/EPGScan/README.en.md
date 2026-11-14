@@ -627,7 +627,7 @@ are in brackets. Every option has a description below the settings list.
 | Channels from bouquets | same selected bouquets as the satellite scan |
 | Max parallel scans / free-tuner reserve | shared with *Satelita – EPG* |
 | Group channels by transponder | recommended; read group PAT/PMTs from one tune, then missing channels individually |
-| Retry failed channels once after scan | optional extra attempt after the entire scan (no) |
+| Retry failed channels once after scan | one extra attempt after the entire scan, one channel at a time, gap at least 2 s (yes) |
 | Gap between tunings (Unicable) | 0.5 / 1 / 1.5 / 2 / 3 s – shorter = faster scan; go back to 2 s on tuning errors (2 s) |
 | Scan channels every | 1 / 2 / 4 / 7 days; scan follows the main EPG schedule |
 
@@ -671,8 +671,8 @@ are in brackets. Every option has a description below the settings list.
 | Restore EPG at start-up when empty | off / ask / automatically (automatically) |
 | Write log | in the backup directory / in `/tmp` (in the backup directory) |
 | Automatic update | (no); checks daily and installs/restarts only in safe standby |
-| Automatic update channel | stable-only (default) or beta and stable; the manual list still shows all available releases |
-| Update now | OK – lists releases with a ZIP asset, including beta and older versions; installation requires confirmation |
+| Automatic update channel | stable-only (default) or beta and stable; also filters the manual *Update now* list |
+| Update now | OK – lists releases with a ZIP asset from the selected channel (including older ones); installation requires confirmation |
 | Plugin information | description bundled with the installed version, available offline |
 | Server for E2Stream | (yes); receiver API, port (8770), optional token |
 | Build client data now | OK – immediately build the EPG/icons/reference package |

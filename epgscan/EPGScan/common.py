@@ -19,7 +19,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.18.2-beta.1"
+VERSION = "2.18.2-beta.2"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 CHANNEL_PARAMS_FILE = os.path.join(E2, "epgscan", "channelparams.json")
@@ -118,7 +118,7 @@ cfg.cp_language_source = ConfigSelection(default="enigma", choices=[
 	("manual", "wlasna kolejnosc jezykow")])
 cfg.cp_languages = ConfigText(default="pol,eng", fixed_size=False)
 cfg.cp_group_tp = ConfigYesNo(default=True)
-cfg.cp_retry_failed = ConfigYesNo(default=False)
+cfg.cp_retry_failed = ConfigYesNo(default=True)
 cfg.cp_tune_gap = ConfigSelection(default="2", choices=[
 	("0.5", "0,5 s"), ("1", "1 s"), ("1.5", "1,5 s"), ("2", "2 s"), ("3", "3 s")])
 cfg.cp_interval = ConfigSelection(default="7", choices=[(str(x), "%d dni" % x) for x in (1, 2, 4, 7)])

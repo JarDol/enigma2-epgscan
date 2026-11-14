@@ -2593,6 +2593,31 @@ class BatchScanTests(unittest.TestCase):
 		self.assertEqual(len(reports), 1)
 		self.assertEqual(len(reports[0]["errors"]), 2)
 
+	def test_final_retry_tunes_one_channel_at_a_time_with_safe_gap(self):
+		common.cfg.cp_retry_failed.value = True
+		self.rows = [{"ref": "1:0:1:%X:%X:1:13E:0:0:0:" % (tsid, tsid), "name": str(tsid), "supported": True}
+			for tsid in range(1, 4)]
+		self.scan.start()
+		for _ in range(40):
+			for job in list(self.scan.active):
+				if not self.scan.final_retry_started:
+					self.scan.rec_event(job.rec, enigma.iRecordableService.evTuneFailed)
+			self.now += 31
+			self.scan.tick()
+			if self.scan.final_retry_started:
+				break
+		self.assertTrue(self.scan.final_retry_started)
+		common.cfg.cp_tune_gap = types.SimpleNamespace(value="0.5")
+		self.addCleanup(lambda: delattr(common.cfg, "cp_tune_gap"))
+		if True:
+			self.now += 31
+			self.scan.tick()
+			own = [job for job in self.scan.active if not job.shared]
+			self.assertEqual(len(own), 1)
+			self.now += 1
+			self.scan.tick()
+			self.assertEqual(len([job for job in self.scan.active if not job.shared]), 1)
+
 	def test_failed_channels_are_not_retried_without_the_optional_final_pass(self):
 		reports = []
 		self.scan.done = reports.append

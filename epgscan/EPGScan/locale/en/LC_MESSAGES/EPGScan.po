@@ -1457,8 +1457,8 @@ msgstr "Channel %s has no manual selection - the source is already selected auto
 msgid "Kanal / audio"
 msgstr "Channel / audio"
 
-msgid "Kanal automatyczny: %s. Wybierz beta, aby automatycznie instalowac nowsze bety i wydania stabilne; stabilne sprawdza tylko wydania stabilne. 'Aktualizuj teraz' (OK) pokazuje wszystkie dostepne wydania GitHub z paczka ZIP, takze beta i starsze. Przy starszej wersji pojawi sie ostrzezenie przed instalacja."
-msgstr "Automatic channel: %s. Choose beta to automatically install newer beta and stable releases; stable checks only stable releases. Update now (OK) shows all available GitHub releases with ZIP packages, including beta and older releases. A warning appears before installing an older version."
+msgid "Kanal: %s. Kanal decyduje o aktualizacjach automatycznych i o liscie 'Aktualizuj teraz' (OK): stabilne - tylko wydania stabilne; beta - bety i wydania stabilne. Lista reczna zawiera tez starsze wersje z paczka ZIP; przy starszej wersji pojawi sie ostrzezenie przed instalacja."
+msgstr "Channel: %s. The channel controls automatic updates and the Update now (OK) list: stable - stable releases only; beta - beta and stable releases. The manual list also includes older versions with ZIP packages; a warning appears before installing an older version."
 
 msgid "Kanal:    %s\nBukiet:   %s\nObecnie: %s\n%s"
 msgstr "Channel:    %s\nBouquet:   %s\nCurrent: %s\n%s"
