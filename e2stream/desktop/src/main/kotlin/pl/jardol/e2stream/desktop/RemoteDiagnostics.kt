@@ -1,7 +1,7 @@
 package pl.jardol.e2stream.desktop
 
 internal class RemoteDiagnostics(
-    private val enabled: Boolean,
+    val enabled: Boolean,
     private val write: (String) -> Unit = System.err::println,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {

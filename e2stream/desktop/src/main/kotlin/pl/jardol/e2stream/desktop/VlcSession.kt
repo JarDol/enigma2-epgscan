@@ -8,8 +8,39 @@ import javax.swing.JComponent
 import javax.swing.SwingUtilities
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
 import uk.co.caprica.vlcj.player.component.EmbeddedMediaPlayerComponent
+import uk.co.caprica.vlcj.player.base.DeinterlaceMode
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
+
+internal fun vlcMediaOptions(config: DesktopConfig): List<String> = buildList {
+    add(":network-caching=${config.bufferMs.coerceIn(250, 10_000)}")
+    add(
+        ":avcodec-hw=" + when (config.vlcHwMode) {
+            "off" -> "none"
+            "d3d11va" -> "d3d11va"
+            "dxva2" -> "dxva2"
+            else -> "any"
+        },
+    )
+    val languages = config.audioLang.split(',', ';', ' ').map(String::trim).filter(String::isNotEmpty)
+    if (languages.isNotEmpty()) add(":audio-language=${languages.joinToString(",")}")
+    if (config.username.isNotBlank()) {
+        add(":http-user=${config.username}")
+        add(":http-pwd=${config.password}")
+    }
+}
+
+/** null wyłącza usuwanie przeplotu. */
+internal fun vlcDeinterlaceMode(value: String): DeinterlaceMode? = when (value) {
+    "off" -> null
+    "yadif" -> DeinterlaceMode.YADIF
+    "yadif2x" -> DeinterlaceMode.YADIF2X
+    "bob" -> DeinterlaceMode.BOB
+    "linear" -> DeinterlaceMode.LINEAR
+    "blend" -> DeinterlaceMode.BLEND
+    "x" -> DeinterlaceMode.X
+    else -> DeinterlaceMode.AUTO
+}
 
 class VlcSession(private val onError: (String) -> Unit) {
     private val component: EmbeddedMediaPlayerComponent
@@ -75,12 +106,10 @@ class VlcSession(private val onError: (String) -> Unit) {
     }
 
     fun play(url: String, config: DesktopConfig) {
-        val options = mutableListOf(":network-caching=1000")
-        if (config.username.isNotBlank()) {
-            options += ":http-user=${config.username}"
-            options += ":http-pwd=${config.password}"
-        }
+        val options = vlcMediaOptions(config)
+        val deinterlace = vlcDeinterlaceMode(config.vlcDeint)
         playbackGate.request {
+            component.mediaPlayer().video().setDeinterlace(deinterlace)
             val started = component.mediaPlayer().media().play(url, *options.toTypedArray())
             if (!started) throw IOException("VLC nie przyjął strumienia.")
             paused = false

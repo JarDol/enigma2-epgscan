@@ -3,29 +3,39 @@ package pl.jardol.e2stream.desktop
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DesktopNavigationTest {
     @Test
-    fun opensSettingsFromMenuWithoutShowingControls() {
+    fun menuOpensOnSettingsAndActivatesSelectedItem() {
         val navigation = DesktopNavigation()
-        assertEquals(DesktopPage.PLAYER, navigation.page)
-        assertFalse(navigation.controlsVisible)
         navigation.openMenu()
-        assertTrue(navigation.handleMenuKey(VirtualRemoteKey.OK))
+        assertEquals(MenuKeyResult(true, DesktopMenuItem.SETTINGS), navigation.handleMenuKey(VirtualRemoteKey.OK))
         assertFalse(navigation.showMenu)
-        assertEquals(DesktopPage.CONNECTION, navigation.page)
         assertFalse(navigation.controlsVisible)
     }
 
     @Test
-    fun backClosesMenuWithoutLeavingPlayer() {
+    fun arrowsMoveMenuSelectionWithWrapping() {
         val navigation = DesktopNavigation()
         navigation.openMenu()
-        assertTrue(navigation.handleMenuKey(VirtualRemoteKey.BACK))
+        navigation.handleMenuKey(VirtualRemoteKey.UP)
+        navigation.handleMenuKey(VirtualRemoteKey.UP)
+        assertEquals(DesktopMenuItem.EXIT.ordinal, navigation.menuSelected)
+        navigation.handleMenuKey(VirtualRemoteKey.DOWN)
+        assertEquals(MenuKeyResult(true, DesktopMenuItem.CHANNEL_LIST), navigation.handleMenuKey(VirtualRemoteKey.OK))
+    }
+
+    @Test
+    fun backClosesMenuWithoutActivatingAnything() {
+        val navigation = DesktopNavigation()
+        navigation.openMenu()
+        val result = navigation.handleMenuKey(VirtualRemoteKey.BACK)
+        assertTrue(result.handled)
+        assertNull(result.activated)
         assertFalse(navigation.showMenu)
-        assertEquals(DesktopPage.PLAYER, navigation.page)
-        assertFalse(navigation.handleMenuKey(VirtualRemoteKey.OK))
+        assertFalse(navigation.handleMenuKey(VirtualRemoteKey.OK).handled)
     }
 
     @Test

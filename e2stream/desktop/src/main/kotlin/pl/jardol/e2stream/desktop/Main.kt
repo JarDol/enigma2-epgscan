@@ -1,34 +1,23 @@
 package pl.jardol.e2stream.desktop
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -37,28 +26,43 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Window
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindow
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
-import androidx.compose.ui.window.WindowPlacement
-import kotlinx.coroutines.Dispatchers
+import androidx.compose.ui.window.Window
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.awt.event.KeyEvent
-import java.awt.KeyboardFocusManager
-import java.awt.Window as AwtWindow
-import javax.swing.SwingUtilities
+import java.awt.AWTEvent
 import java.awt.EventQueue
+import java.awt.KeyboardFocusManager
+import java.awt.Toolkit
+import java.awt.event.AWTEventListener
+import java.awt.event.KeyEvent
+import java.awt.event.MouseEvent
+import java.awt.Window as AwtWindow
+import java.net.URI
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import javax.swing.SwingUtilities
+
+private const val REPOSITORY_URL = "https://github.com/JarDol/enigma2-epgscan"
+private val testTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss")
+
+private fun appVersion(): String = System.getProperty("jpackage.app-version") ?: "wersja deweloperska"
 
 fun main() {
     val remoteDiagnostics = RemoteDiagnostics.fromEnvironment()
@@ -78,15 +82,16 @@ fun main() {
         val colorScheme = appColorScheme(isSystemInDarkTheme())
         MaterialTheme(colorScheme = colorScheme) {
             val desktopWindow = this.window
-            var settingsWindow by remember { mutableStateOf<java.awt.Window?>(null) }
+            var settingsWindow by remember { mutableStateOf<AwtWindow?>(null) }
             val loadedConfig = remember { runCatching { DesktopConfig.load() } }
             var config by remember { mutableStateOf(loadedConfig.getOrDefault(DesktopConfig())) }
             val navigation = remember { DesktopNavigation() }
-            var page by navigation::page
+            val navigator = remember { SettingsNavigator() }
+            val inputMode = remember { InputModeTracker() }
             var status by remember {
                 mutableStateOf(
                     loadedConfig.exceptionOrNull()?.let { "Nie udało się odczytać ustawień: ${it.message}" }
-                        ?: "Podłącz aplikację do dekodera Enigma2.",
+                        ?: "Podłącz aplikację do dekodera Enigma2: Menu → Ustawienia → Dekoder Enigma2.",
                 )
             }
             var busy by remember { mutableStateOf(false) }
@@ -95,12 +100,11 @@ fun main() {
             var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
             var nowEvents by remember { mutableStateOf<Map<String, NowEvent>>(emptyMap()) }
             var epgError by remember { mutableStateOf<String?>(null) }
+            var pluginStatus by remember { mutableStateOf("nie sprawdzono") }
             var showChannelList by remember { mutableStateOf(false) }
             var showMenu by navigation::showMenu
-            val controlsVisible = navigation.controlsVisible
             var channelListSelected by remember { mutableIntStateOf(0) }
             var captureButton by remember { mutableStateOf<VirtualRemoteKey?>(null) }
-            var selectedRemoteButton by remember { mutableStateOf(VirtualRemoteKey.OK) }
             var hidDiagnostic by remember { mutableStateOf("Oczekiwanie na uruchomienie odbiornika HID.") }
             val hidDiagnosticDispatcher = remember {
                 LatestValueDispatcher<String>(
@@ -112,7 +116,7 @@ fun main() {
             val globalPowerKeys = remember { AtomicReference<Set<String>>(emptySet()) }
             val powerDialogOpen = remember { AtomicBoolean(false) }
             var showExitConfirmation by remember { mutableStateOf(false) }
-            var bindings by remember { mutableStateOf(RemoteKeyMap.defaults + RemoteKeyMap.parse(config.remoteBindings)) }
+            val bindings = remember { RemoteKeyMap.defaults + RemoteKeyMap.parse(config.remoteBindings) }
             var universalBindings by remember {
                 mutableStateOf<Map<VirtualRemoteKey, Set<String>>>(
                     UniversalRemoteMap.parse(config.universalRemoteBindings),
@@ -120,8 +124,13 @@ fun main() {
             }
             var vlcSession by remember { mutableStateOf<VlcSession?>(null) }
             var playingChannel by remember { mutableStateOf<Channel?>(null) }
+            var previousChannel by remember { mutableStateOf<Channel?>(null) }
+            var bannerVisible by remember { mutableStateOf(false) }
+            var bannerGeneration by remember { mutableIntStateOf(0) }
+            var pinUnlockedUntil by remember { mutableLongStateOf(0L) }
+            var testEvents by remember { mutableStateOf<List<RemoteTestEvent>>(emptyList()) }
+            var lastTestBackAt by remember { mutableLongStateOf(0L) }
             val scope = rememberCoroutineScope()
-            val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
             var lastVirtualKey by remember { mutableStateOf<VirtualRemoteKey?>(null) }
             var lastVirtualKeyAt by remember { mutableLongStateOf(0L) }
             SideEffect {
@@ -131,11 +140,25 @@ fun main() {
                 globalPowerKeys.set(if (captureButton == null) universalBindings[VirtualRemoteKey.POWER].orEmpty() else emptySet())
             }
 
+            fun recordTest(source: String, physical: String, key: VirtualRemoteKey?) {
+                val event = RemoteTestEvent(
+                    time = LocalTime.now().format(testTimeFormat),
+                    source = source,
+                    physical = physical,
+                    mapped = key?.label ?: "nieprzypisany",
+                )
+                testEvents = (listOf(event) + testEvents).take(40)
+            }
+
+            fun isRemoteTestOpen(): Boolean =
+                navigator.screen == SettingsScreen.REMOTE_TEST && navigator.editor == null && captureButton == null
+
             val requestPower = {
                 if (powerDialogOpen.compareAndSet(false, true)) {
                     SwingUtilities.invokeLater {
                         var confirmationShown = false
                         try {
+                            if (isRemoteTestOpen()) recordTest("Power (globalnie)", "przechwycony", VirtualRemoteKey.POWER)
                             val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
                             val appWasActive = isForegroundApplication() && belongsToApplication(focused, desktopWindow)
                             remoteDiagnostics.log { "power=request active=$appWasActive" }
@@ -168,10 +191,26 @@ fun main() {
                     ExitConfirmationAction.IGNORE -> Unit
                 }
             }
-            val currentRequestPower = androidx.compose.runtime.rememberUpdatedState(requestPower)
+            val currentRequestPower = rememberUpdatedState(requestPower)
             DisposableEffect(instance) {
                 instance.onPowerRequest { currentRequestPower.value() }
                 onDispose { instance.close() }
+            }
+
+            DisposableEffect(Unit) {
+                val listener = AWTEventListener { event ->
+                    if (event is MouseEvent) when (event.id) {
+                        MouseEvent.MOUSE_MOVED, MouseEvent.MOUSE_DRAGGED ->
+                            inputMode.onMouseMoved(event.xOnScreen, event.yOnScreen)
+                        MouseEvent.MOUSE_PRESSED, MouseEvent.MOUSE_WHEEL -> inputMode.onMouseButton()
+                    }
+                }
+                val toolkit = Toolkit.getDefaultToolkit()
+                toolkit.addAWTEventListener(
+                    listener,
+                    AWTEvent.MOUSE_EVENT_MASK or AWTEvent.MOUSE_MOTION_EVENT_MASK or AWTEvent.MOUSE_WHEEL_EVENT_MASK,
+                )
+                onDispose { toolkit.removeAWTEventListener(listener) }
             }
 
             LaunchedEffect(selectedBouquet, config.host, config.httpPort, config.username, config.password) {
@@ -193,6 +232,43 @@ fun main() {
                 }
             }
 
+            LaunchedEffect(playingChannel?.ref, bannerGeneration) {
+                if (playingChannel == null) {
+                    bannerVisible = false
+                    return@LaunchedEffect
+                }
+                bannerVisible = true
+                delay(config.bannerSec * 1000L)
+                bannerVisible = false
+            }
+
+            LaunchedEffect(showChannelList, channelListSelected, selectedBouquet, config.channelListSec) {
+                if (showChannelList && config.channelListSec > 0) {
+                    delay(config.channelListSec * 1000L)
+                    showChannelList = false
+                }
+            }
+
+            LaunchedEffect(captureButton) {
+                if (captureButton != null) {
+                    delay(10_000)
+                    captureButton = null
+                    status = "Nie naciśnięto klawisza — przypisywanie anulowane."
+                }
+            }
+
+            fun saveConfig(updated: DesktopConfig, message: String? = null) {
+                config = updated
+                runCatching { updated.save() }
+                    .onSuccess { if (message != null) status = message }
+                    .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
+            }
+
+            fun visibleBouquets(): List<Bouquet> {
+                val all = catalog?.bouquets.orEmpty()
+                return all.filter { it.ref !in config.hiddenBouquets }.ifEmpty { all }
+            }
+
             fun startChannel(channel: Channel) {
                 val existingSession = vlcSession
                 var newSession: VlcSession? = null
@@ -202,46 +278,100 @@ fun main() {
                     val url = DecoderClient(config).streamUrl(channel)
                     session.play(url, config)
                     if (existingSession == null) vlcSession = session
+                    val current = playingChannel
+                    if (current != null && current.ref != channel.ref) previousChannel = current
                     playingChannel = channel
                     captureButton = null
-                    page = DesktopPage.PLAYER
                     status = "Otwieranie strumienia: ${channel.name}"
+                    saveConfig(
+                        config.copy(
+                            lastBouquetRef = selectedBouquet?.ref ?: config.lastBouquetRef,
+                            lastChannelRef = channel.ref,
+                        ),
+                    )
                 } catch (e: Exception) {
                     newSession?.close()
                     status = e.message ?: "Nie udało się uruchomić VLC."
                 }
             }
 
-            fun selectBouquet(bouquet: Bouquet) {
+            fun restartPlayback() {
+                val channel = playingChannel ?: return
+                vlcSession = null
+                startChannel(channel)
+            }
+
+            suspend fun loadBouquetChannels(bouquet: Bouquet): Boolean {
+                val currentCatalog = catalog ?: return false
                 selectedBouquet = bouquet
                 channels = emptyList()
                 nowEvents = emptyMap()
                 channelListSelected = 0
-                val currentCatalog = catalog ?: return
+                busy = true
+                return try {
+                    channels = withContext(Dispatchers.IO) {
+                        DecoderClient(config).loadChannels(bouquet, currentCatalog.usesPlugin)
+                    }
+                    status = "Kanały w bukiecie „${bouquet.name}”: ${channels.size}."
+                    true
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    channels = emptyList()
+                    status = e.message ?: "Nie udało się pobrać kanałów."
+                    false
+                } finally {
+                    busy = false
+                }
+            }
+
+            fun selectBouquet(bouquet: Bouquet) {
+                scope.launch { loadBouquetChannels(bouquet) }
+            }
+
+            fun connect(autoStart: Boolean) {
                 scope.launch {
                     busy = true
-                    try {
-                        channels = withContext(Dispatchers.IO) {
-                            DecoderClient(config).loadChannels(bouquet, currentCatalog.usesPlugin)
-                        }
-                        status = "Kanały w bukiecie „${bouquet.name}”: ${channels.size}."
+                    status = "Łączenie z dekoderem…"
+                    val result = try {
+                        val current = config
+                        withContext(Dispatchers.IO) { DecoderClient(current).loadBouquets() }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        channels = emptyList()
-                        status = e.message ?: "Nie udało się pobrać kanałów."
+                        status = e.message ?: "Nie udało się połączyć z dekoderem."
+                        null
                     } finally {
                         busy = false
                     }
+                    if (result == null) return@launch
+                    catalog = result
+                    pluginStatus = if (result.usesPlugin) "jest — połączono przez EPG Scan" else "brak — połączono przez OpenWebif"
+                    status = "Połączono przez ${if (result.usesPlugin) "EPG Scan" else "OpenWebif"}; bukiety: ${result.bouquets.size}."
+                    val visible = visibleBouquets()
+                    val startFromSettings = autoStart && !config.resumeLast && config.startChannelRef.isNotBlank()
+                    val preferredBouquet = if (startFromSettings) config.startBouquetRef else config.lastBouquetRef
+                    val bouquet = visible.firstOrNull { it.ref == preferredBouquet } ?: visible.firstOrNull() ?: return@launch
+                    if (!loadBouquetChannels(bouquet) || !autoStart) return@launch
+                    val target = when {
+                        config.resumeLast -> channels.firstOrNull { it.ref == config.lastChannelRef }
+                        startFromSettings -> channels.firstOrNull { it.ref == config.startChannelRef } ?: channels.firstOrNull()
+                        else -> channels.firstOrNull()
+                    }
+                    target?.let(::startChannel)
                 }
+            }
+
+            LaunchedEffect(Unit) {
+                if (config.host.isNotBlank()) connect(autoStart = true)
             }
 
             fun savePhysicalBinding(button: VirtualRemoteKey, id: String, label: String) {
                 universalBindings = UniversalRemoteMap.assign(universalBindings, button, id)
-                config = config.copy(universalRemoteBindings = UniversalRemoteMap.encode(universalBindings))
-                status = runCatching { config.save() }
-                    .fold(
-                        onSuccess = { "Przypisano $label → ${button.label}." },
-                        onFailure = { "Nie udało się zapisać ustawień: ${it.message}" },
-                    )
+                saveConfig(
+                    config.copy(universalRemoteBindings = UniversalRemoteMap.encode(universalBindings)),
+                    "Przypisano $label → ${button.label}.",
+                )
                 captureButton = null
             }
 
@@ -253,13 +383,509 @@ fun main() {
                 return true
             }
 
+            fun zap(up: Boolean) {
+                changeChannel(if (up != config.invertUpDown) 1 else -1)
+            }
+
             fun openChannelList() {
                 if (selectedBouquet == null) {
-                    status = "Połącz się z dekoderem i wybierz bukiet w ustawieniach."
+                    status = "Połącz się z dekoderem: Menu → Ustawienia → Dekoder Enigma2."
                     return
                 }
                 channelListSelected = channels.indexOfFirst { it.ref == playingChannel?.ref }.coerceAtLeast(0)
                 showChannelList = true
+            }
+
+            fun openSettings(vararg path: SettingsScreen) {
+                fun show() {
+                    showMenu = false
+                    showChannelList = false
+                    navigator.open(path.firstOrNull() ?: SettingsScreen.SECTIONS)
+                    path.drop(1).forEach { navigator.push(it) }
+                }
+                if (config.pin.isEmpty() || System.currentTimeMillis() < pinUnlockedUntil) {
+                    show()
+                    return
+                }
+                showMenu = false
+                navigator.openEditor(
+                    SettingsEditor(
+                        title = "Podaj PIN do ustawień",
+                        initial = "",
+                        secret = true,
+                        digitsOnly = true,
+                        maxLength = 6,
+                    ) { value ->
+                        if (value != config.pin) "Błędny PIN." else {
+                            pinUnlockedUntil = if (config.pinMin <= 0) Long.MAX_VALUE
+                            else System.currentTimeMillis() + config.pinMin * 60_000L
+                            show()
+                            null
+                        }
+                    },
+                )
+            }
+
+            fun recall() {
+                val previous = previousChannel
+                if (previous == null) status = "Brak poprzedniego kanału." else startChannel(previous)
+            }
+
+            fun unavailable(feature: String) {
+                status = "$feature nie jest jeszcze dostępne w wersji Windows."
+            }
+
+            fun runNavAction(action: NavAction) {
+                when (action) {
+                    NavAction.NONE -> Unit
+                    NavAction.CHANNEL_BANNER ->
+                        if (playingChannel != null) bannerGeneration++ else status = "Nie odtwarzasz żadnego kanału."
+                    NavAction.CHANNEL_LIST -> openChannelList()
+                    NavAction.EPG_EVENT -> unavailable("EPG wydarzenia")
+                    NavAction.EPG_CHANNEL -> unavailable("EPG kanału")
+                    NavAction.MULTI_EPG -> unavailable("Multi-EPG")
+                    NavAction.EPG_SEARCH -> unavailable("Wyszukiwanie EPG")
+                    NavAction.AUDIO -> unavailable("Wybór ścieżki dźwięku")
+                    NavAction.MENU -> navigation.openMenu()
+                    NavAction.SETTINGS -> openSettings()
+                    NavAction.RECALL -> recall()
+                    NavAction.CH_UP -> zap(true)
+                    NavAction.CH_DOWN -> zap(false)
+                    NavAction.PLAY_PAUSE -> vlcSession?.togglePause()
+                }
+            }
+
+            fun runMenuItem(item: DesktopMenuItem) {
+                when (item) {
+                    DesktopMenuItem.CHANNEL_LIST -> openChannelList()
+                    DesktopMenuItem.SETTINGS -> openSettings()
+                    DesktopMenuItem.REMOTE_TEST -> openSettings(SettingsScreen.REMOTE, SettingsScreen.REMOTE_TEST)
+                    DesktopMenuItem.WINDOW -> toggleMaximized()
+                    DesktopMenuItem.EXIT -> {
+                        powerDialogOpen.set(true)
+                        showExitConfirmation = true
+                    }
+                }
+            }
+
+            // ---------- Pozycje ustawień ----------
+
+            fun choose(title: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+                navigator.openChoice(SettingsChoice(title, options, selected.coerceAtLeast(0), onSelect))
+            }
+
+            fun editText(
+                title: String,
+                value: String,
+                hint: String = "",
+                secret: Boolean = false,
+                apply: (String) -> DesktopConfig,
+            ) {
+                navigator.openEditor(SettingsEditor(title, value, hint, secret) { input ->
+                    saveConfig(apply(input), "Zapisano: $title.")
+                    null
+                })
+            }
+
+            fun editNumber(title: String, value: Int, range: IntRange, apply: (Int) -> DesktopConfig) {
+                navigator.openEditor(
+                    SettingsEditor(title, value.toString(), "${range.first}–${range.last}", digitsOnly = true, maxLength = 6) { input ->
+                        val number = input.toIntOrNull()
+                        if (number == null || number !in range) "Podaj liczbę z zakresu ${range.first}–${range.last}."
+                        else {
+                            saveConfig(apply(number), "Zapisano: $title = $number.")
+                            null
+                        }
+                    },
+                )
+            }
+
+            fun percentItem(label: String, value: Int, apply: (Int) -> DesktopConfig): SettingItem {
+                val options = (50..140 step 10).toList()
+                return SettingItem.Action(label, "$value%") {
+                    choose(label, options.map { "$it%" }, options.indexOf(value)) { saveConfig(apply(options[it]), "$label: ${options[it]}%.") }
+                }
+            }
+
+            fun openBrowser(url: String) {
+                status = runCatching { java.awt.Desktop.getDesktop().browse(URI(url)) }
+                    .fold({ "Otwarto w przeglądarce: $url" }, { "Nie udało się otworzyć przeglądarki: ${it.message}" })
+            }
+
+            fun checkPlugin() {
+                scope.launch {
+                    pluginStatus = "sprawdzanie…"
+                    val current = config
+                    pluginStatus = try {
+                        "jest — ${withContext(Dispatchers.IO) { DecoderClient(current).pluginVersion() }}"
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        "brak odpowiedzi (${e.message ?: "błąd"}) — używany będzie OpenWebif"
+                    }
+                    status = "Wtyczka EPG Scan: $pluginStatus"
+                }
+            }
+
+            fun discover() {
+                scope.launch {
+                    busy = true
+                    status = "Szukam dekoderów w sieci lokalnej…"
+                    val current = config
+                    val found = try {
+                        withContext(Dispatchers.IO) { ReceiverDiscovery.scan(current.httpPort, current.pluginPort) }
+                    } finally {
+                        busy = false
+                    }
+                    if (found.isEmpty()) {
+                        status = "Nie znaleziono dekoderów na porcie ${current.httpPort}."
+                    } else {
+                        status = "Znalezione dekodery: ${found.size}."
+                        choose("Znalezione dekodery", found.map { "${it.ip}   ${it.label}" }, found.indexOfFirst { it.ip == config.host }) {
+                            saveConfig(config.copy(host = found[it].ip), "Wybrano dekoder ${found[it].ip}.")
+                        }
+                    }
+                }
+            }
+
+            fun remoteKeyItem(key: VirtualRemoteKey): SettingItem {
+                val assigned = universalBindings[key].orEmpty().sorted()
+                val summary = assigned.joinToString(", ") { UniversalRemoteMap.label(it) }.ifEmpty { "— brak —" }
+                return SettingItem.Action(
+                    key.label,
+                    if (key == VirtualRemoteKey.POWER) "działa globalnie • $summary" else summary,
+                ) {
+                    val options = listOf("Dodaj klawisz (naciśnij go na pilocie)") +
+                        assigned.map { "Usuń: ${UniversalRemoteMap.label(it)}" }
+                    choose(key.label, options, 0) { index ->
+                        if (index == 0) {
+                            captureButton = key
+                            status = "Naciśnij klawisz dla: ${key.label}."
+                        } else {
+                            universalBindings = UniversalRemoteMap.remove(universalBindings, key, assigned[index - 1])
+                            saveConfig(
+                                config.copy(universalRemoteBindings = UniversalRemoteMap.encode(universalBindings)),
+                                "Usunięto klawisz z: ${key.label}.",
+                            )
+                        }
+                    }
+                }
+            }
+
+            fun navigationItems(withBanner: Boolean): List<SettingItem> {
+                val defaults = if (withBanner) NavigationKeyMap.bannerDefaults else NavigationKeyMap.noBannerDefaults
+                val stored = if (withBanner) config.navBanner else config.navNoBanner
+                val map = NavigationKeyMap.resolve(defaults, stored)
+                fun store(updated: Map<VirtualRemoteKey, NavAction>) {
+                    val encoded = NavigationKeyMap.encode(updated)
+                    saveConfig(if (withBanner) config.copy(navBanner = encoded) else config.copy(navNoBanner = encoded))
+                }
+                return listOf<SettingItem>(
+                    SettingItem.Header(if (withBanner) "Gdy pasek kanału jest widoczny" else "Gdy pasek kanału jest ukryty"),
+                ) + NavigationKeyMap.keys.map { key ->
+                    val action = map[key] ?: NavAction.NONE
+                    SettingItem.Action(key.label, action.label) {
+                        val actions = NavAction.entries
+                        choose("${key.label} — ${if (withBanner) "z paskiem" else "bez paska"}", actions.map { it.label }, actions.indexOf(action)) {
+                            store(map + (key to actions[it]))
+                            status = "${key.label} → ${actions[it].label}."
+                        }
+                    }
+                } + listOf(
+                    SettingItem.Header("Pozostałe"),
+                    SettingItem.Action("Przywróć domyślne") {
+                        store(defaults)
+                        status = "Przywrócono domyślne mapowanie OK i strzałek."
+                    },
+                )
+            }
+
+            fun settingsItems(screen: SettingsScreen?): List<SettingItem> = when (screen) {
+                null -> emptyList()
+                SettingsScreen.SECTIONS -> SettingsScreen.sections.map { section ->
+                    SettingItem.Action(section.title, section.description) {
+                        navigator.push(section, settingsItems(section))
+                    }
+                }
+                SettingsScreen.DECODER -> listOf(
+                    SettingItem.Header("Dekoder"),
+                    SettingItem.Action("Adres IP dekodera", config.host.ifBlank { "nie ustawiono" }) {
+                        editText("Adres IP dekodera", config.host, "np. 192.168.1.20") { config.copy(host = it.trim()) }
+                    },
+                    SettingItem.Action("Szukaj dekoderów w sieci", if (busy) "trwa…" else "sieć lokalna, port OpenWebif") {
+                        if (!busy) discover()
+                    },
+                    SettingItem.Action("Port OpenWebif", config.httpPort.toString()) {
+                        editNumber("Port OpenWebif", config.httpPort, 1..65535) { config.copy(httpPort = it) }
+                    },
+                    SettingItem.Action("Port streamingu", config.streamPort.toString()) {
+                        editNumber("Port streamingu", config.streamPort, 1..65535) { config.copy(streamPort = it) }
+                    },
+                    SettingItem.Action("Użytkownik OpenWebif", config.username.ifBlank { "puste = bez logowania" }) {
+                        editText("Użytkownik OpenWebif", config.username, "puste = bez logowania") { config.copy(username = it.trim()) }
+                    },
+                    SettingItem.Action("Hasło OpenWebif", if (config.password.isEmpty()) "brak" else "••••••") {
+                        editText("Hasło OpenWebif", config.password, secret = true) { config.copy(password = it) }
+                    },
+                    SettingItem.Header("Wtyczka EPG Scan na dekoderze"),
+                    SettingItem.Action("Stan wtyczki", pluginStatus) { checkPlugin() },
+                    SettingItem.Action("Port wtyczki", config.pluginPort.toString()) {
+                        editNumber("Port wtyczki", config.pluginPort, 1024..65535) { config.copy(pluginPort = it) }
+                    },
+                    SettingItem.Action("Token wtyczki", if (config.pluginToken.isEmpty()) "puste = bez (sieć lokalna)" else "••••••") {
+                        editText("Token wtyczki", config.pluginToken, "puste = bez (sieć lokalna)", secret = true) {
+                            config.copy(pluginToken = it.trim())
+                        }
+                    },
+                    SettingItem.Header("Bukiety i kanały"),
+                    SettingItem.Action(
+                        "Połącz i pobierz bukiety",
+                        when {
+                            busy -> "trwa…"
+                            catalog == null -> "nie połączono"
+                            else -> "bukiety: ${catalog?.bouquets?.size} (${if (catalog?.usesPlugin == true) "EPG Scan" else "OpenWebif"})"
+                        },
+                    ) { if (!busy) connect(autoStart = false) },
+                    SettingItem.Action(
+                        "Bukiet",
+                        selectedBouquet?.let { "${it.name} • kanały: ${channels.size}" } ?: "najpierw połącz z dekoderem",
+                    ) {
+                        val visible = visibleBouquets()
+                        if (visible.isEmpty()) status = "Najpierw połącz się z dekoderem."
+                        else choose("Bukiet", visible.map { it.name }, visible.indexOfFirst { it.ref == selectedBouquet?.ref }) {
+                            selectBouquet(visible[it])
+                        }
+                    },
+                )
+                SettingsScreen.PLAYBACK -> listOf(
+                    SettingItem.Header("VLC"),
+                    SettingItem.Action("Usuwanie przeplotu", DesktopConfig.deinterlaceModes[config.vlcDeint]) {
+                        val keys = DesktopConfig.deinterlaceModes.keys.toList()
+                        choose("Usuwanie przeplotu", DesktopConfig.deinterlaceModes.values.toList(), keys.indexOf(config.vlcDeint)) {
+                            saveConfig(config.copy(vlcDeint = keys[it]), "Usuwanie przeplotu: ${DesktopConfig.deinterlaceModes[keys[it]]}.")
+                            restartPlayback()
+                        }
+                    },
+                    SettingItem.Action("Akceleracja sprzętowa", DesktopConfig.hardwareModes[config.vlcHwMode]) {
+                        val keys = DesktopConfig.hardwareModes.keys.toList()
+                        choose("Akceleracja sprzętowa", DesktopConfig.hardwareModes.values.toList(), keys.indexOf(config.vlcHwMode)) {
+                            saveConfig(config.copy(vlcHwMode = keys[it]), "Akceleracja sprzętowa: ${DesktopConfig.hardwareModes[keys[it]]}.")
+                            restartPlayback()
+                        }
+                    },
+                    SettingItem.Action("Bufor sieciowy (ms)", "${config.bufferMs} ms — mniej = szybszy obraz, więcej = odporność na zacięcia") {
+                        editNumber("Bufor sieciowy (ms)", config.bufferMs, 250..10_000) { config.copy(bufferMs = it) }
+                    },
+                    SettingItem.Action("Skalowanie obrazu", config.videoScaleMode.label) {
+                        val modes = VideoScaleMode.entries
+                        choose("Skalowanie obrazu", modes.map { it.label }, modes.indexOf(config.videoScaleMode)) {
+                            saveConfig(config.copy(videoScaleMode = modes[it]), "Skalowanie obrazu: ${modes[it].label}.")
+                            vlcSession?.setVideoScale(modes[it])
+                        }
+                    },
+                    SettingItem.Header("Dźwięk"),
+                    SettingItem.Action("Preferowany język", config.audioLang.ifBlank { "domyślny strumienia" }) {
+                        editText("Preferowany język dźwięku", config.audioLang, "kody języków, np. pl,pol,en") {
+                            config.copy(audioLang = it.trim())
+                        }
+                    },
+                    SettingItem.Header("Zmiany VLC"),
+                    SettingItem.Action("Zastosuj teraz", "uruchamia ponownie bieżący kanał z nowymi ustawieniami") {
+                        if (playingChannel == null) status = "Nie odtwarzasz żadnego kanału." else restartPlayback()
+                    },
+                )
+                SettingsScreen.APPEARANCE -> listOf(
+                    SettingItem.Header("Lista kanałów"),
+                    percentItem("Czcionka listy kanałów", config.uiListFont) { config.copy(uiListFont = it) },
+                    SettingItem.Header("Pasek kanału"),
+                    percentItem("Czcionka paska kanału", config.uiBannerFont) { config.copy(uiBannerFont = it) },
+                )
+                SettingsScreen.EPG -> listOf(
+                    SettingItem.Header("Bieżące EPG"),
+                    SettingItem.Action("Bieżąca audycja", "pobierana z OpenWebif co minutę dla wybranego bukietu") {},
+                    SettingItem.Header("W przygotowaniu w wersji Windows"),
+                    SettingItem.Action("Pobieranie EPG z wtyczki EPG Scan", "pojawi się razem z oknami EPG") {},
+                    SettingItem.Action("Ikony kanałów (picony)", "pojawią się w kolejnych wersjach") {},
+                )
+                SettingsScreen.GENERAL -> listOf(
+                    SettingItem.Header("Bukiety i kanały"),
+                    SettingItem.Action(
+                        "Widoczne bukiety",
+                        if (config.hiddenBouquets.isEmpty()) "wszystkie" else "ukryte: ${config.hiddenBouquets.size}",
+                    ) {
+                        if (catalog == null) status = "Najpierw połącz się z dekoderem."
+                        else navigator.push(SettingsScreen.BOUQUETS, settingsItems(SettingsScreen.BOUQUETS))
+                    },
+                    SettingItem.Toggle("Po uruchomieniu wróć do ostatniego kanału", config.resumeLast) {
+                        saveConfig(config.copy(resumeLast = it))
+                    },
+                    SettingItem.Action(
+                        "Po uruchomieniu przełącz na kanał",
+                        if (config.resumeLast) "nieaktywne (włączony powrót do ostatniego)"
+                        else config.startChannelName.ifBlank { "pierwszy kanał" },
+                    ) {
+                        when {
+                            config.resumeLast -> status = "Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”."
+                            channels.isEmpty() -> status = "Najpierw połącz się z dekoderem i wybierz bukiet."
+                            else -> choose(
+                                "Kanał startowy (${selectedBouquet?.name.orEmpty()})",
+                                listOf("pierwszy kanał") + channels.map { "${it.number}. ${it.name}" },
+                                channels.indexOfFirst { it.ref == config.startChannelRef } + 1,
+                            ) { index ->
+                                val channel = channels.getOrNull(index - 1)
+                                saveConfig(
+                                    config.copy(
+                                        startBouquetRef = if (channel == null) "" else selectedBouquet?.ref.orEmpty(),
+                                        startChannelRef = channel?.ref.orEmpty(),
+                                        startChannelName = channel?.name.orEmpty(),
+                                    ),
+                                    "Kanał startowy: ${channel?.name ?: "pierwszy kanał"}.",
+                                )
+                            }
+                        }
+                    },
+                    SettingItem.Toggle("Odwróć ▲ / ▼ przy zmianie kanału", config.invertUpDown) {
+                        saveConfig(config.copy(invertUpDown = it))
+                    },
+                    SettingItem.Header("Czasy okien"),
+                    SettingItem.Action("Czas paska kanału (s)", "${config.bannerSec} s") {
+                        editNumber("Czas paska kanału (s)", config.bannerSec, 1..30) { config.copy(bannerSec = it) }
+                    },
+                    SettingItem.Action(
+                        "Czas listy kanałów (s, 0 = bez zamykania)",
+                        if (config.channelListSec == 0) "bez zamykania" else "${config.channelListSec} s",
+                    ) {
+                        editNumber("Czas listy kanałów (s)", config.channelListSec, 0..600) { config.copy(channelListSec = it) }
+                    },
+                    SettingItem.Header("Sterowanie"),
+                    SettingItem.Action("Przycisk Wróć w oknach", config.backButtonMode.label) {
+                        val modes = BackButtonMode.entries
+                        choose("Przycisk Wróć w oknach", modes.map { it.label }, modes.indexOf(config.backButtonMode)) {
+                            saveConfig(config.copy(backButtonMode = modes[it]), "Przycisk Wróć: ${modes[it].label}.")
+                        }
+                    },
+                    SettingItem.Header("Blokada"),
+                    SettingItem.Action("PIN do ustawień", if (config.pin.isEmpty()) "brak blokady" else "ustawiony") {
+                        navigator.openEditor(
+                            SettingsEditor(
+                                "PIN do ustawień",
+                                config.pin,
+                                "maks. 6 cyfr; puste = bez blokady",
+                                secret = true,
+                                digitsOnly = true,
+                                maxLength = 6,
+                            ) { value ->
+                                pinUnlockedUntil = if (config.pinMin <= 0) Long.MAX_VALUE
+                                else System.currentTimeMillis() + config.pinMin * 60_000L
+                                saveConfig(config.copy(pin = value), if (value.isEmpty()) "Usunięto PIN." else "Ustawiono PIN.")
+                                null
+                            },
+                        )
+                    },
+                    SettingItem.Action(
+                        "Pytaj o PIN ponownie po",
+                        if (config.pin.isEmpty()) "nieaktywne (brak PIN-u)"
+                        else if (config.pinMin <= 0) "do wyjścia z aplikacji" else "${config.pinMin} min",
+                    ) {
+                        val minutes = listOf(1, 5, 15, 60, 0)
+                        if (config.pin.isEmpty()) status = "Najpierw ustaw PIN."
+                        else choose(
+                            "Pytaj o PIN ponownie po",
+                            minutes.map { if (it == 0) "do wyjścia z aplikacji" else "$it min" },
+                            minutes.indexOf(config.pinMin),
+                        ) { saveConfig(config.copy(pinMin = minutes[it])) }
+                    },
+                )
+                SettingsScreen.REMOTE -> listOf(
+                    SettingItem.Header("Pilot"),
+                    SettingItem.Action("Klawisze pilota", "przypisz klawisze pilota i klawiatury do przycisków") {
+                        navigator.push(SettingsScreen.REMOTE_KEYS, settingsItems(SettingsScreen.REMOTE_KEYS))
+                    },
+                    SettingItem.Action("Mapowanie OK i strzałek — bez paska", "co robią OK i strzałki podczas oglądania") {
+                        navigator.push(SettingsScreen.NAV_NO_BANNER, settingsItems(SettingsScreen.NAV_NO_BANNER))
+                    },
+                    SettingItem.Action("Mapowanie OK i strzałek — z paskiem kanału", "gdy widoczny jest pasek kanału") {
+                        navigator.push(SettingsScreen.NAV_BANNER, settingsItems(SettingsScreen.NAV_BANNER))
+                    },
+                    SettingItem.Action("Test pilota", "sprawdź, jakie klawisze odbiera program") {
+                        testEvents = emptyList()
+                        navigator.push(SettingsScreen.REMOTE_TEST)
+                    },
+                    SettingItem.Header("Power"),
+                    remoteKeyItem(VirtualRemoteKey.POWER),
+                    SettingItem.Header("Odbiornik pilota HID"),
+                    SettingItem.Action("Stan odbiornika", hidDiagnostic) {},
+                )
+                SettingsScreen.REMOTE_KEYS -> listOf<SettingItem>(
+                    SettingItem.Action("Przywróć domyślne klawisze", "Enter, strzałki, Esc, Home, PgUp/PgDn, F1, cyfry") {
+                        choose("Przywrócić domyślne klawisze?", listOf("Tak, przywróć", "Anuluj"), 1) {
+                            if (it == 0) {
+                                universalBindings = UniversalRemoteMap.defaults
+                                saveConfig(config.copy(universalRemoteBindings = ""), "Przywrócono domyślne klawisze.")
+                            }
+                        }
+                    },
+                    SettingItem.Header("Przyciski"),
+                ) + VirtualRemoteKey.entries.map(::remoteKeyItem)
+                SettingsScreen.NAV_NO_BANNER -> navigationItems(withBanner = false)
+                SettingsScreen.NAV_BANNER -> navigationItems(withBanner = true)
+                SettingsScreen.REMOTE_TEST -> emptyList()
+                SettingsScreen.BOUQUETS -> listOf<SettingItem>(SettingItem.Header("Bukiety widoczne na liście kanałów")) +
+                    catalog?.bouquets.orEmpty().map { bouquet ->
+                        SettingItem.Toggle(bouquet.name, bouquet.ref !in config.hiddenBouquets) { visible ->
+                            val hidden = if (visible) config.hiddenBouquets - bouquet.ref else config.hiddenBouquets + bouquet.ref
+                            if (catalog?.bouquets.orEmpty().all { it.ref in hidden }) {
+                                status = "Co najmniej jeden bukiet musi być widoczny."
+                            } else {
+                                saveConfig(config.copy(hiddenBouquets = hidden))
+                            }
+                        }
+                    }
+                SettingsScreen.INFO -> listOf(
+                    SettingItem.Header("Aplikacja E2Stream dla Windows"),
+                    SettingItem.Action("Wersja", appVersion()) {},
+                    SettingItem.Action("Wydania na GitHubie", "sprawdź nowe wersje") { openBrowser("$REPOSITORY_URL/releases") },
+                    SettingItem.Action("Opis wersji Windows (README)") {
+                        openBrowser("$REPOSITORY_URL/blob/windows/0.1.0-test/e2stream/desktop/README.md")
+                    },
+                    SettingItem.Action("Opis aplikacji (README)") { openBrowser("$REPOSITORY_URL/blob/main/e2stream/README.md") },
+                    SettingItem.Header("Wtyczka EPG Scan"),
+                    SettingItem.Action("Wtyczka na dekoderze", pluginStatus) { checkPlugin() },
+                    SettingItem.Action("Opis wtyczki (README)") { openBrowser("$REPOSITORY_URL/blob/main/epgscan/EPGScan/README.md") },
+                )
+                SettingsScreen.LOGS -> listOf(
+                    SettingItem.Header("Diagnostyka"),
+                    SettingItem.Action(
+                        "Śledzenie pilota",
+                        if (remoteDiagnostics.enabled) "włączone (E2STREAM_HID_TRACE=1, wyjście na konsolę)"
+                        else "wyłączone — uruchom z E2STREAM_HID_TRACE=1",
+                    ) {},
+                    SettingItem.Action("Test pilota", "podgląd odbieranych klawiszy") {
+                        testEvents = emptyList()
+                        navigator.push(SettingsScreen.REMOTE_TEST)
+                    },
+                    SettingItem.Header("W przygotowaniu w wersji Windows"),
+                    SettingItem.Action("Statystyki, log i zrzuty TS", "pojawią się w kolejnych wersjach") {},
+                )
+            }
+
+            // ---------- Klawisze ----------
+
+            fun handleSettingsKey(key: VirtualRemoteKey): Boolean {
+                if (isRemoteTestOpen() && navigator.choice == null) {
+                    if (key == VirtualRemoteKey.BACK) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastTestBackAt < 2000) {
+                            lastTestBackAt = 0
+                            navigator.back()
+                        } else {
+                            lastTestBackAt = now
+                            status = "Naciśnij Wstecz jeszcze raz, aby wyjść z testu."
+                        }
+                    }
+                    return true
+                }
+                return navigator.handleKey(key, settingsItems(navigator.screen))
             }
 
             fun handleVirtualKey(key: VirtualRemoteKey): Boolean {
@@ -274,77 +900,101 @@ fun main() {
                 }
                 lastVirtualKey = key
                 lastVirtualKeyAt = now
-                remoteDiagnostics.log { "key=$key page=$page channelList=$showChannelList" }
+                remoteDiagnostics.log { "key=$key settings=${navigator.screen} channelList=$showChannelList" }
 
-                if (showMenu) {
-                    return navigation.handleMenuKey(key)
+                if (key == VirtualRemoteKey.POWER) {
+                    currentRequestPower.value()
+                    return true
                 }
-
-                if (page != DesktopPage.PLAYER) {
-                    return when (key) {
-                        VirtualRemoteKey.BACK, VirtualRemoteKey.HOME -> {
-                            captureButton = null
-                            page = DesktopPage.PLAYER
-                            true
-                        }
-                        VirtualRemoteKey.UP -> { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Up); true }
-                        VirtualRemoteKey.DOWN -> { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down); true }
-                        VirtualRemoteKey.LEFT -> { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Left); true }
-                        VirtualRemoteKey.RIGHT -> { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Right); true }
-                        else -> false
-                    }
+                if (navigator.isVisible) return handleSettingsKey(key)
+                if (showMenu) {
+                    val result = navigation.handleMenuKey(key)
+                    result.activated?.let(::runMenuItem)
+                    return result.handled
                 }
 
                 if (showChannelList) {
+                    val bouquets = visibleBouquets()
                     when (key) {
                         VirtualRemoteKey.UP -> if (channels.isNotEmpty()) channelListSelected = (channelListSelected - 1 + channels.size) % channels.size
                         VirtualRemoteKey.DOWN -> if (channels.isNotEmpty()) channelListSelected = (channelListSelected + 1) % channels.size
-                        VirtualRemoteKey.LEFT -> bouquetOffset(catalog?.bouquets.orEmpty(), selectedBouquet, -1)?.let(::selectBouquet)
-                        VirtualRemoteKey.RIGHT -> bouquetOffset(catalog?.bouquets.orEmpty(), selectedBouquet, 1)?.let(::selectBouquet)
+                        VirtualRemoteKey.LEFT -> bouquetOffset(bouquets, selectedBouquet, -1)?.let(::selectBouquet)
+                        VirtualRemoteKey.RIGHT -> bouquetOffset(bouquets, selectedBouquet, 1)?.let(::selectBouquet)
                         VirtualRemoteKey.OK -> channels.getOrNull(channelListSelected)?.let {
                             showChannelList = false
                             startChannel(it)
                         }
-                        VirtualRemoteKey.BACK -> showChannelList = false
+                        VirtualRemoteKey.BACK, VirtualRemoteKey.HOME -> showChannelList = false
                         VirtualRemoteKey.CHANNEL_UP -> if (channels.isNotEmpty()) {
                             channelListSelected = (channelListSelected - 8).coerceAtLeast(0)
                         }
                         VirtualRemoteKey.CHANNEL_DOWN -> if (channels.isNotEmpty()) {
                             channelListSelected = (channelListSelected + 8).coerceAtMost(channels.lastIndex)
                         }
+                        VirtualRemoteKey.MENU -> {
+                            showChannelList = false
+                            navigation.openMenu()
+                        }
                         else -> return false
                     }
                     return true
                 }
 
+                if (key in NavigationKeyMap.keys) {
+                    val map = if (bannerVisible) {
+                        NavigationKeyMap.resolve(NavigationKeyMap.bannerDefaults, config.navBanner)
+                    } else {
+                        NavigationKeyMap.resolve(NavigationKeyMap.noBannerDefaults, config.navNoBanner)
+                    }
+                    runNavAction(map[key] ?: NavAction.NONE)
+                    return true
+                }
                 when (key) {
-                    VirtualRemoteKey.UP, VirtualRemoteKey.CHANNEL_UP -> changeChannel(1)
-                    VirtualRemoteKey.DOWN, VirtualRemoteKey.CHANNEL_DOWN -> changeChannel(-1)
-                    VirtualRemoteKey.OK -> openChannelList()
-                    VirtualRemoteKey.SETTINGS -> page = DesktopPage.CONNECTION
+                    VirtualRemoteKey.CHANNEL_UP -> zap(true)
+                    VirtualRemoteKey.CHANNEL_DOWN -> zap(false)
+                    VirtualRemoteKey.SETTINGS, VirtualRemoteKey.HOME -> openSettings()
+                    VirtualRemoteKey.MENU -> navigation.openMenu()
                     VirtualRemoteKey.PLAY_PAUSE -> vlcSession?.togglePause()
                     VirtualRemoteKey.PLAY -> vlcSession?.resume()
                     VirtualRemoteKey.PAUSE -> vlcSession?.pause()
-                    VirtualRemoteKey.BACK ->
-                        status = "Przycisk Wstecz zamyka listę kanałów lub wraca z ustawień."
-                    VirtualRemoteKey.HOME -> page = DesktopPage.CONNECTION
-                    VirtualRemoteKey.LEFT -> status = "EPG kanału nie jest jeszcze dostępne w wersji Windows."
-                    VirtualRemoteKey.RIGHT, VirtualRemoteKey.GUIDE, VirtualRemoteKey.TV_DATA ->
-                        status = "Multi-EPG nie jest jeszcze dostępne w wersji Windows."
-                    VirtualRemoteKey.INFO -> status = "EPG wydarzenia nie jest jeszcze dostępne w wersji Windows."
-                    VirtualRemoteKey.SEARCH -> status = "Wyszukiwanie EPG nie jest jeszcze dostępne w wersji Windows."
-                    VirtualRemoteKey.AUDIO -> status = "Wybór ścieżki audio nie jest jeszcze dostępny w wersji Windows."
-                    VirtualRemoteKey.MENU -> navigation.openMenu()
-                    VirtualRemoteKey.LAST_CHANNEL -> status = "Historia kanałów nie jest jeszcze dostępna w wersji Windows."
-                    VirtualRemoteKey.REWIND, VirtualRemoteKey.FAST_FORWARD, VirtualRemoteKey.STOP ->
-                        status = "Timeshift nie jest jeszcze dostępny w wersji Windows."
+                    VirtualRemoteKey.BACK -> when {
+                        bannerVisible -> bannerVisible = false
+                        navigation.controlsVisible -> navigation.toggleControls()
+                        else -> status = "Menu: przycisk Menu na pilocie lub M na klawiaturze."
+                    }
+                    VirtualRemoteKey.INFO -> runNavAction(NavAction.EPG_EVENT)
+                    VirtualRemoteKey.GUIDE, VirtualRemoteKey.TV_DATA -> runNavAction(NavAction.MULTI_EPG)
+                    VirtualRemoteKey.SEARCH -> runNavAction(NavAction.EPG_SEARCH)
+                    VirtualRemoteKey.AUDIO -> runNavAction(NavAction.AUDIO)
+                    VirtualRemoteKey.LAST_CHANNEL -> recall()
+                    VirtualRemoteKey.REWIND, VirtualRemoteKey.FAST_FORWARD, VirtualRemoteKey.STOP -> unavailable("Timeshift")
                     VirtualRemoteKey.DIGIT_0, VirtualRemoteKey.DIGIT_1, VirtualRemoteKey.DIGIT_2,
                     VirtualRemoteKey.DIGIT_3, VirtualRemoteKey.DIGIT_4, VirtualRemoteKey.DIGIT_5,
                     VirtualRemoteKey.DIGIT_6, VirtualRemoteKey.DIGIT_7, VirtualRemoteKey.DIGIT_8,
-                    VirtualRemoteKey.DIGIT_9 -> status = "Wybór kanału numerem nie jest jeszcze dostępny w wersji Windows."
-                    VirtualRemoteKey.POWER -> currentRequestPower.value()
+                    VirtualRemoteKey.DIGIT_9 -> unavailable("Wybór kanału numerem")
+                    else -> return false
                 }
                 return true
+            }
+
+            fun handleLegacyKey(keyCode: Int): Boolean = when (bindings[keyCode]) {
+                RemoteAction.TIMESHIFT -> {
+                    vlcSession?.togglePause()
+                    status = "Odtwarzanie wstrzymane lub wznowione."
+                    true
+                }
+                RemoteAction.CHANNEL_UP -> { zap(true); true }
+                RemoteAction.CHANNEL_DOWN -> { zap(false); true }
+                RemoteAction.CHANNEL_LIST -> { openChannelList(); true }
+                RemoteAction.CHANNEL_BANNER -> { runNavAction(NavAction.CHANNEL_BANNER); true }
+                RemoteAction.MENU -> { navigation.openMenu(); true }
+                RemoteAction.SETTINGS -> { openSettings(); true }
+                RemoteAction.RECALL -> { recall(); true }
+                RemoteAction.NONE, null -> false
+                else -> {
+                    status = "${bindings[keyCode]?.label} nie jest jeszcze dostępne w wersji Windows."
+                    true
+                }
             }
 
             val sessionToClose = vlcSession
@@ -352,7 +1002,7 @@ fun main() {
                 onDispose { sessionToClose?.close() }
             }
 
-            DisposableEffect(desktopWindow, settingsWindow, captureButton, bindings, universalBindings, vlcSession, page, channels, playingChannel, showChannelList, showMenu, showExitConfirmation) {
+            DisposableEffect(desktopWindow) {
                 val dispatcher = java.awt.KeyEventDispatcher { event ->
                     val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
                     if (!belongsToApplication(focusedWindow, desktopWindow) ||
@@ -360,62 +1010,42 @@ fun main() {
                         event.id != KeyEvent.KEY_PRESSED ||
                         event.keyCode == KeyEvent.VK_UNDEFINED
                     ) {
-                        false
-                    } else if (showExitConfirmation) {
-                        val key = when (event.keyCode) {
-                            KeyEvent.VK_ENTER -> VirtualRemoteKey.OK
-                            KeyEvent.VK_ESCAPE -> VirtualRemoteKey.BACK
-                            else -> UniversalRemoteMap.findKey(universalBindings, UniversalRemoteMap.keyId(event.keyCode))
-                        }
-                        handleExitConfirmation(key)
-                        true
-                    } else if (event.keyCode == KeyEvent.VK_F11 && captureButton == null) {
-                        toggleMaximized()
-                        true
-                    } else if (captureButton != null) {
-                        val button = captureButton ?: return@KeyEventDispatcher false
-                        savePhysicalBinding(button, UniversalRemoteMap.keyId(event.keyCode), RemoteKeyMap.keyName(event.keyCode))
-                        true
-                    } else {
-                        val physicalId = UniversalRemoteMap.keyId(event.keyCode)
-                        val virtualKey = UniversalRemoteMap.findKey(universalBindings, physicalId)
-                        if (virtualKey != null) {
-                            remoteDiagnostics.log { "source=keyboard key=$virtualKey page=$page" }
-                        }
-                        if (virtualKey != null && (page == DesktopPage.PLAYER ||
-                            virtualKey == VirtualRemoteKey.BACK ||
-                            page == DesktopPage.REMOTE && virtualKey in setOf(
-                                VirtualRemoteKey.BACK, VirtualRemoteKey.HOME,
-                                VirtualRemoteKey.UP, VirtualRemoteKey.DOWN,
-                                VirtualRemoteKey.LEFT, VirtualRemoteKey.RIGHT,
-                            ))
-                        ) {
-                            handleVirtualKey(virtualKey)
-                        } else if (page == DesktopPage.PLAYER) {
-                            when (bindings[event.keyCode]) {
-                                RemoteAction.TIMESHIFT -> {
-                                    vlcSession?.togglePause()
-                                    status = "Odtwarzanie wstrzymane lub wznowione."
-                                    true
-                                }
-                                RemoteAction.CHANNEL_UP -> changeChannel(1)
-                                RemoteAction.CHANNEL_DOWN -> changeChannel(-1)
-                                RemoteAction.CHANNEL_LIST -> {
-                                    openChannelList()
-                                    true
-                                }
-                                RemoteAction.MENU -> {
-                                    if (showMenu) showMenu = false else showMenu = true
-                                    true
-                                }
-                                RemoteAction.SETTINGS -> { page = DesktopPage.CONNECTION; true }
-                                RemoteAction.NONE, null -> false
-                                else -> {
-                                    status = "${bindings[event.keyCode]?.label} nie jest jeszcze dostępne w wersji Windows."
-                                    true
-                                }
+                        return@KeyEventDispatcher false
+                    }
+                    inputMode.onKey()
+                    val physicalId = UniversalRemoteMap.keyId(event.keyCode)
+                    val virtualKey = UniversalRemoteMap.findKey(universalBindings, physicalId)
+                    when {
+                        showExitConfirmation -> {
+                            val key = when (event.keyCode) {
+                                KeyEvent.VK_ENTER -> VirtualRemoteKey.OK
+                                KeyEvent.VK_ESCAPE -> VirtualRemoteKey.BACK
+                                else -> virtualKey
                             }
-                        } else false
+                            handleExitConfirmation(key)
+                            true
+                        }
+                        captureButton != null -> {
+                            val button = captureButton ?: return@KeyEventDispatcher false
+                            savePhysicalBinding(button, physicalId, RemoteKeyMap.keyName(event.keyCode))
+                            true
+                        }
+                        // Edytor tekstu sam obsługuje wpisywane znaki, Enter i Esc.
+                        navigator.editor != null -> false
+                        event.keyCode == KeyEvent.VK_F11 -> {
+                            toggleMaximized()
+                            true
+                        }
+                        isRemoteTestOpen() && navigator.choice == null -> {
+                            recordTest("Klawiatura", RemoteKeyMap.keyName(event.keyCode), virtualKey)
+                            if (virtualKey == VirtualRemoteKey.BACK) handleVirtualKey(VirtualRemoteKey.BACK)
+                            true
+                        }
+                        else -> {
+                            if (virtualKey != null) remoteDiagnostics.log { "source=keyboard key=$virtualKey" }
+                            val handled = virtualKey != null && handleVirtualKey(virtualKey)
+                            handled || !navigator.isVisible && !showMenu && !showChannelList && handleLegacyKey(event.keyCode)
+                        }
                     }
                 }
                 val manager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
@@ -444,6 +1074,7 @@ fun main() {
                                     remoteDiagnostics.log { "source=hid $label queueMs=$queueMs ignored=focus" }
                                     return@invokeLater
                                 }
+                                inputMode.onKey()
                                 val button = captureButton
                                 if (button != null) {
                                     remoteDiagnostics.log { "source=hid $label queueMs=$queueMs capture=$button" }
@@ -451,7 +1082,12 @@ fun main() {
                                 } else {
                                     val key = UniversalRemoteMap.findKey(universalBindings, physicalId)
                                     remoteDiagnostics.log { "source=hid $label queueMs=$queueMs mapped=${key ?: "none"}" }
-                                    key?.let(::handleVirtualKey)
+                                    if (isRemoteTestOpen() && navigator.choice == null) {
+                                        recordTest("Pilot HID", UniversalRemoteMap.label(physicalId), key)
+                                        if (key == VirtualRemoteKey.BACK) handleVirtualKey(key)
+                                    } else {
+                                        key?.let(::handleVirtualKey)
+                                    }
                                 }
                             }
                         },
@@ -476,119 +1112,32 @@ fun main() {
                 onDispose { rawInput?.close() }
             }
 
-            val settingsContent: @Composable () -> Unit = {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                    contentColor = MaterialTheme.colorScheme.onBackground,
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize().focusable().padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text("E2Stream", style = MaterialTheme.typography.headlineMedium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = {
-                                captureButton = null
-                                page = DesktopPage.CONNECTION
-                            }) { Text("Dekoder") }
-                            OutlinedButton(onClick = { page = DesktopPage.REMOTE }) { Text("Pilot / klawiatura") }
-                            OutlinedButton(onClick = {
-                                captureButton = null
-                                page = DesktopPage.PLAYER
-                            }) { Text("Wróć") }
-                        }
-                        Text(status, style = MaterialTheme.typography.bodyMedium)
-                        epgError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            // ---------- Okna ----------
 
-                        when (page) {
-                            DesktopPage.CONNECTION -> ConnectionPage(
-                                config = config,
-                                onConfigChange = { config = it },
-                                busy = busy,
-                                catalog = catalog,
-                                selectedBouquet = selectedBouquet,
-                                channels = channels,
-                                onPlay = ::startChannel,
-                                onConnect = {
-                                    scope.launch {
-                                        busy = true
-                                        status = "Łączenie z dekoderem…"
-                                        try {
-                                            val result = withContext(Dispatchers.IO) {
-                                                val updated = config.copy(
-                                                    httpPort = config.httpPort,
-                                                    streamPort = config.streamPort,
-                                                    pluginPort = config.pluginPort,
-                                                )
-                                                DecoderClient(updated).loadBouquets().also { updated.save() }
-                                            }
-                                            catalog = result
-                                            selectedBouquet = null
-                                            channels = emptyList()
-                                            nowEvents = emptyMap()
-                                            status = "Połączono przez ${if (result.usesPlugin) "EPG Scan" else "OpenWebif"}; bukiety: ${result.bouquets.size}."
-                                        } catch (e: Exception) {
-                                            status = e.message ?: "Nie udało się połączyć z dekoderem."
-                                        } finally {
-                                            busy = false
-                                        }
-                                    }
-                                },
-                                onBouquetSelected = ::selectBouquet,
-                            )
-                            DesktopPage.PLAYER -> Unit
-                            DesktopPage.REMOTE -> RemotePage(
-                                bindings = universalBindings,
-                                selected = selectedRemoteButton,
-                                captureButton = captureButton,
-                                hidDiagnostic = hidDiagnostic,
-                                onSelect = { selectedRemoteButton = it },
-                                onCapture = {
-                                    selectedRemoteButton = it
-                                    captureButton = it
-                                    status = "Naciśnij przycisk fizycznego pilota lub klawiatury."
-                                },
-                                onCancelCapture = { captureButton = null },
-                                onRemove = { key, id ->
-                                    universalBindings = UniversalRemoteMap.remove(universalBindings, key, id)
-                                    config = config.copy(universalRemoteBindings = UniversalRemoteMap.encode(universalBindings))
-                                    runCatching { config.save() }
-                                        .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
-                                },
-                                onReset = {
-                                    universalBindings = UniversalRemoteMap.defaults
-                                    captureButton = null
-                                    config = config.copy(universalRemoteBindings = "")
-                                    runCatching { config.save() }
-                                        .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-
+            CompositionLocalProvider(
+                LocalBackButtonVisible provides (config.backButtonMode == BackButtonMode.ALWAYS || inputMode.mouseActive),
+            ) {
             val session = vlcSession
             val channel = playingChannel
             PlaybackHost(
-                settingsVisible = page != DesktopPage.PLAYER,
+                settingsVisible = navigator.isVisible,
                 player = {
                     PlayerPage(
                         channel = channel,
                         session = session,
                         event = channel?.let { nowEvents[serviceKey(it.ref)] },
-                        controlsVisible = controlsVisible,
-                        onToggleControls = navigation::toggleControls,
                         status = epgError ?: status,
+                        bannerVisible = bannerVisible,
+                        bannerFontScale = config.uiBannerFont / 100f,
+                        onShowBanner = { bannerGeneration++ },
+                        controlsVisible = navigation.controlsVisible,
+                        onToggleControls = navigation::toggleControls,
                         videoScaleMode = config.videoScaleMode,
                         isMaximized = mainWindowState.placement == WindowPlacement.Maximized,
                         onToggleMaximized = ::toggleMaximized,
                         onScaleChange = {
-                            config = config.copy(videoScaleMode = it)
+                            saveConfig(config.copy(videoScaleMode = it))
                             session?.setVideoScale(it)
-                            runCatching { config.save() }
-                                .onFailure { error -> status = "Nie udało się zapisać ustawień: ${error.message}" }
                         },
                         onChannels = ::openChannelList,
                         onMenu = navigation::openMenu,
@@ -596,38 +1145,35 @@ fun main() {
                             showChannelList = false
                             vlcSession = null
                             playingChannel = null
-                            page = DesktopPage.PLAYER
                             status = "Odtwarzanie zatrzymane."
                         },
                     )
                 },
                 settings = {
-                    DialogWindow(
-                        onCloseRequest = {
+                    SettingsWindow(
+                        navigator = navigator,
+                        items = settingsItems(navigator.screen),
+                        colors = colorScheme,
+                        status = status,
+                        captureLabel = captureButton?.label,
+                        onCancelCapture = {
                             captureButton = null
-                            page = DesktopPage.PLAYER
+                            status = "Przypisywanie anulowane."
                         },
-                        title = "E2Stream — ustawienia",
-                        state = rememberDialogState(width = 900.dp, height = 600.dp),
-                        resizable = true,
-                    ) {
-                        val dialog = window
-                        DisposableEffect(dialog) {
-                            settingsWindow = dialog
-                            onDispose { settingsWindow = null }
-                        }
-                        MaterialTheme(colorScheme = colorScheme) { settingsContent() }
-                    }
+                        onWindow = { settingsWindow = it },
+                        testContent = { RemoteTestPanel(testEvents, hidDiagnostic) },
+                    )
                 },
             )
-            if (showChannelList && page == DesktopPage.PLAYER) {
+            if (showChannelList && !navigator.isVisible) {
                 ChannelListDialog(
                     bouquet = selectedBouquet,
-                    bouquets = catalog?.bouquets.orEmpty(),
+                    bouquets = visibleBouquets(),
                     channels = channels,
                     selected = channelListSelected,
                     nowEvents = nowEvents,
                     busy = busy,
+                    fontScale = config.uiListFont / 100f,
                     onClose = { showChannelList = false },
                     onSelectedChange = { channelListSelected = it },
                     onBouquetSelected = ::selectBouquet,
@@ -637,32 +1183,16 @@ fun main() {
                     },
                 )
             }
-            if (showMenu && page == DesktopPage.PLAYER) {
-                DialogWindow(
-                    onCloseRequest = { showMenu = false },
-                    title = "E2Stream",
-                    state = rememberDialogState(width = 440.dp, height = 220.dp),
-                    undecorated = true,
-                    resizable = false,
-                ) {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = colorScheme.surface,
-                        contentColor = colorScheme.onSurface,
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxSize().padding(24.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            Text("E2Stream", style = MaterialTheme.typography.titleLarge)
-                            Button(onClick = {
-                                showMenu = false
-                                page = DesktopPage.CONNECTION
-                            }) { Text("Ustawienia") }
-                            OutlinedButton(onClick = { showMenu = false }) { Text("Zamknij") }
-                        }
-                    }
-                }
+            if (showMenu && !navigator.isVisible) {
+                MenuDialog(
+                    selected = navigation.menuSelected,
+                    colors = colorScheme,
+                    onClose = { showMenu = false },
+                    onSelect = { item ->
+                        showMenu = false
+                        runMenuItem(item)
+                    },
+                )
             }
             if (showExitConfirmation) {
                 DialogWindow(
@@ -691,8 +1221,49 @@ fun main() {
                     }
                 }
             }
+            }
         }
     }
+    }
+}
+
+@Composable
+private fun MenuDialog(
+    selected: Int,
+    colors: androidx.compose.material3.ColorScheme,
+    onClose: () -> Unit,
+    onSelect: (DesktopMenuItem) -> Unit,
+) {
+    val items = DesktopMenuItem.entries
+    DialogWindow(
+        onCloseRequest = onClose,
+        title = "E2Stream",
+        state = rememberDialogState(width = 460.dp, height = (150 + items.size * 54).dp),
+        undecorated = true,
+        resizable = false,
+    ) {
+        MaterialTheme(colorScheme = colors) {
+            Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
+                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Menu", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)
+                        BackButton(onClick = onClose)
+                    }
+                    items.forEachIndexed { index, item ->
+                        val isSelected = index == selected
+                        Text(
+                            item.label,
+                            modifier = Modifier.fillMaxWidth()
+                                .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
+                                .clickable { onSelect(item) }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            color = if (isSelected) colors.onPrimaryContainer else colors.onSurface,
+                            fontSize = 20.sp,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -703,257 +1274,4 @@ private fun belongsToApplication(window: AwtWindow?, mainWindow: AwtWindow): Boo
         current = current.owner
     }
     return false
-}
-
-@Composable
-private fun ConnectionPage(
-    config: DesktopConfig,
-    onConfigChange: (DesktopConfig) -> Unit,
-    busy: Boolean,
-    catalog: DecoderCatalog?,
-    selectedBouquet: Bouquet?,
-    channels: List<Channel>,
-    onPlay: (Channel) -> Unit,
-    onConnect: () -> Unit,
-    onBouquetSelected: (Bouquet) -> Unit,
-) {
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("Połączenie z dekoderem", style = MaterialTheme.typography.titleLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = config.host,
-                onValueChange = { onConfigChange(config.copy(host = it)) },
-                label = { Text("Adres dekodera") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            NumberField("OpenWebif", config.httpPort, { onConfigChange(config.copy(httpPort = it)) })
-            NumberField("Streaming", config.streamPort, { onConfigChange(config.copy(streamPort = it)) })
-            NumberField("EPG Scan", config.pluginPort, { onConfigChange(config.copy(pluginPort = it)) })
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = config.username,
-                onValueChange = { onConfigChange(config.copy(username = it)) },
-                label = { Text("Login OpenWebif") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = config.password,
-                onValueChange = { onConfigChange(config.copy(password = it)) },
-                label = { Text("Hasło OpenWebif") },
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = config.pluginToken,
-                onValueChange = { onConfigChange(config.copy(pluginToken = it)) },
-                label = { Text("Token EPG Scan (opcjonalnie)") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Button(onClick = onConnect, enabled = !busy) {
-            Text(if (busy) "Łączenie…" else "Połącz i pobierz bukiety")
-        }
-
-        if (catalog != null) {
-            Text("Bukiety", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BouquetPicker(catalog.bouquets, selectedBouquet, busy, onBouquetSelected)
-                Text("Kanały: ${channels.size}", modifier = Modifier.padding(top = 12.dp))
-            }
-            if (channels.isNotEmpty()) {
-                Card(Modifier.fillMaxWidth().height(360.dp)) {
-                    LazyColumn(Modifier.padding(12.dp)) {
-                        items(channels) { channel ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Text(
-                                    "${channel.number}. ${channel.name}",
-                                    modifier = Modifier.weight(1f).padding(top = 10.dp),
-                                )
-                                Button(onClick = { onPlay(channel) }) { Text("Oglądaj") }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NumberField(label: String, value: Int, onValueChange: (Int) -> Unit) {
-    var text by remember(value) { mutableStateOf(value.toString()) }
-    OutlinedTextField(
-        value = text,
-        onValueChange = { input ->
-            val normalized = input.filter(Char::isDigit).take(5)
-            val port = normalized.toIntOrNull()
-            if (port != null && port in 1..65535) {
-                text = normalized
-                onValueChange(port)
-            }
-        },
-        label = { Text(label) },
-        singleLine = true,
-        modifier = Modifier.width(125.dp),
-    )
-}
-
-@Composable
-private fun BouquetPicker(
-    bouquets: List<Bouquet>,
-    selected: Bouquet?,
-    busy: Boolean,
-    onSelected: (Bouquet) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Column {
-        OutlinedButton(onClick = { expanded = true }, enabled = bouquets.isNotEmpty() && !busy) {
-            Text(selected?.name ?: "Wybierz bukiet")
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            bouquets.forEach { bouquet ->
-                DropdownMenuItem(
-                    text = { Text(bouquet.name) },
-                    onClick = {
-                        expanded = false
-                        onSelected(bouquet)
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RemotePage(
-    bindings: Map<VirtualRemoteKey, Set<String>>,
-    selected: VirtualRemoteKey,
-    captureButton: VirtualRemoteKey?,
-    hidDiagnostic: String,
-    onSelect: (VirtualRemoteKey) -> Unit,
-    onCapture: (VirtualRemoteKey) -> Unit,
-    onCancelCapture: () -> Unit,
-    onRemove: (VirtualRemoteKey, String) -> Unit,
-    onReset: () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        Column(
-            modifier = Modifier.width(340.dp).fillMaxHeight().verticalScroll(rememberScrollState())
-                .background(colors.surfaceVariant, RoundedCornerShape(32.dp)).padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("PILOT UNIWERSALNY", style = MaterialTheme.typography.titleMedium)
-            @Composable
-            fun key(key: VirtualRemoteKey, modifier: Modifier = Modifier) {
-                OutlinedButton(onClick = { onSelect(key) }, modifier = modifier, shape = RoundedCornerShape(18.dp)) {
-                    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
-                        Text(key.label, maxLines = 1)
-                        val count = bindings[key].orEmpty().size
-                        Text(
-                            if (count == 0) "—" else "$count klawiszy",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.onSurfaceVariant,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                key(VirtualRemoteKey.POWER, Modifier.weight(1f))
-                key(VirtualRemoteKey.HOME, Modifier.weight(1f))
-                key(VirtualRemoteKey.BACK, Modifier.weight(1f))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                key(VirtualRemoteKey.MENU, Modifier.weight(1f))
-                key(VirtualRemoteKey.SETTINGS, Modifier.weight(1f))
-            }
-            key(VirtualRemoteKey.UP, Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally).width(110.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                key(VirtualRemoteKey.LEFT, Modifier.weight(1f))
-                key(VirtualRemoteKey.OK, Modifier.weight(1f))
-                key(VirtualRemoteKey.RIGHT, Modifier.weight(1f))
-            }
-            key(VirtualRemoteKey.DOWN, Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally).width(110.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                key(VirtualRemoteKey.CHANNEL_UP, Modifier.weight(1f))
-                key(VirtualRemoteKey.CHANNEL_DOWN, Modifier.weight(1f))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                key(VirtualRemoteKey.INFO, Modifier.weight(1f))
-                key(VirtualRemoteKey.GUIDE, Modifier.weight(1f))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                key(VirtualRemoteKey.TV_DATA, Modifier.weight(1f))
-                key(VirtualRemoteKey.SEARCH, Modifier.weight(1f))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                key(VirtualRemoteKey.AUDIO, Modifier.weight(1f))
-                key(VirtualRemoteKey.LAST_CHANNEL, Modifier.weight(1f))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                key(VirtualRemoteKey.REWIND, Modifier.weight(1f))
-                key(VirtualRemoteKey.PLAY_PAUSE, Modifier.weight(1f))
-                key(VirtualRemoteKey.FAST_FORWARD, Modifier.weight(1f))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                key(VirtualRemoteKey.PLAY, Modifier.weight(1f))
-                key(VirtualRemoteKey.PAUSE, Modifier.weight(1f))
-                key(VirtualRemoteKey.STOP, Modifier.weight(1f))
-            }
-            (1..9).chunked(3).forEach { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    row.forEach { number ->
-                        key(VirtualRemoteKey.valueOf("DIGIT_$number"), Modifier.weight(1f))
-                    }
-                }
-            }
-            key(VirtualRemoteKey.DIGIT_0, Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally).width(110.dp))
-        }
-
-        Column(
-            modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(selected.label, style = MaterialTheme.typography.titleLarge, color = colors.primary)
-            Text(hidDiagnostic, style = MaterialTheme.typography.bodySmall)
-            if (selected == VirtualRemoteKey.POWER) {
-                Text(
-                    "Power działa globalnie, gdy E2Stream jest uruchomiony: przywołuje jego okno lub pyta o zamknięcie.",
-                )
-            } else {
-                Text("Przypisz do tego przycisku kilka klawiszy fizycznych. Pilot HID jest wykrywany tylko wtedy, gdy E2Stream jest aktywny.")
-            }
-            if (captureButton == selected) {
-                Text("Naciśnij teraz klawisz pilota lub klawiatury.", color = colors.primary)
-                OutlinedButton(onClick = onCancelCapture) { Text("Anuluj") }
-            } else {
-                Button(onClick = { onCapture(selected) }) { Text("Dodaj klawisz fizyczny") }
-            }
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(bindings[selected].orEmpty().sorted()) { physicalId ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            UniversalRemoteMap.label(physicalId),
-                            modifier = Modifier.weight(1f).padding(top = 12.dp),
-                        )
-                        OutlinedButton(onClick = { onRemove(selected, physicalId) }) { Text("Usuń") }
-                    }
-                }
-            }
-            OutlinedButton(onClick = onReset) { Text("Przywróć domyślne klawisze") }
-        }
-    }
 }

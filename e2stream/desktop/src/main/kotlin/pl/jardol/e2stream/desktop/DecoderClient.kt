@@ -68,6 +68,14 @@ class DecoderClient(private val config: DesktopConfig) {
         }
     }
 
+    /** Wersja wtyczki EPG Scan albo wyjątek, gdy wtyczka nie odpowiada. */
+    fun pluginVersion(): String {
+        require(config.host.isNotBlank()) { "Podaj adres dekodera." }
+        validatePort(config.pluginPort, "EPG Scan")
+        val info = get(config.pluginPort, "/api/info", plugin = true, timeoutMs = 4000)
+        return info.optString("version").ifBlank { "API ${info.optInt("api")}" }
+    }
+
     fun loadChannels(bouquet: Bouquet, usesPlugin: Boolean): List<Channel> {
         val port = if (usesPlugin) config.pluginPort else config.httpPort
         validatePort(port, if (usesPlugin) "EPG Scan" else "OpenWebif")

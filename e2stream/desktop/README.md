@@ -20,12 +20,31 @@ switching to another app does not minimize it. The title bar and Windows
 taskbar remain available. Use F11 or the player button to toggle between
 maximized and regular window sizes.
 The player opens first, including before a decoder is configured. Press M or
-the mapped Menu remote key to open the menu and choose **Ustawienia** to
-connect to a decoder and select a bouquet. Right-click the player to show or
-hide the mouse controls; their **Menu** button opens the same menu.
-The **Obraz** menu selects fit, fill with cropping, or stretch to fill.
-The selection is saved. The borderless channel list can be closed with Escape,
-Alt+F4 or **Zamknij**.
+the mapped Menu remote key to open the menu and choose **Ustawienia**. Right-click
+the player to show or hide the mouse controls; their **Menu** button opens the
+same menu. The **Obraz** menu selects fit, fill with cropping, or stretch to fill.
+The selection is saved.
+
+Settings follow the Android layout: a list of sections (Dekoder Enigma2,
+Odtwarzanie i obraz, Wygląd, EPG i ikony kanałów, Ogólne, Pilot i klawiatura,
+Informacje i aktualizacje, Logi i zrzuty), each opening a list
+of options. The settings window has no title bar and is fully operable with a
+remote or keyboard (arrows, OK, Back, digits in numeric fields) as well as the
+mouse. Decoder settings include automatic receiver discovery on the local
+network and an EPG Scan plugin check. Playback settings cover VLC network
+buffering, deinterlacing, hardware decoding and preferred audio language.
+Optional PIN protection for settings, start channel, resume of the last channel,
+up/down inversion, banner and channel-list timeouts, list/banner font sizes and
+hidden bouquets are available as on Android. Features not yet present in the
+Windows player (full EPG, recordings, logs) are marked as in preparation.
+
+A **Wróć** button closing the current window is shown only while the mouse is
+being used: moving the mouse or clicking shows it, pressing a key or remote
+button hides it. **Ogólne → Przycisk Wróć w oknach** can make it permanently visible.
+**Pilot i klawiatura** contains the remote/keyboard button mapping, separate
+OK/arrow action mappings for playback with and without the channel banner
+(like Android), and **Test pilota**, which lists every received command with
+its source, physical key and mapped action. Press Back twice to leave the test.
 
 This is an early test version, not yet functionally equivalent to Android:
 full EPG, recordings, true timeshift and most other Android features are not
@@ -52,8 +71,8 @@ e2stream\gradlew.bat -p e2stream\desktop packageReleaseMsi packageReleaseExe
 The app tries the EPG Scan client API first and falls back to OpenWebif. Decoder
 settings and key bindings are stored in `%APPDATA%/E2Stream/settings.properties`.
 The OpenWebif password and EPG Scan token are stored in this file as plain text.
-To map a button, open **Pilot / klawiatura**, select a logical button on the
-remote illustration, choose **Dodaj klawisz fizyczny**, then press a keyboard
+To map a button, open **Ustawienia → Pilot i klawiatura → Klawisze pilota**,
+select a logical button, choose **Dodaj klawisz**, then press a keyboard
 key or a button on a connected HID remote. HID reports are handled only while
 an E2Stream window is focused; they are not translated into system-wide
 keystrokes. Test with the specific remote because HID report formats vary by

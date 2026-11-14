@@ -74,6 +74,9 @@ internal fun PlayerPage(
     session: VlcSession?,
     event: NowEvent?,
     status: String,
+    bannerVisible: Boolean,
+    bannerFontScale: Float,
+    onShowBanner: () -> Unit,
     controlsVisible: Boolean,
     onToggleControls: () -> Unit,
     videoScaleMode: VideoScaleMode,
@@ -85,8 +88,6 @@ internal fun PlayerPage(
     onBack: () -> Unit,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
-    var bannerVisible by remember { mutableStateOf(true) }
-    var bannerGeneration by remember { mutableIntStateOf(0) }
     var scaleMenuExpanded by remember { mutableStateOf(false) }
     var statusVisible by remember { mutableStateOf(false) }
     val currentToggleControls by androidx.compose.runtime.rememberUpdatedState(onToggleControls)
@@ -104,11 +105,6 @@ internal fun PlayerPage(
             now = Instant.now().epochSecond
             delay(30_000)
         }
-    }
-    LaunchedEffect(channel?.ref, bannerGeneration) {
-        bannerVisible = true
-        delay(5_000)
-        bannerVisible = false
     }
     LaunchedEffect(status, session) {
         statusVisible = session != null
@@ -156,17 +152,17 @@ internal fun PlayerPage(
                             "${channel.number}   ${channel.name}",
                             modifier = Modifier.weight(1f),
                             color = accent,
-                            fontSize = 20.sp,
+                            fontSize = 20.sp * bannerFontScale,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Text(time(now), color = secondary, fontSize = 20.sp)
+                        Text(time(now), color = secondary, fontSize = 20.sp * bannerFontScale)
                     }
                     Text(
                         currentEvent?.title ?: "Brak danych bieżącej audycji",
                         color = colors.onSurface,
-                        fontSize = 21.sp,
+                        fontSize = 21.sp * bannerFontScale,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -174,13 +170,13 @@ internal fun PlayerPage(
                     if (currentEvent != null && currentEvent.end > currentEvent.begin) {
                         val progress = ((now - currentEvent.begin).toFloat() / (currentEvent.end - currentEvent.begin)).coerceIn(0f, 1f)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(time(currentEvent.begin), color = secondary)
+                            Text(time(currentEvent.begin), color = secondary, fontSize = 14.sp * bannerFontScale)
                             LinearProgressIndicator(
                                 progress = { progress },
                                 modifier = Modifier.weight(1f).padding(top = 8.dp).height(6.dp),
                                 color = accent,
                             )
-                            Text(time(currentEvent.end), color = secondary)
+                            Text(time(currentEvent.end), color = secondary, fontSize = 14.sp * bannerFontScale)
                         }
                     }
                 }
@@ -189,7 +185,7 @@ internal fun PlayerPage(
                 }
                 if (controlsVisible) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onChannels) { Text("Lista kanałów") }
-                    OutlinedButton(onClick = { bannerGeneration++ }, enabled = channel != null) { Text("Pasek") }
+                    OutlinedButton(onClick = onShowBanner, enabled = channel != null) { Text("Pasek") }
                     OutlinedButton(onClick = { session?.togglePause() }, enabled = session != null) { Text("Pauza / Wznów") }
                     Box {
                         OutlinedButton(onClick = { scaleMenuExpanded = true }) { Text("Obraz") }
@@ -225,6 +221,7 @@ internal fun ChannelListDialog(
     selected: Int,
     nowEvents: Map<String, NowEvent>,
     busy: Boolean,
+    fontScale: Float,
     onClose: () -> Unit,
     onSelectedChange: (Int) -> Unit,
     onBouquetSelected: (Bouquet) -> Unit,
@@ -321,8 +318,8 @@ internal fun ChannelListDialog(
                         onClick = { bouquetOffset(bouquets, bouquet, 1)?.let(onBouquetSelected) },
                         enabled = !busy && bouquets.size > 1,
                     ) { Text("Bukiet ▶") }
-                    Text("← → bukiet   •   ↑ ↓ kanał   •   Enter oglądaj   •   Esc zamknij", color = secondary)
-                    OutlinedButton(onClick = onClose) { Text("Zamknij") }
+                    Text("← → bukiet   •   ↑ ↓ kanał   •   OK oglądaj   •   Wstecz zamknij", color = secondary)
+                    BackButton(onClick = onClose)
                 }
                 LazyColumn(Modifier.weight(3f), state = listState) {
                     itemsIndexed(channels) { index, channel ->
@@ -339,13 +336,13 @@ internal fun ChannelListDialog(
                                 }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
-                            Text(channel.number.toString(), modifier = Modifier.width(55.dp), color = secondaryText, fontSize = 20.sp)
+                            Text(channel.number.toString(), modifier = Modifier.width(55.dp * fontScale), color = secondaryText, fontSize = 20.sp * fontScale)
                             Column(Modifier.weight(1f)) {
-                                Text(channel.name, color = primaryText, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                                Text(event?.title ?: "Brak danych EPG", color = secondaryText, fontSize = 16.sp, maxLines = 1)
+                                Text(channel.name, color = primaryText, fontSize = 22.sp * fontScale, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text(event?.title ?: "Brak danych EPG", color = secondaryText, fontSize = 16.sp * fontScale, maxLines = 1)
                             }
                             if (event != null && event.end > event.begin) {
-                                Text("${time(event.begin)}–${time(event.end)}", color = secondaryText, fontSize = 16.sp)
+                                Text("${time(event.begin)}–${time(event.end)}", color = secondaryText, fontSize = 16.sp * fontScale)
                             }
                         }
                     }
@@ -353,12 +350,12 @@ internal fun ChannelListDialog(
                 Box(Modifier.fillMaxWidth().height(1.dp).background(colors.outlineVariant))
                 Column(Modifier.weight(1f).padding(8.dp)) {
                     val channel = channels.getOrNull(selected)
-                    Text(channel?.name.orEmpty(), color = accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(channel?.name.orEmpty(), color = accent, fontSize = 20.sp * fontScale, fontWeight = FontWeight.Bold)
                     Text(
                         channel?.let { nowEvents[serviceKey(it.ref)]?.takeIf { event -> event.begin <= now && now < event.end }?.title }
                             ?: "Brak danych EPG",
                         color = colors.onSurface,
-                        fontSize = 19.sp,
+                        fontSize = 19.sp * fontScale,
                     )
                     Text("Wybierz kanał myszą lub naciśnij Enter.", color = secondary)
                 }

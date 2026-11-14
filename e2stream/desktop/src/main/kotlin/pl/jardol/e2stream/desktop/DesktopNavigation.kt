@@ -1,17 +1,27 @@
 package pl.jardol.e2stream.desktop
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-internal enum class DesktopPage { CONNECTION, PLAYER, REMOTE }
+internal enum class DesktopMenuItem(val label: String) {
+    CHANNEL_LIST("Lista kanałów"),
+    SETTINGS("Ustawienia"),
+    REMOTE_TEST("Test pilota"),
+    WINDOW("Okno / pełny ekran"),
+    EXIT("Wyłącz E2Stream"),
+}
+
+internal data class MenuKeyResult(val handled: Boolean, val activated: DesktopMenuItem? = null)
 
 internal class DesktopNavigation {
-    var page by mutableStateOf(DesktopPage.PLAYER)
     var showMenu by mutableStateOf(false)
+    var menuSelected by mutableIntStateOf(0)
     var controlsVisible by mutableStateOf(false)
 
     fun openMenu() {
+        menuSelected = DesktopMenuItem.SETTINGS.ordinal
         showMenu = true
     }
 
@@ -19,17 +29,19 @@ internal class DesktopNavigation {
         controlsVisible = !controlsVisible
     }
 
-    fun handleMenuKey(key: VirtualRemoteKey): Boolean {
-        if (!showMenu) return false
+    fun handleMenuKey(key: VirtualRemoteKey): MenuKeyResult {
+        if (!showMenu) return MenuKeyResult(false)
+        val items = DesktopMenuItem.entries
         when (key) {
             VirtualRemoteKey.OK -> {
                 showMenu = false
-                page = DesktopPage.CONNECTION
+                return MenuKeyResult(true, items[menuSelected.coerceIn(items.indices)])
             }
-            VirtualRemoteKey.BACK, VirtualRemoteKey.MENU -> showMenu = false
-            VirtualRemoteKey.UP, VirtualRemoteKey.DOWN -> Unit
-            else -> return false
+            VirtualRemoteKey.BACK, VirtualRemoteKey.MENU, VirtualRemoteKey.LEFT -> showMenu = false
+            VirtualRemoteKey.UP -> menuSelected = (menuSelected - 1).mod(items.size)
+            VirtualRemoteKey.DOWN -> menuSelected = (menuSelected + 1).mod(items.size)
+            else -> return MenuKeyResult(false)
         }
-        return true
+        return MenuKeyResult(true)
     }
 }

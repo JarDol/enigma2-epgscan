@@ -9,7 +9,10 @@ W katalogu [`desktop/`](desktop/) powstaje aplikacja Windows. Na tym etapie umo�
 przeglądanie bukietów i kanałów z bieżącym EPG, odtwarzanie na żywo przez zainstalowany VLC oraz konfigurowanie
 mapowania klawiatury i pilota. Jest to wczesna wersja testowa, bez pełnego EPG, nagrań i prawdziwego timeshiftu.
 Uruchamia się w oknie odtwarzacza; ustawienia otwiera się przez menu (klawisz M lub przycisk Menu pilota).
-Prawy przycisk myszy pokazuje i ukrywa przyciski sterowania.
+Prawy przycisk myszy pokazuje i ukrywa przyciski sterowania. Ustawienia mają układ z Androida (lista sekcji,
+a w nich opcje), otwierają się w oknie bez paska tytułu i obejmują m.in. mapowanie OK/strzałek, konfigurację
+pilota oraz okno testu pilota. Przycisk „Wróć” jest widoczny tylko przy obsłudze myszą (lub na stałe, jeśli
+tak ustawiono).
 
 * ExoPlayer (Media3) z **tunelowaniem wideo**
   (sprzętowy deinterlacer telewizora, płynne paski informacyjne).
