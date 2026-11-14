@@ -171,7 +171,10 @@ fun main() {
             var volumeOsdVisible by remember { mutableStateOf(false) }
             val volumeKeyIds = remember { AtomicReference<Set<String>>(emptySet()) }
             val captureActive = remember { AtomicBoolean(false) }
-            fun openMenu() = navigation.openMenu(DesktopMenuItem.visible(config.menuOrder, config.menuHidden))
+            fun openMenu() = navigation.openMenu(
+                DesktopMenuItem.visible(config.menuOrder, config.menuHidden)
+                    .filter { it != DesktopMenuItem.SAVE_TIMESHIFT || (timeshift != null && playingRecording == null) },
+            )
             LaunchedEffect(config.appLanguage) { AppLanguage.apply(config.appLanguage) }
             var lastVirtualKey by remember { mutableStateOf<VirtualRemoteKey?>(null) }
             var lastVirtualKeyAt by remember { mutableLongStateOf(0L) }
@@ -1181,6 +1184,86 @@ fun main() {
                 }
             }
 
+            // ---------- Watchdog: zawieszony obraz i brak dekodera (jak w Androidzie) ----------
+            var decoderDown by remember { mutableStateOf(false) }
+            val restartBackoff = remember { RestartBackoff() }
+            /** Ponowne otwarcie bieżącego odtwarzania; timeshift zachowuje bufor i miejsce. */
+            fun reopenPlayback(reason: String) {
+                logInfo("watchdog: $reason")
+                val ts = timeshift
+                val session = vlcSession
+                val recording = playingRecording
+                when {
+                    recording != null -> {
+                        saveRecordingPosition()
+                        playRecording(recording)
+                    }
+                    ts != null && session != null && ts.buffer.failed == null -> {
+                        val url = if (timeshiftShifted()) ts.urlAt(timeshiftShown(ts, session)) else ts.liveUrl()
+                        session.play(url, config)
+                    }
+                    else -> restartPlayback()
+                }
+            }
+            LaunchedEffect(vlcSession, playingChannel?.ref, playingRecording?.path, config.watchdog, config.stallSec) {
+                val session = vlcSession ?: return@LaunchedEffect
+                if (!config.watchdog || (playingChannel == null && playingRecording == null)) return@LaunchedEffect
+                val watch = StallWatch(config.stallSec * 1000L)
+                watch.reset(monotonicMs())
+                var wasDown = false
+                while (true) {
+                    delay(1000)
+                    val now = monotonicMs()
+                    if (decoderDown) {
+                        wasDown = true
+                        continue
+                    }
+                    if (wasDown) {
+                        wasDown = false
+                        watch.reset(now)
+                    }
+                    val time = session.time()
+                    if (!watch.check(now, time, session.isPaused || tsPendingTarget != null)) {
+                        if (time > 0 && !session.isPaused) restartBackoff.playing(now)
+                        continue
+                    }
+                    restartBackoff.stalled()
+                    val current = config
+                    val reachable = withContext(Dispatchers.IO) { probeDecoder(current) }
+                    if (!reachable) {
+                        logInfo("dekoder: brak komunikacji — czekam na powrót (co 3 s)")
+                        decoderDown = true
+                        continue
+                    }
+                    val wait = restartBackoff.nextDelay()
+                    delay(wait)
+                    reopenPlayback("obraz stoi — ponowne otwarcie strumienia (próba ${restartBackoff.streak})")
+                    watch.reset(monotonicMs())
+                }
+            }
+            LaunchedEffect(decoderDown) {
+                if (!decoderDown) return@LaunchedEffect
+                runCatching { vlcSession?.stop() }
+                var attempt = 0
+                while (decoderDown) {
+                    attempt++
+                    status = "Brak komunikacji z dekoderem ${config.host} — ponawiam co 3 s (próba $attempt)."
+                    delay(3000)
+                    val current = config
+                    if (withContext(Dispatchers.IO) { probeDecoder(current) }) {
+                        decoderDown = false
+                        logInfo("dekoder: komunikacja przywrócona — wznawiam")
+                        status = "Dekoder znów odpowiada — wznawiam odtwarzanie."
+                        val recording = playingRecording
+                        val channel = playingChannel
+                        when {
+                            recording != null -> playRecording(recording)
+                            channel != null -> startChannel(channel)
+                        }
+                    }
+                }
+            }
+
             fun openSettings(vararg path: SettingsScreen) {
                 fun show() {
                     showMenu = false
@@ -1840,6 +1923,144 @@ fun main() {
             showMultiEpgRef = ::showMultiEpgImpl
             openEpgSearchRef = ::openEpgSearchImpl
 
+            /** Pytanie z wyborem: w ustawieniach jako okno wyboru, poza nimi jako okienko nad obrazem. */
+            fun ask(title: String, body: String, options: List<String>, onSelect: (Int) -> Unit) {
+                if (navigator.isVisible) navigator.openChoice(SettingsChoice(title, options, 0, body = body, onSelect = onSelect))
+                else quickPick = QuickPick(title, options, 0, body = body, timeoutSec = 0, onSelect = onSelect)
+            }
+
+            // ---------- Aktualizacja aplikacji z GitHuba ----------
+            var updateStatus by remember { mutableStateOf("") }
+            var updateBusy by remember { mutableStateOf(false) }
+            fun installUpdate(release: Updater.Release) {
+                if (updateBusy) return
+                updateBusy = true
+                scope.launch {
+                    try {
+                        val file = withContext(Dispatchers.IO) {
+                            Updater.download(release) { percent ->
+                                EventQueue.invokeLater { updateStatus = "pobieranie ${release.version}: $percent%" }
+                            }
+                        }
+                        logInfo("aktualizacja: pobrano ${file.name} — uruchamiam instalator")
+                        updateStatus = "uruchamiam instalator ${release.version}…"
+                        withContext(Dispatchers.IO) { Updater.launchInstaller(file) }
+                        delay(1500)
+                        exitApplication()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        updateStatus = "błąd: ${e.message}"
+                        status = "Nie udało się pobrać aktualizacji: ${e.message}"
+                    } finally {
+                        updateBusy = false
+                    }
+                }
+            }
+            fun checkUpdate(manual: Boolean) {
+                if (updateBusy) return
+                updateBusy = true
+                updateStatus = "sprawdzanie…"
+                val channel = config.updateChannel
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { runCatching { Updater.newer(appVersion(), channel) } }
+                    updateBusy = false
+                    saveConfig(config.copy(lastUpdateCheck = System.currentTimeMillis()))
+                    result.onFailure {
+                        updateStatus = "błąd sprawdzania: ${it.message}"
+                        if (manual) status = "Nie udało się sprawdzić aktualizacji: ${it.message}"
+                    }.onSuccess { release ->
+                        if (release == null) {
+                            updateStatus = "masz najnowszą wersję (${appVersion()})"
+                            if (manual) status = "E2Stream ${appVersion()} — to najnowsza wersja."
+                            return@onSuccess
+                        }
+                        val kind = if (release.test) "testowa" else "stabilna"
+                        updateStatus = "dostępna ${release.version} ($kind)"
+                        logInfo("aktualizacja: dostępna ${release.version} ($kind)")
+                        ask(
+                            "Nowa wersja E2Stream ${release.version}",
+                            "Zainstalowana: ${appVersion()}. Dostępna: ${release.version} ($kind).\n\n" +
+                                "Instalator zostanie pobrany i uruchomiony, a E2Stream się zamknie. Po instalacji uruchom aplikację ponownie.",
+                            listOf("Zainstaluj teraz", "Później"),
+                        ) { if (it == 0) installUpdate(release) }
+                    }
+                }
+            }
+            LaunchedEffect(Unit) {
+                delay(20_000)
+                if (config.autoUpdate && System.currentTimeMillis() - config.lastUpdateCheck > 20 * 3_600_000L) checkUpdate(manual = false)
+            }
+
+            // ---------- Zapis bufora timeshiftu do nagrań na komputerze ----------
+            var tsSaveBusy by remember { mutableStateOf(false) }
+            fun saveTimeshiftBuffer(fromWall: Long, label: String) {
+                val ts = timeshift ?: return
+                val channel = playingChannel ?: return
+                if (tsSaveBusy) {
+                    status = "Zapis bufora już trwa."
+                    return
+                }
+                val dir = TimeshiftBuffer.recordingsDir(config)
+                val title = bannerNowNext.first?.title ?: nowEvents[serviceKey(channel.ref)]?.title
+                val target = java.io.File(dir, TimeshiftBuffer.recordingName(channel.name, title, java.time.LocalDateTime.now()))
+                tsSaveBusy = true
+                status = "Zapisuję bufor timeshiftu ($label)…"
+                scope.launch {
+                    try {
+                        val bytes = withContext(Dispatchers.IO) {
+                            ts.buffer.saveTo(target, fromWall) { percent ->
+                                if (percent % 10 == 0) EventQueue.invokeLater { status = "Zapis bufora: $percent%" }
+                            }
+                        }
+                        if (bytes <= 0) {
+                            target.delete()
+                            status = "Bufor timeshiftu jest pusty — nic nie zapisano."
+                        } else {
+                            logInfo("timeshift: zapisano ${bytes / 1_000_000} MB do ${target.path}")
+                            status = "Zapisano ${bytes / 1_000_000} MB: ${target.path}"
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        status = "Nie udało się zapisać bufora: ${e.message}"
+                    } finally {
+                        tsSaveBusy = false
+                    }
+                }
+            }
+            fun pickTimeshiftSave() {
+                val ts = timeshift
+                if (ts == null) {
+                    status = "Timeshift jest wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift."
+                    return
+                }
+                val now = monotonicMs()
+                val span = ts.buffer.spanMs()
+                val options = mutableListOf<Pair<String, Long>>()
+                options += "Cały bufor (${formatDuration(span)})" to Long.MIN_VALUE
+                val event = bannerNowNext.first
+                if (event != null) {
+                    val eventWall = now - (System.currentTimeMillis() / 1000 - event.begin) * 1000
+                    if (eventWall > ts.buffer.oldestWall) {
+                        options += "Od początku audycji „${event.title}” (${formatDuration(now - eventWall)})" to eventWall
+                    }
+                }
+                for (minutes in listOf(5, 15, 30)) {
+                    if (span > minutes * 60_000L) options += "Ostatnie $minutes min" to now - minutes * 60_000L
+                }
+                quickPick = QuickPick(
+                    "Zapisz bufor timeshiftu",
+                    options.map { it.first },
+                    0,
+                    body = "Plik .ts trafi do: ${TimeshiftBuffer.recordingsDir(config).path} (zmiana: Ustawienia → Odtwarzanie i obraz). " +
+                        "Nie zmieniaj kanału do końca zapisu.",
+                ) { index ->
+                    val (label, from) = options[index]
+                    saveTimeshiftBuffer(from, label)
+                }
+            }
+
             fun runNavAction(action: NavAction) {
                 when (action) {
                     NavAction.NONE -> Unit
@@ -1878,6 +2099,7 @@ fun main() {
                     DesktopMenuItem.EPG_CHANNEL -> runNavAction(NavAction.EPG_CHANNEL)
                     DesktopMenuItem.EPG_SEARCH -> openEpgSearch()
                     DesktopMenuItem.AUDIO -> showAudioPick()
+                    DesktopMenuItem.SAVE_TIMESHIFT -> pickTimeshiftSave()
                     DesktopMenuItem.EXIT -> {
                         powerDialogOpen.set(true)
                         showExitConfirmation = true
@@ -2166,6 +2388,15 @@ fun main() {
                             status = "Okno programu: ${modes[it].label}."
                         }
                     },
+                    SettingItem.Header("Watchdog"),
+                    SettingItem.Toggle(
+                        "Watchdog",
+                        config.watchdog,
+                        "gdy obraz stoi — ponowne otwarcie strumienia; gdy dekoder nie odpowiada — czekanie i wznowienie tego samego kanału",
+                    ) { saveConfig(config.copy(watchdog = it)) },
+                    SettingItem.Action("Próg zawieszenia", "${config.stallSec} s (+2 s zapasu; po starcie kanału 15 s)") {
+                        editNumber("Próg zawieszenia obrazu (s)", config.stallSec, 1..30) { config.copy(stallSec = it) }
+                    },
                     SettingItem.Header("Timeshift"),
                     SettingItem.Action(
                         "Timeshift (bufor na dysku)",
@@ -2208,6 +2439,18 @@ fun main() {
                     },
                     SettingItem.Toggle("Wstecz wraca na żywo", config.tsBackLive) {
                         saveConfig(config.copy(tsBackLive = it))
+                    },
+                    SettingItem.Action("Katalog nagrań z bufora", TimeshiftBuffer.recordingsDir(config).path) {
+                        editText(
+                            "Katalog nagrań zapisanych z bufora timeshiftu",
+                            config.recLocalDir,
+                            "pusty = ${TimeshiftBuffer.recordingsDir(config.copy(recLocalDir = "")).path}",
+                        ) { config.copy(recLocalDir = it.trim()) }
+                    },
+                    SettingItem.Action("Otwórz katalog nagrań", "Menu → Zapisz bufor timeshiftu zapisuje tam pliki .ts") {
+                        val dir = TimeshiftBuffer.recordingsDir(config)
+                        status = runCatching { dir.mkdirs(); java.awt.Desktop.getDesktop().open(dir) }
+                            .fold({ "Otwarto: ${dir.path}" }, { "Nie udało się otworzyć katalogu: ${it.message}" })
                     },
                     SettingItem.Header("Dźwięk"),
                     SettingItem.Action(
@@ -2636,7 +2879,29 @@ fun main() {
                 SettingsScreen.INFO -> listOf(
                     SettingItem.Header("Aplikacja E2Stream dla Windows"),
                     SettingItem.Action("Wersja", appVersion()) {},
-                    SettingItem.Action("Wydania na GitHubie", "sprawdź nowe wersje") { openBrowser("$REPOSITORY_URL/releases") },
+                    SettingItem.Action(
+                        "Sprawdź i zainstaluj aktualizację",
+                        updateStatus.ifBlank {
+                            if (config.lastUpdateCheck > 0) "ostatnio: " + EpgTime.day(config.lastUpdateCheck / 1000) + " " +
+                                EpgTime.clock(config.lastUpdateCheck / 1000) else "jeszcze nie sprawdzano"
+                        },
+                    ) { checkUpdate(manual = true) },
+                    SettingItem.Toggle(
+                        "Aktualizacja automatyczna",
+                        config.autoUpdate,
+                        "raz na dobę przy uruchomieniu sprawdza GitHuba i proponuje instalację",
+                    ) { saveConfig(config.copy(autoUpdate = it)) },
+                    SettingItem.Action(
+                        "Kanał aktualizacji",
+                        if (config.updateChannel == "test") "stabilne i testowe" else "tylko stabilne",
+                    ) {
+                        val channels = listOf("stable", "test")
+                        choose("Kanał aktualizacji", listOf("tylko stabilne", "stabilne i testowe"), channels.indexOf(config.updateChannel)) {
+                            saveConfig(config.copy(updateChannel = channels[it]))
+                            updateStatus = ""
+                        }
+                    },
+                    SettingItem.Action("Wydania na GitHubie", "wszystkie wersje") { openBrowser("$REPOSITORY_URL/releases") },
                     SettingItem.Action("Opis wersji Windows (README)") {
                         openBrowser("$REPOSITORY_URL/blob/windows/0.1.0-test/e2stream/desktop/README.md")
                     },

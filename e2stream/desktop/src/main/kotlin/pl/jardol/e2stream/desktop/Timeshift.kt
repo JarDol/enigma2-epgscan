@@ -216,6 +216,46 @@ internal class TimeshiftBuffer(
         }
     }
 
+    /** Początek najstarszej zachowanej minuty; -1 — bufor pusty lub zamknięty. */
+    fun oldestOffset(): Long = synchronized(lock) { segments.firstOrNull()?.start ?: -1 }
+
+    /**
+     * Kopia bufora od chwili [fromWall] do bieżącego końca do pliku [target] (zwykły plik .ts do odtworzenia w VLC).
+     * Zwraca liczbę zapisanych bajtów; [progress] dostaje procent.
+     */
+    fun saveTo(target: File, fromWall: Long, progress: (Int) -> Unit = {}): Long {
+        val end = total
+        var position = maxOf(offsetAt(fromWall), oldestOffset())
+        if (position < 0 || end <= position) return 0
+        val start = position
+        var written = 0L
+        var last = -1
+        target.parentFile?.mkdirs()
+        FileOutputStream(target).use { output ->
+            val bytes = ByteArray(PACKET * 2048)
+            while (position < end) {
+                val count = read(position, bytes, 0, minOf(bytes.size.toLong(), end - position).toInt())
+                if (count < 0) {
+                    // Najstarsza minuta wypadła w trakcie kopiowania — dalej od najstarszej zachowanej.
+                    val oldest = oldestOffset()
+                    if (oldest < 0 || oldest <= position) break
+                    position = oldest
+                    continue
+                }
+                if (count == 0) break
+                output.write(bytes, 0, count)
+                position += count
+                written += count
+                val percent = ((position - start) * 100 / (end - start)).toInt()
+                if (percent != last) {
+                    last = percent
+                    progress(percent)
+                }
+            }
+        }
+        return written
+    }
+
     /** Koniec bufora: pliki skasowane w tle. */
     override fun close() = synchronized(lock) {
         runCatching { output?.close() }
@@ -249,6 +289,18 @@ internal class TimeshiftBuffer(
 
         fun dirFor(config: DesktopConfig): File =
             config.tsDir.takeIf(String::isNotBlank)?.let { File(it, "timeshift") } ?: defaultDir()
+
+        /** Katalog nagrań zapisanych z bufora: ustawienie albo Wideo\E2Stream. */
+        fun recordingsDir(config: DesktopConfig): File =
+            config.recLocalDir.takeIf(String::isNotBlank)?.let(::File)
+                ?: Paths.get(System.getProperty("user.home"), "Videos", "E2Stream").toFile()
+
+        /** Nazwa pliku nagrania: „kanał – audycja – rrrr-mm-dd gg.mm.ts” bez znaków niedozwolonych w Windows. */
+        fun recordingName(channel: String, title: String?, at: java.time.LocalDateTime): String {
+            val stamp = at.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH.mm"))
+            val base = listOfNotNull(channel.trim().ifBlank { null }, title?.trim()?.ifBlank { null }, stamp).joinToString(" – ")
+            return base.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").take(150) + ".ts"
+        }
 
         /** Ile minut timeshiftu zmieści się w katalogu [dir] (z zapasem). */
         fun fitMinutes(dir: File): Int {

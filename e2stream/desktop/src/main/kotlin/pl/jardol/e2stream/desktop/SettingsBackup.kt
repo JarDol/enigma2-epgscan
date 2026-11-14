@@ -40,7 +40,7 @@ internal object SettingsBackup {
     /** Ustawienia zależne od komputera albo stanu — nie trafiają do kopii ani z niej nie wracają. */
     private val excluded = setOf(
         "host", "lastBouquetRef", "lastChannelRef", "tsDir", "piconDir", "logDir", "lastPiconFetchDay",
-        "lastEpgFetch", "epgPackIdentity", "epgPackCheckAt", "backupDecision",
+        "lastEpgFetch", "epgPackIdentity", "epgPackCheckAt", "backupDecision", "recLocalDir", "lastUpdateCheck",
     )
 
     // nazwa w Androidzie → nazwa w Windows
@@ -52,7 +52,7 @@ internal object SettingsBackup {
         "tsMin" to "tsMin", "tsStepSec" to "tsStepSec", "tsStepMin" to "tsStepMin", "tsBannerSec" to "tsBannerSec",
         "epgDays" to "epgDays", "confirmDialogSec" to "confirmDialogSec", "epgChannelSec" to "epgChannelSec",
         "epgMultiSec" to "epgMultiSec", "infoDialogSec" to "infoDialogSec", "zapHistoryDays" to "zapHistoryDays",
-        "epgEventSec" to "actionDialogSec",
+        "epgEventSec" to "actionDialogSec", "stallSec" to "stallSec",
     )
     private val strings = linkedMapOf(
         "pluginToken" to "pluginToken", "user" to "username", "pass" to "password",
@@ -64,6 +64,7 @@ internal object SettingsBackup {
         "resumeLast" to "resumeLast", "invertUpDown" to "invertUpDown", "tsBackLive" to "tsBackLive",
         "epgDaily" to "epgDaily", "picons" to "picons", "missingPiconLogo" to "missingPiconLogo",
         "showStats" to "showStats", "logFtp" to "logFtp", "hideInfoDialogs" to "hideInfoDialogs",
+        "watchdog" to "watchdog",
     )
 
     fun backup(config: DesktopConfig): JSONObject {

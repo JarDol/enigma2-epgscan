@@ -85,4 +85,32 @@ class TimeshiftTest {
         assertEquals("1:05", formatDuration(65_000))
         assertEquals("1:01:01", formatDuration(3_661_000))
     }
+
+    @Test
+    fun savesBufferFromChosenMomentToFile() {
+        val dir = Files.createTempDirectory("e2stream-ts-test").toFile()
+        var now = 0L
+        val buffer = TimeshiftBuffer(dir, 30, clock = { now }, reserveBytes = 0)
+        try {
+            buffer.write(packets(2000), 0, 2000 * TimeshiftBuffer.PACKET)
+            now = 60_000
+            buffer.write(packets(2000, 2000), 0, 2000 * TimeshiftBuffer.PACKET)
+            now = 120_000
+            val all = java.io.File(dir, "all.ts")
+            assertEquals(4000L * TimeshiftBuffer.PACKET, buffer.saveTo(all, -1))
+            assertEquals(4000L * TimeshiftBuffer.PACKET, all.length())
+            val part = java.io.File(dir, "part.ts")
+            assertEquals(2000L * TimeshiftBuffer.PACKET, buffer.saveTo(part, 60_000))
+            assertEquals(0x47.toByte(), part.readBytes()[0])
+        } finally {
+            buffer.close()
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun recordingNameIsSafeForWindows() {
+        val name = TimeshiftBuffer.recordingName("TVP 1 HD", "Piłka nożna: Rumunia / Polska?", java.time.LocalDateTime.of(2026, 11, 14, 21, 5))
+        assertEquals("TVP 1 HD – Piłka nożna_ Rumunia _ Polska_ – 2026-11-14 21.05.ts", name)
+    }
 }

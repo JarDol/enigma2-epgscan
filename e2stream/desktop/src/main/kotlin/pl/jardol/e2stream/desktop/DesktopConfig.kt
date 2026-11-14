@@ -102,6 +102,17 @@ data class DesktopConfig(
     val eitReplace: Boolean = true,
     /** Czy po wybraniu dekodera zapadła już decyzja o imporcie kopii ustawień (jak w Androidzie). */
     val backupDecision: Boolean = false,
+    /** Watchdog: ponowne otwarcie strumienia, gdy obraz stoi; przy braku dekodera — czekanie i wznowienie. */
+    val watchdog: Boolean = true,
+    /** Ile sekund stojącego obrazu (+2 s zapasu) to zawieszenie. */
+    val stallSec: Int = 3,
+    /** Katalog nagrań zapisanych z bufora timeshiftu (pusty = Wideo\E2Stream). */
+    val recLocalDir: String = "",
+    /** Sprawdzanie nowych wersji raz na dobę przy uruchomieniu. */
+    val autoUpdate: Boolean = true,
+    /** "stable" albo "test" (także wersje testowe). */
+    val updateChannel: String = "stable",
+    val lastUpdateCheck: Long = 0,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -189,6 +200,12 @@ data class DesktopConfig(
             setProperty("eitStream", eitStream.toString())
             setProperty("eitReplace", eitReplace.toString())
             setProperty("backupDecision", backupDecision.toString())
+            setProperty("watchdog", watchdog.toString())
+            setProperty("stallSec", stallSec.toString())
+            setProperty("recLocalDir", recLocalDir)
+            setProperty("autoUpdate", autoUpdate.toString())
+            setProperty("updateChannel", updateChannel)
+            setProperty("lastUpdateCheck", lastUpdateCheck.toString())
     }
 
     companion object {
@@ -325,6 +342,13 @@ data class DesktopConfig(
                 eitReplace = bool("eitReplace", defaults.eitReplace),
                 // Starsze wersje: dekoder już skonfigurowany — bez pytania o kopię.
                 backupDecision = bool("backupDecision", properties.getProperty("host").orEmpty().isNotBlank()),
+                watchdog = bool("watchdog", defaults.watchdog),
+                stallSec = int("stallSec", defaults.stallSec, 1..30),
+                recLocalDir = string("recLocalDir", ""),
+                autoUpdate = bool("autoUpdate", defaults.autoUpdate),
+                updateChannel = string("updateChannel", defaults.updateChannel).takeIf { it == "stable" || it == "test" }
+                    ?: defaults.updateChannel,
+                lastUpdateCheck = properties.getProperty("lastUpdateCheck")?.toLongOrNull() ?: 0,
             )
         }
 

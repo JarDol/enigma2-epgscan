@@ -3,6 +3,12 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.2.1
+
+- Watchdog jak w Androidzie: gdy obraz stoi (domyślnie 3 s + 2 s, po starcie kanału 15 s), strumień jest otwierany ponownie (kolejne próby po 0, 1, 2, 5, 10 s); gdy dekoder nie odpowiada — komunikat i sprawdzanie co 3 s, potem wznowienie tego samego kanału lub nagrania. Ustawienia → Odtwarzanie i obraz → Watchdog
+- Aktualizacja aplikacji z GitHuba: Ustawienia → Informacje i aktualizacje → „Sprawdź i zainstaluj aktualizację” (ręcznie) i „Aktualizacja automatyczna” (raz na dobę przy uruchomieniu, z pytaniem); kanał tylko stabilne albo także testowe. Instalator uruchamia się, a E2Stream zamyka
+- Menu → „Zapisz bufor timeshiftu” (gdy timeshift działa): cały bufor, od początku bieżącej audycji albo ostatnie 5/15/30 min do pliku .ts w katalogu nagrań (domyślnie Wideo\E2Stream; zmiana i otwarcie katalogu w Ustawienia → Odtwarzanie i obraz)
+
 ## 0.2.0
 
 Pierwsza wersja stabilna.
