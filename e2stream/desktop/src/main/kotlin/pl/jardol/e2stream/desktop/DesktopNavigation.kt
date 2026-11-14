@@ -9,6 +9,7 @@ internal enum class DesktopMenuItem(val label: String) {
     CHANNEL_LIST("Lista kanałów"),
     SETTINGS("Ustawienia"),
     REMOTE_TEST("Test pilota"),
+    IMAGE("Obraz — skalowanie"),
     WINDOW("Okno / pełny ekran"),
     EXIT("Wyłącz E2Stream"),
 }

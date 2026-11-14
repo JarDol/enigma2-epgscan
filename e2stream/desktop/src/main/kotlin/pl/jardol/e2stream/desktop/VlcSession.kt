@@ -62,6 +62,12 @@ class VlcSession(private val onError: (String) -> Unit) {
     private var scaleMode = VideoScaleMode.FIT
     private var closed = false
 
+    /** Koniec odtwarzanego materiału (plik nagrania, zamknięty strumień timeshiftu); wątek Swing. */
+    var onFinished: (() -> Unit)? = null
+
+    val isPaused: Boolean
+        get() = paused
+
     val view: JComponent
         get() = component
 
@@ -99,6 +105,9 @@ class VlcSession(private val onError: (String) -> Unit) {
                     onError("VLC: nie udało się odtworzyć strumienia. Sprawdź połączenie i dane logowania.")
                 }
             }
+            override fun finished(mediaPlayer: MediaPlayer) {
+                SwingUtilities.invokeLater { if (!closed) onFinished?.invoke() }
+            }
         })
     }
 
@@ -118,8 +127,9 @@ class VlcSession(private val onError: (String) -> Unit) {
         }
     }
 
-    fun play(url: String, config: DesktopConfig) {
-        val options = vlcMediaOptions(config)
+    fun play(url: String, config: DesktopConfig, startMs: Long = 0) {
+        val options = vlcMediaOptions(config) +
+            if (startMs > 0) listOf(":start-time=%.1f".format(java.util.Locale.US, startMs / 1000.0)) else emptyList()
         val deinterlace = vlcDeinterlaceMode(config.vlcDeint)
         playbackGate.request {
             component.mediaPlayer().video().setDeinterlace(deinterlace)
@@ -127,6 +137,16 @@ class VlcSession(private val onError: (String) -> Unit) {
             if (!started) throw IOException("VLC nie przyjął strumienia.")
             paused = false
         }
+    }
+
+    /** Położenie odtwarzania (ms) od początku bieżącego materiału; -1, gdy nieznane. */
+    fun time(): Long = if (closed) -1 else component.mediaPlayer().status().time()
+
+    /** Długość materiału (ms); 0 lub -1 dla strumieni na żywo. */
+    fun length(): Long = if (closed) -1 else component.mediaPlayer().status().length()
+
+    fun seekTo(ms: Long) {
+        if (!closed) component.mediaPlayer().controls().setTime(ms.coerceAtLeast(0))
     }
 
     fun togglePause() {

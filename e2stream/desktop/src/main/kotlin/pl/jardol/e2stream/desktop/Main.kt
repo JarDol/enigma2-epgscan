@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.AWTEvent
 import java.awt.EventQueue
+import java.awt.Frame
 import java.awt.KeyboardFocusManager
 import java.awt.Toolkit
 import java.awt.event.AWTEventListener
@@ -61,6 +62,8 @@ import java.util.concurrent.atomic.AtomicReference
 import javax.swing.SwingUtilities
 
 private const val REPOSITORY_URL = "https://github.com/JarDol/enigma2-epgscan"
+private const val REC_PREFIX = "rec:"
+private const val REC_UP = ".."
 private val testTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss")
 
 private fun appVersion(): String = System.getProperty("jpackage.app-version") ?: "wersja deweloperska"
@@ -69,12 +72,10 @@ fun main() {
     val remoteDiagnostics = RemoteDiagnostics.fromEnvironment()
     val instance = SingleInstance.startOrSignal() ?: return
     application {
-        val mainWindowState = rememberWindowState(placement = WindowPlacement.Maximized)
-        fun toggleMaximized() {
-            mainWindowState.placement = if (mainWindowState.placement == WindowPlacement.Maximized) {
-                WindowPlacement.Floating
-            } else WindowPlacement.Maximized
-        }
+        val startWindowMode = remember { runCatching { DesktopConfig.load().windowMode }.getOrDefault(WindowMode.MAXIMIZED) }
+        val mainWindowState = rememberWindowState(
+            placement = if (startWindowMode == WindowMode.WINDOW) WindowPlacement.Floating else WindowPlacement.Maximized,
+        )
         Window(
             onCloseRequest = ::exitApplication,
             title = "E2Stream",
@@ -132,6 +133,20 @@ fun main() {
             var vlcSession by remember { mutableStateOf<VlcSession?>(null) }
             var playingChannel by remember { mutableStateOf<Channel?>(null) }
             var previousChannel by remember { mutableStateOf<Channel?>(null) }
+            // Kanały, po których przełączają Kanał +/−; lista kanałów może w tym czasie pokazywać inny bukiet lub nagrania.
+            var playList by remember { mutableStateOf<List<Channel>>(emptyList()) }
+            var recDir by remember { mutableStateOf("") }
+            var recStack by remember { mutableStateOf<List<String>>(emptyList()) }
+            var recRows by remember { mutableStateOf<Map<String, Recording>>(emptyMap()) }
+            var playingRecording by remember { mutableStateOf<Recording?>(null) }
+            val recPositions = remember { RecordingPositions() }
+            var timeshift by remember { mutableStateOf<TimeshiftSession?>(null) }
+            var tsPendingTarget by remember { mutableStateOf<Long?>(null) }
+            var tsPendingGeneration by remember { mutableIntStateOf(0) }
+            var playbackBarVisible by remember { mutableStateOf(false) }
+            var playbackBarGeneration by remember { mutableIntStateOf(0) }
+            var playbackTick by remember { mutableIntStateOf(0) }
+            val finishedHandler = remember { AtomicReference<(() -> Unit)?>(null) }
             var bannerVisible by remember { mutableStateOf(false) }
             var bannerGeneration by remember { mutableIntStateOf(0) }
             var pinUnlockedUntil by remember { mutableLongStateOf(0L) }
@@ -223,7 +238,7 @@ fun main() {
             LaunchedEffect(selectedBouquet, config.host, config.httpPort, config.username, config.password, epgRefresh) {
                 val bouquet = selectedBouquet
                 epgError = null
-                if (bouquet == null) return@LaunchedEffect
+                if (bouquet == null || bouquet.ref == REC_BOUQUET) return@LaunchedEffect
                 val client = DecoderClient(config)
                 while (true) {
                     try {
@@ -271,6 +286,55 @@ fun main() {
                     .onFailure { status = "Nie udało się zapisać ustawień: ${it.message}" }
             }
 
+            val fullscreen = remember { BorderlessFullscreen(desktopWindow) }
+            var windowMode by remember { mutableStateOf(startWindowMode) }
+            var lastWindowedMode by remember {
+                mutableStateOf(if (startWindowMode == WindowMode.WINDOW) WindowMode.WINDOW else WindowMode.MAXIMIZED)
+            }
+            fun applyWindowMode(mode: WindowMode) {
+                when (mode) {
+                    WindowMode.WINDOW, WindowMode.MAXIMIZED -> {
+                        fullscreen.exit()
+                        val placement = if (mode == WindowMode.WINDOW) WindowPlacement.Floating else WindowPlacement.Maximized
+                        mainWindowState.placement = placement
+                        desktopWindow.extendedState = if (mode == WindowMode.WINDOW) Frame.NORMAL else Frame.MAXIMIZED_BOTH
+                    }
+                    WindowMode.FULLSCREEN -> {
+                        if (fullscreen.isActive) return
+                        desktopWindow.extendedState = Frame.NORMAL
+                        mainWindowState.placement = WindowPlacement.Floating
+                        runCatching { fullscreen.enter() }
+                            .onFailure { status = "Nie udało się włączyć pełnego ekranu: ${it.message}" }
+                    }
+                }
+            }
+            fun setWindowMode(mode: WindowMode) {
+                if (mode != WindowMode.FULLSCREEN) lastWindowedMode = mode
+                windowMode = mode
+                applyWindowMode(mode)
+                if (config.windowMode != mode) saveConfig(config.copy(windowMode = mode))
+            }
+            fun toggleFullscreen() {
+                setWindowMode(if (windowMode == WindowMode.FULLSCREEN) lastWindowedMode else WindowMode.FULLSCREEN)
+            }
+            LaunchedEffect(Unit) {
+                if (startWindowMode == WindowMode.FULLSCREEN) {
+                    while (!desktopWindow.isShowing) delay(50)
+                    delay(200)
+                    applyWindowMode(WindowMode.FULLSCREEN)
+                }
+            }
+            // Maksymalizacja/przywrócenie z paska tytułu lub Win+strzałki aktualizuje bieżący tryb.
+            LaunchedEffect(mainWindowState.placement) {
+                if (windowMode == WindowMode.FULLSCREEN) return@LaunchedEffect
+                val mode = if (mainWindowState.placement == WindowPlacement.Maximized) WindowMode.MAXIMIZED else WindowMode.WINDOW
+                if (mode != windowMode) {
+                    windowMode = mode
+                    lastWindowedMode = mode
+                    if (config.windowMode != mode) saveConfig(config.copy(windowMode = mode))
+                }
+            }
+
             LaunchedEffect(config.logDir) {
                 AppLog.setDirectory(AppLog.dirFor(config))
             }
@@ -309,30 +373,101 @@ fun main() {
                 return all.filter { it.ref !in config.hiddenBouquets }.ifEmpty { all }
             }
 
+            /** Bukiety listy kanałów: widoczne bukiety TV i wirtualny bukiet „Nagrania”. */
+            fun listBouquets(): List<Bouquet> {
+                val tv = visibleBouquets()
+                return if (catalog == null || REC_BOUQUET in config.hiddenBouquets) tv else tv + RECORDINGS_BOUQUET
+            }
+
+            fun closeTimeshift() {
+                val ts = timeshift ?: return
+                timeshift = null
+                tsPendingTarget = null
+                scope.launch(Dispatchers.IO) { runCatching { ts.close() } }
+            }
+
+            fun saveRecordingPosition() {
+                val recording = playingRecording ?: return
+                val session = vlcSession ?: return
+                val position = session.time()
+                if (position > 0) recPositions.save(recording.path, position, session.length())
+            }
+
+            fun showPlaybackBar() {
+                playbackBarGeneration++
+                playbackTick++
+            }
+
+            fun sessionOrNew(): VlcSession {
+                val session = vlcSession ?: VlcSession { status = it }.also { vlcSession = it }
+                session.onFinished = { finishedHandler.get()?.invoke() }
+                session.setVideoScale(config.videoScaleMode)
+                return session
+            }
+
             fun startChannel(channel: Channel) {
-                val existingSession = vlcSession
-                var newSession: VlcSession? = null
+                saveRecordingPosition()
+                playingRecording = null
+                closeTimeshift()
                 try {
-                    val session = existingSession ?: VlcSession { status = it }.also { newSession = it }
-                    session.setVideoScale(config.videoScaleMode)
+                    val session = sessionOrNew()
                     val url = DecoderClient(config).streamUrl(channel)
-                    session.play(url, config)
-                    if (existingSession == null) vlcSession = session
+                    val ts = if (config.tsMin <= 0) null else runCatching {
+                        TimeshiftSession(
+                            TimeshiftBuffer(TimeshiftBuffer.dirFor(config), config.tsMin),
+                            url,
+                            TimeshiftSession.basicAuth(config),
+                        )
+                    }.onFailure { AppLog.i("timeshift: nie udało się uruchomić (${it.message})") }.getOrNull()
+                    timeshift = ts
+                    session.play(ts?.liveUrl() ?: url, config)
                     val current = playingChannel
                     if (current != null && current.ref != channel.ref) previousChannel = current
                     playingChannel = channel
+                    if (selectedBouquet?.ref != REC_BOUQUET && channels.any { it.ref == channel.ref }) playList = channels
                     captureButton = null
                     status = "Otwieranie strumienia: ${channel.name}"
                     saveConfig(
                         config.copy(
-                            lastBouquetRef = selectedBouquet?.ref ?: config.lastBouquetRef,
+                            lastBouquetRef = selectedBouquet?.ref?.takeIf { it != REC_BOUQUET } ?: config.lastBouquetRef,
                             lastChannelRef = channel.ref,
                         ),
                     )
                 } catch (e: Exception) {
-                    newSession?.close()
+                    closeTimeshift()
                     status = e.message ?: "Nie udało się uruchomić VLC."
                 }
+            }
+
+            fun playRecording(recording: Recording) {
+                saveRecordingPosition()
+                closeTimeshift()
+                try {
+                    val session = sessionOrNew()
+                    val start = recPositions.get(recording.path)
+                    session.play(DecoderClient(config).recordingUrl(recording.path), config, start)
+                    playingChannel?.let { previousChannel = it }
+                    playingChannel = null
+                    playingRecording = recording
+                    bannerVisible = false
+                    showPlaybackBar()
+                    status = "Nagranie: ${recording.title}" +
+                        if (start > 0) " — wznowienie od ${formatDuration(start)}" else ""
+                } catch (e: Exception) {
+                    status = e.message ?: "Nie udało się odtworzyć nagrania."
+                }
+            }
+
+            fun stopPlayback(message: String) {
+                saveRecordingPosition()
+                closeTimeshift()
+                showChannelList = false
+                vlcSession = null
+                playingChannel?.let { previousChannel = it }
+                playingChannel = null
+                playingRecording = null
+                playbackBarVisible = false
+                status = message
             }
 
             fun restartPlayback() {
@@ -341,7 +476,53 @@ fun main() {
                 startChannel(channel)
             }
 
+            suspend fun loadRecordings(dir: String, select: String? = null): Boolean {
+                selectedBouquet = RECORDINGS_BOUQUET
+                channels = emptyList()
+                nowEvents = emptyMap()
+                channelListSelected = 0
+                busy = true
+                return try {
+                    val current = config
+                    val (directory, items) = withContext(Dispatchers.IO) { DecoderClient(current).movies(dir) }
+                    recDir = directory
+                    val rows = buildList {
+                        if (recStack.isNotEmpty()) add(Recording(REC_UP, "‹ wstecz", isDir = true))
+                        addAll(items)
+                    }
+                    recRows = rows.associateBy { REC_PREFIX + it.path }
+                    var number = 0
+                    channels = rows.map { Channel(if (it.isDir) 0 else ++number, it.title, REC_PREFIX + it.path) }
+                    val wanted = select ?: playingRecording?.path
+                    channelListSelected = channels.indexOfFirst { it.ref == REC_PREFIX + wanted }.coerceAtLeast(0)
+                    status = "Nagrania w $directory: $number."
+                    true
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    channels = emptyList()
+                    recRows = emptyMap()
+                    status = "Nie udało się pobrać nagrań: ${e.message ?: "nieznany błąd"}"
+                    false
+                } finally {
+                    busy = false
+                }
+            }
+
+            fun openRecordingDir(row: Recording) {
+                if (row.path == REC_UP) {
+                    val parent = recStack.lastOrNull() ?: return
+                    val child = recDir
+                    recStack = recStack.dropLast(1)
+                    scope.launch { loadRecordings(parent, select = child) }
+                } else {
+                    recStack = recStack + recDir
+                    scope.launch { loadRecordings(row.path) }
+                }
+            }
+
             suspend fun loadBouquetChannels(bouquet: Bouquet): Boolean {
+                if (bouquet.ref == REC_BOUQUET) return loadRecordings(recDir)
                 val currentCatalog = catalog ?: return false
                 selectedBouquet = bouquet
                 channels = emptyList()
@@ -459,10 +640,12 @@ fun main() {
             }
 
             fun changeChannel(offset: Int): Boolean {
-                val current = channels.indexOfFirst { it.ref == playingChannel?.ref }
-                if (current < 0 || channels.isEmpty()) return false
-                val next = (current + offset).mod(channels.size)
-                startChannel(channels[next])
+                val anchor = playingChannel ?: previousChannel ?: return false
+                val list = playList.ifEmpty { channels.filterNot { it.ref.startsWith(REC_PREFIX) } }
+                val current = list.indexOfFirst { it.ref == anchor.ref }
+                if (current < 0 || list.isEmpty()) return false
+                val next = (current + offset).mod(list.size)
+                startChannel(list[next])
                 return true
             }
 
@@ -475,8 +658,183 @@ fun main() {
                     status = "Połącz się z dekoderem: Menu → Ustawienia → Dekoder Enigma2."
                     return
                 }
-                channelListSelected = channels.indexOfFirst { it.ref == playingChannel?.ref }.coerceAtLeast(0)
+                val playingRef = playingChannel?.ref ?: playingRecording?.let { REC_PREFIX + it.path }
+                channelListSelected = channels.indexOfFirst { it.ref == playingRef }.coerceAtLeast(0)
                 showChannelList = true
+            }
+
+            fun openRecordingsList() {
+                scope.launch {
+                    if (selectedBouquet?.ref != REC_BOUQUET || channels.isEmpty()) loadRecordings(recDir)
+                    else {
+                        val playingRef = playingRecording?.let { REC_PREFIX + it.path }
+                        channelListSelected = channels.indexOfFirst { it.ref == playingRef }.coerceAtLeast(0)
+                    }
+                    showChannelList = true
+                }
+            }
+
+            fun activateListRow(row: Channel) {
+                val recording = recRows[row.ref]
+                if (row.ref.startsWith(REC_PREFIX) && recording != null) {
+                    if (recording.isDir) openRecordingDir(recording)
+                    else {
+                        showChannelList = false
+                        playRecording(recording)
+                    }
+                } else {
+                    showChannelList = false
+                    startChannel(row)
+                }
+            }
+
+            fun togglePlaybackPause() {
+                val session = vlcSession ?: return
+                session.togglePause()
+                if (session.isPaused) saveRecordingPosition()
+                if (playingRecording != null || timeshift != null) showPlaybackBar()
+                status = if (session.isPaused) "Pauza." else "Odtwarzanie wznowione."
+            }
+
+            fun seekRecording(deltaMs: Long) {
+                val session = vlcSession ?: return
+                val position = session.time()
+                if (position < 0) return
+                val length = session.length()
+                val target = (position + deltaMs).coerceAtLeast(0)
+                    .let { if (length > 0) it.coerceAtMost(length - 1000) else it }
+                session.seekTo(target)
+                if (session.isPaused) session.resume()
+                showPlaybackBar()
+            }
+
+            fun stopRecordingToList() {
+                val recording = playingRecording ?: return
+                stopPlayback("Nagranie zatrzymane: ${recording.title}")
+                openRecordingsList()
+            }
+
+            fun timeshiftShown(ts: TimeshiftSession, session: VlcSession): Long = ts.shownWall(session.time())
+
+            fun timeshiftShifted(): Boolean {
+                val ts = timeshift ?: return false
+                val session = vlcSession ?: return false
+                return session.isPaused || monotonicMs() - timeshiftShown(ts, session) > LIVE_MARGIN_MS
+            }
+
+            fun timeshiftPlay(target: TimeshiftTarget) {
+                val ts = timeshift ?: return
+                val session = vlcSession ?: return
+                val url = when (target) {
+                    TimeshiftTarget.Live -> ts.liveUrl()
+                    is TimeshiftTarget.At -> ts.urlAt(target.wall)
+                }
+                session.play(url, config)
+                showPlaybackBar()
+            }
+
+            fun timeshiftGoLive() {
+                if (timeshift == null) return
+                tsPendingTarget = null
+                if (!timeshiftShifted()) {
+                    status = "Już na żywo."
+                    showPlaybackBar()
+                    return
+                }
+                timeshiftPlay(TimeshiftTarget.Live)
+                status = "Na żywo."
+            }
+
+            fun timeshiftSeekBy(deltaMs: Long) {
+                val ts = timeshift
+                val session = vlcSession
+                if (ts == null || session == null) {
+                    status = "Timeshift jest wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift."
+                    return
+                }
+                val now = monotonicMs()
+                val base = tsPendingTarget ?: timeshiftShown(ts, session)
+                if (deltaMs > 0 && now - base <= LIVE_MARGIN_MS) {
+                    status = "Już na żywo."
+                    showPlaybackBar()
+                    return
+                }
+                tsPendingTarget = (base + deltaMs).coerceAtMost(now)
+                tsPendingGeneration++
+                showPlaybackBar()
+            }
+
+            LaunchedEffect(tsPendingGeneration) {
+                if (tsPendingGeneration == 0) return@LaunchedEffect
+                delay(700)
+                val target = tsPendingTarget ?: return@LaunchedEffect
+                val ts = timeshift ?: return@LaunchedEffect
+                tsPendingTarget = null
+                when (val resolved = timeshiftTarget(target, monotonicMs(), ts.buffer.oldestWall)) {
+                    TimeshiftTarget.Live -> {
+                        timeshiftPlay(resolved)
+                        status = "Na żywo."
+                    }
+                    is TimeshiftTarget.At -> {
+                        timeshiftPlay(resolved)
+                        if (resolved.clampedToOldest) status = "Początek bufora timeshiftu."
+                    }
+                }
+            }
+
+            LaunchedEffect(playbackBarGeneration) {
+                if (playbackBarGeneration == 0) return@LaunchedEffect
+                playbackBarVisible = true
+                delay(6_000)
+                while (vlcSession?.isPaused == true || tsPendingTarget != null) delay(500)
+                playbackBarVisible = false
+            }
+
+            LaunchedEffect(vlcSession, playingRecording, timeshift) {
+                if (vlcSession == null || (playingRecording == null && timeshift == null)) return@LaunchedEffect
+                var lastSave = monotonicMs()
+                while (true) {
+                    delay(500)
+                    playbackTick++
+                    val session = vlcSession ?: break
+                    if (playingRecording != null && !session.isPaused && monotonicMs() - lastSave > 15_000) {
+                        lastSave = monotonicMs()
+                        saveRecordingPosition()
+                    }
+                    val ts = timeshift ?: continue
+                    val failure = ts.buffer.failed
+                    val channel = playingChannel
+                    if (failure != null) {
+                        closeTimeshift()
+                        status = "Timeshift wyłączony: $failure"
+                        if (channel != null) runCatching { session.play(DecoderClient(config).streamUrl(channel), config) }
+                        break
+                    }
+                    if (ts.buffer.trimmed && tsPendingTarget == null &&
+                        timeshiftShown(ts, session) < ts.buffer.oldestWall + 5_000
+                    ) {
+                        timeshiftPlay(TimeshiftTarget.At(ts.buffer.oldestWall + 10_000, clampedToOldest = true))
+                        status = "Bufor timeshiftu pełny — odtwarzanie od najstarszego miejsca."
+                    }
+                }
+            }
+
+            SideEffect {
+                finishedHandler.set {
+                    val recording = playingRecording
+                    when {
+                        recording != null -> {
+                            recPositions.remove(recording.path)
+                            playingRecording = null
+                            stopPlayback("Koniec nagrania: ${recording.title}")
+                            openRecordingsList()
+                        }
+                        timeshift != null -> timeshiftPlay(
+                            if (timeshiftShifted()) TimeshiftTarget.At(timeshift!!.buffer.oldestWall + 10_000, true)
+                            else TimeshiftTarget.Live,
+                        )
+                    }
+                }
             }
 
             fun openSettings(vararg path: SettingsScreen) {
@@ -534,7 +892,26 @@ fun main() {
                     NavAction.RECALL -> recall()
                     NavAction.CH_UP -> zap(true)
                     NavAction.CH_DOWN -> zap(false)
-                    NavAction.PLAY_PAUSE -> vlcSession?.togglePause()
+                    NavAction.PLAY_PAUSE -> togglePlaybackPause()
+                    NavAction.TIMESHIFT -> when {
+                        timeshift != null || playingRecording != null -> showPlaybackBar()
+                        else -> status = "Timeshift jest wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift."
+                    }
+                }
+            }
+
+            var quickPick by remember { mutableStateOf<QuickPick?>(null) }
+            fun pickVideoScale() {
+                val modes = VideoScaleMode.entries
+                quickPick = QuickPick("Obraz — skalowanie", modes.map { it.label }, modes.indexOf(config.videoScaleMode)) {
+                    saveConfig(config.copy(videoScaleMode = modes[it]), "Skalowanie obrazu: ${modes[it].label}.")
+                    vlcSession?.setVideoScale(modes[it])
+                }
+            }
+            fun pickWindowMode() {
+                val modes = WindowMode.entries
+                quickPick = QuickPick("Okno / pełny ekran", modes.map { it.label }, modes.indexOf(windowMode)) {
+                    setWindowMode(modes[it])
                 }
             }
 
@@ -543,7 +920,8 @@ fun main() {
                     DesktopMenuItem.CHANNEL_LIST -> openChannelList()
                     DesktopMenuItem.SETTINGS -> openSettings()
                     DesktopMenuItem.REMOTE_TEST -> openSettings(SettingsScreen.REMOTE, SettingsScreen.REMOTE_TEST)
-                    DesktopMenuItem.WINDOW -> toggleMaximized()
+                    DesktopMenuItem.IMAGE -> pickVideoScale()
+                    DesktopMenuItem.WINDOW -> pickWindowMode()
                     DesktopMenuItem.EXIT -> {
                         powerDialogOpen.set(true)
                         showExitConfirmation = true
@@ -778,6 +1156,56 @@ fun main() {
                             vlcSession?.setVideoScale(modes[it])
                         }
                     },
+                    SettingItem.Action("Okno programu", windowMode.label) {
+                        val modes = WindowMode.entries
+                        choose("Okno programu", modes.map { it.label }, modes.indexOf(windowMode)) {
+                            setWindowMode(modes[it])
+                            status = "Okno programu: ${modes[it].label}."
+                        }
+                    },
+                    SettingItem.Header("Timeshift"),
+                    SettingItem.Action(
+                        "Timeshift (bufor na dysku)",
+                        if (config.tsMin <= 0) "wyłączony" else "${config.tsMin} min — działa od następnego przełączenia kanału",
+                    ) {
+                        val dir = TimeshiftBuffer.dirFor(config)
+                        val fit = TimeshiftBuffer.fitMinutes(dir)
+                        val choices = TimeshiftBuffer.CHOICES
+                        choose(
+                            "Timeshift — zmieści się ok. $fit min",
+                            choices.map { if (it == 0) "wyłączony" else if (it > fit) "$it min (za mało miejsca)" else "$it min" },
+                            choices.indexOf(config.tsMin),
+                        ) {
+                            val minutes = choices[it]
+                            if (minutes > fit) {
+                                status = "Za mało miejsca na dysku na $minutes min timeshiftu (zmieści się ok. $fit min)."
+                            } else {
+                                saveConfig(config.copy(tsMin = minutes), if (minutes == 0) "Timeshift wyłączony." else "Timeshift: $minutes min.")
+                                if (minutes == 0) closeTimeshift()
+                                timeshift?.buffer?.maxMin = minutes
+                            }
+                        }
+                    },
+                    SettingItem.Action("Katalog bufora", TimeshiftBuffer.dirFor(config).path) {
+                        editText("Katalog bufora timeshiftu", config.tsDir, "pusty = ${TimeshiftBuffer.defaultDir().path}") {
+                            config.copy(tsDir = it.trim())
+                        }
+                    },
+                    SettingItem.Action("Krok ◀ ▶", "${config.tsStepSec} s") {
+                        val steps = listOf(5, 10, 15, 30, 60)
+                        choose("Krok ◀ ▶ (sekundy)", steps.map { "$it s" }, steps.indexOf(config.tsStepSec)) {
+                            saveConfig(config.copy(tsStepSec = steps[it]), "Krok ◀ ▶: ${steps[it]} s.")
+                        }
+                    },
+                    SettingItem.Action("Krok ▲ ▼", "${config.tsStepMin} min") {
+                        val steps = listOf(1, 3, 5, 10, 15)
+                        choose("Krok ▲ ▼ (minuty)", steps.map { "$it min" }, steps.indexOf(config.tsStepMin)) {
+                            saveConfig(config.copy(tsStepMin = steps[it]), "Krok ▲ ▼: ${steps[it]} min.")
+                        }
+                    },
+                    SettingItem.Toggle("Wstecz wraca na żywo", config.tsBackLive) {
+                        saveConfig(config.copy(tsBackLive = it))
+                    },
                     SettingItem.Header("Dźwięk"),
                     SettingItem.Action("Preferowany język", config.audioLang.ifBlank { "domyślny strumienia" }) {
                         editText("Preferowany język dźwięku", config.audioLang, "kody języków, np. pl,pol,en") {
@@ -877,23 +1305,59 @@ fun main() {
                         if (config.resumeLast) "nieaktywne (włączony powrót do ostatniego)"
                         else config.startChannelName.ifBlank { "pierwszy kanał" },
                     ) {
+                        val currentCatalog = catalog
+                        val bouquets = visibleBouquets()
                         when {
                             config.resumeLast -> status = "Najpierw wyłącz „Po uruchomieniu wróć do ostatniego kanału”."
-                            channels.isEmpty() -> status = "Najpierw połącz się z dekoderem i wybierz bukiet."
+                            currentCatalog == null || bouquets.isEmpty() -> status = "Najpierw połącz się z dekoderem."
                             else -> choose(
-                                "Kanał startowy (${selectedBouquet?.name.orEmpty()})",
-                                listOf("pierwszy kanał") + channels.map { "${it.number}. ${it.name}" },
-                                channels.indexOfFirst { it.ref == config.startChannelRef } + 1,
-                            ) { index ->
-                                val channel = channels.getOrNull(index - 1)
-                                saveConfig(
-                                    config.copy(
-                                        startBouquetRef = if (channel == null) "" else selectedBouquet?.ref.orEmpty(),
-                                        startChannelRef = channel?.ref.orEmpty(),
-                                        startChannelName = channel?.name.orEmpty(),
-                                    ),
-                                    "Kanał startowy: ${channel?.name ?: "pierwszy kanał"}.",
-                                )
+                                "Kanał startowy — bukiet",
+                                listOf("pierwszy kanał") + bouquets.map { it.name },
+                                if (config.startChannelRef.isBlank()) 0
+                                else bouquets.indexOfFirst { it.ref == config.startBouquetRef } + 1,
+                            ) { bouquetIndex ->
+                                val bouquet = bouquets.getOrNull(bouquetIndex - 1)
+                                if (bouquet == null) {
+                                    saveConfig(
+                                        config.copy(startBouquetRef = "", startChannelRef = "", startChannelName = ""),
+                                        "Kanał startowy: pierwszy kanał.",
+                                    )
+                                    return@choose
+                                }
+                                scope.launch {
+                                    status = "Pobieranie kanałów bukietu „${bouquet.name}”…"
+                                    val list = try {
+                                        if (bouquet.ref == selectedBouquet?.ref && channels.isNotEmpty()) channels
+                                        else withContext(Dispatchers.IO) {
+                                            DecoderClient(config).loadChannels(bouquet, currentCatalog.usesPlugin)
+                                        }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        status = e.message ?: "Nie udało się pobrać kanałów."
+                                        return@launch
+                                    }
+                                    if (list.isEmpty()) {
+                                        status = "Bukiet „${bouquet.name}” nie zawiera kanałów."
+                                        return@launch
+                                    }
+                                    status = "Wybierz kanał startowy z bukietu „${bouquet.name}”."
+                                    choose(
+                                        "Kanał startowy (${bouquet.name})",
+                                        list.map { "${it.number}. ${it.name}" },
+                                        list.indexOfFirst { it.ref == config.startChannelRef },
+                                    ) { index ->
+                                        val channel = list[index]
+                                        saveConfig(
+                                            config.copy(
+                                                startBouquetRef = bouquet.ref,
+                                                startChannelRef = channel.ref,
+                                                startChannelName = "${channel.name} (${bouquet.name})",
+                                            ),
+                                            "Kanał startowy: ${channel.name} (${bouquet.name}).",
+                                        )
+                                    }
+                                }
                             }
                         }
                     },
@@ -1006,6 +1470,12 @@ fun main() {
                                 saveConfig(config.copy(hiddenBouquets = hidden))
                             }
                         }
+                    } + SettingItem.Toggle("Nagrania (z dysku dekodera)", REC_BOUQUET !in config.hiddenBouquets) { visible ->
+                        saveConfig(
+                            config.copy(
+                                hiddenBouquets = if (visible) config.hiddenBouquets - REC_BOUQUET else config.hiddenBouquets + REC_BOUQUET,
+                            ),
+                        )
                     }
                 SettingsScreen.INFO -> listOf(
                     SettingItem.Header("Aplikacja E2Stream dla Windows"),
@@ -1100,19 +1570,34 @@ fun main() {
                     result.activated?.let(::runMenuItem)
                     return result.handled
                 }
+                quickPick?.let { pick ->
+                    when (key) {
+                        VirtualRemoteKey.UP -> quickPick = pick.copy(selected = (pick.selected - 1).mod(pick.options.size))
+                        VirtualRemoteKey.DOWN -> quickPick = pick.copy(selected = (pick.selected + 1).mod(pick.options.size))
+                        VirtualRemoteKey.OK -> {
+                            quickPick = null
+                            pick.onSelect(pick.selected)
+                        }
+                        VirtualRemoteKey.BACK, VirtualRemoteKey.LEFT, VirtualRemoteKey.MENU -> quickPick = null
+                        else -> return false
+                    }
+                    return true
+                }
 
                 if (showChannelList) {
-                    val bouquets = visibleBouquets()
+                    val bouquets = listBouquets()
                     when (key) {
                         VirtualRemoteKey.UP -> if (channels.isNotEmpty()) channelListSelected = (channelListSelected - 1 + channels.size) % channels.size
                         VirtualRemoteKey.DOWN -> if (channels.isNotEmpty()) channelListSelected = (channelListSelected + 1) % channels.size
                         VirtualRemoteKey.LEFT -> bouquetOffset(bouquets, selectedBouquet, -1)?.let(::selectBouquet)
                         VirtualRemoteKey.RIGHT -> bouquetOffset(bouquets, selectedBouquet, 1)?.let(::selectBouquet)
-                        VirtualRemoteKey.OK -> channels.getOrNull(channelListSelected)?.let {
+                        VirtualRemoteKey.OK -> channels.getOrNull(channelListSelected)?.let(::activateListRow)
+                        VirtualRemoteKey.BACK -> if (selectedBouquet?.ref == REC_BOUQUET && recStack.isNotEmpty()) {
+                            openRecordingDir(Recording(REC_UP, ""))
+                        } else {
                             showChannelList = false
-                            startChannel(it)
                         }
-                        VirtualRemoteKey.BACK, VirtualRemoteKey.HOME -> showChannelList = false
+                        VirtualRemoteKey.HOME -> showChannelList = false
                         VirtualRemoteKey.CHANNEL_UP -> if (channels.isNotEmpty()) {
                             channelListSelected = (channelListSelected - 8).coerceAtLeast(0)
                         }
@@ -1126,6 +1611,55 @@ fun main() {
                         else -> return false
                     }
                     return true
+                }
+
+                val session = vlcSession
+                if (playingRecording != null && session != null) {
+                    val handled = when (key) {
+                        VirtualRemoteKey.LEFT -> { seekRecording(-10_000); true }
+                        VirtualRemoteKey.RIGHT -> { seekRecording(30_000); true }
+                        VirtualRemoteKey.UP -> { seekRecording(300_000); true }
+                        VirtualRemoteKey.DOWN -> { seekRecording(-300_000); true }
+                        VirtualRemoteKey.FAST_FORWARD -> { seekRecording(60_000); true }
+                        VirtualRemoteKey.REWIND -> { seekRecording(-60_000); true }
+                        VirtualRemoteKey.OK, VirtualRemoteKey.PLAY_PAUSE -> { togglePlaybackPause(); true }
+                        VirtualRemoteKey.PLAY -> { if (session.isPaused) togglePlaybackPause(); true }
+                        VirtualRemoteKey.PAUSE -> { if (!session.isPaused) togglePlaybackPause(); true }
+                        VirtualRemoteKey.INFO -> { showPlaybackBar(); true }
+                        VirtualRemoteKey.STOP -> { stopRecordingToList(); true }
+                        VirtualRemoteKey.BACK -> {
+                            if (playbackBarVisible && !session.isPaused) playbackBarVisible = false else stopRecordingToList()
+                            true
+                        }
+                        else -> false
+                    }
+                    if (handled) return true
+                }
+                val ts = timeshift
+                if (ts != null && session != null) {
+                    val stepMs = config.tsStepSec * 1000L
+                    val stepMinMs = config.tsStepMin * 60_000L
+                    val barOpen = playbackBarVisible
+                    val handled = when (key) {
+                        VirtualRemoteKey.PLAY_PAUSE -> { togglePlaybackPause(); true }
+                        VirtualRemoteKey.PLAY -> { if (session.isPaused) togglePlaybackPause(); true }
+                        VirtualRemoteKey.PAUSE -> { if (!session.isPaused) togglePlaybackPause(); true }
+                        VirtualRemoteKey.REWIND -> { timeshiftSeekBy(-stepMs); true }
+                        VirtualRemoteKey.FAST_FORWARD -> { timeshiftSeekBy(stepMs); true }
+                        VirtualRemoteKey.STOP -> { timeshiftGoLive(); true }
+                        VirtualRemoteKey.LEFT -> barOpen.also { if (it) timeshiftSeekBy(-stepMs) }
+                        VirtualRemoteKey.RIGHT -> barOpen.also { if (it) timeshiftSeekBy(stepMs) }
+                        VirtualRemoteKey.DOWN -> barOpen.also { if (it) timeshiftSeekBy(-stepMinMs) }
+                        VirtualRemoteKey.UP -> barOpen.also { if (it) timeshiftSeekBy(stepMinMs) }
+                        VirtualRemoteKey.OK -> barOpen.also { if (it) togglePlaybackPause() }
+                        VirtualRemoteKey.BACK -> when {
+                            barOpen && !session.isPaused -> { playbackBarVisible = false; true }
+                            config.tsBackLive && timeshiftShifted() -> { timeshiftGoLive(); true }
+                            else -> false
+                        }
+                        else -> false
+                    }
+                    if (handled) return true
                 }
 
                 if (key in NavigationKeyMap.keys) {
@@ -1142,9 +1676,9 @@ fun main() {
                     VirtualRemoteKey.CHANNEL_DOWN -> zap(false)
                     VirtualRemoteKey.SETTINGS, VirtualRemoteKey.HOME -> openSettings()
                     VirtualRemoteKey.MENU -> navigation.openMenu()
-                    VirtualRemoteKey.PLAY_PAUSE -> vlcSession?.togglePause()
-                    VirtualRemoteKey.PLAY -> vlcSession?.resume()
-                    VirtualRemoteKey.PAUSE -> vlcSession?.pause()
+                    VirtualRemoteKey.PLAY_PAUSE -> togglePlaybackPause()
+                    VirtualRemoteKey.PLAY -> if (vlcSession?.isPaused == true) togglePlaybackPause()
+                    VirtualRemoteKey.PAUSE -> if (vlcSession?.isPaused == false) togglePlaybackPause()
                     VirtualRemoteKey.BACK -> when {
                         bannerVisible -> bannerVisible = false
                         navigation.controlsVisible -> navigation.toggleControls()
@@ -1155,7 +1689,8 @@ fun main() {
                     VirtualRemoteKey.SEARCH -> runNavAction(NavAction.EPG_SEARCH)
                     VirtualRemoteKey.AUDIO -> runNavAction(NavAction.AUDIO)
                     VirtualRemoteKey.LAST_CHANNEL -> recall()
-                    VirtualRemoteKey.REWIND, VirtualRemoteKey.FAST_FORWARD, VirtualRemoteKey.STOP -> unavailable("Timeshift")
+                    VirtualRemoteKey.REWIND, VirtualRemoteKey.FAST_FORWARD, VirtualRemoteKey.STOP ->
+                        status = "Timeshift jest wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift."
                     VirtualRemoteKey.DIGIT_0, VirtualRemoteKey.DIGIT_1, VirtualRemoteKey.DIGIT_2,
                     VirtualRemoteKey.DIGIT_3, VirtualRemoteKey.DIGIT_4, VirtualRemoteKey.DIGIT_5,
                     VirtualRemoteKey.DIGIT_6, VirtualRemoteKey.DIGIT_7, VirtualRemoteKey.DIGIT_8,
@@ -1167,8 +1702,21 @@ fun main() {
 
             fun handleLegacyKey(keyCode: Int): Boolean = when (bindings[keyCode]) {
                 RemoteAction.TIMESHIFT -> {
-                    vlcSession?.togglePause()
-                    status = "Odtwarzanie wstrzymane lub wznowione."
+                    togglePlaybackPause()
+                    true
+                }
+                RemoteAction.TS_REWIND -> {
+                    if (playingRecording != null) seekRecording(-config.tsStepSec * 1000L)
+                    else timeshiftSeekBy(-config.tsStepSec * 1000L)
+                    true
+                }
+                RemoteAction.TS_FORWARD -> {
+                    if (playingRecording != null) seekRecording(config.tsStepSec * 1000L)
+                    else timeshiftSeekBy(config.tsStepSec * 1000L)
+                    true
+                }
+                RemoteAction.TS_LIVE -> {
+                    if (playingRecording != null) stopRecordingToList() else timeshiftGoLive()
                     true
                 }
                 RemoteAction.CHANNEL_UP -> { zap(true); true }
@@ -1188,6 +1736,13 @@ fun main() {
             val sessionToClose = vlcSession
             DisposableEffect(sessionToClose) {
                 onDispose { sessionToClose?.close() }
+            }
+            val timeshiftToClose = timeshift
+            DisposableEffect(timeshiftToClose) {
+                onDispose { timeshiftToClose?.let { ts -> runCatching { ts.close() } } }
+            }
+            LaunchedEffect(Unit) {
+                if (config.tsMin <= 0) TimeshiftBuffer.cleanupAsync(TimeshiftBuffer.dirFor(config))
             }
 
             DisposableEffect(desktopWindow) {
@@ -1221,7 +1776,7 @@ fun main() {
                         // Edytor tekstu sam obsługuje wpisywane znaki, Enter i Esc.
                         navigator.editor != null -> false
                         event.keyCode == KeyEvent.VK_F11 -> {
-                            toggleMaximized()
+                            toggleFullscreen()
                             true
                         }
                         isRemoteTestOpen() && navigator.choice == null -> {
@@ -1232,7 +1787,8 @@ fun main() {
                         else -> {
                             if (virtualKey != null) remoteDiagnostics.log { "source=keyboard key=$virtualKey" }
                             val handled = virtualKey != null && handleVirtualKey(virtualKey)
-                            handled || !navigator.isVisible && !showMenu && !showChannelList && handleLegacyKey(event.keyCode)
+                            handled || !navigator.isVisible && !showMenu && !showChannelList && quickPick == null &&
+                                handleLegacyKey(event.keyCode)
                         }
                     }
                 }
@@ -1357,6 +1913,16 @@ fun main() {
             ) {
             val session = vlcSession
             val channel = playingChannel
+            val playbackBar = playbackBarFor(
+                visible = playbackBarVisible,
+                tick = playbackTick,
+                session = session,
+                recording = playingRecording,
+                timeshift = timeshift,
+                pendingTarget = tsPendingTarget,
+                channelName = channel?.name,
+                config = config,
+            )
             PlaybackHost(
                 settingsVisible = navigator.isVisible,
                 player = {
@@ -1371,20 +1937,22 @@ fun main() {
                         controlsVisible = navigation.controlsVisible,
                         onToggleControls = navigation::toggleControls,
                         videoScaleMode = config.videoScaleMode,
-                        isMaximized = mainWindowState.placement == WindowPlacement.Maximized,
-                        onToggleMaximized = ::toggleMaximized,
-                        onScaleChange = {
-                            saveConfig(config.copy(videoScaleMode = it))
-                            session?.setVideoScale(it)
-                        },
+                        windowMode = windowMode,
+                        onWindowMode = ::pickWindowMode,
+                        onScaleMenu = ::pickVideoScale,
                         onChannels = ::openChannelList,
                         onMenu = navigation::openMenu,
-                        onBack = {
-                            showChannelList = false
-                            vlcSession = null
-                            playingChannel = null
-                            status = "Odtwarzanie zatrzymane."
+                        onBack = { stopPlayback("Odtwarzanie zatrzymane.") },
+                        playback = playbackBar,
+                        onTogglePause = ::togglePlaybackPause,
+                        onSeek = when {
+                            playingRecording != null -> { forward -> seekRecording(if (forward) 30_000 else -10_000) }
+                            timeshift != null -> { forward ->
+                                timeshiftSeekBy((if (forward) 1 else -1) * config.tsStepSec * 1000L)
+                            }
+                            else -> null
                         },
+                        onLive = if (timeshift != null) ::timeshiftGoLive else null,
                         picon = channel?.let { piconVersion; Picons.image(it) },
                         piconStyle = piconStyle(config),
                         bannerIconScale = config.uiBannerIcon / 100f,
@@ -1410,7 +1978,7 @@ fun main() {
             if (showChannelList && !navigator.isVisible) {
                 ChannelListDialog(
                     bouquet = selectedBouquet,
-                    bouquets = visibleBouquets(),
+                    bouquets = listBouquets(),
                     channels = channels,
                     selected = channelListSelected,
                     nowEvents = nowEvents,
@@ -1419,13 +1987,11 @@ fun main() {
                     onClose = { showChannelList = false },
                     onSelectedChange = { channelListSelected = it },
                     onBouquetSelected = ::selectBouquet,
-                    onPlay = {
-                        showChannelList = false
-                        startChannel(it)
-                    },
+                    onPlay = ::activateListRow,
                     piconFor = { piconVersion; Picons.image(it) },
                     piconStyle = piconStyle(config),
                     iconScale = config.uiListIcon / 100f,
+                    recordings = if (selectedBouquet?.ref == REC_BOUQUET) recRows else emptyMap(),
                 )
             }
             if (showMenu && !navigator.isVisible) {
@@ -1436,6 +2002,17 @@ fun main() {
                     onSelect = { item ->
                         showMenu = false
                         runMenuItem(item)
+                    },
+                )
+            }
+            quickPick?.takeIf { !navigator.isVisible && !showMenu }?.let { pick ->
+                QuickPickDialog(
+                    pick = pick,
+                    colors = colorScheme,
+                    onClose = { quickPick = null },
+                    onSelect = { index ->
+                        quickPick = null
+                        pick.onSelect(index)
                     },
                 )
             }

@@ -12,6 +12,71 @@ data class Channel(val number: Int, val name: String, val ref: String)
 data class DecoderCatalog(val bouquets: List<Bouquet>, val usesPlugin: Boolean)
 data class NowEvent(val title: String, val begin: Long, val end: Long)
 
+/** Wirtualny bukiet „Nagrania” — nagrania z dysku dekodera (OpenWebif /api/movielist). */
+const val REC_BOUQUET = "e2stream:nagrania"
+val RECORDINGS_BOUQUET = Bouquet("Nagrania", REC_BOUQUET)
+
+data class Recording(
+    val path: String,
+    val title: String,
+    val description: String = "",
+    val service: String = "",
+    val serviceRef: String = "",
+    val begin: Long = 0,
+    val lengthSec: Long = 0,
+    val size: Long = 0,
+    val isDir: Boolean = false,
+)
+
+/** Długość z OpenWebif: „m:ss” albo „h:mm:ss” → sekundy. */
+internal fun parseRecordingLength(value: String): Long {
+    val parts = value.split(":").map { it.trim().toLongOrNull() ?: return 0 }
+    return when (parts.size) {
+        3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
+        2 -> parts[0] * 60 + parts[1]
+        else -> 0
+    }
+}
+
+/** Odpowiedź /api/movielist → bieżący katalog oraz podkatalogi i pliki (od najnowszych). */
+internal fun parseMovieList(json: JSONObject, requestedDir: String): Pair<String, List<Recording>> {
+    fun JSONObject.text(key: String): String =
+        if (isNull(key)) "" else optString(key).takeUnless { it == "None" || it == "null" }.orEmpty()
+    val directory = json.text("directory").ifBlank { requestedDir }
+    val dirs = mutableListOf<Recording>()
+    json.optJSONArray("bookmarks")?.let { bookmarks ->
+        for (index in 0 until bookmarks.length()) {
+            val name = bookmarks.optString(index).trimEnd('/')
+            if (name.isBlank() || name.startsWith(".")) continue
+            dirs += Recording(directory.trimEnd('/') + "/" + name + "/", name, isDir = true)
+        }
+    }
+    val files = mutableListOf<Recording>()
+    json.optJSONArray("movies")?.let { movies ->
+        for (index in 0 until movies.length()) {
+            val item = movies.optJSONObject(index) ?: continue
+            val path = item.text("filename")
+            if (path.isBlank()) continue
+            files += Recording(
+                path = path,
+                title = OpenWebifText.unescape(
+                    item.text("eventname").ifBlank { path.substringAfterLast('/').substringBeforeLast('.') },
+                ),
+                description = OpenWebifText.unescape(
+                    listOf(item.text("description"), item.text("descriptionExtended"))
+                        .filter(String::isNotBlank).distinct().joinToString("\n"),
+                ),
+                service = OpenWebifText.unescape(item.text("servicename")),
+                serviceRef = item.text("serviceref"),
+                begin = item.optLong("recordingtime"),
+                lengthSec = parseRecordingLength(item.text("length")),
+                size = item.optLong("filesize"),
+            )
+        }
+    }
+    return directory to (dirs + files.sortedByDescending { it.begin })
+}
+
 fun serviceKey(ref: String): String = ref.trim().trimEnd(':').uppercase()
 
 class DecoderClient(private val config: DesktopConfig) {
@@ -114,6 +179,19 @@ class DecoderClient(private val config: DesktopConfig) {
     fun streamUrl(channel: Channel): String {
         validatePort(config.streamPort, "streaming")
         return "http://${hostForUrl(config.host)}:${config.streamPort}/${channel.ref.replace(" ", "%20")}"
+    }
+
+    /** Nagrania z katalogu [dir] (puste = katalog domyślny dekodera). */
+    fun movies(dir: String): Pair<String, List<Recording>> {
+        validatePort(config.httpPort, "OpenWebif")
+        val path = "/api/movielist" + if (dir.isNotBlank()) "?dirname=${encode(dir)}" else ""
+        return parseMovieList(get(config.httpPort, path, timeoutMs = 30_000), dir)
+    }
+
+    /** Plik nagrania przez serwer OpenWebif (z przewijaniem — zakresy HTTP). */
+    fun recordingUrl(path: String): String {
+        validatePort(config.httpPort, "OpenWebif")
+        return "http://${hostForUrl(config.host)}:${config.httpPort}/file?file=${encode(path)}"
     }
 
     fun loadNow(bouquet: Bouquet): Map<String, NowEvent> {

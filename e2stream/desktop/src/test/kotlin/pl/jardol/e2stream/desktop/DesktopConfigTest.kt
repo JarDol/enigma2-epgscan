@@ -61,6 +61,12 @@ class DesktopConfigTest {
             lircHost = "192.168.1.5",
             lircPort = 9000,
             lastPiconFetchDay = "2025-01-31",
+            tsMin = 90,
+            tsDir = "E:\\bufor",
+            tsStepSec = 15,
+            tsStepMin = 5,
+            tsBackLive = true,
+            windowMode = WindowMode.FULLSCREEN,
         )
 
         try {

@@ -11,6 +11,31 @@ import kotlin.test.assertTrue
 
 class DecoderClientTest {
     @Test
+    fun parsesMovieListWithDirectoriesFirstAndNewestRecordings() {
+        val json = org.json.JSONObject(
+            """
+            {"directory": "/media/hdd/movie/", "bookmarks": ["Filmy/", ".Trash"],
+             "movies": [
+               {"filename": "/media/hdd/movie/a.ts", "eventname": "Stary", "servicename": "TVP 1",
+                "recordingtime": 100, "length": "1:02:03", "description": "None"},
+               {"filename": "/media/hdd/movie/b.ts", "eventname": "", "recordingtime": 200, "length": "45:10"}
+             ]}
+            """.trimIndent(),
+        )
+
+        val (directory, rows) = parseMovieList(json, "/x/")
+
+        assertEquals("/media/hdd/movie/", directory)
+        assertEquals(listOf("Filmy", "b", "Stary"), rows.map { it.title })
+        assertEquals("/media/hdd/movie/Filmy/", rows[0].path)
+        assertTrue(rows[0].isDir)
+        assertEquals(2710L, rows[1].lengthSec)
+        assertEquals(3723L, rows[2].lengthSec)
+        assertEquals("", rows[2].description)
+        assertEquals(0L, parseRecordingLength("abc"))
+    }
+
+    @Test
     fun loadsCurrentEpgAndNormalizesServiceReferences() {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         var requestedQuery = ""

@@ -85,9 +85,9 @@ internal fun PlayerPage(
     controlsVisible: Boolean,
     onToggleControls: () -> Unit,
     videoScaleMode: VideoScaleMode,
-    isMaximized: Boolean,
-    onToggleMaximized: () -> Unit,
-    onScaleChange: (VideoScaleMode) -> Unit,
+    windowMode: WindowMode,
+    onWindowMode: () -> Unit,
+    onScaleMenu: () -> Unit,
     onChannels: () -> Unit,
     onMenu: () -> Unit,
     onBack: () -> Unit,
@@ -95,9 +95,12 @@ internal fun PlayerPage(
     piconStyle: PiconStyle = PiconStyle.OFF,
     bannerIconScale: Float = 1f,
     showStats: Boolean = false,
+    playback: PlaybackBar? = null,
+    onTogglePause: () -> Unit = { session?.togglePause() },
+    onSeek: ((forward: Boolean) -> Unit)? = null,
+    onLive: (() -> Unit)? = null,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
-    var scaleMenuExpanded by remember { mutableStateOf(false) }
     var statusVisible by remember { mutableStateOf(false) }
     val currentToggleControls by androidx.compose.runtime.rememberUpdatedState(onToggleControls)
     DisposableEffect(session) {
@@ -162,12 +165,37 @@ internal fun PlayerPage(
                 )
             }
         }
-        if ((channel != null && bannerVisible) || controlsVisible || statusVisible || stats != null) {
+        if ((channel != null && bannerVisible) || controlsVisible || statusVisible || stats != null || playback != null) {
             Column(
                 modifier = Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = 24.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (channel != null && bannerVisible) {
+                if (playback != null) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            playback.title,
+                            modifier = Modifier.weight(1f),
+                            color = accent,
+                            fontSize = 20.sp * bannerFontScale,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(time(now), color = secondary, fontSize = 20.sp * bannerFontScale)
+                    }
+                    Text(playback.line, color = colors.onSurface, fontSize = 17.sp * bannerFontScale, maxLines = 1)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(playback.start, color = secondary, fontSize = 14.sp * bannerFontScale)
+                        LinearProgressIndicator(
+                            progress = { playback.progress },
+                            modifier = Modifier.weight(1f).padding(top = 8.dp).height(6.dp),
+                            color = accent,
+                        )
+                        Text(playback.end, color = secondary, fontSize = 14.sp * bannerFontScale)
+                    }
+                    Text(playback.hint, color = secondary, fontSize = 13.sp, maxLines = 1)
+                }
+                if (channel != null && bannerVisible && playback == null) {
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -215,24 +243,15 @@ internal fun PlayerPage(
                 if (controlsVisible) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onChannels) { Text("Lista kanałów") }
                     OutlinedButton(onClick = onShowBanner, enabled = channel != null) { Text("Pasek") }
-                    OutlinedButton(onClick = { session?.togglePause() }, enabled = session != null) { Text("Pauza / Wznów") }
-                    Box {
-                        OutlinedButton(onClick = { scaleMenuExpanded = true }) { Text("Obraz") }
-                        DropdownMenu(expanded = scaleMenuExpanded, onDismissRequest = { scaleMenuExpanded = false }) {
-                            VideoScaleMode.entries.forEach { mode ->
-                                DropdownMenuItem(
-                                    text = { Text("${if (mode == videoScaleMode) "✓ " else ""}${mode.label}") },
-                                    onClick = {
-                                        scaleMenuExpanded = false
-                                        onScaleChange(mode)
-                                    },
-                                )
-                            }
-                        }
+                    OutlinedButton(onClick = onTogglePause, enabled = session != null) { Text("Pauza / Wznów") }
+                    if (onSeek != null) {
+                        OutlinedButton(onClick = { onSeek(false) }) { Text("◀◀") }
+                        OutlinedButton(onClick = { onSeek(true) }) { Text("▶▶") }
                     }
-                    OutlinedButton(onClick = onToggleMaximized) {
-                        Text(if (isMaximized) "Okno" else "Maksymalizuj")
-                    }
+                    if (onLive != null) OutlinedButton(onClick = onLive) { Text("Na żywo") }
+                    // Lista trybów otwiera się w osobnym oknie — rozwijane menu Compose chowa się pod obrazem VLC.
+                    OutlinedButton(onClick = onScaleMenu) { Text("Obraz: ${videoScaleMode.label}") }
+                    OutlinedButton(onClick = onWindowMode) { Text(windowMode.label) }
                     OutlinedButton(onClick = onMenu) { Text("Menu") }
                     OutlinedButton(onClick = onBack, enabled = session != null) { Text("Zatrzymaj") }
                     Text(status, modifier = Modifier.weight(1f).padding(top = 12.dp), color = secondary, maxLines = 1)
@@ -258,6 +277,7 @@ internal fun ChannelListDialog(
     piconFor: (Channel) -> ImageBitmap? = { null },
     piconStyle: PiconStyle = PiconStyle.OFF,
     iconScale: Float = 0.8f,
+    recordings: Map<String, Recording> = emptyMap(),
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     val listState = rememberLazyListState()
@@ -350,11 +370,16 @@ internal fun ChannelListDialog(
                         onClick = { bouquetOffset(bouquets, bouquet, 1)?.let(onBouquetSelected) },
                         enabled = !busy && bouquets.size > 1,
                     ) { Text("Bukiet ▶") }
-                    Text("← → bukiet   •   ↑ ↓ kanał   •   OK oglądaj   •   Wstecz zamknij", color = secondary)
+                    Text(
+                        if (recordings.isEmpty()) "← → bukiet   •   ↑ ↓ kanał   •   OK oglądaj   •   Wstecz zamknij"
+                        else "← → bukiet   •   ↑ ↓ nagranie   •   OK otwórz/odtwórz   •   Wstecz katalog wyżej/zamknij",
+                        color = secondary,
+                    )
                     BackButton(onClick = onClose)
                 }
                 LazyColumn(Modifier.weight(3f), state = listState) {
                     itemsIndexed(channels) { index, channel ->
+                        val recording = recordings[channel.ref]
                         val event = nowEvents[serviceKey(channel.ref)]?.takeIf { it.begin <= now && now < it.end }
                         val isSelected = index == selected
                         val primaryText = if (isSelected) colors.onPrimaryContainer else colors.onSurface
@@ -369,6 +394,27 @@ internal fun ChannelListDialog(
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            if (recording != null) {
+                                Text(
+                                    if (recording.isDir) "" else channel.number.toString(),
+                                    modifier = Modifier.width(55.dp * fontScale),
+                                    color = secondaryText,
+                                    fontSize = 20.sp * fontScale,
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        if (recording.isDir && recording.path != "..") "▸ ${recording.title}" else recording.title,
+                                        color = primaryText,
+                                        fontSize = 22.sp * fontScale,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                    )
+                                    if (!recording.isDir) {
+                                        Text(recordingDetails(recording), color = secondaryText, fontSize = 16.sp * fontScale, maxLines = 1)
+                                    }
+                                }
+                                return@Row
+                            }
                             if (piconStyle != PiconStyle.OFF) {
                                 ChannelIcon(piconFor(channel), piconStyle == PiconStyle.WITH_LOGO, 80.dp * iconScale, 48.dp * iconScale)
                                 androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
@@ -387,6 +433,18 @@ internal fun ChannelListDialog(
                 Box(Modifier.fillMaxWidth().height(1.dp).background(colors.outlineVariant))
                 Column(Modifier.weight(1f).padding(8.dp)) {
                     val channel = channels.getOrNull(selected)
+                    val recording = channel?.let { recordings[it.ref] }
+                    if (recording != null) {
+                        Text(recording.title, color = accent, fontSize = 20.sp * fontScale, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text(
+                            if (recording.isDir) "Katalog — OK otwiera" else recording.description.ifBlank { recordingDetails(recording) },
+                            color = colors.onSurface,
+                            fontSize = 17.sp * fontScale,
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        return@Column
+                    }
                     Text(channel?.name.orEmpty(), color = accent, fontSize = 20.sp * fontScale, fontWeight = FontWeight.Bold)
                     Text(
                         channel?.let { nowEvents[serviceKey(it.ref)]?.takeIf { event -> event.begin <= now && now < event.end }?.title }
@@ -440,5 +498,51 @@ internal fun formatStats(current: PlaybackStats, previous: PlaybackStats?): Stri
         append("  •  uszkodzone pakiety: ${current.corrupted}")
         append("  •  nieciągłości: ${current.discontinuities}")
         append("  •  utracony dźwięk: ${current.audioLost}")
+    }
+}
+/** Krótka lista wyboru w osobnym oknie — widoczna także nad obrazem VLC. */
+internal data class QuickPick(
+    val title: String,
+    val options: List<String>,
+    val selected: Int,
+    val onSelect: (Int) -> Unit,
+)
+
+@Composable
+internal fun QuickPickDialog(
+    pick: QuickPick,
+    colors: androidx.compose.material3.ColorScheme,
+    onClose: () -> Unit,
+    onSelect: (Int) -> Unit,
+) {
+    DialogWindow(
+        onCloseRequest = onClose,
+        title = pick.title,
+        state = rememberDialogState(width = 460.dp, height = (150 + pick.options.size * 54).dp),
+        undecorated = true,
+        resizable = false,
+    ) {
+        MaterialTheme(colorScheme = colors) {
+            androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
+                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(pick.title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)
+                        BackButton(onClick = onClose)
+                    }
+                    pick.options.forEachIndexed { index, option ->
+                        val isSelected = index == pick.selected
+                        Text(
+                            option,
+                            modifier = Modifier.fillMaxWidth()
+                                .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
+                                .clickable { onSelect(index) }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            color = if (isSelected) colors.onPrimaryContainer else colors.onSurface,
+                            fontSize = 20.sp,
+                        )
+                    }
+                }
+            }
+        }
     }
 }

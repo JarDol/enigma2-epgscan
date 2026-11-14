@@ -16,6 +16,7 @@ enum class NavAction(val label: String) {
     CH_UP("Kanał +"),
     CH_DOWN("Kanał −"),
     PLAY_PAUSE("Pauza / wznowienie"),
+    TIMESHIFT("Pasek timeshiftu"),
 }
 
 object NavigationKeyMap {

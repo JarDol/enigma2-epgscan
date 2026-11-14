@@ -15,15 +15,27 @@ channel list lets you change bouquets with its selector or left/right buttons
 Enter and Escape. EPG refreshes every minute while a bouquet is selected; an
 EPG error does not prevent playback.
 
-The app starts in a maximized window rather than exclusive full screen, so
-switching to another app does not minimize it. The title bar and Windows
-taskbar remain available. Use F11 or the player button to toggle between
-maximized and regular window sizes.
+**Odtwarzanie i obraz → Okno programu** (or F11 and the player button) selects
+a regular window, a maximized window, or borderless full screen that covers the
+Windows taskbar. Full screen restyles the existing window instead of using
+exclusive full screen, so switching apps does not minimize the player.
 The player opens first, including before a decoder is configured. Press M or
 the mapped Menu remote key to open the menu and choose **Ustawienia**. Right-click
 the player to show or hide the mouse controls; their **Menu** button opens the
-same menu. The **Obraz** menu selects fit, fill with cropping, or stretch to fill.
-The selection is saved.
+same menu. The **Obraz** menu entry (and player button) opens a picker above the
+video to select fit, fill with cropping, or stretch to fill. The selection is saved.
+
+**Nagrania** appears as an extra bouquet (it can be hidden under
+**Bukiety**). It lists the decoder's recording folders and files from OpenWebif
+with service, date, length and description; playback resumes from the saved
+position. During recording playback: ◀/▶ −10/+30 s, ▲/▼ ±5 min, OK pause,
+Info shows the progress bar, Back/Stop returns to the list.
+
+**Odtwarzanie i obraz → Timeshift** buffers the live stream on disk (default
+`%LOCALAPPDATA%/E2Stream/timeshift`, 15–360 minutes, limited by free space) and
+plays it through a local server. Pause, REW/FF, the configurable ◀▶/▲▼ steps,
+Stop (back to live) and an optional Back-to-live action work as on Android; the
+timeshift bar shows the buffered range and delay.
 
 Settings follow the Android layout: a list of sections (Dekoder Enigma2,
 Odtwarzanie i obraz, Wygląd, EPG i ikony kanałów, Ogólne, Pilot i klawiatura,
@@ -36,7 +48,7 @@ buffering, deinterlacing, hardware decoding and preferred audio language.
 Optional PIN protection for settings, start channel, resume of the last channel,
 up/down inversion, banner and channel-list timeouts, list/banner font sizes and
 hidden bouquets are available as on Android. Features not yet present in the
-Windows player (full EPG guide, recordings) are marked as in preparation.
+Windows player (full EPG guide) are marked as in preparation.
 
 **Wygląd** sets list, banner and EPG font sizes and channel-icon sizes.
 **EPG i ikony kanałów** stores the EPG update mode, daily refresh hour and
@@ -65,9 +77,7 @@ OK/arrow action mappings for playback with and without the channel banner
 its source, physical key and mapped action. Press Back twice to leave the test.
 
 This is an early test version, not yet functionally equivalent to Android:
-full EPG, recordings, true timeshift and most other Android features are not
-yet available. Only channel switching, channel list, and pause/resume actions
-currently work during playback.
+the full EPG guide and some other Android features are not yet available.
 
 ## Build and run
 
@@ -79,7 +89,7 @@ gradle -p e2stream/desktop run
 ```
 
 Install 64-bit VLC 3.x separately. The player pauses/resumes from its controls
-or from a key assigned to the timeshift action. On Windows, create installers
+or from the Play/Pause key. On Windows, create installers
 with the repository's Gradle wrapper:
 
 ```shell

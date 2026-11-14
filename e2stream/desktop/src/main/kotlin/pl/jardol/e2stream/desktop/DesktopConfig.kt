@@ -11,6 +11,13 @@ enum class BackButtonMode(val label: String) {
     ALWAYS("zawsze widoczny"),
 }
 
+/** Okno główne: zwykłe okno, zmaksymalizowane (widać pasek zadań) albo pełny ekran bez ramki i paska zadań. */
+enum class WindowMode(val label: String) {
+    WINDOW("Okno"),
+    MAXIMIZED("Zmaksymalizowane"),
+    FULLSCREEN("Pełny ekran"),
+}
+
 data class DesktopConfig(
     val host: String = "",
     val httpPort: Int = 80,
@@ -63,6 +70,12 @@ data class DesktopConfig(
     val lircHost: String = "127.0.0.1",
     val lircPort: Int = 8765,
     val lastPiconFetchDay: String = "",
+    val tsMin: Int = 0,
+    val tsDir: String = "",
+    val tsStepSec: Int = 5,
+    val tsStepMin: Int = 1,
+    val tsBackLive: Boolean = false,
+    val windowMode: WindowMode = WindowMode.MAXIMIZED,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -118,6 +131,12 @@ data class DesktopConfig(
             setProperty("lircHost", lircHost)
             setProperty("lircPort", lircPort.toString())
             setProperty("lastPiconFetchDay", lastPiconFetchDay)
+            setProperty("tsMin", tsMin.toString())
+            setProperty("tsDir", tsDir)
+            setProperty("tsStepSec", tsStepSec.toString())
+            setProperty("tsStepMin", tsStepMin.toString())
+            setProperty("tsBackLive", tsBackLive.toString())
+            setProperty("windowMode", windowMode.name)
         }
         Files.newOutputStream(path).use { properties.store(it, "E2Stream settings") }
     }
@@ -219,6 +238,13 @@ data class DesktopConfig(
                 lircHost = string("lircHost", defaults.lircHost).ifBlank { defaults.lircHost },
                 lircPort = int("lircPort", defaults.lircPort, 1..65535),
                 lastPiconFetchDay = string("lastPiconFetchDay", ""),
+                tsMin = int("tsMin", defaults.tsMin, 0..600),
+                tsDir = string("tsDir", ""),
+                tsStepSec = int("tsStepSec", defaults.tsStepSec, 1..120),
+                tsStepMin = int("tsStepMin", defaults.tsStepMin, 1..30),
+                tsBackLive = bool("tsBackLive", defaults.tsBackLive),
+                windowMode = WindowMode.entries.firstOrNull { it.name == properties.getProperty("windowMode") }
+                    ?: defaults.windowMode,
             )
         }
 
