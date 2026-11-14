@@ -130,7 +130,8 @@ obok katalogu bufora (ten sam nośnik); po zakończeniu nagrania timeshift zaczy
 Podczas nagrywania pasek pokazuje *● REC*, a pierwszą pozycją menu długiego OK jest *Zatrzymaj nagrywanie*. Nagranie kończy się
 też przy zmianie kanału, wyjściu z aplikacji, po limicie jednego nagrania (1–6 h, domyślnie 3 h) i po osiągnięciu limitu miejsca
 (domyślnie 70% pojemności nośnika — reszta dla timeshiftu). W pamięci urządzenia nagrania wymagają osobnej zgody.
-Nagrania są w bukiecie *Nagrania lokalne* (wznawianie, opis z EPG, długie OK → Odtwórz/Usuń); można go ukryć w *Widoczne bukiety*.
+Nagrania są w bukiecie *Nagrania lokalne* (wznawianie, opis z EPG, długie OK → Odtwórz / Eksportuj do jednego pliku .ts / Usuń); można go ukryć w *Widoczne bukiety*.
+*Eksportuj do jednego pliku .ts* skleja kawałki w tle (pasek postępu, czas do końca, *Ukryj* — eksport trwa dalej, *Anuluj* — częściowy plik usunięty) do pliku `nagrania/RRRR-MM-DD GG-MM Kanał - Tytuł.ts`; nagranie w kawałkach zostaje bez zmian, plik wlicza się do limitu miejsca.
 Opcja „Wstecz na pustym ekranie → na żywo” pozwala wrócić z cofniętego strumienia do transmisji na żywo.
 Wyjście z aplikacji wymaga dwóch osobnych naciśnięć WSTECZ; przytrzymanie nie zamyka aplikacji.
 Tam też można ustawić osobne czasy zamykania listy kanałów oraz EPG wydarzenia, kanału i Multi EPG.

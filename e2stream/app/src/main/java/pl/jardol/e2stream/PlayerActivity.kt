@@ -2609,10 +2609,88 @@ class PlayerActivity : Activity() {
     }
 
     private fun showRecordingActions(r: Recording) {
-        TvDialog.list(this, r.title, listOf(TvDialog.Item(getString(R.string.message_play)), TvDialog.Item(getString(R.string.message_delete))),
-            hint = getString(R.string.epg_hint_actions), widthFrac = 0.45f) { selected ->
-            if (selected == 0) pickRecording(r) else confirmDeleteRecording(r)
+        val acts = ArrayList<Pair<String, () -> Unit>>()
+        acts += getString(R.string.message_play) to { pickRecording(r) }
+        if (LocalRecordings.isLocal(r.path)) acts += getString(R.string.player_localrec_export) to { exportLocalRecording(r) }
+        acts += getString(R.string.message_delete) to { confirmDeleteRecording(r) }
+        TvDialog.list(this, r.title, acts.map { TvDialog.Item(it.first) },
+            hint = getString(R.string.epg_hint_actions), widthFrac = 0.45f) { selected -> acts[selected].second() }
+    }
+
+    // --- eksport nagrania lokalnego do jednego pliku .ts (na żądanie, w tle)
+    private var exportCancel: java.util.concurrent.atomic.AtomicBoolean? = null
+    private var exportDialog: android.app.Dialog? = null
+    private var exportTitle = ""
+
+    private fun exportLocalRecording(r: Recording) {
+        val dir = LocalRecordings.dirOf(r.path)
+        if (exportCancel != null) {             // trwa inny eksport — pokaż jego postęp
+            showExportDialog(getString(R.string.player_localrec_export_busy, exportTitle)); return
         }
+        if (localRec?.pin?.dir == dir) { showMessage(getString(R.string.player_localrec_export_running)); return }
+        val target = LocalRecordings.exportFile(dir)
+        fun start() {
+            val size = LocalRecordings.size(dir)
+            val free = dir.usableSpace
+            if (size + TimeshiftBuffer.RESERVE > free) {
+                TvDialog.confirm(this, getString(R.string.player_localrec_export), getString(R.string.player_localrec_export_no_space,
+                    TimeshiftBuffer.gb(size), TimeshiftBuffer.gb(free)), listOf(TvDialog.Btn("OK")))
+                return
+            }
+            val cancel = java.util.concurrent.atomic.AtomicBoolean(false)
+            exportCancel = cancel
+            exportTitle = r.title
+            AppLog.i("nagranie lokalne: eksport „${r.title}” → ${target.absolutePath} (${TimeshiftBuffer.gb(size)})")
+            showExportDialog(getString(R.string.player_localrec_export_start, target.name))
+            Thread({
+                val result = try {
+                    if (LocalRecordings.export(dir, target, cancel) { done, total, eta ->
+                            runOnUiThread { exportProgress(done, total, eta) }
+                        }) "ok" else "cancel"
+                } catch (e: Exception) { e.message ?: e.toString() }
+                runOnUiThread {
+                    exportCancel = null
+                    val d = exportDialog
+                    exportDialog = null
+                    d?.dismiss()
+                    when (result) {
+                        "ok" -> {
+                            AppLog.i("nagranie lokalne: eksport gotowy ${target.absolutePath}")
+                            TvDialog.confirm(this, getString(R.string.player_localrec_export_done_title),
+                                getString(R.string.player_localrec_export_done, target.absolutePath), listOf(TvDialog.Btn("OK")), timeoutSec = 0)
+                        }
+                        "cancel" -> { AppLog.i("nagranie lokalne: eksport anulowany"); showMessage(getString(R.string.player_localrec_export_cancelled)) }
+                        else -> {
+                            AppLog.i("nagranie lokalne: eksport nieudany ($result)")
+                            TvDialog.confirm(this, getString(R.string.player_localrec_export), getString(R.string.player_localrec_export_failed, result),
+                                listOf(TvDialog.Btn("OK")), timeoutSec = 0)
+                        }
+                    }
+                }
+            }, "eksport-nagrania").start()
+        }
+        if (target.exists()) {
+            TvDialog.confirm(this, getString(R.string.player_localrec_export), getString(R.string.player_localrec_export_exists, target.name), listOf(
+                TvDialog.Btn(getString(R.string.player_localrec_export_overwrite)) { start() },
+                TvDialog.Btn(getString(R.string.dialog_cancel)),
+            ))
+        } else start()
+    }
+
+    private fun showExportDialog(message: String) {
+        exportDialog?.dismiss()
+        exportDialog = TvDialog.progress(this, getString(R.string.player_localrec_export_progress_title, exportTitle), message,
+            getString(R.string.player_localrec_export_hide), getString(R.string.dialog_cancel),
+            onHide = { exportDialog?.dismiss(); exportDialog = null; showMessage(getString(R.string.player_localrec_export_background)) },
+            onCancel = { exportCancel?.set(true) })
+    }
+
+    private fun exportProgress(done: Long, total: Long, eta: Long) {
+        val d = exportDialog ?: return
+        val pct = if (total > 0) (done * 1000 / total).toInt() else 0
+        TvDialog.setProgress(d, pct)
+        val left = if (eta >= 0) getString(R.string.player_localrec_export_eta, fmtMs(eta * 1000)) else ""
+        TvDialog.setMessage(d, getString(R.string.player_localrec_export_status, pct / 10, TimeshiftBuffer.gb(done), TimeshiftBuffer.gb(total), left))
     }
 
     private fun confirmDeleteRecording(r: Recording) {

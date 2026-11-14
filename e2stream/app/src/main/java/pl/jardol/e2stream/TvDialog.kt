@@ -347,6 +347,28 @@ object TvDialog {
         }
     }
 
+    /**
+     * Okno postępu długiej operacji: tekst + pasek 0…1000. [onHide] — okno znika, operacja trwa dalej;
+     * [onCancel] — przerwanie. Aktualizacja: [setMessage] i [setProgress].
+     */
+    fun progress(a: Activity, title: String, message: String, hideLabel: String, cancelLabel: String,
+                 onHide: () -> Unit, onCancel: () -> Unit): Dialog =
+        panel(a, title, null, listOf(Btn(hideLabel) { onHide() }, Btn(cancelLabel) { onCancel() }), widthFrac = 0.55f,
+            onBack = onHide, focusChip = true) { ctx, _ ->
+            LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(ctx).apply { text = message; textSize = 18f; setTextColor(0xFFECEFF1.toInt()); tag = "dialog-message" })
+                addView(ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    max = 1000; progressDrawable = ctx.getDrawable(R.drawable.progress_epg); tag = "dialog-progress"
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(ctx, 6)).apply { topMargin = dp(ctx, 14) })
+            }
+        }
+
+    fun setProgress(dlg: Dialog?, value: Int) {
+        if (dlg?.isShowing != true) return
+        dlg.window?.decorView?.findViewWithTag<ProgressBar>("dialog-progress")?.progress = value.coerceIn(0, 1000)
+    }
+
     /** Przewijany tekst sterowany pilotem (▲▼ o ~2/3 ekranu tekstu); [onPos] — położenie 0…1000. */
     fun scrollText(ctx: Context, text: CharSequence, sizeSp: Float, color: Int = 0xFFECEFF1.toInt(), onPos: (Int) -> Unit = {}): ScrollView {
         val sv = object : ScrollView(ctx) {

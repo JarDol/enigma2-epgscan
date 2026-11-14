@@ -98,4 +98,20 @@
     <string name="player_localrec_reason_disk_full">" – brak miejsca na nośniku"</string>
     <string name="player_localrec_cannot_delete_running">Tego nagrania nie można usunąć – trwa zapis</string>
     <string name="player_localrec_delete_failed">Nie udało się usunąć plików nagrania</string>
+    <string name="player_localrec_export">Eksportuj do jednego pliku .ts</string>
+    <string name="player_localrec_export_busy">Trwa eksport: %1$s</string>
+    <string name="player_localrec_export_running">Nagranie jeszcze trwa – eksport po jego zakończeniu</string>
+    <string name="player_localrec_export_no_space">Za mało miejsca na nośniku: eksport potrzebuje %1$s (plus zapas), wolne %2$s.</string>
+    <string name="player_localrec_export_start">Przygotowuję %1$s…</string>
+    <string name="player_localrec_export_progress_title">Eksport: %1$s</string>
+    <string name="player_localrec_export_status">%1$d%% · %2$s z %3$s%4$s</string>
+    <string name="player_localrec_export_eta">" · do końca ok. %1$s"</string>
+    <string name="player_localrec_export_hide">Ukryj</string>
+    <string name="player_localrec_export_background">Eksport trwa w tle – wynik pojawi się po zakończeniu</string>
+    <string name="player_localrec_export_done_title">Eksport gotowy</string>
+    <string name="player_localrec_export_done">Plik:\n%1$s\n\nNagranie w kawałkach zostaje bez zmian – plik możesz skopiować z nośnika (np. na komputer).</string>
+    <string name="player_localrec_export_cancelled">Eksport anulowany – częściowy plik usunięty</string>
+    <string name="player_localrec_export_failed">Eksport nieudany: %1$s</string>
+    <string name="player_localrec_export_exists">Plik %1$s już istnieje. Zastąpić go?</string>
+    <string name="player_localrec_export_overwrite">Zastąp</string>
 </resources>

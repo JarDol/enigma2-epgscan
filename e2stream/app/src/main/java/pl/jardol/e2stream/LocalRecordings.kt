@@ -35,8 +35,66 @@ object LocalRecordings {
 
     fun size(dir: File): Long = parts(dir).sumOf { it.length() }
 
-    /** Miejsce zajęte przez wszystkie nagrania w [base]. */
-    fun used(base: File): Long = base.listFiles { f -> f.isDirectory }?.sumOf { size(it) } ?: 0L
+    /** Miejsce zajęte przez wszystkie nagrania w [base] (katalogi kawałków i wyeksportowane pliki .ts). */
+    fun used(base: File): Long =
+        (base.listFiles { f -> f.isDirectory }?.sumOf { size(it) } ?: 0L) +
+            (base.listFiles { f -> f.isFile && f.name.endsWith(".ts") }?.sumOf { it.length() } ?: 0L)
+
+    /** Nazwa pliku eksportu: „2026-11-14 20-00 TVN 24 HD - Superwizjer.ts” (w katalogu nagrań). */
+    fun exportFile(dir: File): File {
+        val m = readMeta(dir) ?: org.json.JSONObject()
+        val begin = m.optLong("begin", dir.lastModified() / 1000) * 1000
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd HH-mm", java.util.Locale.US).format(java.util.Date(begin))
+        val name = listOf(m.optString("service"), m.optString("title")).filter { it.isNotBlank() }.distinct().joinToString(" - ")
+        val safe = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().take(90).ifEmpty { dir.name }
+        return File(dir.parentFile, "$stamp $safe.ts")
+    }
+
+    /**
+     * Sklejenie kawałków nagrania w jeden plik [target] (najpierw .part, na końcu zmiana nazwy).
+     * [onProgress] (bajty zapisane, wszystkie, szacowane sekundy do końca albo -1). Przerwane [cancel] — plik usunięty.
+     */
+    fun export(dir: File, target: File, cancel: java.util.concurrent.atomic.AtomicBoolean,
+               onProgress: (Long, Long, Long) -> Unit): Boolean {
+        val parts = parts(dir)
+        val total = parts.sumOf { it.length() }
+        val tmp = File(target.parentFile, target.name + ".part")
+        var done = 0L
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        var lastReport = 0L
+        try {
+            java.io.FileOutputStream(tmp).use { out ->
+                val buf = ByteArray(1 shl 20)
+                for (f in parts) {
+                    java.io.FileInputStream(f).use { inp ->
+                        while (true) {
+                            if (cancel.get()) throw java.io.InterruptedIOException("anulowano")
+                            val n = inp.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            done += n
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            if (now - lastReport >= 500) {
+                                lastReport = now
+                                val el = now - t0
+                                val eta = if (done > 0 && el > 1500) ((total - done) * el / done) / 1000 else -1
+                                onProgress(done, total, eta)
+                            }
+                        }
+                    }
+                }
+                out.fd.sync()
+            }
+            if (target.exists()) target.delete()
+            if (!tmp.renameTo(target)) throw IOException("nie udało się zmienić nazwy ${tmp.name}")
+            onProgress(total, total, 0)
+            return true
+        } catch (e: Exception) {
+            tmp.delete()
+            if (e !is java.io.InterruptedIOException) throw e
+            return false
+        }
+    }
 
     /** Pojemność nośnika (bajty) — limit procentowy liczony od niej. */
     fun capacity(base: File): Long = try {

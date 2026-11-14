@@ -98,4 +98,20 @@
     <string name="player_localrec_reason_disk_full">" – storage full"</string>
     <string name="player_localrec_cannot_delete_running">This recording cannot be deleted – it is still being written</string>
     <string name="player_localrec_delete_failed">Could not delete the recording files</string>
+    <string name="player_localrec_export">Export to a single .ts file</string>
+    <string name="player_localrec_export_busy">Export in progress: %1$s</string>
+    <string name="player_localrec_export_running">The recording is still running – export it when it ends</string>
+    <string name="player_localrec_export_no_space">Not enough space: the export needs %1$s (plus a margin), free %2$s.</string>
+    <string name="player_localrec_export_start">Preparing %1$s…</string>
+    <string name="player_localrec_export_progress_title">Export: %1$s</string>
+    <string name="player_localrec_export_status">%1$d%% · %2$s of %3$s%4$s</string>
+    <string name="player_localrec_export_eta">" · about %1$s left"</string>
+    <string name="player_localrec_export_hide">Hide</string>
+    <string name="player_localrec_export_background">Export continues in the background – the result appears when it finishes</string>
+    <string name="player_localrec_export_done_title">Export finished</string>
+    <string name="player_localrec_export_done">File:\n%1$s\n\nThe recording in parts stays unchanged – you can copy the file from the storage (e.g. to a computer).</string>
+    <string name="player_localrec_export_cancelled">Export cancelled – partial file deleted</string>
+    <string name="player_localrec_export_failed">Export failed: %1$s</string>
+    <string name="player_localrec_export_exists">File %1$s already exists. Replace it?</string>
+    <string name="player_localrec_export_overwrite">Replace</string>
 </resources>
