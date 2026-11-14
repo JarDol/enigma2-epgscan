@@ -653,17 +653,85 @@ class ChannelParamScanTests(unittest.TestCase):
 		scan.last_tune = 0
 		scan._complete_channel(jobs[0])
 		scan.tick()
-		self.assertEqual(started[-1], ("tp-two-a", False))
-
-		scan.last_tune = 0
-		scan._complete_channel(jobs[1])
-		scan.tick()
-		self.assertEqual(started[-1], ("tp-one-b", True))
+		# nowy transponder najpierw; dalszy kanal juz dostrojonej grupy rusza w tym samym obiegu,
+		# bo nic nie stroi (bez czekania na odstep)
+		self.assertEqual(started[-2:], [("tp-two-a", False), ("tp-one-b", True)])
 
 		scan._complete_channel(jobs[2])
 		scan.last_tune = 0
 		scan.tick()
 		self.assertNotEqual(started[-1][0], "tp-three-a")
+
+	def _gap_engine(self):
+		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=4,
+			scan_usage=lambda: None, upcoming_recordings=lambda: 0, eff_reserve=lambda: 1,
+			free_tuners=lambda: 6, on_busy_tp=lambda _job: False, notify=lambda: None)
+		engine.release = lambda job: engine.active.remove(job) if job in engine.active else None
+		return engine
+
+	def _fake_start(self, scan, started):
+		def start(job, shared):
+			started.append((job.ref, shared))
+			job.state = "scanning"
+			job.shared = shared
+			job.group.current = job
+			scan.active.append(job)
+			if not shared:
+				scan.last_tune = scanner_module.time.time()
+			return True
+		return start
+
+	def test_only_one_new_transponder_is_tuned_per_gap(self):
+		engine = self._gap_engine()
+		scan = scanner_module.ChannelParamsScan(engine)
+		jobs = [scanner_module.ChannelJob({"ref": ref, "name": ref}) for ref in ("tp1", "tp2", "tp3")]
+		for i, job in enumerate(jobs):
+			job.tp = (11000 + i * 100, 0, 192)
+		scan.groups = scanner_module.group_channel_jobs(jobs)
+		scan.queue = list(jobs)
+		started = []
+		scan._start = self._fake_start(scan, started)
+		scan.last_tune = 0
+		scan.tick()
+		scan.tick()
+		# Unicable: jedno strojenie, kolejne dopiero po odstepie
+		self.assertEqual(started, [("tp1", False)])
+		scan.last_tune = 0
+		scan.tick()
+		self.assertEqual(started, [("tp1", False), ("tp2", False)])
+
+	def test_tune_gap_setting_controls_the_interval(self):
+		common.cfg.cp_tune_gap = types.SimpleNamespace(value="0.5")
+		try:
+			self.assertEqual(scanner_module.tune_gap(), 0.5)
+		finally:
+			del common.cfg.cp_tune_gap
+		self.assertEqual(scanner_module.tune_gap(), float(common.TUNE_GAP))
+
+	def test_failed_group_tune_is_retried_once_as_a_group(self):
+		engine = self._gap_engine()
+		scan = scanner_module.ChannelParamsScan(engine)
+		jobs = [scanner_module.ChannelJob({"ref": ref, "name": ref}) for ref in ("a1", "a2", "a3")]
+		for job in jobs:
+			job.tp = (11000, 0, 192)
+		scan.groups = scanner_module.group_channel_jobs(jobs)
+		scan.queue = list(jobs)
+		started = []
+		scan._start = self._fake_start(scan, started)
+		scan.last_tune = 0
+		scan.tick()
+		self.assertEqual(started, [("a1", False)])
+		jobs[0].batch_members = list(jobs)
+		jobs[0].state = "BLAD: brak dostrojenia"
+		scan.tick()
+		# grupa wraca do kolejki jako calosc (a1 pierwszy), bez rozbijania na pojedyncze kanaly
+		self.assertEqual([job.ref for job in jobs[0].group.pending], ["a1", "a2", "a3"])
+		self.assertFalse(any(job.individual for job in jobs))
+		self.assertEqual(scan.errors, [])
+		jobs[0].group.not_before = 0
+		scan.last_tune = 0
+		scan.tick()
+		self.assertEqual(started[-1], ("a1", False))
 
 	def test_tuner_reserve_shortage_releases_transponder_and_delays_resume(self):
 		engine = types.SimpleNamespace(active=[], timer_hold=0, max_parallel=4,
@@ -2519,8 +2587,9 @@ class BatchScanTests(unittest.TestCase):
 				initial_counts = [sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows]
 			if self.engine.channel_params_scan is None:
 				break
-		self.assertEqual(sorted(initial_counts), [1, 2])
-		self.assertEqual(sorted(sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows), [2, 3])
+		# z ponowieniem strojenia grupy w trakcie skanu; runda koncowa dokłada po jednej probie
+		self.assertEqual(sorted(initial_counts), [2, 3])
+		self.assertEqual(sorted(sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows), [3, 4])
 		self.assertEqual(len(reports), 1)
 		self.assertEqual(len(reports[0]["errors"]), 2)
 
@@ -2535,7 +2604,8 @@ class BatchScanTests(unittest.TestCase):
 			self.scan.tick()
 			if self.engine.channel_params_scan is None:
 				break
-		self.assertEqual(sorted(sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows), [1, 2])
+		# nieudane strojenie grupy jest raz ponawiane w trakcie skanu (bez opcjonalnej rundy koncowej)
+		self.assertEqual(sorted(sum(rec.ref == row["ref"] for rec in self.records) for row in self.rows), [2, 3])
 		self.assertEqual(len(reports), 1)
 		self.assertEqual(len(reports[0]["errors"]), 2)
 
@@ -2546,9 +2616,13 @@ class BatchScanTests(unittest.TestCase):
 		reports = []
 		self.scan.done = reports.append
 		self.scan.start()
-		self.scan.rec_event(self.records[0], enigma.iRecordableService.evTuneFailed)
-		self.now += common.TUNE_GAP
-		self.scan.tick()
+		for _ in range(10):
+			for job in list(self.scan.active):
+				self.scan.rec_event(job.rec, enigma.iRecordableService.evTuneFailed)
+			self.now += common.TUNE_GAP * 2
+			self.scan.tick()
+			if reports:
+				break
 		self.assertIs(self.scan.results[self.rows[0]["ref"]], old)
 		self.assertEqual(reports[0]["scanned"], 0)
 		self.assertEqual([row["ref"] for row in reports[0]["errors"]], [self.rows[0]["ref"]])

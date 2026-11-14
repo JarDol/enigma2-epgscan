@@ -199,6 +199,14 @@ def same_transponder(job, group):
 	return job.tp_key is not None and job.tp_key == group.tp_key
 
 
+def tune_gap():
+	"""Odstep miedzy strojeniami [s] (Unicable) - ustawienie skanu parametrow."""
+	try:
+		return float(cfg.cp_tune_gap.value)
+	except (AttributeError, TypeError, ValueError):
+		return float(TUNE_GAP)
+
+
 def group_owns_tuner(group):
 	return any(job is not None and not job.shared for job in (group.current, group.reservation))
 
@@ -241,8 +249,24 @@ class ChannelParamsScan(object):
 		self.unsupported = [row for row in rows if not row["supported"]]
 		self.queue = [ChannelJob(row) for row in rows if row["supported"]]
 		self.groups = group_channel_jobs(self.queue, bool(cfg.cp_group_tp.value))
+		self._log_groups()
 		self.prepared = True
 		self.started = int(time.time())
+
+	def _log_groups(self):
+		"""Lista grup (transponder, liczba kanalow, pierwsze nazwy) - widac, co jest strojone razem."""
+		for i, group in enumerate(self.groups, 1):
+			tp = group.tp
+			if tp:
+				pos = tp[2]
+				where = "%d %s %s" % (int(tp[0]) // 1000 if tp[0] else 0,
+					{0: "H", 1: "V", 2: "L", 3: "R"}.get(tp[1], str(tp[1])),
+					"%.1f%s" % (abs(pos) / 10.0, "E" if pos >= 0 else "W") if isinstance(pos, int) else "?")
+			else:
+				where = "TSID/ONID/NS %s" % (group.tp_key,)
+			names = [job.name for job in group.pending]
+			log("Skan parametrow: grupa %d - %s: %d kan. (%s%s)" % (i, where, len(names),
+				", ".join(names[:6]), ", ..." if len(names) > 6 else ""))
 
 	def start(self):
 		if self.engine.phase == "channelparams":
@@ -259,7 +283,7 @@ class ChannelParamsScan(object):
 		self.engine.phase = "channelparams"
 		self.engine.channel_params_scan = self
 		self.tuner_trace = TunerTrace(self.engine.total_tuners, self.engine.reserve,
-			self.engine.max_parallel, TUNE_GAP, time.time(), epg_borrowed=self.epg_borrowed)
+			self.engine.max_parallel, tune_gap(), time.time(), epg_borrowed=self.epg_borrowed)
 		log("Skan parametrow: %d kanalow DVB w %d transponderach, %d nieobslugiwanych; tunery %d, rezerwa %d" %
 			(len(self.queue), len(self.groups), len(self.unsupported), self.engine.total_tuners, self.engine.reserve))
 		if self.unsupported:
@@ -351,7 +375,7 @@ class ChannelParamsScan(object):
 		self.timer.stop()
 		if self.tuner_trace is None and not self.tuner_reported and self.prepared:
 			self.tuner_trace = TunerTrace(self.engine.total_tuners, self.engine.reserve,
-				self.engine.max_parallel, TUNE_GAP, self.started, epg_borrowed=self.epg_borrowed, independent=False)
+				self.engine.max_parallel, tune_gap(), self.started, epg_borrowed=self.epg_borrowed, independent=False)
 		if self.tuner_trace is not None:
 			self.engine.params_tuner_report = close_trace(self.tuner_trace, "params", time.time(), cancelled=True)
 			self.tuner_trace = None
@@ -482,6 +506,27 @@ class ChannelParamsScan(object):
 		log("Skan parametrow: BLAD %s: %s" % (job.name, reason))
 		self._finish_group_if_idle(group)
 
+	def _handle_tune_failure(self, job, reason, now):
+		"""Nieudane strojenie grupy: jedna ponowna proba calej grupy (jedno strojenie) po odstepie,
+		dopiero potem kanaly osobno. Pozostale grupy pracuja dalej rownolegle."""
+		group = job.group
+		if getattr(job, "borrowed", False) or group is None or job.shared or getattr(job, "tune_retried", False):
+			self._handle_failure(job, reason)
+			return
+		log("Skan parametrow: %s - %s; ponowie strojenie grupy" % (job.name, reason))
+		job.tune_retried = True
+		job.batch_members = []
+		self._release(job)
+		job.state = "czeka (ponowne strojenie)"
+		job.tuner_no = -1
+		job.tuner = "-"
+		group.done = False
+		group.not_before = now + tune_gap() * 2
+		if job not in group.pending:
+			group.pending.insert(0, job)
+		if job not in self.queue:
+			self.queue.insert(0, job)
+
 	def _start(self, job, shared):
 		job.batch_members = []
 		if not job.individual and job.group:
@@ -506,8 +551,11 @@ class ChannelParamsScan(object):
 			if job.group.current is None and job.group.reservation is None:
 				job.group.started_at = job.t0
 			job.group.current = job
-		self.last_tune = time.time()
-		self.engine.last_tune = self.last_tune
+		if not shared:
+			# odstep (Unicable) liczy sie tylko od prawdziwego strojenia; wspoldzielony
+			# transponder niczego nie stroi
+			self.last_tune = time.time()
+			self.engine.last_tune = self.last_tune
 		try:
 			rec.prepareStreaming()
 			rec.start()
@@ -856,9 +904,9 @@ class ChannelParamsScan(object):
 		now = time.time()
 		for job in list(self.active):
 			if job.state == "BLAD: brak dostrojenia":
-				self._handle_failure(job, "brak dostrojenia")
+				self._handle_tune_failure(job, "brak dostrojenia", now)
 			elif job.state == "strojenie" and now - job.t0 > TUNE_TIMEOUT:
-				self._handle_failure(job, "timeout strojenia")
+				self._handle_tune_failure(job, "timeout strojenia", now)
 			elif job.state == "odczyt strumienia":
 				self._begin_capture(job)
 			elif job.state == "zbieranie PAT/PMT":
@@ -881,33 +929,34 @@ class ChannelParamsScan(object):
 				self._yield_group(group, now)
 
 		own_groups = len([group for group in self.groups if group_owns_tuner(group)])
-		if now - self.last_tune >= TUNE_GAP:
-			job = None
-			group = None
-			shared = False
-			ready_groups = self._ready_groups(now)
-			new_groups = [item for item in ready_groups if item.reservation is None]
-			continuing_groups = [item for item in ready_groups if item.reservation is not None]
-			for candidate_group in new_groups + continuing_groups:
-				candidate = candidate_group.pending[0]
-				if candidate_group.reservation:
-					group, job, shared = candidate_group, candidate, True
-					break
-				if engine.on_busy_tp(candidate):
-					group, job, shared = candidate_group, candidate, True
-					break
-				if not engine.timer_hold and own_groups < engine.max_parallel \
-						and engine.free_tuners() - engine.eff_reserve() > 0:
-					group, job = candidate_group, candidate
-					break
-			if job is not None:
-				group.pending.remove(job)
-				self.queue.remove(job)
-				started = self._start(job, shared)
-				if self.tuner_trace is not None:
-					self.tuner_trace.note_start(shared, started)
-				if not started:
-					self._handle_failure(job, "nie mozna zarezerwowac serwisu")
+		# Grupy na juz dostrojonym transponderze (rezerwa grupy albo tuner innej uslugi) ruszaja od razu -
+		# nic nie stroja. Nowy transponder: jedno strojenie na odstep (Unicable - polecenia do konwertera
+		# nie moga isc jednoczesnie); odczyt PAT/PMT na dostrojonych tunerach trwa w tym czasie rownolegle.
+		gap = tune_gap()
+		can_tune = now - self.last_tune >= gap
+		ready_groups = self._ready_groups(now)
+		new_groups = [item for item in ready_groups if item.reservation is None]
+		continuing_groups = [item for item in ready_groups if item.reservation is not None]
+		for candidate_group in new_groups + continuing_groups:
+			candidate = candidate_group.pending[0]
+			if candidate_group.reservation or engine.on_busy_tp(candidate):
+				shared = True
+			elif can_tune and not engine.timer_hold and own_groups < engine.max_parallel \
+					and engine.free_tuners() - engine.eff_reserve() > 0:
+				shared = False
+			else:
+				continue
+			candidate_group.pending.remove(candidate)
+			self.queue.remove(candidate)
+			started = self._start(candidate, shared)
+			if self.tuner_trace is not None:
+				self.tuner_trace.note_start(shared, started)
+			if not started:
+				self._handle_failure(candidate, "nie mozna zarezerwowac serwisu")
+				continue
+			if not shared:
+				can_tune = False
+				own_groups += 1
 		if not self.queue and not self.active and not self.final_retry_started:
 			self.final_retry_started = True
 			if cfg.cp_retry_failed.value and self.failed_jobs:
@@ -926,7 +975,7 @@ class ChannelParamsScan(object):
 		if self.tuner_trace is not None:
 			self.tuner_trace.sample(engine, now, len(self.queue), len(self._ready_groups(now)),
 				len([group for group in self.groups if group_owns_tuner(group)]),
-				False, now - self.last_tune < TUNE_GAP)
+				False, now - self.last_tune < tune_gap())
 		if not self.queue and not self.active and not self.reservations:
 			return self._finish()
 		if now - self.last_notify >= 1:

@@ -28,7 +28,7 @@ def all_items():
 		cfg.local_grab, cfg.local_days, cfg.local_conn_tm, cfg.local_conn_onet, cfg.local_conn_naz, cfg.local_conn_wp,
 		cfg.local_conn_max, cfg.local_pause, cfg.local_errlog, cfg.src_order, cfg.site_order, cfg.map_diff, cfg.one_place, cfg.cand_night, cfg.sched_on, cfg.map_mode, cfg.rs_mode, cfg.rs_days, cfg.rs_mem,
 		cfg.cl_on, cfg.cl_dir, cfg.cl_ts_hours, cfg.cl_crash_keep, cfg.cl_e2s_days, cfg.cl_every, cfg.cli_api, cfg.cli_port, cfg.cli_token, cfg.cli_pack, cfg.upd_auto, cfg.upd_channel,
-		cfg.cp_language_source, cfg.cp_languages, cfg.cp_group_tp, cfg.cp_retry_failed, cfg.cp_interval, cfg.cp_last_run, cfg.cp_auto_in_progress,
+		cfg.cp_language_source, cfg.cp_languages, cfg.cp_group_tp, cfg.cp_retry_failed, cfg.cp_tune_gap, cfg.cp_interval, cfg.cp_last_run, cfg.cp_auto_in_progress,
 		cfg.cp_sync_common, cfg.cp_sync_devices, cfg.ui_language,
 		cfg.cp_common_overwrite, cfg.cp_devices_overwrite,
 		cfg.topup, cfg.topup_mode, cfg.topup_every, cfg.topup_hours, cfg.topup_when, cfg.topup_fixed, cfg.topup_fixed_time] + SCHED_DAYS
@@ -191,6 +191,7 @@ class EPGScanSetup(Screen, ConfigListScreen):
 				e("Maks. rownoleglych skanow (wspolny)", cfg.max_parallel), e("Rezerwa wolnych tunerow (wspolna)", cfg.reserve),
 				e("Grupowanie kanalow po transponderze", cfg.cp_group_tp),
 				e("Ponow raz bledne kanaly po skanie", cfg.cp_retry_failed),
+				e("Odstep miedzy strojeniami (Unicable)", cfg.cp_tune_gap),
 				e("Po skanie: wspolne ustawienia E2Stream", cfg.cp_sync_common),
 				e("Po skanie: wszystkie profile E2Stream", cfg.cp_sync_devices),
 				e("Skanuj kanaly co", cfg.cp_interval)]
@@ -322,6 +323,10 @@ class EPGScanSetup(Screen, ConfigListScreen):
 		elif item is cfg.cp_group_tp:
 			txt = "Tak: jeden dostrojony kanal zbiera PAT i PMT calej grupy; brakujace kanaly sa sprawdzane osobno. " \
 				"Nie: kazdy kanal jest osobna grupa."
+		elif item is cfg.cp_tune_gap:
+			txt = "Nowy transponder jest strojony dopiero po dostrojeniu poprzedniego i po tym odstepie; odczyt PAT/PMT " \
+				"na dostrojonych tunerach trwa rownolegle. Krotszy odstep = szybszy skan. Przy Unicable/JESS zbyt krotki " \
+				"odstep moze dawac bledy strojenia - wtedy wroc do 2 s."
 		elif item is cfg.cp_retry_failed:
 			txt = "Po zakonczeniu calego skanu wykonaj jedna dodatkowa probe tylko dla kanalow z bledem, takze w harmonogramie."
 		elif item is cfg.cp_interval:

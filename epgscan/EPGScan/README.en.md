@@ -628,6 +628,7 @@ are in brackets. Every option has a description below the settings list.
 | Max parallel scans / free-tuner reserve | shared with *Satelita – EPG* |
 | Group channels by transponder | recommended; read group PAT/PMTs from one tune, then missing channels individually |
 | Retry failed channels once after scan | optional extra attempt after the entire scan (no) |
+| Gap between tunings (Unicable) | 0.5 / 1 / 1.5 / 2 / 3 s – shorter = faster scan; go back to 2 s on tuning errors (2 s) |
 | Scan channels every | 1 / 2 / 4 / 7 days; scan follows the main EPG schedule |
 
 ### *Program z internetu* (internet listings)

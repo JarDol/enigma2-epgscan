@@ -4192,3 +4192,13 @@ msgstr "regular"
 
 msgid "środa"
 msgstr "Wednesday"
+
+msgid "Odstep miedzy strojeniami (Unicable)"
+msgstr "Gap between tunings (Unicable)"
+
+msgid "Nowy transponder jest strojony dopiero po dostrojeniu poprzedniego i po tym odstepie; odczyt PAT/PMT na dostrojonych tunerach trwa rownolegle. Krotszy odstep = szybszy skan. Przy Unicable/JESS zbyt krotki odstep moze dawac bledy strojenia - wtedy wroc do 2 s."
+msgstr "A new transponder is tuned only after the previous one has locked and this gap has passed; PAT/PMT reading on tuned tuners continues in parallel. A shorter gap means a faster scan. With Unicable/JESS a gap that is too short may cause tuning errors - then go back to 2 s."
+
+
+msgid "1,5 s"
+msgstr "1.5 s"
