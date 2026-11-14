@@ -66,4 +66,5 @@
     <string name="prompt_sending_recording">Wysyłam nagranie na dekoder…</string>
     <string name="prompt_recording_set">Nagranie ustawione na dekoderze</string>
     <string name="prompt_recording_failed">Nie udało się ustawić nagrania: %1$s</string>
+    <string name="epg_eit_only_skip">EPG: tryb testowy EIT – pobieranie z dekodera wyłączone</string>
 </resources>

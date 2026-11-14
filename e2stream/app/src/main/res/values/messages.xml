@@ -104,4 +104,5 @@
     <string name="eit_unknown_title">Nie można sprawdzić</string>
     <string name="eit_unknown_message">Nie da się odczytać ustawienia EIT w Enigma2 (potrzebna wtyczka EPG Scan 2.19.1 lub nowsza). Jeśli Enigma2 nie wysyła EIT w strumieniu, opcja niczego nie zmieni. Włączyć?</string>
     <string name="eit_enable">Włącz</string>
+    <string name="message_eit_only_on">Usunięto EPG (%1$d kanałów). EPG pojawi się tylko z EIT oglądanego kanału.</string>
 </resources>

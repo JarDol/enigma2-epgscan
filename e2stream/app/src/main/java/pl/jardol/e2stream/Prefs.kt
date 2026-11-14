@@ -280,6 +280,14 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("eitReplace", true)
         set(v) = putB("eitReplace", v)
 
+    /** Test EIT: EPG aplikacji tylko z EIT strumienia — bez paczki EPG Scan i bez OpenWebif. */
+    var eitOnly: Boolean
+        get() = sp.getBoolean("eitOnly", false)
+        set(v) = putB("eitOnly", v)
+
+    /** Tryb testowy EIT aktywny (wymaga włączonego EIT ze strumienia). */
+    val eitOnlyActive: Boolean get() = eitStream && eitOnly
+
     /** Godzina codziennego pobierania EPG "HH:MM". */
     var epgHour: String
         get() = s("epgHour", "05:00")

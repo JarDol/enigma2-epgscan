@@ -90,7 +90,7 @@ class SettingsActivity : Activity() {
         return listOf<Item>(Item.Header(getString(title))) + when (sec) {
             "Dekoder Enigma2" -> listOf(
                 Item.Header(getString(R.string.setting_receiver)),
-        Item.Text(getString(R.string.setting_receiver_ip_address), { p.host }, { p.host = it.trim(); checkPluginQuiet() }, hint = "np. 192.168.1.20"),
+        Item.Text(getString(R.string.setting_receiver_ip_address), { p.host }, { p.host = it.trim(); checkPluginQuiet(); offerBackupNow() }, hint = "np. 192.168.1.20"),
         Item.Action(getString(R.string.setting_search_for_receivers_on_the_network)) { discover() },
         Item.Text(getString(R.string.receiver_search_subnet), { p.discoverySubnet }, { value ->
             val subnet = value.trim()
@@ -193,6 +193,14 @@ class SettingsActivity : Activity() {
         }),
     ) + (if (p.eitStream) listOf<Item>(
         Item.Toggle(getString(R.string.setting_eit_replace_epg), { p.eitReplace }, { p.eitReplace = it }),
+        Item.Toggle(getString(R.string.setting_eit_only), { p.eitOnly }, { v ->
+            p.eitOnly = v
+            if (v) {
+                val n = EpgStore(this).clear()
+                AppLog.i("EPG: tryb testowy EIT — usunięto zapisane EPG ($n kanałów); pobieranie z dekodera wyłączone")
+                toast(getString(R.string.message_eit_only_on, n))
+            }
+        }),
     ) else emptyList()) + listOf(
         Item.Toggle(getString(R.string.setting_channel_picons_from_receiver), { p.picons }, { p.picons = it }),
         Item.Toggle(getString(R.string.setting_replace_missing_picons_with_e2stream_logo), { p.missingPiconLogo }, { p.missingPiconLogo = it }),
@@ -780,6 +788,17 @@ class SettingsActivity : Activity() {
         receiver.streamPort?.let { p.streamPort = it }
         markChanged("dekoder = ${receiver.ip}:${receiver.httpPort} (${receiver.description})")
         checkPluginQuiet()
+        offerBackupNow()
+    }
+
+    /**
+     * Pierwsza konfiguracja: zaraz po wybraniu dekodera pytanie o kopię ustawień z dekodera (okno w odtwarzaczu),
+     * zanim cokolwiek zostanie zmienione - inaczej późniejsza synchronizacja mogłaby nadpisać kopię zmianami.
+     */
+    private fun offerBackupNow() {
+        if (p.host.isBlank() || !SyncManager.needsBackupDecision || isFinishing) return
+        AppLog.i("ustawienia: wybrano dekoder ${p.host} - od razu pytanie o kopię ustawień")
+        finish()
     }
 
     private fun chooseBouquets() {

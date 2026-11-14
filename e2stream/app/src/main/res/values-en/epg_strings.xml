@@ -66,4 +66,5 @@
     <string name="prompt_sending_recording">Sending recording to receiver…</string>
     <string name="prompt_recording_set">Recording scheduled on receiver</string>
     <string name="prompt_recording_failed">Could not schedule recording: %1$s</string>
+    <string name="epg_eit_only_skip">EPG: EIT test mode – downloads from the receiver are off</string>
 </resources>

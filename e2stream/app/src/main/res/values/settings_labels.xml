@@ -105,4 +105,5 @@
     <string name="setting_send_ts_dumps_to_receiver_2" formatted="false">Wysyłaj zrzuty TS na dekoder</string>
     <string name="setting_eit_from_stream" formatted="false">EIT ze strumienia (teraz/następne)</string>
     <string name="setting_eit_replace_epg" formatted="false">Podmieniaj EPG po odebraniu EIT</string>
+    <string name="setting_eit_only" formatted="false">Test EIT: EPG tylko ze strumienia (usuwa EPG, bez pobierania)</string>
 </resources>

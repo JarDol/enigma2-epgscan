@@ -105,4 +105,5 @@
     <string name="setting_send_ts_dumps_to_receiver_2" formatted="false">Send TS dumps to receiver</string>
     <string name="setting_eit_from_stream" formatted="false">EIT from the stream (now/next)</string>
     <string name="setting_eit_replace_epg" formatted="false">Replace EPG when EIT is received</string>
+    <string name="setting_eit_only" formatted="false">EIT test: EPG from the stream only (clears EPG, no downloads)</string>
 </resources>

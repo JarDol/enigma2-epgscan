@@ -104,4 +104,5 @@
     <string name="eit_unknown_title">Cannot check</string>
     <string name="eit_unknown_message">The Enigma2 EIT setting cannot be read (EPG Scan plugin 2.19.1 or newer is needed). If Enigma2 does not send EIT in the stream, the option changes nothing. Enable it?</string>
     <string name="eit_enable">Enable</string>
+    <string name="message_eit_only_on">EPG removed (%1$d channels). EPG will appear only from the EIT of the watched channel.</string>
 </resources>

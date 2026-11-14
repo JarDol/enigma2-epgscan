@@ -432,6 +432,8 @@ class PlayerActivity : Activity() {
             return
         }
         AppLog.init(this, Storage.dir(this, prefs))
+        epg.eitOnly = prefs.eitOnlyActive
+        if (epg.eitOnly) AppLog.i("EPG: tryb testowy EIT — EPG tylko ze strumienia, bez pobierania z dekodera")
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
         keyMap = KeyMap.load(prefs)
         UiScale.apply(banner, UiScale.pct(prefs.uiBannerFont), UiScale.pct(prefs.uiBannerIcon))
@@ -565,7 +567,7 @@ class PlayerActivity : Activity() {
     private val epgTick = object : Runnable {
         override fun run() {
             if (safeMode) return
-            if (EpgSync.due(prefs, epgStartupPending)) {
+            if (!prefs.eitOnlyActive && EpgSync.due(prefs, epgStartupPending)) {
                 epgStartupPending = false
                 if (!prefs.pluginOk) AppLog.i("EPG: pobieranie wg harmonogramu (${prefs.epgHour})")
                 EpgSync.run(applicationContext, prefs, epgStore, false, { },
@@ -1710,7 +1712,7 @@ class PlayerActivity : Activity() {
         if (b.ref == REC_REF) return
         val target = panelList
         io.execute {
-            val map = try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
+            val map = if (epg.eitOnly) emptyMap() else try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
             // kanały, dla których dekoder nie podał bieżącej audycji (np. EPG tylko z paczki EPG Scan
             // pod inną referencją) — z zapisanego EPG, tak jak opis na dole listy
             val n = System.currentTimeMillis() / 1000
@@ -2772,6 +2774,10 @@ class PlayerActivity : Activity() {
                 appendLine(getString(R.string.diag_ts_rate, a.bitrateKbps / 1000.0, a.maxGapMs))
                 appendLine(getString(R.string.diag_ts_bursts, a.burstAvgMs, a.cleaned, a.tsFixed))
                 appendLine(getString(R.string.diag_ts_errors, a.ccErrors, a.teiErrors, a.scrambled, a.syncLoss, a.pcrJumps, a.pmtChanges))
+                if (prefs.eitStream) {
+                    fun e(x: EitEvent?) = x?.let { "${it.title} ${hm.format(Date(it.begin * 1000))}–${hm.format(Date(it.end * 1000))}" } ?: "-"
+                    appendLine(getString(R.string.diag_eit, a.eitPackets, e(a.eitPresent), e(a.eitFollowing)))
+                }
             }
             appendLine(getString(R.string.diag_screen, displayInfo()))
             appendLine(getString(R.string.diag_refresh, afrName(prefs.afrMode)))
@@ -3061,6 +3067,7 @@ class PlayerActivity : Activity() {
             message.visibility = View.GONE
         }
         applyDisplayMode()
+        epg.eitOnly = prefs.eitOnlyActive
         epg.clearMemory()
         list.adapter = adapter      // wiersze od nowa (np. nowa wielkość czcionki)
         if (prefs.hiddenBouquets.toString() != settingsBq) {

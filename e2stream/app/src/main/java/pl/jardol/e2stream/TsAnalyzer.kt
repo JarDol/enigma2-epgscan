@@ -44,8 +44,10 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     @Volatile var eitPackets = 0L
         private set
     private val eitVersion = intArrayOf(-1, -1)
-    private var eitPresent: EitEvent? = null
-    private var eitFollowing: EitEvent? = null
+    @Volatile var eitPresent: EitEvent? = null
+        private set
+    @Volatile var eitFollowing: EitEvent? = null
+        private set
     private val eitAsm = SectionAssembler { b, len -> eitSection(b, len) }
 
     private fun eitSection(b: ByteArray, len: Int) {

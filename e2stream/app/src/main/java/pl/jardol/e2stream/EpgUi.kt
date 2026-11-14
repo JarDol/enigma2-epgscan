@@ -90,7 +90,11 @@ class EpgUi(
 
     private fun load(ref: String): List<EpgEvent> = withEit(ref, loadRaw(ref))
 
+    /** Test EIT: tylko zapisane EPG (z EIT), bez zapytań do dekodera. */
+    @Volatile var eitOnly = false
+
     private fun loadRaw(ref: String): List<EpgEvent> {
+        if (eitOnly) return try { store.read(ref)?.second } catch (_: Exception) { null } ?: emptyList()
         val k = OpenWebif.key(ref)
         synchronized(cache) {
             cache[k]?.let { if (System.currentTimeMillis() - it.first < 10 * 60_000) return it.second }

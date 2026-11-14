@@ -63,6 +63,9 @@ class EpgStore(ctx: Context) {
     }
 
     fun count() = dir.listFiles()?.size ?: 0
+
+    /** Usuwa całe zapisane EPG aplikacji (test EIT). */
+    fun clear(): Int = dir.listFiles()?.count { it.delete() } ?: 0
 }
 
 /** Pobieranie EPG (i ikon) wszystkich kanałów z widocznych bukietów — ręcznie lub wg harmonogramu. */
@@ -242,6 +245,7 @@ object EpgSync {
     @Synchronized
     fun run(ctx: Context, prefs: Prefs, store: EpgStore, manual: Boolean, progress: (String) -> Unit, done: (String) -> Unit, failed: () -> Unit) {
         val localized = AppLanguage.wrap(ctx)
+        if (prefs.eitOnlyActive) { done(localized.getString(R.string.epg_eit_only_skip)); return }
         if (running) { done(localized.getString(R.string.epg_already_downloading)); return }
         running = true
         Thread {
