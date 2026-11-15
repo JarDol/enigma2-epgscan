@@ -50,6 +50,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.delay
+import androidx.compose.runtime.mutableStateListOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.AWTEvent
@@ -83,8 +84,49 @@ fun main() {
     System.setProperty("jna.encoding", "UTF-8")
     val remoteDiagnostics = RemoteDiagnostics.fromEnvironment()
     val instance = SingleInstance.startOrSignal() ?: return
+    val startConfig = runCatching { DesktopConfig.load() }.getOrNull()
+    startConfig?.let { AppLog.setDirectory(AppLog.dirFor(it)) }
+    AppLog.i("E2Stream ${appVersion()} uruchomiony; Java ${System.getProperty("java.version")}, ${System.getProperty("os.name")}")
     application {
-        val startWindowMode = remember { runCatching { DesktopConfig.load().windowMode }.getOrDefault(WindowMode.MAXIMIZED) }
+        // Ekran startowy z etapami, dopóki VLC (biblioteki i wtyczki) ładuje się w tle — okno do oglądania od razu reaguje.
+        var vlcReady by remember { mutableStateOf(false) }
+        val startStages = remember { mutableStateListOf<StartStage>() }
+        LaunchedEffect(Unit) {
+            val started = System.nanoTime()
+            fun begin(label: String): Int { startStages += StartStage(label); return startStages.lastIndex }
+            suspend fun <T> stage(label: String, work: () -> T, done: (T) -> String? = { null }): T? {
+                val index = begin(label)
+                val t0 = System.nanoTime()
+                val result = withContext(Dispatchers.IO) { runCatching(work) }
+                val ms = (System.nanoTime() - t0) / 1_000_000
+                startStages[index] = result.fold(
+                    { StartStage(label, StageState.DONE, ms, done(it)) },
+                    { StartStage(label, StageState.FAILED, ms, it.message) },
+                )
+                AppLog.i("start: $label — ${if (result.isSuccess) "$ms ms" else "błąd: ${result.exceptionOrNull()?.message}"}")
+                return result.getOrNull()
+            }
+            startStages += StartStage(
+                "Ustawienia",
+                if (startConfig != null) StageState.DONE else StageState.FAILED,
+                detail = if (startConfig != null) null else "domyślne",
+            )
+            VlcRuntime.preferInternal = startConfig?.vlcInternal ?: true
+            val libs = stage("Biblioteki VLC", { VlcRuntime.ensureLoaded() }) { loaded ->
+                loaded.source.label + if (loaded.fallback) " (wewnętrzny niedostępny)" else ""
+            }
+            if (libs != null) {
+                stage("Wtyczki VLC (po instalacji pierwszy start trwa dłużej)", { VlcRuntime.factory(); VlcRuntime.version }) { it }
+            }
+            begin("Okno odtwarzacza")
+            if (startStages.any { it.state == StageState.FAILED }) delay(2500)
+            AppLog.i("start: ekran startowy ${(System.nanoTime() - started) / 1_000_000} ms")
+            vlcReady = true
+        }
+        if (!vlcReady) {
+            SplashWindow(startStages, onClose = ::exitApplication)
+        } else {
+        val startWindowMode = remember { startConfig?.windowMode ?: WindowMode.MAXIMIZED }
         val mainWindowState = rememberWindowState(
             placement = if (startWindowMode == WindowMode.WINDOW) WindowPlacement.Floating else WindowPlacement.Maximized,
         )
@@ -156,6 +198,8 @@ fun main() {
             var recStack by remember { mutableStateOf<List<String>>(emptyList()) }
             var recRows by remember { mutableStateOf<Map<String, Recording>>(emptyMap()) }
             var playingRecording by remember { mutableStateOf<Recording?>(null) }
+            /** Spis audycji odtwarzanego nagrania lokalnego (przytrzymane OK — lista, skok). */
+            var recordingProgrammes by remember { mutableStateOf<List<RecProgramme>>(emptyList()) }
             val recPositions = remember { RecordingPositions() }
             var timeshift by remember { mutableStateOf<TimeshiftSession?>(null) }
             var tsPendingTarget by remember { mutableStateOf<Long?>(null) }
@@ -395,9 +439,6 @@ fun main() {
             LaunchedEffect(config.logDir) {
                 AppLog.setDirectory(AppLog.dirFor(config))
             }
-            LaunchedEffect(Unit) {
-                AppLog.i("E2Stream ${appVersion()} uruchomiony; Java ${System.getProperty("java.version")}, ${System.getProperty("os.name")}")
-            }
             LaunchedEffect(status) { withContext(Dispatchers.IO) { AppLog.i(status) } }
             LaunchedEffect(epgError) { epgError?.let { withContext(Dispatchers.IO) { AppLog.i(it) } } }
 
@@ -576,19 +617,28 @@ fun main() {
                     val eit = if (!config.eitStream || sid <= 0) null else EitReader(sid) { now, next ->
                         EventQueue.invokeLater { onStreamEit(channel, now, next) }
                     }
+                    // PAT/PMT jak na Androidzie: zapamiętany PMT kanału (wspólny z telewizorami) wstawiany, gdy dekoder go nie przyśle.
+                    fun fixer(waitForPcr: Boolean) = TsStreamFixer(
+                        sid = sid,
+                        cachedPmt = { PmtStore.pmtOrBuilt(sid) },
+                        onPmt = { section -> if (sid > 0 && PmtStore.putPmt(sid, section)) AppLog.i("TS: zapamiętano PMT kanału ${channel.name}") },
+                        waitForPcr = waitForPcr,
+                    )
                     val ts = if (config.tsMin <= 0) null else runCatching {
                         TimeshiftSession(
                             TimeshiftBuffer(TimeshiftBuffer.dirFor(config), config.tsMin),
                             url,
                             TimeshiftSession.basicAuth(config),
                             eit?.let { reader -> reader::feed },
+                            fixer(waitForPcr = true),
                         )
                     }.onFailure { AppLog.i("timeshift: nie udało się uruchomić (${it.message})") }.getOrNull()
                     timeshift = ts
-                    val tap = if (ts != null || eit == null) null else runCatching {
-                        StreamTap(url, TimeshiftSession.basicAuth(config), eit::feed)
-                    }.onFailure { AppLog.i("EIT: tunel strumienia nie działa (${it.message})") }.getOrNull()
+                    val tap = if (ts != null) null else runCatching {
+                        StreamTap(url, TimeshiftSession.basicAuth(config), eit?.let { reader -> reader::feed }) { fixer(waitForPcr = false) }
+                    }.onFailure { AppLog.i("strumień: tunel nie działa (${it.message})") }.getOrNull()
                     streamTap = tap
+                    session.startLabel = "kanał ${channel.name}"
                     session.play(ts?.liveUrl() ?: tap?.url ?: url, config)
                     if (eit != null) scope.launch {
                         delay(15_000)
@@ -625,6 +675,10 @@ fun main() {
                     val start = recPositions.get(recording.path)
                     val url = if (recording.path.startsWith(LOCAL_PREFIX)) localRecordingServer.url(recording)
                     else DecoderClient(config).recordingUrl(recording.path)
+                    recordingProgrammes = LocalRecordings.dirOf(config, recording)
+                        ?.let { dir -> runCatching { programmesFrom(LocalRecordings.readInfo(dir)) }.getOrNull() }
+                        .orEmpty()
+                    session.startLabel = "nagranie"
                     session.play(url, config, start)
                     playingChannel?.let { previousChannel = it }
                     playingChannel = null
@@ -1181,6 +1235,7 @@ fun main() {
                     TimeshiftTarget.Live -> ts.liveUrl()
                     is TimeshiftTarget.At -> ts.urlAt(target.wall)
                 }
+                session.startLabel = "timeshift — przewinięcie"
                 session.play(url, config)
                 showPlaybackBar()
             }
@@ -1259,7 +1314,7 @@ fun main() {
                     if (failure != null) {
                         closeTimeshift()
                         status = "Timeshift wyłączony: $failure"
-                        if (channel != null) runCatching { session.play(DecoderClient(config).streamUrl(channel), config) }
+                        if (channel != null) runCatching { session.startLabel = "wznowienie"; session.play(DecoderClient(config).streamUrl(channel), config) }
                         break
                     }
                     if (ts.buffer.trimmed && tsPendingTarget == null &&
@@ -1305,6 +1360,7 @@ fun main() {
                     }
                     ts != null && session != null && ts.buffer.failed == null -> {
                         val url = if (timeshiftShifted()) ts.urlAt(timeshiftShown(ts, session)) else ts.liveUrl()
+                        session.startLabel = "wznowienie"
                         session.play(url, config)
                     }
                     else -> restartPlayback()
@@ -2167,6 +2223,17 @@ fun main() {
             fun wallOf(epochSec: Long): Long = monotonicMs() - (System.currentTimeMillis() - epochSec * 1000)
             fun epochOf(wall: Long): Long = System.currentTimeMillis() - (monotonicMs() - wall)
 
+            // Dziennik audycji bufora: EPG co minutę i od razu po nowym EIT ze strumienia.
+            LaunchedEffect(timeshift, playingChannel?.ref, eitVersion, epgRefresh) {
+                val ts = timeshift ?: return@LaunchedEffect
+                val channel = playingChannel ?: return@LaunchedEffect
+                while (true) {
+                    val current = withContext(Dispatchers.IO) { runCatching { epgRepo.nowNext(channel.ref).first }.getOrNull() }
+                    current?.let { ts.programmes.add(it.title, epgDescription(it), it.begin, it.end) }
+                    delay(60_000)
+                }
+            }
+
             fun startLocalRecording(kind: String, fromWall: Long, untilWall: Long, title: String?, note: String?) {
                 val ts = timeshift ?: return
                 val channel = playingChannel ?: return
@@ -2212,6 +2279,17 @@ fun main() {
                             .put("durationMs", if (result.firstWall != Long.MAX_VALUE) result.endWall - result.firstWall else 0L)
                             .put("bytes", result.bytes)
                             .put("end", result.reason)
+                        // Spis audycji (jak na Androidzie): „bufor do teraz” i „do zmiany kanału” — tytuł z godzinami i audycjami
+                        if (kind != "audycja" && result.firstWall != Long.MAX_VALUE) {
+                            val beginMs = epochOf(result.firstWall)
+                            val endMs = epochOf(result.endWall)
+                            val programmes = programmeIndex(ts.programmes.snapshot(), beginMs, endMs)
+                            if (programmes.isNotEmpty()) {
+                                done.put("title", indexedRecordingTitle(channel.name, beginMs, endMs, programmes))
+                                    .put("description", indexedRecordingDescription(programmes))
+                                    .put("programmes", programmesJson(programmes))
+                            }
+                        }
                         runCatching { LocalRecordings.writeInfo(result.dir, done) }
                         EventQueue.invokeLater {
                             if (activeRecording?.dir == result.dir) activeRecording = null
@@ -3406,9 +3484,31 @@ fun main() {
                 }
             }
             /** Długie OK: na pasku kanału — timeshift; na pasku timeshiftu — nagrywanie; bez pasków — Menu. */
+            /** Przytrzymane OK w nagraniu z kilkoma audycjami: lista audycji, wybór przeskakuje do jej początku. */
+            fun pickProgramme() {
+                val session = vlcSession ?: return
+                val programmes = recordingProgrammes
+                val current = programmeAt(programmes, session.time().coerceAtLeast(0))
+                quickPick = QuickPick(
+                    "Audycje w nagraniu",
+                    programmes.map { "${formatDuration(it.offsetMs)}  ${it.title}" },
+                    programmes.indexOf(current).coerceAtLeast(0),
+                ) { index ->
+                    programmes.getOrNull(index)?.let { target ->
+                        vlcSession?.let {
+                            it.seekTo(target.offsetMs)
+                            if (it.isPaused) it.resume()
+                        }
+                        showPlaybackBar()
+                        status = "Audycja: ${target.title}"
+                    }
+                }
+            }
+
             fun longOk() {
                 remoteDiagnostics.log { "key=OK long banner=$bannerVisible playbackBar=$playbackBarVisible" }
                 when {
+                    playingRecording != null && recordingProgrammes.size > 1 -> pickProgramme()
                     playingRecording == null && timeshift != null && playbackBarVisible -> {
                         playbackBarVisible = false
                         pickRecording()
@@ -3937,6 +4037,7 @@ fun main() {
                 pendingTarget = tsPendingTarget,
                 channelName = channel?.name,
                 config = config,
+                programmes = recordingProgrammes,
             )
             PlaybackHost(
                 settingsVisible = navigator.isVisible,
@@ -4102,6 +4203,7 @@ fun main() {
             }
             }
         }
+    }
     }
     }
 }

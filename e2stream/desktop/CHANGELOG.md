@@ -3,6 +3,17 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.5.0
+
+- Szybszy i „żywy” start: ekran startowy z logo i etapami (ustawienia, biblioteki VLC, wtyczki VLC, okno odtwarzacza — z czasami). VLC ładuje się w tle; wcześniej ładował się w wątku okna przy pierwszym kanale i aplikacja przez kilka sekund nie reagowała
+- Jedna instancja VLC na całe uruchomienie — restart odtwarzania (watchdog, błąd strumienia) nie ładuje już wtyczek od nowa
+- PAT/PMT jak w aplikacji na Androidzie: zapamiętany PMT kanału jest wstawiany do strumienia, gdy dekoder go nie przyśle (po 0,3 s od PAT); bez zapamiętanego — PMT z PID-ów z lamedb (EPG Scan). PMT kanałów są wspólne z telewizorami (synchronizacja przez EPG Scan, nowszy wygrywa)
+- Odczyt z bufora timeshiftu (start kanału, przewinięcie) zaczyna się od PAT + PMT programu — VLC od razu zna ścieżki i czeka tylko na klatkę kluczową
+- Bufor timeshiftu i nagrania lokalne zaczynają się od pierwszego zegara PCR programu (Enigma2 zaczyna strumień >100 kB danych bez PAT/PMT i zegara); pominięte dane w logu
+- Bez timeshiftu VLC też czyta strumień przez lokalny tunel (wstawianie brakującego PMT)
+- Log: „start: obraz po … ms” przy każdym starcie odtwarzania; gdy obraz nie ruszy w 8 s mimo ścieżki wideo — jedno szybkie wznowienie strumienia
+- Nagrania lokalne „Bufor do teraz” i „Cały bufor do zmiany kanału”: tytuł z kanałem, godzinami i audycjami, opis ze spisem audycji (czas od początku nagrania) i ich opisami (dziennik audycji bufora z EPG i EIT). W nagraniu z kilkoma audycjami przytrzymane OK — lista audycji z przeskokiem, na pasku nazwa bieżącej audycji
+
 ## 0.4.1
 
 - Kopia ustawień: po wyczyszczeniu ustawień aplikacja nie proponowała kopii zapisanej przez ten sam komputer (pomijała własny plik device-win-<komputer>.json). Teraz kopia tego komputera jest pierwsza na liście, oznaczona „ten komputer”; tak samo w „Przywróć lub przenieś ustawienia” (wcześniej „Przenieś ustawienia z innego odbiornika”)

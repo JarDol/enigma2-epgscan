@@ -37,19 +37,23 @@ internal fun playbackBarFor(
     pendingTarget: Long?,
     channelName: String?,
     config: DesktopConfig,
+    programmes: List<RecProgramme> = emptyList(),
 ): PlaybackBar? {
     if (!visible || session == null) return null
     val paused = session.isPaused
     if (recording != null) {
         val position = session.time().coerceAtLeast(0)
         val length = session.length().takeIf { it > 0 } ?: (recording.lengthSec * 1000)
+        val indexed = programmes.size > 1
+        val now = if (indexed) programmeAt(programmes, position)?.title?.let { "▶ $it" }.orEmpty() else ""
         return PlaybackBar(
             title = recording.title,
-            line = listOf(if (paused) "Pauza" else "", recordingDetails(recording)).filter(String::isNotBlank).joinToString(" • "),
+            line = listOf(if (paused) "Pauza" else "", now, recordingDetails(recording)).filter(String::isNotBlank).joinToString(" • "),
             start = formatDuration(position),
             end = if (length > 0) formatDuration(length) else "--:--",
             progress = if (length > 0) (position.toFloat() / length).coerceIn(0f, 1f) else 0f,
-            hint = "◀ −10 s   ▶ +30 s   ▲ +5 min   ▼ −5 min   OK pauza   Stop/Wstecz — lista nagrań",
+            hint = "◀ −10 s   ▶ +30 s   ▲ +5 min   ▼ −5 min   OK pauza   " +
+                (if (indexed) "przytrzymaj OK — audycje   " else "") + "Stop/Wstecz — lista nagrań",
         )
     }
     if (timeshift == null) return null

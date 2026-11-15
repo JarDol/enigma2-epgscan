@@ -12,7 +12,6 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import javax.swing.SwingUtilities
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
-import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
 import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormat
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCallback
@@ -79,6 +78,9 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
     @Volatile private var height = 0
     /** Liczba odebranych klatek (do wykrycia braku obrazu). */
     val count = java.util.concurrent.atomic.AtomicLong()
+    /** Pierwsza klatka po uruchomieniu odtwarzania (pomiar startu kanału); wątek VLC. */
+    @Volatile var onFirstFrame: (() -> Unit)? = null
+    @Volatile var awaitingFirst = false
 
     /** Rozmiar ustalony przy pierwszym wywołaniu dla strumienia (VLC potrafi podawać zmienną wysokość). */
     @Volatile private var lockedWidth = 0
@@ -130,6 +132,10 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
             bitmap.notifyPixelsChanged()
             frame.value = bitmap.asComposeImageBitmap()
             if (count.incrementAndGet() == 1L) AppLog.i("obraz: pierwsza klatka ${width}x$height")
+            if (awaitingFirst) {
+                awaitingFirst = false
+                runCatching { onFirstFrame?.invoke() }
+            }
         }
     }
 
@@ -166,19 +172,14 @@ class VlcSession(private val onError: (String) -> Unit) {
         get() = paused
 
     init {
-        VlcRuntime.ensureLoaded()
         // Wyjątek w wywołaniu zwrotnym z VLC (JNA) jest inaczej niewidoczny — do logu.
         com.sun.jna.Native.setCallbackExceptionHandler { _, error ->
             AppLog.i("VLC: błąd w wywołaniu zwrotnym: $error")
         }
-        try {
-            // Biblioteki już wskazane przez VlcRuntime — bez ponownego wyszukiwania (nie mieszać wtyczek VLC).
-            factory = MediaPlayerFactory(null as NativeDiscovery?)
-            if (VlcRuntime.version == null) {
-                VlcRuntime.version = runCatching { factory.application().version() }.getOrNull()
-                AppLog.i("VLC: wersja ${VlcRuntime.version ?: "nieznana"}")
-            }
-            player = factory.mediaPlayers().newEmbeddedMediaPlayer()
+        // Jedna instancja libVLC na całe uruchomienie (wtyczki ładowane raz — przy starcie, w tle).
+        factory = VlcRuntime.factory()
+        player = try {
+            factory.mediaPlayers().newEmbeddedMediaPlayer()
         } catch (e: LinkageError) {
             throw IllegalStateException("Nie można załadować bibliotek VLC. Sprawdź instalację VLC 64-bit.", e)
         }
@@ -280,6 +281,11 @@ class VlcSession(private val onError: (String) -> Unit) {
     @Volatile private var deinterlaceFallback = false
     @Volatile private var lastDeinterlace: DeinterlaceMode? = null
     @Volatile private var playGeneration = 0
+    @Volatile private var quickRetryGeneration = -1
+    @Volatile private var playStartedNs = 0L
+
+    /** Opis bieżącego startu w logu (np. „kanał TVP 2 HD”). */
+    @Volatile var startLabel: String = ""
 
     /**
      * Strumień z obrazem, a po kilku sekundach żadnej klatki przy dekodowaniu sprzętowym — ponowne otwarcie
@@ -291,12 +297,25 @@ class VlcSession(private val onError: (String) -> Unit) {
         val url = lastUrl ?: return
         val hardware = lastOptions.any { it.startsWith(":avcodec-hw=") && it != ":avcodec-hw=none" }
         val deinterlacing = lastDeinterlace != null
-        if ((softwareFallback || !hardware) && (deinterlaceFallback || !deinterlacing)) return
+        val canFallback = !((softwareFallback || !hardware) && (deinterlaceFallback || !deinterlacing))
         kotlin.concurrent.thread(name = "vlc-kontrola-obrazu", isDaemon = true) {
-            Thread.sleep(5000)
+            Thread.sleep(if (canFallback) 5000 else QUICK_RETRY_MS)
             if (closed || generation != playGeneration || frames.count.get() != before) return@thread
             val hasVideo = runCatching { player.video().trackCount() > 0 }.getOrDefault(false)
             if (!hasVideo) return@thread
+            if (!canFallback) {
+                // Ścieżka wideo jest, dane płyną, a obraz nie ruszył — jedno szybkie wznowienie zamiast czekania na watchdog.
+                if (quickRetryGeneration == generation) return@thread
+                quickRetryGeneration = generation
+                AppLog.i("start: brak obrazu po ${QUICK_RETRY_MS / 1000} s mimo ścieżki wideo — wznawiam strumień")
+                SwingUtilities.invokeLater {
+                    if (!closed && generation == playGeneration) runCatching {
+                        frames.resetFormat()
+                        player.media().play(url, *lastOptions.toTypedArray())
+                    }
+                }
+                return@thread
+            }
             val message = if (hardware && !softwareFallback) {
                 softwareFallback = true
                 AppLog.i("obraz: brak klatek przy dekodowaniu sprzętowym — przełączam na programowe")
@@ -326,6 +345,13 @@ class VlcSession(private val onError: (String) -> Unit) {
         lastUrl = url
         lastOptions = options
         playGeneration++
+        playStartedNs = System.nanoTime()
+        val label = startLabel
+        frames.onFirstFrame = {
+            val ms = (System.nanoTime() - playStartedNs) / 1_000_000
+            AppLog.i("start: obraz po $ms ms" + if (label.isNotBlank()) " ($label)" else "")
+        }
+        frames.awaitingFirst = true
         frames.resetFormat()
         val deinterlace = if (deinterlaceFallback) null else vlcDeinterlaceMode(config.vlcDeint)
         lastDeinterlace = deinterlace
@@ -398,7 +424,12 @@ class VlcSession(private val onError: (String) -> Unit) {
         runCatching { player.controls().stop() }
         player.release()
         runCatching { nativeLog?.release() }
-        factory.release()
+        // Fabryka (libVLC) zostaje — wspólna dla kolejnych sesji, zwalniana z końcem aplikacji.
         frames.close()
+    }
+
+    private companion object {
+        /** Bez możliwości zmiany dekodowania: po tylu ms bez obrazu jedno wznowienie strumienia. */
+        const val QUICK_RETRY_MS = 8000L
     }
 }

@@ -1,6 +1,7 @@
 package pl.jardol.e2stream.desktop
 
 import com.sun.jna.NativeLibrary
+import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
 import java.io.File
 import java.net.HttpURLConnection
@@ -36,9 +37,42 @@ object VlcRuntime {
     fun bundledVersion(): String? =
         bundledDir()?.let { File(it, "VERSION") }?.takeIf { it.isFile }?.readText()?.trim()?.ifBlank { null }
 
+    private var sharedFactory: MediaPlayerFactory? = null
+
+    /**
+     * Wspólna instancja libVLC. Pierwsze wywołanie ładuje biblioteki i wszystkie wtyczki VLC (sekundy),
+     * dlatego robi to ekran startowy w tle przy starcie aplikacji, a nie wątek okna przy pierwszym kanale.
+     */
+    @Synchronized
+    fun factory(): MediaPlayerFactory {
+        sharedFactory?.let { return it }
+        ensureLoaded()
+        val started = System.nanoTime()
+        val created = try {
+            // Biblioteki już wskazane — bez ponownego wyszukiwania (nie mieszać wtyczek VLC).
+            MediaPlayerFactory(null as NativeDiscovery?)
+        } catch (e: LinkageError) {
+            throw IllegalStateException("Nie można załadować bibliotek VLC. Sprawdź instalację VLC 64-bit.", e)
+        }
+        val ms = (System.nanoTime() - started) / 1_000_000
+        version = runCatching { created.application().version() }.getOrNull()
+        AppLog.i("VLC: wersja ${version ?: "nieznana"}, wtyczki VLC załadowane w $ms ms")
+        sharedFactory = created
+        return created
+    }
+
     @Synchronized
     fun ensureLoaded(): Loaded {
         loaded?.let { return it }
+        val started = System.nanoTime()
+        try {
+            return load()
+        } finally {
+            AppLog.i("VLC: biblioteki odnalezione w ${(System.nanoTime() - started) / 1_000_000} ms")
+        }
+    }
+
+    private fun load(): Loaded {
         val bundled = bundledDir()
         if (preferInternal && bundled != null) {
             val ok = runCatching {

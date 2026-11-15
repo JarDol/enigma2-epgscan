@@ -256,6 +256,7 @@ class DecoderClient(private val config: DesktopConfig) {
             ?: throw IOException("Dekoder nie zwrócił listy kanałów.")
 
         val channels = mutableListOf<Channel>()
+        val pids = HashMap<Int, String>()
         for (index in 0 until items.length()) {
             val item = items.optJSONObject(index) ?: continue
             val ref: String
@@ -265,6 +266,8 @@ class DecoderClient(private val config: DesktopConfig) {
                 ref = item.optString("play").ifBlank { item.optString("ref") }
                 name = item.optString("name")
                 number = item.optInt("num", index + 1)
+                // PID-y z lamedb (EPG Scan) — do budowy PMT, gdy kanał nie ma jeszcze zapamiętanego
+                item.optJSONObject("pids")?.let { serviceSid(ref).takeIf { sid -> sid > 0 }?.let { sid -> pids[sid] = it.toString() } }
             } else {
                 ref = item.optString("servicereference")
                 val flags = ref.split(":").getOrNull(1)?.toIntOrNull() ?: 0
@@ -275,6 +278,7 @@ class DecoderClient(private val config: DesktopConfig) {
             if (ref.isBlank()) continue
             channels += Channel(number, OpenWebifText.unescape(name).trim(), ref)
         }
+        if (pids.isNotEmpty()) runCatching { PmtStore.putPids(pids) }
         return channels
     }
 

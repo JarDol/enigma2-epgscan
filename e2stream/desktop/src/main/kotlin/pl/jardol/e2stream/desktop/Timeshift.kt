@@ -448,6 +448,8 @@ internal class TimeshiftRecorder(
     private val buffer: TimeshiftBuffer,
     /** Podgląd danych ze strumienia (np. EIT) — w wątku zapisu. */
     private val tap: ((ByteArray, Int, Int) -> Unit)? = null,
+    /** PAT/PMT i początek od PCR (jak na Androidzie); null — dane bez zmian. */
+    private val fixer: TsStreamFixer? = null,
 ) : Closeable {
     @Volatile private var running = true
     @Volatile private var connection: HttpURLConnection? = null
@@ -469,11 +471,12 @@ internal class TimeshiftRecorder(
                 connection = current
                 current.inputStream.use { input ->
                     buffer.resync()
+                    fixer?.newConnection()
                     val bytes = ByteArray(TimeshiftBuffer.PACKET * 700)
                     while (running) {
                         val count = input.read(bytes)
                         if (count < 0) break
-                        buffer.write(bytes, 0, count)
+                        if (fixer != null) fixer.feed(bytes, 0, count, buffer::write) else buffer.write(bytes, 0, count)
                         tap?.let { runCatching { it(bytes, 0, count) } }
                         failures = 0
                     }
@@ -500,7 +503,11 @@ internal class TimeshiftRecorder(
  * Lokalny serwer HTTP (127.0.0.1, losowy port), z którego VLC czyta bufor timeshiftu:
  * GET /ts/<n>.ts?off=<bajt> — strumień od podanego bajtu, doganiający zapis na bieżąco.
  */
-internal class TimeshiftServer(private val buffer: TimeshiftBuffer) : Closeable {
+internal class TimeshiftServer(
+    private val buffer: TimeshiftBuffer,
+    /** PAT + PMT programu wysyłane przed danymi bufora — VLC od razu zna ścieżki (po przewinięciu też). */
+    private val header: () -> ByteArray? = { null },
+) : Closeable {
     private val server = ServerSocket(0, 8, InetAddress.getLoopbackAddress())
     private val clients = ConcurrentHashMap.newKeySet<Socket>()
     @Volatile private var closed = false
@@ -547,6 +554,10 @@ internal class TimeshiftServer(private val buffer: TimeshiftBuffer) : Closeable 
                 )
                 output.flush()
                 if (method == "HEAD") return
+                header()?.let {
+                    output.write(it)
+                    output.flush()
+                }
                 var position = offset
                 val bytes = ByteArray(TimeshiftBuffer.PACKET * 512)
                 while (!closed) {
@@ -586,9 +597,14 @@ internal class TimeshiftSession(
     sourceUrl: String,
     authorization: String?,
     tap: ((ByteArray, Int, Int) -> Unit)? = null,
+    /** Poprawki PAT/PMT/PCR strumienia; null — bez zmian. */
+    val fixer: TsStreamFixer? = null,
 ) : Closeable {
-    private val recorder = TimeshiftRecorder(sourceUrl, authorization, buffer, tap)
-    private val server = TimeshiftServer(buffer)
+    private val recorder = TimeshiftRecorder(sourceUrl, authorization, buffer, tap, fixer)
+    private val server = TimeshiftServer(buffer) { fixer?.psiHeader() }
+
+    /** Audycje widziane w czasie zapisu bufora (spis w nagraniach lokalnych). */
+    val programmes = ProgrammeLog()
     private var generation = 0
 
     /** Chwila odbioru odpowiadająca początkowi bieżącego odtwarzania VLC. */

@@ -99,12 +99,14 @@ internal class EitReader(private val sid: Int, private val onEit: (EitEvent?, Ei
 
 /**
  * Lokalny tunel strumienia (127.0.0.1, losowy port), gdy timeshift jest wyłączony: VLC czyta strumień przez niego,
- * a [tap] widzi te same dane (EIT). Każde połączenie VLC to osobne połączenie z dekoderem.
+ * [tap] widzi te same dane (EIT), a brakujący PMT jest wstawiany ([fixerFactory]). Każde połączenie VLC to osobne połączenie z dekoderem.
  */
 internal class StreamTap(
     private val sourceUrl: String,
     private val authorization: String?,
-    private val tap: (ByteArray, Int, Int) -> Unit,
+    private val tap: ((ByteArray, Int, Int) -> Unit)?,
+    /** Poprawki PAT/PMT dla każdego połączenia VLC (wstawianie zapamiętanego PMT); null — dane bez zmian. */
+    private val fixerFactory: (() -> TsStreamFixer)? = null,
 ) : Closeable {
     private val server = ServerSocket(0, 4, InetAddress.getLoopbackAddress())
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
@@ -163,14 +165,16 @@ internal class StreamTap(
                 )
                 output.flush()
                 if (method == "HEAD") return
+                val fixer = fixerFactory?.invoke()
+                val forward: (ByteArray, Int, Int) -> Unit = { b, o, l -> output.write(b, o, l) }
                 connection.inputStream.use { input ->
                     val bytes = ByteArray(188 * 512)
                     while (!closed) {
                         val count = input.read(bytes)
                         if (count < 0) break
                         if (count == 0) continue
-                        runCatching { tap(bytes, 0, count) }
-                        output.write(bytes, 0, count)
+                        tap?.let { runCatching { it(bytes, 0, count) } }
+                        if (fixer != null) fixer.feed(bytes, 0, count, forward) else output.write(bytes, 0, count)
                         output.flush()
                     }
                 }
