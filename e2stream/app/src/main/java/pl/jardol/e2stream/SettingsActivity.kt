@@ -569,9 +569,15 @@ class SettingsActivity : Activity() {
             chooseBgBuffer()
         },
         gated(getString(R.string.setting_pip_mode), { pipName(p.pipFrameMs) }) {
-            val o = listOf(0, 500, 1000, 2000)
+            val o = listOf(1000, 2000, 3000)
             TvDialog.single(this, getString(R.string.setting_pip_mode), o.map { pipName(it) }, o.indexOf(p.pipFrameMs).coerceAtLeast(0)) { w ->
                 p.pipFrameMs = o[w]; markChanged("PiP: ${pipName(o[w])}"); items = buildItems(); refresh()
+            }
+        },
+        gated(getString(R.string.setting_pip_position), { pipPositions().getOrElse(p.pipPos) { "" } }) {
+            val o = pipPositions()
+            TvDialog.single(this, getString(R.string.setting_pip_position), o, p.pipPos.coerceIn(0, o.size - 1)) { w ->
+                p.pipPos = w; markChanged("PiP: położenie okien = ${o[w]}"); items = buildItems(); refresh()
             }
         },
         Item.Header(getString(R.string.setting_timeshift_pause_and_rewind_live_tv)),
@@ -616,8 +622,11 @@ class SettingsActivity : Activity() {
         else -> getString(R.string.setting_bg_buffer_manual, minOf(m, mainBufMin()))
     }
 
-    private fun pipName(ms: Int): String =
-        if (ms <= 0) getString(R.string.setting_pip_smooth) else getString(R.string.setting_pip_frames, ms / 1000.0)
+    private fun pipName(ms: Int): String = getString(R.string.setting_pip_frames, ms / 1000)
+
+    /** Kolejność zgodna z PlayerActivity.pipLayout. */
+    private fun pipPositions() = listOf(R.string.pip_pos_top, R.string.pip_pos_bottom, R.string.pip_pos_right, R.string.pip_pos_left,
+        R.string.pip_pos_tl_down, R.string.pip_pos_tr_down, R.string.pip_pos_bl_up, R.string.pip_pos_br_up).map { getString(it) }
 
     /** Wyłączony / taki sam jak timeshift / ręczny w minutach (najwyżej długość bufora bieżącego kanału). */
     private fun chooseBgBuffer() {

@@ -52,8 +52,7 @@
     <string name="setting_bg_buffer_manual_hint">minutes: 1–%1$d (at most the timeshift length)</string>
     <string name="setting_bg_buffer_capped">Limited to %1$d min (timeshift length)</string>
     <string name="setting_pip_mode">Picture in PiP windows</string>
-    <string name="setting_pip_smooth">smooth</string>
-    <string name="setting_pip_frames">frame every %1$.1f s</string>
+    <string name="setting_pip_frames">frame every %1$d s</string>
     <string name="pip_menu">Picture in picture (PiP)…</string>
     <string name="pip_title">Picture in picture (PiP)</string>
     <string name="pip_add_buffered">Add window: %1$s (buffered)</string>
@@ -66,4 +65,13 @@
     <string name="pip_choose">Channel for PiP window</string>
     <string name="pip_needs">PiP requires playback through buffer and a medium</string>
     <string name="pip_no_slot">No free slot for a PiP buffer</string>
+    <string name="setting_pip_position">PiP window position</string>
+    <string name="pip_pos_top">top corners</string>
+    <string name="pip_pos_bottom">bottom corners</string>
+    <string name="pip_pos_right">right side corners</string>
+    <string name="pip_pos_left">left side corners</string>
+    <string name="pip_pos_tl_down">top-left corner, downwards</string>
+    <string name="pip_pos_tr_down">top-right corner, downwards</string>
+    <string name="pip_pos_bl_up">bottom-left corner, upwards</string>
+    <string name="pip_pos_br_up">bottom-right corner, upwards</string>
 </resources>

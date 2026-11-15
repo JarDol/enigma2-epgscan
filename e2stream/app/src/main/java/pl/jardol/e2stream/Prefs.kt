@@ -286,10 +286,15 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("bgBufMin", 0)
         set(v) = putI("bgBufMin", v)
 
-    /** PiP: 0 — obraz płynny (osobny odtwarzacz), inaczej klatka co tyle ms. */
+    /** PiP: klatka co tyle ms (1 / 2 / 3 s; dawny obraz płynny i 0,5 s → 1 s). */
     var pipFrameMs: Int
-        get() = sp.getInt("pipFrameMs", 1000)
+        get() = sp.getInt("pipFrameMs", 1000).let { if (it < 1000) 1000 else minOf(it, 3000) }
         set(v) = putI("pipFrameMs", v)
+
+    /** PiP: położenie okien (SettingsActivity.pipPositions), domyślnie prawy górny róg w dół. */
+    var pipPos: Int
+        get() = sp.getInt("pipPos", 5)
+        set(v) = putI("pipPos", v)
 
     var keepFrame: Boolean
         get() = sp.getBoolean("keepFrame", true)

@@ -2136,7 +2136,7 @@ class PlayerActivity : Activity() {
     private var tsLiveUrl: String? = null
 
     private val BG_MAX = 2      // kanały w tle (razem z bieżącym najwyżej 3)
-    private val PIP_TAIL = 2_000_000L
+    private val PIP_TAIL = 1_500_000L
 
     // --- odtwarzanie przez bufor: jedno połączenie z dekoderem (TimeshiftRecorder) zapisuje do bufora,
     // odtwarzacz (ExoPlayer / VLC przez lokalny serwer) czyta koniec bufora; pauza i cofnięcie bez nowego połączenia
@@ -2328,139 +2328,207 @@ class PlayerActivity : Activity() {
         return c
     }
 
-    // --- PiP: najwyżej 2 okna z kanałami buforowanymi w tle (bez dźwięku); obraz płynny albo klatka co prefs.pipFrameMs
+    // --- PiP: najwyżej 2 okna z kanałami buforowanymi w tle (bez dźwięku): klatka kluczowa z końcówki bufora co
+    // prefs.pipFrameMs, okna odświeżane na zmianę przez jeden wątek; dekoder programowy (bez zajmowania sprzętowego
+    // dekodera obrazu głównego), obraz prosto na TextureView okna
     private inner class PipWin(val idx: Int) {
         val frame = android.widget.FrameLayout(this@PlayerActivity)
         val label = TextView(this@PlayerActivity)
-        var chan: BgChan? = null
-        var mode = -1
-        var exo: ExoPlayer? = null
-        @Volatile var gen = 0
+        val tv = android.view.TextureView(this@PlayerActivity)
+        @Volatile var surface: android.view.Surface? = null
+        @Volatile var chan: BgChan? = null
         var failLogged = false
+        var firstLogged = false
     }
     private val pipWins = arrayOfNulls<PipWin>(2)
+    @Volatile private var pipWorker: Thread? = null
 
     private fun pipView(i: Int): PipWin = pipWins[i] ?: PipWin(i).also { w ->
-        val dm = resources.displayMetrics
-        val wpx = (dm.widthPixels * 0.26f).toInt()
-        val hpx = wpx * 9 / 16
-        val m = (16 * dm.density).toInt()
+        val m = (16 * resources.displayMetrics.density).toInt()
         w.frame.setBackgroundColor(0xFF000000.toInt())
         w.frame.setPadding(3, 3, 3, 3)
         w.frame.foreground = android.graphics.drawable.GradientDrawable().apply { setStroke(3, 0xCCFFFFFF.toInt()) }
         w.label.setTextColor(0xFFFFFFFF.toInt()); w.label.textSize = 13f
         w.label.setBackgroundColor(0x99000000.toInt()); w.label.setPadding(m / 3, 2, m / 3, 2)
-        val lp = android.widget.FrameLayout.LayoutParams(wpx, hpx, android.view.Gravity.TOP or android.view.Gravity.END)
-        lp.topMargin = m * 2 + i * (hpx + m); lp.rightMargin = m * 2
+        w.tv.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(st: android.graphics.SurfaceTexture, width: Int, height: Int) { w.surface = android.view.Surface(st) }
+            override fun onSurfaceTextureSizeChanged(st: android.graphics.SurfaceTexture, width: Int, height: Int) {}
+            override fun onSurfaceTextureDestroyed(st: android.graphics.SurfaceTexture): Boolean { w.surface?.release(); w.surface = null; return true }
+            override fun onSurfaceTextureUpdated(st: android.graphics.SurfaceTexture) {}
+        }
+        w.frame.addView(w.tv, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        w.frame.addView(w.label, android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM or android.view.Gravity.START))
         w.frame.isFocusable = false
-        (findViewById<ViewGroup>(android.R.id.content)).addView(w.frame, lp)
+        (findViewById<ViewGroup>(android.R.id.content)).addView(w.frame, pipLayout(i))
         w.frame.visibility = View.GONE
         pipWins[i] = w
     }
 
+    /**
+     * Położenie okna [i] (0 — pierwsze): 0 na górze w rogach, 1 na dole w rogach, 2 prawa strona w rogach,
+     * 3 lewa strona w rogach, 4 lewy górny róg w dół, 5 prawy górny róg w dół, 6 lewy dolny róg w górę, 7 prawy dolny róg w górę.
+     */
+    private fun pipLayout(i: Int): android.widget.FrameLayout.LayoutParams {
+        val dm = resources.displayMetrics
+        val wpx = (dm.widthPixels * 0.26f).toInt()
+        val hpx = wpx * 9 / 16
+        val m = (16 * dm.density).toInt() * 2
+        val step = hpx + m / 2
+        val G = android.view.Gravity.TOP; val B = android.view.Gravity.BOTTOM
+        val L = android.view.Gravity.START; val R = android.view.Gravity.END
+        val (g, off) = when (prefs.pipPos) {
+            0 -> (G or if (i == 0) R else L) to 0
+            1 -> (B or if (i == 0) R else L) to 0
+            2 -> (R or if (i == 0) G else B) to 0
+            3 -> (L or if (i == 0) G else B) to 0
+            4 -> (G or L) to i * step
+            6 -> (B or L) to i * step
+            7 -> (B or R) to i * step
+            else -> (G or R) to i * step
+        }
+        return android.widget.FrameLayout.LayoutParams(wpx, hpx, g).apply {
+            leftMargin = m; rightMargin = m
+            topMargin = m + if ((g and android.view.Gravity.VERTICAL_GRAVITY_MASK) == G) off else 0
+            bottomMargin = m + if ((g and android.view.Gravity.VERTICAL_GRAVITY_MASK) == B) off else 0
+        }
+    }
+
     /** Okna zgodnie z kanałami w tle oznaczonymi jako PiP (po przełączeniu, zamknięciu bufora, zmianie ustawień). */
     private fun pipRefresh() {
+        // numeracja bez dziur: po zamknięciu pierwszego okna drugie zajmuje jego miejsce
+        bgChans.filter { it.pip >= 0 }.sortedBy { it.pip }.forEachIndexed { n, c -> c.pip = n }
         for (i in 0 until 2) {
             val c = bgChans.firstOrNull { it.pip == i }
             val w = pipWins[i]
-            if (c == null) { if (w != null) pipUnbind(w); continue }
+            if (c == null) {
+                if (w != null) { w.chan = null; w.frame.visibility = View.GONE }
+                continue
+            }
             val v = pipView(i)
-            if (v.chan !== c || v.mode != prefs.pipFrameMs) pipBind(v, c, prefs.pipFrameMs)
+            v.frame.layoutParams = pipLayout(i)
+            if (v.chan !== c) {
+                v.chan = c; v.failLogged = false; v.firstLogged = false
+                v.label.text = "${i + 1}  ${c.name}"
+                AppLog.i("PiP ${i + 1}: ${c.name} — klatka co ${prefs.pipFrameMs} ms")
+            }
+            v.frame.visibility = View.VISIBLE
+        }
+        if (pipWins.any { it?.chan != null } && pipWorker == null) {
+            pipWorker = Thread({ pipLoop() }, "pip-klatki").also { it.start() }
         }
     }
 
-    private fun pipUnbind(w: PipWin) {
-        w.gen++
-        w.exo?.release(); w.exo = null
-        w.frame.removeAllViews()
-        w.frame.visibility = View.GONE
-        w.chan = null; w.mode = -1
-    }
-
-    private fun pipBind(w: PipWin, c: BgChan, mode: Int) {
-        pipUnbind(w)
-        w.chan = c; w.mode = mode
-        w.frame.visibility = View.VISIBLE
-        val gen = w.gen
-        if (mode <= 0) {
-            val tv = android.view.TextureView(this)
-            w.frame.addView(tv, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            val p = ExoPlayer.Builder(this).build()
-            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
-            p.volume = 0f
-            p.setVideoTextureView(tv)
-            val b = c.buf
-            val start = if (b.total > 0) b.offsetAt(SystemClock.elapsedRealtime() - 2000) else 0L
-            val hdr = c.an.psiHeader()
-            val src = ProgressiveMediaSource.Factory(
-                DataSource.Factory { TimeshiftDataSource(b, start, hdr, onGone = { }, lateHeader = if (hdr == null) ({ c.an.psiHeader() }) else null) },
-                DefaultExtractorsFactory().setTsExtractorFlags(
-                    DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS),
-            ).createMediaSource(MediaItem.fromUri("pip://${w.idx}/$start"))
-            p.addListener(object : Player.Listener {
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                    AppLog.i("PiP ${w.idx + 1} (${c.name}): odtwarzacz — ${error.errorCodeName} (${error.cause?.message ?: error.message}) — przechodzę na klatki co 0,5 s")
-                    ui.post { if (w.gen == gen && w.chan === c) pipBind(w, c, 500) }
-                }
-            })
-            p.setMediaSource(src); p.prepare(); p.playWhenReady = true
-            w.exo = p
-            AppLog.i("PiP ${w.idx + 1}: ${c.name} — obraz płynny")
-        } else {
-            val iv = android.widget.ImageView(this)
-            iv.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-            w.frame.addView(iv, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            val tmp = File(cacheDir, "pip-${w.idx}.ts")
-            val wpx = w.frame.layoutParams.width
-            val hpx = w.frame.layoutParams.height
-            Thread({
-                var ok = 0
-                while (w.gen == gen) {
-                    val t0 = SystemClock.elapsedRealtime()
-                    val bmp = try { pipGrab(c, tmp, wpx, hpx) } catch (e: Exception) {
+    /** Jeden wątek dla wszystkich okien: na zmianę, każde okno co prefs.pipFrameMs. */
+    private fun pipLoop() {
+        var turn = 0
+        try {
+            while (true) {
+                val open = pipWins.filter { it?.chan != null }.filterNotNull()
+                if (open.isEmpty()) break
+                val w = open[turn++ % open.size]
+                val t0 = SystemClock.elapsedRealtime()
+                val c = w.chan
+                val surf = w.surface
+                if (c != null && surf != null && surf.isValid) {
+                    try {
+                        val ms = pipGrab(c, surf)
+                        if (ms >= 0 && !w.firstLogged) { w.firstLogged = true; AppLog.i("PiP ${w.idx + 1}: ${c.name} — pierwsza klatka po $ms ms") }
+                    } catch (e: Exception) {
                         if (!w.failLogged) { w.failLogged = true; AppLog.i("PiP ${w.idx + 1} (${c.name}): klatka nieudana ($e)") }
-                        null
                     }
-                    if (bmp != null) {
-                        if (ok++ == 0) AppLog.i("PiP ${w.idx + 1}: ${c.name} — pierwsza klatka po ${SystemClock.elapsedRealtime() - t0} ms")
-                        ui.post { if (w.gen == gen) iv.setImageBitmap(bmp) }
-                    }
-                    val wait = mode - (SystemClock.elapsedRealtime() - t0)
-                    try { Thread.sleep(maxOf(100L, wait)) } catch (_: InterruptedException) { break }
                 }
-                tmp.delete()
-            }, "pip-klatki-${w.idx}").start()
-            AppLog.i("PiP ${w.idx + 1}: ${c.name} — klatka co ${mode} ms")
-        }
-        w.label.text = "${w.idx + 1}  ${c.name}"
-        w.frame.addView(w.label, android.widget.FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM or android.view.Gravity.START))
+                val step = prefs.pipFrameMs.coerceAtLeast(1000).toLong() / open.size
+                Thread.sleep(maxOf(100L, step - (SystemClock.elapsedRealtime() - t0)))
+            }
+        } catch (_: InterruptedException) {
+        } finally { pipWorker = null }
+        // okno otwarte w chwili kończenia wątku — nowy wątek
+        ui.post { if (pipWins.any { it?.chan != null } && pipWorker == null) pipRefresh() }
     }
 
-    /** Ostatnie ~2 MB bufora (z PAT/PMT) do pliku tymczasowego i pierwsza klatka kluczowa z nich. */
-    private fun pipGrab(c: BgChan, tmp: File, wpx: Int, hpx: Int): android.graphics.Bitmap? {
+    private class BytesSource(private val d: ByteArray) : android.media.MediaDataSource() {
+        override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+            if (position >= d.size) return -1
+            val n = minOf(size.toLong(), d.size - position).toInt()
+            System.arraycopy(d, position.toInt(), buffer, offset, n)
+            return n
+        }
+        override fun getSize(): Long = d.size.toLong()
+        override fun close() {}
+    }
+
+    private val swDecoders = HashMap<String, String?>()
+
+    /** Programowy dekoder dla typu (c2.android / OMX.google), gdy jest; inaczej dowolny. */
+    private fun swDecoder(mime: String): android.media.MediaCodec = synchronized(swDecoders) {
+        val name = swDecoders.getOrPut(mime) {
+            val all = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
+                .filter { !it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }
+            val sw = all.firstOrNull { it.name.startsWith("c2.android.") || it.name.startsWith("OMX.google.") }
+            AppLog.i("PiP: dekoder dla $mime: ${sw?.name ?: all.firstOrNull()?.name ?: "brak"}" + if (sw == null) " (brak programowego)" else " (programowy)")
+            sw?.name ?: all.firstOrNull()?.name
+        }
+        name?.let { android.media.MediaCodec.createByCodecName(it) } ?: android.media.MediaCodec.createDecoderByType(mime)
+    }
+
+    /** Końcówka bufora (z PAT/PMT) w pamięci → pierwsza klatka kluczowa → dekoder → okno. Zwraca czas w ms albo -1. */
+    private fun pipGrab(c: BgChan, surf: android.view.Surface): Long {
+        val t0 = SystemClock.elapsedRealtime()
         val b = c.buf
         val total = b.total
-        if (total < 300_000) return null
+        if (total < 300_000) return -1
         var pos = maxOf(b.oldestOffset, total - PIP_TAIL)
         pos -= (pos - b.oldestOffset) % 188
-        java.io.FileOutputStream(tmp).use { o ->
-            c.an.psiHeader()?.let { o.write(it) }
-            val chunk = ByteArray(188 * 700)
-            while (pos < total) {
-                val n = b.read(pos, chunk, 0, minOf(chunk.size.toLong(), total - pos).toInt())
-                if (n <= 0) break
-                o.write(chunk, 0, n); pos += n
-            }
+        val hdr = c.an.psiHeader() ?: ByteArray(0)
+        val data = ByteArray(hdr.size + (total - pos).toInt())
+        System.arraycopy(hdr, 0, data, 0, hdr.size)
+        var w = hdr.size
+        while (pos < total && w < data.size) {
+            val n = b.read(pos, data, w, minOf(188 * 700, data.size - w))
+            if (n <= 0) break
+            w += n; pos += n
         }
-        val r = android.media.MediaMetadataRetriever()
+        val ex = android.media.MediaExtractor()
+        var codec: android.media.MediaCodec? = null
         try {
-            r.setDataSource(tmp.path)
-            return if (android.os.Build.VERSION.SDK_INT >= 27)
-                r.getScaledFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_NEXT_SYNC, wpx, hpx)
-            else r.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_NEXT_SYNC)
-        } finally { try { r.release() } catch (_: Exception) {} }
+            ex.setDataSource(BytesSource(if (w == data.size) data else data.copyOf(w)))
+            val t = (0 until ex.trackCount).firstOrNull { ex.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("video/") == true } ?: return -1
+            val fmt = ex.getTrackFormat(t)
+            val mime = fmt.getString(android.media.MediaFormat.KEY_MIME)!!
+            ex.selectTrack(t)
+            // do pierwszej próbki z klatką kluczową
+            var guard = 0
+            while ((ex.sampleFlags and android.media.MediaExtractor.SAMPLE_FLAG_SYNC) == 0 && guard++ < 200) if (!ex.advance()) return -1
+            codec = swDecoder(mime)
+            codec.configure(fmt, surf, null, 0)
+            codec.start()
+            val info = android.media.MediaCodec.BufferInfo()
+            var fed = 0
+            var eos = false
+            while (SystemClock.elapsedRealtime() - t0 < 1500) {
+                if (!eos) {
+                    val ii = codec.dequeueInputBuffer(10_000)
+                    if (ii >= 0) {
+                        val n = if (fed < 12) ex.readSampleData(codec.getInputBuffer(ii)!!, 0) else -1
+                        if (n < 0) { codec.queueInputBuffer(ii, 0, 0, 0, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM); eos = true }
+                        else { codec.queueInputBuffer(ii, 0, n, ex.sampleTime, 0); ex.advance(); fed++ }
+                    }
+                }
+                val oi = codec.dequeueOutputBuffer(info, 10_000)
+                if (oi >= 0) {
+                    val frame = info.size > 0 || (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM) == 0
+                    codec.releaseOutputBuffer(oi, frame)
+                    if (frame) return SystemClock.elapsedRealtime() - t0
+                    if ((info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) return -1
+                }
+            }
+            return -1
+        } finally {
+            try { codec?.stop() } catch (_: Exception) {}
+            try { codec?.release() } catch (_: Exception) {}
+            ex.release()
+        }
     }
 
     /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału z bufora w tle albo innego. */
@@ -2628,6 +2696,10 @@ class PlayerActivity : Activity() {
         bgDropAll("koniec odtwarzania na żywo")
         tsCtl = false; tsChBar = false
         tsBuf?.reset()
+        // po powrocie wszystko od nowa: nowy bufor w katalogu głównym, bez przejętych połączeń i analizatorów kanałów w tle
+        tsBuf = null
+        tsRec?.stop(); tsRec = null; tsRecAn = null
+        bgPromoted = false
         journal.clear()
         ui.removeCallbacks(journalTick)
     }
