@@ -87,6 +87,52 @@ jobs:
           }
           if (Test-Path "$wixBin\candle.exe") { $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append }
 
+      - name: VLC wewnętrzny (VLC 3.x win64 z videolan.org)
+        shell: pwsh
+        env:
+          VLC_FALLBACK: '3.0.21'
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $base = 'https://download.videolan.org/pub/videolan/vlc'
+          $version = $null
+          try {
+            $listing = (Invoke-WebRequest "$base/last/win64/" -UseBasicParsing).Content
+            if ($listing -match 'vlc-(3\.\d+\.\d+(?:\.\d+)?)-win64\.zip') { $version = $Matches[1] }
+          } catch { Write-Warning "Brak listy last/win64: $_" }
+          if (-not $version) { $version = $env:VLC_FALLBACK }
+          Write-Host "VLC: $version"
+          $name = "vlc-$version-win64.zip"
+          $zip = Join-Path $env:RUNNER_TEMP $name
+          Invoke-WebRequest "$base/$version/win64/$name" -OutFile $zip -UseBasicParsing
+          try {
+            $content = (Invoke-WebRequest "$base/$version/win64/$name.sha256" -UseBasicParsing).Content
+            if ($content -is [byte[]]) { $content = [Text.Encoding]::ASCII.GetString($content) }
+            $sum = ("$content".Trim() -split '\s+')[0]
+            $actual = (Get-FileHash $zip -Algorithm SHA256).Hash
+            if ($sum -and $actual -ne $sum.ToUpper()) { throw "Suma SHA256 $name się nie zgadza ($actual / $sum)." }
+            Write-Host "SHA256 zgodna: $actual"
+          } catch [System.Net.WebException], [Microsoft.PowerShell.Commands.HttpResponseException] {
+            Write-Warning "Brak pliku $name.sha256 — bez sprawdzenia sumy"
+          }
+          $unpacked = Join-Path $env:RUNNER_TEMP 'vlc-unpacked'
+          Expand-Archive $zip -DestinationPath $unpacked -Force
+          $src = (Get-ChildItem $unpacked -Directory | Select-Object -First 1).FullName
+          $dest = 'e2stream/desktop/vlc-bundle/windows/vlc'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Copy-Item "$src/libvlc.dll", "$src/libvlccore.dll" $dest
+          Copy-Item "$src/plugins" $dest -Recurse
+          # Bez interfejsów VLC (Qt, skórki) — aplikacja używa tylko libVLC.
+          Remove-Item "$dest/plugins/gui" -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem "$dest/plugins" -Recurse -Filter plugins.dat | Remove-Item -Force
+          & "$src/vlc-cache-gen.exe" (Resolve-Path "$dest/plugins").Path
+          if ($LASTEXITCODE -ne 0) { Write-Warning "vlc-cache-gen: kod $LASTEXITCODE (VLC zbuduje pamięć wtyczek sam)"; $global:LASTEXITCODE = 0 }
+          foreach ($doc in 'COPYING.txt', 'AUTHORS.txt', 'NEWS.txt') { if (Test-Path "$src/$doc") { Copy-Item "$src/$doc" $dest } }
+          "Źródła VLC $version`: https://download.videolan.org/pub/videolan/vlc/$version/ (vlc-$version.tar.xz), licencja: COPYING.txt" |
+            Out-File "$dest/SOURCES.txt" -Encoding utf8
+          [IO.File]::WriteAllText((Join-Path $dest 'VERSION'), $version)
+          $size = [math]::Round(((Get-ChildItem $dest -Recurse -File | Measure-Object Length -Sum).Sum) / 1MB)
+          Write-Host "VLC wewnętrzny: $size MB w $dest"
+
       - name: Testy i instalator
         shell: pwsh
         run: |

@@ -60,7 +60,12 @@ private val English = mapOf(
     "pilot HID / IR (WinLIRC), mapowanie klawiszy, OK i strzałki, test pilota" to
         "HID / IR remote (WinLIRC), key mapping, OK and arrows, remote test",
     "Informacje i aktualizacje" to "Information and updates",
-    "wersja aplikacji, opis aplikacji i wtyczki EPG Scan" to "app version, application and EPG Scan plugin information",
+    "wersja aplikacji i VLC, aktualizacje, opis aplikacji i wtyczki EPG Scan" to "app and VLC version, updates, application and EPG Scan plugin information",
+    "Odtwarzacz VLC" to "VLC player",
+    "Wersja VLC" to "VLC version",
+    "Aktualizacja VLC" to "VLC update",
+    "Biblioteki VLC" to "VLC libraries",
+    "Aplikacja — więcej" to "Application — more",
     "Logi i zrzuty" to "Logs and dumps",
     "statystyki, log na dekoder, miejsce zapisu, diagnostyka pilota" to
         "statistics, log upload, storage location, remote diagnostics",

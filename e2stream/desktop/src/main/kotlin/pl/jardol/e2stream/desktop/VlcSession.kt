@@ -166,17 +166,18 @@ class VlcSession(private val onError: (String) -> Unit) {
         get() = paused
 
     init {
-        if (!NativeDiscovery().discover()) {
-            throw IllegalStateException(
-                "Nie znaleziono 64-bitowego VLC. Zainstaluj VLC 3.x i uruchom aplikację ponownie.",
-            )
-        }
+        VlcRuntime.ensureLoaded()
         // Wyjątek w wywołaniu zwrotnym z VLC (JNA) jest inaczej niewidoczny — do logu.
         com.sun.jna.Native.setCallbackExceptionHandler { _, error ->
             AppLog.i("VLC: błąd w wywołaniu zwrotnym: $error")
         }
         try {
-            factory = MediaPlayerFactory()
+            // Biblioteki już wskazane przez VlcRuntime — bez ponownego wyszukiwania (nie mieszać wtyczek VLC).
+            factory = MediaPlayerFactory(null as NativeDiscovery?)
+            if (VlcRuntime.version == null) {
+                VlcRuntime.version = runCatching { factory.application().version() }.getOrNull()
+                AppLog.i("VLC: wersja ${VlcRuntime.version ?: "nieznana"}")
+            }
             player = factory.mediaPlayers().newEmbeddedMediaPlayer()
         } catch (e: LinkageError) {
             throw IllegalStateException("Nie można załadować bibliotek VLC. Sprawdź instalację VLC 64-bit.", e)
@@ -187,6 +188,8 @@ class VlcSession(private val onError: (String) -> Unit) {
             factory.application().newLog().apply {
                 setLevel(uk.co.caprica.vlcj.log.LogLevel.WARNING)
                 addLogListener { level, module, _, _, _, _, _, message ->
+                    // „Failed to set on top” — VLC chce ustawić własne okno na wierzchu, a obraz idzie do okna aplikacji.
+                    if (message.startsWith("Failed to set on top")) return@addLogListener
                     val text = "$module: $message"
                     val seen = vlcMessages.merge(text, 1, Int::plus) ?: 1
                     if (seen <= 3 && vlcMessageTotal.incrementAndGet() <= 400) AppLog.i("VLC ${level.name.lowercase()} $text")

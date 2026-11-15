@@ -2,7 +2,8 @@
 
 Windows desktop client for Enigma2 receivers. Current features include decoder
 connection, bouquet/channel browsing with current EPG from OpenWebif, live
-playback through an existing 64-bit VLC 3.x installation, pause/resume, and a
+playback through VLC 3.x — bundled with the installer ("VLC wewnętrzny") or an
+installed 64-bit VLC ("VLC zewnętrzny", Settings → Odtwarzanie → Biblioteki VLC), pause/resume, and a
 universal remote-key mapping panel. Each logical E2Stream button can have
 multiple keyboard or HID aliases. At startup, the interface selects a
 light or dark palette based on the system app theme, with contrasting text.
@@ -121,7 +122,9 @@ gradle -p e2stream/desktop test
 gradle -p e2stream/desktop run
 ```
 
-Install 64-bit VLC 3.x separately. The player pauses/resumes from its controls
+Installers built by CI bundle VLC 3.x win64 (downloaded from videolan.org into
+`vlc-bundle/windows/vlc`, not stored in the repository). Local builds without
+that directory use an installed 64-bit VLC 3.x. The player pauses/resumes from its controls
 or from the Play/Pause key. On Windows, create installers
 with the repository's Gradle wrapper:
 

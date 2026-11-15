@@ -11,3 +11,5 @@ dist/
 !epgpl/sites/**/*.xml
 # E2Stream (Android): manifest i zasoby to pliki XML
 !e2stream/**/*.xml
+# E2Stream Windows: VLC wewnętrzny pobierany w CI
+e2stream/desktop/vlc-bundle/

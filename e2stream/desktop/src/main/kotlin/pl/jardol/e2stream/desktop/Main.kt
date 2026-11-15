@@ -509,6 +509,7 @@ fun main() {
             }
 
             fun sessionOrNew(): VlcSession {
+                VlcRuntime.preferInternal = config.vlcInternal
                 val session = vlcSession ?: VlcSession { status = it }.also { vlcSession = it }
                 session.onFinished = { finishedHandler.get()?.invoke() }
                 session.onPlaying = { applySavedAudio() }
@@ -2113,9 +2114,52 @@ fun main() {
                     }
                 }
             }
+            // ---------- VLC: wersja, źródło, aktualizacja ----------
+            var vlcLatest by remember { mutableStateOf<String?>(null) }
+            var vlcCheck by remember { mutableStateOf("") }
+            fun checkVlc(manual: Boolean) {
+                vlcCheck = "sprawdzanie…"
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { runCatching { VlcRuntime.latestVersion() } }
+                    vlcLatest = result.getOrNull()
+                    vlcCheck = when {
+                        result.isFailure -> "błąd sprawdzania: ${result.exceptionOrNull()?.message}"
+                        vlcLatest == null -> "serwer VideoLAN nie podał wersji"
+                        else -> ""
+                    }
+                    if (manual && vlcCheck.isNotEmpty()) status = "VLC: $vlcCheck"
+                    vlcLatest?.let { logInfo("VLC: najnowszy na videolan.org: $it") }
+                }
+            }
+            fun vlcDescription(): String {
+                val loaded = VlcRuntime.loaded
+                val version = VlcRuntime.version ?: VlcRuntime.bundledVersion()?.takeIf { config.vlcInternal }
+                val source = when {
+                    loaded == null -> if (config.vlcInternal && VlcRuntime.bundledDir() != null) "wewnętrzny" else "zewnętrzny"
+                    loaded.fallback -> "zewnętrzny (wewnętrzny niedostępny)"
+                    else -> loaded.source.label
+                }
+                return listOfNotNull(version ?: "wersja po uruchomieniu kanału", source, loaded?.dir).joinToString(" — ")
+            }
+            fun vlcUpdateDescription(): String {
+                if (vlcCheck.isNotEmpty()) return vlcCheck
+                val latest = vlcLatest ?: return "kliknij, aby sprawdzić na videolan.org"
+                val internal = VlcRuntime.loaded?.source == VlcRuntime.Source.INTERNAL
+                val current = VlcRuntime.version ?: if (internal) VlcRuntime.bundledVersion() else null
+                return when {
+                    current == null -> "najnowszy VLC: $latest"
+                    !VlcRuntime.isNewer(latest, current) -> "masz najnowszy VLC ($latest)"
+                    internal -> "najnowszy VLC: $latest — wewnętrzny zaktualizuje się z nową wersją E2Stream"
+                    else -> "dostępny VLC $latest — kliknij, aby otworzyć stronę VLC"
+                }
+            }
+
             LaunchedEffect(Unit) {
                 delay(20_000)
-                if (config.autoUpdate && System.currentTimeMillis() - config.lastUpdateCheck > 20 * 3_600_000L) checkUpdate(manual = false)
+                if (config.autoUpdate && System.currentTimeMillis() - config.lastUpdateCheck > 20 * 3_600_000L) {
+                    checkUpdate(manual = false)
+                    checkVlc(manual = false)
+                }
             }
 
             // ---------- Nagrania lokalne z bufora timeshiftu (kawałki przenoszone, nie kopiowane) ----------
@@ -2623,6 +2667,36 @@ fun main() {
                 )
                 SettingsScreen.PLAYBACK -> listOf(
                     SettingItem.Header("VLC"),
+                    SettingItem.Action(
+                        "Biblioteki VLC",
+                        (if (config.vlcInternal) "VLC wewnętrzny (z instalatora)" else "VLC zewnętrzny (zainstalowany w systemie)") +
+                            (if (VlcRuntime.bundledDir() == null) " — wewnętrzny niedostępny w tej kopii" else "") +
+                            (VlcRuntime.loaded?.let { if ((it.source == VlcRuntime.Source.INTERNAL) != config.vlcInternal) " — zmiana po ponownym uruchomieniu" else "" } ?: ""),
+                    ) {
+                        choose(
+                            "Biblioteki VLC",
+                            listOf("VLC wewnętrzny (z instalatora)", "VLC zewnętrzny (zainstalowany w systemie)"),
+                            if (config.vlcInternal) 0 else 1,
+                        ) { choice ->
+                            val internal = choice == 0
+                            if (internal == config.vlcInternal) return@choose
+                            saveConfig(config.copy(vlcInternal = internal))
+                            if (VlcRuntime.loaded == null) {
+                                status = "VLC ${if (internal) "wewnętrzny" else "zewnętrzny"} — użyty przy pierwszym kanale."
+                                return@choose
+                            }
+                            ask(
+                                "Biblioteki VLC",
+                                "VLC ${if (internal) "wewnętrzny" else "zewnętrzny"} zacznie działać po ponownym uruchomieniu aplikacji." +
+                                    if (!internal) "\n\nWymaga zainstalowanego VLC 3.x 64-bit (videolan.org)." else "",
+                                listOf("Uruchom ponownie teraz", "Później"),
+                            ) {
+                                if (it != 0) return@ask
+                                if (relaunchApplication()) exitApplication()
+                                else status = "Nie udało się uruchomić ponownie — zamknij i otwórz aplikację."
+                            }
+                        }
+                    },
                     SettingItem.Action("Usuwanie przeplotu", DesktopConfig.deinterlaceModes[config.vlcDeint]) {
                         val keys = DesktopConfig.deinterlaceModes.keys.toList()
                         choose("Usuwanie przeplotu", DesktopConfig.deinterlaceModes.values.toList(), keys.indexOf(config.vlcDeint)) {
@@ -3173,7 +3247,10 @@ fun main() {
                             if (config.lastUpdateCheck > 0) "ostatnio: " + EpgTime.day(config.lastUpdateCheck / 1000) + " " +
                                 EpgTime.clock(config.lastUpdateCheck / 1000) else "jeszcze nie sprawdzano"
                         },
-                    ) { checkUpdate(manual = true) },
+                    ) {
+                        checkUpdate(manual = true)
+                        checkVlc(manual = false)
+                    },
                     SettingItem.Toggle(
                         "Aktualizacja automatyczna",
                         config.autoUpdate,
@@ -3189,6 +3266,14 @@ fun main() {
                             updateStatus = ""
                         }
                     },
+                    SettingItem.Header("Odtwarzacz VLC"),
+                    SettingItem.Action("Wersja VLC", vlcDescription()) {},
+                    SettingItem.Action("Aktualizacja VLC", vlcUpdateDescription()) {
+                        val external = VlcRuntime.loaded?.source == VlcRuntime.Source.EXTERNAL
+                        if (external && VlcRuntime.isNewer(vlcLatest, VlcRuntime.version)) openBrowser("https://www.videolan.org/vlc/")
+                        else checkVlc(manual = true)
+                    },
+                    SettingItem.Header("Aplikacja — więcej"),
                     SettingItem.Action("Wydania na GitHubie", "wszystkie wersje") { openBrowser("$REPOSITORY_URL/releases") },
                     SettingItem.Action("Opis wersji Windows (README)") {
                         openBrowser("$REPOSITORY_URL/blob/windows/0.1.0-test/e2stream/desktop/README.md")

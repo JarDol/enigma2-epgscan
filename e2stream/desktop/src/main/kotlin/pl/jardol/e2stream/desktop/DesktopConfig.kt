@@ -127,6 +127,8 @@ data class DesktopConfig(
     val blockOnDisconnect: Boolean = false,
     /** Śledzenie klawiszy pilota w logu. */
     val remoteTrace: Boolean = false,
+    /** VLC dołączony do instalatora (true) albo zainstalowany w systemie (false). */
+    val vlcInternal: Boolean = true,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -227,6 +229,7 @@ data class DesktopConfig(
             setProperty("discoverySubnet", discoverySubnet)
             setProperty("blockOnDisconnect", blockOnDisconnect.toString())
             setProperty("remoteTrace", remoteTrace.toString())
+            setProperty("vlcInternal", vlcInternal.toString())
     }
 
     companion object {
@@ -377,6 +380,7 @@ data class DesktopConfig(
                 discoverySubnet = string("discoverySubnet", ""),
                 blockOnDisconnect = bool("blockOnDisconnect", defaults.blockOnDisconnect),
                 remoteTrace = bool("remoteTrace", defaults.remoteTrace),
+                vlcInternal = bool("vlcInternal", defaults.vlcInternal),
             )
         }
 

@@ -40,12 +40,14 @@ compose.desktop {
             // jdk.localedata: polskie nazwy języków ścieżek dźwięku (Locale.getDisplayLanguage).
             // jdk.unsupported: vlcj rezerwuje bufory klatek przez sun.misc.Unsafe (bez niego VLC: „video format setup failure”)
             modules("jdk.net", "jdk.localedata", "jdk.unsupported")
+            // VLC wewnętrzny: CI rozpakowuje VLC 3.x win64 do vlc-bundle/windows/vlc (bez katalogu — tylko VLC z systemu).
+            project.file("vlc-bundle").takeIf { it.isDirectory }?.let { appResourcesRootDir.set(it) }
             targetFormats(
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe,
             )
             packageName = "E2Stream"
-            packageVersion = "0.3.6"
+            packageVersion = "0.4.0"
         }
     }
 }

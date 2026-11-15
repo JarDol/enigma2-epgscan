@@ -43,7 +43,7 @@ internal enum class SettingsScreen(val title: String, val description: String = 
     EPG("EPG i ikony kanałów", "pobieranie EPG, ikony z dekodera"),
     GENERAL("Ogólne", "bukiety, kanał startowy, menu, czasy okien, harmonogram, język, PIN"),
     REMOTE("Pilot i klawiatura", "pilot HID / IR (WinLIRC), mapowanie klawiszy, OK i strzałki, test pilota"),
-    INFO("Informacje i aktualizacje", "wersja aplikacji, opis aplikacji i wtyczki EPG Scan"),
+    INFO("Informacje i aktualizacje", "wersja aplikacji i VLC, aktualizacje, opis aplikacji i wtyczki EPG Scan"),
     LOGS("Logi i zrzuty", "statystyki, log na dekoder, miejsce zapisu, diagnostyka pilota"),
     REMOTE_KEYS("Klawisze pilota"),
     NAV_NO_BANNER("OK i strzałki — bez paska"),

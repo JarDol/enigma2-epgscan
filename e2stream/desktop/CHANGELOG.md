@@ -3,6 +3,13 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.4.0
+
+- VLC wewnętrzny: instalator zawiera VLC 3.x 64-bit (biblioteki i wtyczki z videolan.org, bez interfejsu Qt) — osobna instalacja VLC nie jest już potrzebna
+- Ustawienia → Odtwarzanie → „Biblioteki VLC”: VLC wewnętrzny (z instalatora) albo VLC zewnętrzny (zainstalowany w systemie); zmiana działa po ponownym uruchomieniu (aplikacja proponuje „Uruchom ponownie teraz”). Gdy wewnętrzny nie da się załadować, aplikacja sama używa zewnętrznego
+- Informacje i aktualizacje → „Odtwarzacz VLC”: wersja VLC, źródło (wewnętrzny / zewnętrzny i katalog) oraz sprawdzenie najnowszej wersji VLC na videolan.org (przy sprawdzaniu aktualizacji aplikacji też); dla zewnętrznego — odnośnik do strony VLC, gdy jest nowszy
+- Log bez powtarzanego komunikatu VLC „Failed to set on top” (nie dotyczy obrazu w oknie aplikacji)
+
 ## 0.3.6
 
 - Brak obrazu — właściwa przyczyna: w Javie dołączonej do instalatora brakowało modułu jdk.unsupported, którego vlcj używa do buforów klatek (VLC: „video format setup failure (no pictures)”). Moduł dołączony; błędy w wywołaniach zwrotnych VLC trafiają do logu
