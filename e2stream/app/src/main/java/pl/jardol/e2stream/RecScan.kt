@@ -34,6 +34,8 @@ object RecScan {
         val exoLastMs: Long? = null,
         /** Co jest na początku pliku: pierwszy PAT / PCR (bajt) i najczęstsze PID w oknie ExoPlayera. */
         val headInfo: String = "",
+        /** false — duże nagranie: tylko początek i koniec (bez przeglądu zegara w całym pliku). */
+        val full: Boolean = true,
     ) {
         /** Tak liczy długość ExoPlayer: ostatni − pierwszy PCR (ujemna = nagranie „nieprzewijalne”). */
         val playerMs get() = wrapMs(lastMs - firstMs)
@@ -52,8 +54,13 @@ object RecScan {
         return x
     }
 
+    /** Nagrania większe niż to przeglądane tylko na początku i końcu (pełny przegląd czytałby wiele GB). */
+    const val FULL_MAX = 1_500_000_000L
+
     fun scan(files: List<File>): Result {
-        val r = scanStreams(files.map { { it.inputStream() } to it.length() })
+        val total = files.sumOf { it.length() }
+        val r = if (total <= FULL_MAX) scanStreams(files.map { { it.inputStream() } to it.length() })
+        else Result(files.size, total, -1, 0, 0, 0, 0, emptyList(), 0, 0, false, full = false)
         return try { withExoProbe(r, head(files), tail(files)) } catch (_: Exception) { r }
     }
 
@@ -272,9 +279,13 @@ object RecScan {
     /** Opis do logu; [lengthSec] — długość wg zegara aplikacji (opis nagrania). */
     fun describe(r: Result, lengthSec: Long): String {
         val sb = StringBuilder()
-        sb.append("${r.parts} plików, ${r.bytes / 1_000_000} MB, PCR pid ${r.pcrPid} (${r.pcrCount}×), ")
-        sb.append("długość: wg nagrywania ${t(lengthSec * 1000)}, ciągła wg PCR ${t(r.continuousMs)}, ")
-        sb.append("ostatni−pierwszy PCR ${t(r.playerMs)}")
+        if (!r.full) {
+            sb.append("${r.parts} plików, ${r.bytes / 1_000_000} MB (duże — tylko początek i koniec), długość wg nagrywania ${t(lengthSec * 1000)}")
+        } else {
+            sb.append("${r.parts} plików, ${r.bytes / 1_000_000} MB, PCR pid ${r.pcrPid} (${r.pcrCount}×), ")
+            sb.append("długość: wg nagrywania ${t(lengthSec * 1000)}, ciągła wg PCR ${t(r.continuousMs)}, ")
+            sb.append("ostatni−pierwszy PCR ${t(r.playerMs)}")
+        }
         if (r.badStart) sb.append(", początek nie na granicy pakietu")
         sb.append(", ExoPlayer (pierwsze/ostatnie ${EXO_WINDOW / 1000} kB): PMT ${if (r.pmtPcrPid >= 0) "jest" else "BRAK"}, " +
             "PCR na początku ${if (r.exoFirstMs != null) "jest" else "BRAK"}, na końcu ${if (r.exoLastMs != null) "jest" else "BRAK"}")
@@ -282,6 +293,7 @@ object RecScan {
         if (f != null && l != null) sb.append(" → długość ${t(wrapMs(l - f))}") else sb.append(" → NIEPRZEWIJALNE")
         if (r.headInfo.isNotEmpty()) sb.append(" [początek pliku: ${r.headInfo}]")
         if (r.syncLoss > 0) sb.append(", utrata synchronizacji ×${r.syncLoss}")
+        if (!r.full) return sb.toString()
         if (r.jumpCount == 0) sb.append(", zegar ciągły") else {
             sb.append(", skoki zegara ×${r.jumpCount}: ")
             sb.append(r.jumps.joinToString("; ") { j ->

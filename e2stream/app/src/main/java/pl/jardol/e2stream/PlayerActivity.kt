@@ -957,6 +957,8 @@ class PlayerActivity : Activity() {
             ui.postDelayed(this, 250)
             val p = player ?: return
             if (restartPending || !p.playWhenReady) { loadStuckSince = 0; return }
+            // nagranie: koniec pliku — wszystko wczytane, to nie zawieszenie (bez wznawiania przed ENDED)
+            if (recMode && p.duration > 0 && p.bufferedPosition >= p.duration - 1500) { loadStuckSince = 0; return }
             val st = p.playbackState
             val buf = p.totalBufferedDuration
             val stuck = !p.isLoading && (st == Player.STATE_BUFFERING || (st == Player.STATE_READY && buf < 1000))
