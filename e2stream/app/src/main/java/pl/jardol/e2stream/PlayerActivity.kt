@@ -1085,17 +1085,7 @@ class PlayerActivity : Activity() {
                 if (generation == streamGen) analyzer else null
             }
         }
-        // nagranie lokalne: TS z zapasowym przewijaniem wg rozmiaru, gdy odtwarzacz nie odczyta długości
-        val factory = if (local != null) {
-            val lengthSec = LocalRecordings.readMeta(local)?.optLong("lengthSec") ?: 0L
-            val bytes = LocalRecordings.parts(local).sumOf { it.length() }
-            androidx.media3.extractor.ExtractorsFactory {
-                extractors.createExtractors().map { e ->
-                    if (e is androidx.media3.extractor.ts.TsExtractor) LocalSeekExtractor(e, bytes, lengthSec * 1_000_000) else e
-                }.toTypedArray()
-            }
-        } else extractors
-        return ProgressiveMediaSource.Factory(analyzing, factory)
+        return ProgressiveMediaSource.Factory(analyzing, extractors)
             .createMediaSource(MediaItem.fromUri(url))
     }
 
@@ -2577,7 +2567,7 @@ class PlayerActivity : Activity() {
      * Diagnostyka: przegląd zegara PCR całego nagrania w tle (niski priorytet), wynik do logu i do opisu nagrania
      * (pole "scan" — przy następnym odtwarzaniu bez ponownego czytania plików).
      */
-    private val SCAN_V = 2
+    private val SCAN_V = 3
 
     private fun scanRecording(dir: File, title: String) {
         Thread({

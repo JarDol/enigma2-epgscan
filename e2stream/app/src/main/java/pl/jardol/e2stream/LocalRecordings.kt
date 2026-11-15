@@ -250,6 +250,37 @@ class LocalRecordingDataSource(private val dir: File) : DataSource {
     private var raf: RandomAccessFile? = null
     private var rafIdx = -1
     private var uri: Uri? = null
+    /** Pomijany początek nagrania (dane przed pierwszym PCR — starsze nagrania); -1 = jeszcze nie sprawdzony. */
+    private var skip = -1L
+
+    /**
+     * Starsze nagrania zaczynają się paczką danych bez zegara PCR (początek strumienia z Enigmy2) — ExoPlayer nie
+     * odczytuje wtedy długości i nie przewija. Odczyt zaczyna się od pierwszego pakietu z PCR (najwyżej 8 MB dalej).
+     */
+    private fun leadingWithoutPcr(f: File): Long = try {
+        java.io.RandomAccessFile(f, "r").use { r ->
+            val b = ByteArray(188 * 2048)
+            var base = 0L
+            var found = -1L
+            while (found < 0 && base < 8_000_000) {
+                r.seek(base)
+                val n = r.read(b)
+                if (n < 188 * 3) break
+                var o = 0
+                while (o + 188 * 2 < n) {
+                    if (b[o].toInt() == 0x47 && b[o + 188].toInt() == 0x47) {
+                        if ((b[o + 1].toInt() and 0x80) == 0 && (b[o + 3].toInt() and 0x20) != 0 &&
+                            (b[o + 4].toInt() and 0xff) >= 7 && (b[o + 5].toInt() and 0x10) != 0) { found = base + o; break }
+                        o += 188
+                    } else o++
+                }
+                base += o
+            }
+            val k = if (found > 0) found else 0L
+            if (k > 0) AppLog.i("nagranie: pomijam ${k / 1000} kB początku bez zegara PCR (${dir.name})")
+            k
+        }
+    } catch (_: Exception) { 0L }
 
     override fun addTransferListener(transferListener: TransferListener) {}
 
@@ -260,7 +291,8 @@ class LocalRecordingDataSource(private val dir: File) : DataSource {
         starts = LongArray(files.size)
         var t = 0L
         for (i in files.indices) { starts[i] = t; t += files[i].length() }
-        total = t
+        if (skip < 0) skip = leadingWithoutPcr(files[0])
+        total = t - skip
         pos = dataSpec.position
         if (pos > total) throw IOException("nagranie: pozycja poza plikiem")
         val left = total - pos
@@ -270,16 +302,17 @@ class LocalRecordingDataSource(private val dir: File) : DataSource {
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
         if (pos >= total) return C.RESULT_END_OF_INPUT
-        var idx = starts.indexOfLast { it <= pos }
-        while (idx < files.size - 1 && pos >= starts[idx] + files[idx].length()) idx++
+        val apos = pos + skip
+        var idx = starts.indexOfLast { it <= apos }
+        while (idx < files.size - 1 && apos >= starts[idx] + files[idx].length()) idx++
         if (idx != rafIdx) {
             try { raf?.close() } catch (_: Exception) {}
             raf = RandomAccessFile(files[idx], "r")
             rafIdx = idx
         }
         val r = raf!!
-        r.seek(pos - starts[idx])
-        val inFile = files[idx].length() - (pos - starts[idx])
+        r.seek(apos - starts[idx])
+        val inFile = files[idx].length() - (apos - starts[idx])
         val n = r.read(buffer, offset, minOf(length.toLong(), inFile).toInt())
         if (n < 0) return C.RESULT_END_OF_INPUT
         pos += n
@@ -295,36 +328,3 @@ class LocalRecordingDataSource(private val dir: File) : DataSource {
     }
 }
 
-
-/**
- * Przewijanie nagrania lokalnego, gdy ExoPlayer nie odczyta jego długości (pierwszy znacznik PCR w pliku późniejszy
- * niż ostatni — wtedy TS jest „nieprzewijalny” i każde przewinięcie wraca na początek): pozycja liczona proporcjonalnie
- * z rozmiaru plików i długości z opisu nagrania (stała przepływność, granica pakietu 188 B).
- */
-class LocalSeekExtractor(
-    private val inner: androidx.media3.extractor.Extractor,
-    private val totalBytes: Long,
-    private val durationUs: Long,
-) : androidx.media3.extractor.Extractor {
-
-    override fun sniff(input: androidx.media3.extractor.ExtractorInput) = inner.sniff(input)
-
-    override fun init(output: androidx.media3.extractor.ExtractorOutput) {
-        inner.init(object : androidx.media3.extractor.ExtractorOutput by output {
-            override fun seekMap(seekMap: androidx.media3.extractor.SeekMap) {
-                if (seekMap.isSeekable || totalBytes <= 0 || durationUs <= 0) { output.seekMap(seekMap); return }
-                val bitrate = (totalBytes * 8 * 1_000_000.0 / durationUs).toLong().coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
-                AppLog.i("nagranie: odtwarzacz nie odczytał długości — przewijanie wg rozmiaru (${totalBytes / 1_000_000} MB, " +
-                    "${durationUs / 1_000_000} s, ${bitrate / 1000} kb/s)")
-                output.seekMap(androidx.media3.extractor.ConstantBitrateSeekMap(totalBytes, 0, bitrate, 188))
-            }
-        })
-    }
-
-    override fun read(input: androidx.media3.extractor.ExtractorInput, seekPosition: androidx.media3.extractor.PositionHolder) =
-        inner.read(input, seekPosition)
-
-    override fun seek(position: Long, timeUs: Long) = inner.seek(position, timeUs)
-
-    override fun release() = inner.release()
-}

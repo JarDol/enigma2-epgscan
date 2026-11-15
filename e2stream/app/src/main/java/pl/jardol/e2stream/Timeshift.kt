@@ -94,6 +94,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
             }
             writerId = t.id
             writerName = t.name
+            waitPcr = true                         // nowe połączenie — znów od pierwszego PCR
         }
         lastWriteAt = now
         return true
@@ -116,6 +117,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         if (writerId != -1L) { staleId = writerId; staleUntil = SystemClock.elapsedRealtime() + 5000; staleLogged = false }
         writerId = -1L
         switches = 0; switchesLogged = 0; switchesReported = 0
+        waitPcr = true; skipped = 0; skippedPids.clear()
         if (pin != null) finishPin()          // nagranie trwało — kawałki zachowane, nie skasowane
         try { out?.close() } catch (_: Exception) {}
         out = null
@@ -132,6 +134,36 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
 
     private val pend = ByteArray(188)
     private var pendLen = 0
+
+    /**
+     * Początek strumienia (nowy kanał, nowe połączenie): pakiety do pierwszego z PCR są pomijane. Enigma2 zaczyna
+     * strumień paczką danych bez obrazu i zegara (>100 kB) — nagranie zaczynające się od niej jest dla ExoPlayera
+     * nieprzewijalne (szuka PCR tylko w pierwszych 112 kB pliku).
+     */
+    private var waitPcr = true
+    private var skipped = 0L
+    private val skippedPids = HashMap<Int, Int>()
+
+    /** Czy pakiet od [o] ma trafić do bufora (false — pominięty, bo przed pierwszym PCR). */
+    private fun admit(p: ByteArray, o: Int): Boolean {
+        if (!waitPcr) return true
+        val tei = (p[o + 1].toInt() and 0x80) != 0
+        val pcr = !tei && (p[o + 3].toInt() and 0x20) != 0 && (p[o + 4].toInt() and 0xff) >= 7 && (p[o + 5].toInt() and 0x10) != 0
+        if (pcr || skipped >= SKIP_MAX) {
+            waitPcr = false
+            if (skipped > 0) {
+                val pids = skippedPids.entries.sortedByDescending { it.value }.take(5).joinToString(", ") { "${it.key}×${it.value}" }
+                AppLog.i("timeshift: zapis od pierwszego pakietu z zegarem PCR — pominięto ${skipped / 1000} kB na początku strumienia (PID: $pids)" +
+                    if (!pcr) " — PCR nie znaleziony, zapis bez czekania" else "")
+            }
+            skipped = 0; skippedPids.clear()
+            return true
+        }
+        skipped += 188
+        val pid = ((p[o + 1].toInt() and 0x1f) shl 8) or (p[o + 2].toInt() and 0xff)
+        skippedPids[pid] = (skippedPids[pid] ?: 0) + 1
+        return false
+    }
 
     /** Nowe połączenie ze strumieniem: niepełny pakiet z poprzedniego jest porzucany, żeby bufor został zgodny z siatką 188 B. */
     fun resync() = synchronized(lock) { pendLen = 0 }
@@ -151,7 +183,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
                     pendLen += n; o += n
                     if (pendLen < 188) return
                     pendLen = 0
-                    if (pend[0] == SYNC) writeRaw(pend, 0, 188)
+                    if (pend[0] == SYNC && admit(pend, 0)) writeRaw(pend, 0, 188)
                 }
                 // pierwszy zapis (np. po opóźnieniu): początek porcji bywa w środku pakietu — szukamy pewnej granicy
                 if (total == 0L && pendLen == 0) {
@@ -166,6 +198,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
                         o = j; run = j
                         continue
                     }
+                    if (waitPcr && !admit(b, o)) { o += 188; run = o; continue }
                     o += 188
                 }
                 if (o > run) writeRaw(b, run, o - run)
@@ -371,6 +404,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         }
 
         private const val SYNC = 0x47.toByte()
+        /** Najwięcej pomijanych danych przed pierwszym PCR (potem zapis bez czekania). */
+        private const val SKIP_MAX = 8L * 1_000_000
 
         /** Zapas wolnego miejsca, którego bufor nie rusza. */
         const val RESERVE = 400L * 1_000_000

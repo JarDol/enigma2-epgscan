@@ -80,8 +80,23 @@ class RecScanTest {
         assertEquals(534, r.pmtPcrPid)
         assertEquals(1000L, r.exoFirstMs)
         assertEquals(9040L, r.exoLastMs)
-        assertTrue(RecScan.describe(r, 8).contains("PCR na początku jest, na końcu jest"))
+        val d = RecScan.describe(r, 8)
+        assertTrue(d, d.contains("PMT jest, PCR na początku jest, na końcu jest"))
+        assertTrue(d, d.contains("pierwszy PAT 0 kB"))
         val noTail = RecScan.withExoProbe(r0, head, ByteArray(188 * 3) { if (it % 188 == 0) 0x47 else 0 })
         assertTrue(RecScan.describe(noTail, 8).contains("na końcu BRAK → NIEPRZEWIJALNE"))
+    }
+
+    @Test
+    fun leadingBurstWithoutPcrIsReported() {
+        val burst = java.io.ByteArrayOutputStream()
+        repeat(700) { burst.write(dataPacket(18)) }               // > 112 kB bez PCR (np. EIT)
+        val all = burst.toByteArray() + stream(1000, 1040)
+        val r0 = RecScan.scanStreams(listOf(part(all)))
+        val r = RecScan.withExoProbe(r0, all.copyOf(RecScan.EXO_WINDOW), stream(9000))
+        val d = RecScan.describe(r, 8)
+        assertTrue(d, d.contains("PCR na początku BRAK"))
+        assertTrue(d, d.contains("NIEPRZEWIJALNE"))
+        assertTrue(d, d.contains("PID: 18×600"))
     }
 }

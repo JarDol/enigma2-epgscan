@@ -32,6 +32,8 @@ object RecScan {
         /** Jak ExoPlayer: PCR (pid z PMT) w pierwszych / ostatnich [EXO_WINDOW] bajtach; null — nie znalazł. */
         val exoFirstMs: Long? = null,
         val exoLastMs: Long? = null,
+        /** Co jest na początku pliku: pierwszy PAT / PCR (bajt) i najczęstsze PID w oknie ExoPlayera. */
+        val headInfo: String = "",
     ) {
         /** Tak liczy długość ExoPlayer: ostatni − pierwszy PCR (ujemna = nagranie „nieprzewijalne”). */
         val playerMs get() = wrapMs(lastMs - firstMs)
@@ -88,8 +90,9 @@ object RecScan {
 
     /** Odtworzenie odczytu długości przez ExoPlayer (TsDurationReader): PCR_PID z PMT, PCR w oknie początku i końca. */
     fun withExoProbe(r: Result, head: ByteArray, tail: ByteArray): Result {
-        val pcrPid = pmtPcrPid(head)
-        if (pcrPid < 0) return r.copy(pmtPcrPid = -1)
+        val pmtPid = pmtPcrPid(head)
+        val pcrPid = if (pmtPid >= 0) pmtPid else r.pcrPid
+        val info = headInfo(head, r.pcrPid)
         // początek: każdy bajt 0x47 (także nie na granicy pakietu), pierwszy pasujący PCR
         var first: Long? = null
         for (i in 0 until head.size - 11) {
@@ -108,7 +111,27 @@ object RecScan {
             }
             i--
         }
-        return r.copy(pmtPcrPid = pcrPid, exoFirstMs = first, exoLastMs = last)
+        return r.copy(pmtPcrPid = pmtPid, exoFirstMs = first, exoLastMs = last, headInfo = info)
+    }
+
+    /** Pierwszy PAT, pierwszy PCR [pcrPid] (bajt od początku) i 4 najczęstsze PID w [b]. */
+    private fun headInfo(b: ByteArray, pcrPid: Int): String {
+        var o = 0
+        while (o + 376 < b.size && !((b[o].toInt() and 0xff) == SYNC && (b[o + 188].toInt() and 0xff) == SYNC)) o++
+        var pat = -1
+        var pcr = -1
+        val hist = HashMap<Int, Int>()
+        while (o + 188 <= b.size) {
+            if ((b[o].toInt() and 0xff) != SYNC) { o++; continue }
+            val pid = ((b[o + 1].toInt() and 0x1f) shl 8) or (b[o + 2].toInt() and 0xff)
+            hist[pid] = (hist[pid] ?: 0) + 1
+            if (pid == 0 && pat < 0) pat = o
+            if (pid == pcrPid && pcr < 0 && exoPcr(b, o, pcrPid) != null) pcr = o
+            o += 188
+        }
+        val top = hist.entries.sortedByDescending { it.value }.take(4).joinToString(", ") { "${it.key}×${it.value}" }
+        fun at(x: Int) = if (x < 0) "BRAK" else "${x / 1000} kB"
+        return "pierwszy PAT ${at(pat)}, pierwszy PCR ${at(pcr)}, PID: $top"
     }
 
     /** Jak TsUtil.readPcrFromPacket: bez pakietów z TEI, PID = [pid], pole adaptacji ≥ 7 B z flagą PCR. */
@@ -250,11 +273,11 @@ object RecScan {
         sb.append("długość: wg nagrywania ${t(lengthSec * 1000)}, ciągła wg PCR ${t(r.continuousMs)}, ")
         sb.append("ostatni−pierwszy PCR ${t(r.playerMs)}")
         if (r.badStart) sb.append(", początek nie na granicy pakietu")
-        if (r.pmtPcrPid >= 0 || r.exoFirstMs != null) {
-            sb.append(", ExoPlayer: PCR pid z PMT ${r.pmtPcrPid}, PCR na początku ${if (r.exoFirstMs != null) "jest" else "BRAK"}, na końcu ${if (r.exoLastMs != null) "jest" else "BRAK"}")
-            val f = r.exoFirstMs; val l = r.exoLastMs
-            if (f != null && l != null) sb.append(" → długość ${t(wrapMs(l - f))}") else sb.append(" → NIEPRZEWIJALNE")
-        } else sb.append(", ExoPlayer: brak PMT w pierwszych ${EXO_WINDOW / 1000} kB")
+        sb.append(", ExoPlayer (pierwsze/ostatnie ${EXO_WINDOW / 1000} kB): PMT ${if (r.pmtPcrPid >= 0) "jest" else "BRAK"}, " +
+            "PCR na początku ${if (r.exoFirstMs != null) "jest" else "BRAK"}, na końcu ${if (r.exoLastMs != null) "jest" else "BRAK"}")
+        val f = r.exoFirstMs; val l = r.exoLastMs
+        if (f != null && l != null) sb.append(" → długość ${t(wrapMs(l - f))}") else sb.append(" → NIEPRZEWIJALNE")
+        if (r.headInfo.isNotEmpty()) sb.append(" [początek pliku: ${r.headInfo}]")
         if (r.syncLoss > 0) sb.append(", utrata synchronizacji ×${r.syncLoss}")
         if (r.jumpCount == 0) sb.append(", zegar ciągły") else {
             sb.append(", skoki zegara ×${r.jumpCount}: ")
