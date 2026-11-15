@@ -27,4 +27,15 @@
     <string name="menu_audio_track">Audio track…</string>
     <string name="menu_scheduled_switches">Scheduled switches</string>
     <string name="menu_receiver_timers">Receiver timers</string>
+    <string name="section_storage">Storage</string>
+    <string name="section_storage_desc">medium (USB drive / device storage), timeshift, local recordings, logs</string>
+    <string name="storage_header_medium">Medium</string>
+    <string name="storage_medium">Medium for timeshift, recordings and logs</string>
+    <string name="storage_header_recordings">Local recordings</string>
+    <string name="storage_header_logs">Logs and app storage</string>
+    <string name="storage_none">None</string>
+    <string name="storage_none_desc">no timeshift or local recordings; logs in app storage</string>
+    <string name="storage_requires_medium">requires a medium — choose it under “Medium”</string>
+    <string name="storage_medium_unavailable">inactive — medium unavailable (resumes when connected)</string>
+    <string name="storage_requires_timeshift">requires timeshift to be enabled</string>
 </resources>

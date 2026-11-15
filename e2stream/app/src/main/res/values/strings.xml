@@ -28,4 +28,15 @@
     <string name="menu_audio_track">Ścieżka dźwięku…</string>
     <string name="menu_scheduled_switches">Przełączenia wg harmonogramu</string>
     <string name="menu_receiver_timers">Harmonogramy dekodera</string>
+    <string name="section_storage">Pamięć masowa</string>
+    <string name="section_storage_desc">nośnik (dysk USB / pamięć urządzenia), timeshift, nagrania lokalne, logi</string>
+    <string name="storage_header_medium">Nośnik</string>
+    <string name="storage_medium">Nośnik dla timeshiftu, nagrań i logów</string>
+    <string name="storage_header_recordings">Nagrania lokalne</string>
+    <string name="storage_header_logs">Logi i pamięć aplikacji</string>
+    <string name="storage_none">Brak</string>
+    <string name="storage_none_desc">bez timeshiftu i nagrań lokalnych; logi w pamięci aplikacji</string>
+    <string name="storage_requires_medium">wymaga nośnika — wybierz w „Nośnik”</string>
+    <string name="storage_medium_unavailable">nieaktywne — nośnik niedostępny (wróci po podłączeniu)</string>
+    <string name="storage_requires_timeshift">wymaga włączonego timeshiftu</string>
 </resources>

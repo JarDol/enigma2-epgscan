@@ -164,13 +164,22 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
   Dla VLC można testowo ustawić 300 ms, ale mniejszy bufor może pogorszyć płynność. Log pokazuje czas do
   pierwszych bajtów i pierwszej klatki według licznika VLC (próbkowanie do 250 ms, a po 15 s do 1 s); sam sygnał utworzenia
   wyjścia wideo VLC nie jest dowodem wyświetlenia klatki,
-* zapas w trakcie oglądania (domyślnie 4000 ms): po starcie odtwarzanie jest lekko zwalniane (0,95×, wysokość dźwięku bez zmian), aż bufor dojdzie do zapasu; przerwy w paczkach z dekodera nie powodują wtedy czkawki. Przy tunelowaniu zwolnienia nie ma (zmiana prędkości psuła płynność obrazu) – wtedy o płynności decyduje bufor startowy (na MiBox 4 zalecane 2500 ms), a zapas buduje się po pierwszym niedoborze,
+* zapas w trakcie oglądania (domyślnie 4500 ms): po starcie odtwarzanie jest lekko zwalniane (0,95×, wysokość dźwięku bez zmian), aż bufor dojdzie do zapasu; przerwy w paczkach z dekodera nie powodują wtedy czkawki. Przy tunelowaniu zwolnienia nie ma (zmiana prędkości psuła płynność obrazu) – wtedy o płynności decyduje bufor startowy (na MiBox 4 zalecane 2500 ms), a zapas buduje się po pierwszym niedoborze,
 * odświeżanie ekranu (bez zmian / 50 Hz / automatycznie),
 * pasek komunikatów odtwarzacza: włączony domyślnie, czas wyświetlania 1–10 s (domyślnie 3 s).
   Wyłączenie ukrywa także ostrzeżenia na tym pasku; okna dialogowe działają niezależnie.
   Wielkość tekstu paska komunikatów jest zgodna z ustawieniem czcionki paska kanału,
 * preferowany język dźwięku i AC3,
 * log przez FTP: użytkownik (root), hasło, katalog na dekoderze.
+
+**Pamięć masowa** – jedno miejsce na nośnik i wszystko, co z niego korzysta:
+* nośnik: dysk USB / karta, pamięć urządzenia (tylko za zgodą — zużycie pamięci flash) albo „Brak”,
+* timeshift (długość bufora, automatyczny start, kroki przewijania, WSTECZ na pustym ekranie),
+* nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,
+* miejsce logów i zrzutów (domyślnie podąża za nośnikiem) oraz pamięć zajmowana przez aplikację.
+
+Bez wybranego lub przy odłączonym nośniku pozycje są nieaktywne (opis zamiast wartości), a timeshift się nie
+uruchamia; ustawienia zostają i po podłączeniu dysku wszystko działa jak przedtem (od następnego kanału).
 
 ## Budowanie
 

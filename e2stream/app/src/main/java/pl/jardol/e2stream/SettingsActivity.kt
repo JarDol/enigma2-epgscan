@@ -75,6 +75,7 @@ class SettingsActivity : Activity() {
     private val sections = listOf(
         Triple("Dekoder Enigma2", R.string.section_decoder, R.string.section_decoder_desc),
         Triple("Odtwarzanie i obraz", R.string.section_playback, R.string.section_playback_desc),
+        Triple("Pamięć masowa", R.string.section_storage, R.string.section_storage_desc),
         Triple("Wygląd", R.string.section_appearance, R.string.section_appearance_desc),
         Triple("EPG i picony kanałów", R.string.section_epg, R.string.section_epg_desc),
         Triple("Ogólne", R.string.section_general, R.string.section_general_desc),
@@ -88,6 +89,7 @@ class SettingsActivity : Activity() {
         }
         val title = sections.first { it.first == sec }.second
         return listOf<Item>(Item.Header(getString(title))) + when (sec) {
+            "Pamięć masowa" -> storageItems()
             "Dekoder Enigma2" -> listOf(
                 Item.Header(getString(R.string.setting_receiver)),
         Item.Text(getString(R.string.setting_receiver_ip_address), { p.host }, { p.host = it.trim(); checkPluginQuiet(); offerBackupNow() }, hint = "np. 192.168.1.20"),
@@ -136,35 +138,6 @@ class SettingsActivity : Activity() {
         num(getString(R.string.setting_freeze_after_seconds_without_new_frames), { p.stallSec }, { p.stallSec = it }, 1..30),
         num(getString(R.string.setting_startup_buffer_ms_fast_picture), { p.bufferMs }, { p.bufferMs = it }, 250..10_000),
         Item.Action(getString(R.string.setting_screen_refresh_rate), { afrName(p.afrMode) }) { chooseAfr() },
-                Item.Header(getString(R.string.setting_timeshift_pause_and_rewind_live_tv)),
-        Item.Action(getString(R.string.setting_timeshift), { tsValue() }) { chooseTs() },
-        Item.Action(getString(R.string.setting_timeshift_buffer_location), { tsPlace() }) { chooseTsDir() },
-        Item.Action(getString(R.string.setting_automatic_timeshift), { tsDelayName(p.tsDelay) }) { chooseTsDelay() },
-        Item.Action(getString(R.string.setting_rec_max_hours), { "${p.recMaxHours} h" }) {
-            val o = (1..6).toList()
-            TvDialog.single(this, getString(R.string.setting_rec_max_hours), o.map { "$it h" }, o.indexOf(p.recMaxHours).coerceAtLeast(0)) { w ->
-                p.recMaxHours = o[w]; markChanged("nagrania lokalne: limit nagrania = ${o[w]} h"); items = buildItems(); refresh()
-            }
-        },
-        Item.Action(getString(R.string.setting_rec_max_pct), { "${p.recMaxPct}%" }) {
-            val o = listOf(30, 50, 60, 70, 80, 90)
-            TvDialog.single(this, getString(R.string.setting_rec_max_pct), o.map { "$it%" }, o.indexOf(p.recMaxPct).coerceAtLeast(0)) { w ->
-                p.recMaxPct = o[w]; markChanged("nagrania lokalne: limit miejsca = ${o[w]}%"); items = buildItems(); refresh()
-            }
-        },
-        Item.Action(getString(R.string.setting_seek_seconds), { "${p.tsStepSec} s" }) {
-            val o = listOf(5, 10, 15, 30)
-            TvDialog.single(this, getString(R.string.message_seek), o.map { "$it s" }, o.indexOf(p.tsStepSec).coerceAtLeast(0)) { w -> p.tsStepSec = o[w]; markChanged("timeshift: krok ◀ ▶ = ${o[w]} s"); items = buildItems(); refresh() }
-        },
-        Item.Action(getString(R.string.setting_seek_minutes), { "${p.tsStepMin} min" }) {
-            val o = listOf(1, 3, 5, 10, 15)
-            TvDialog.single(this, getString(R.string.message_seek_2), o.map { "$it min" }, o.indexOf(p.tsStepMin).coerceAtLeast(0)) { w -> p.tsStepMin = o[w]; markChanged("timeshift: krok ▲ ▼ = ${o[w]} min"); items = buildItems(); refresh() }
-        },
-        Item.Toggle(getString(R.string.setting_back_on_empty_screen_live_tv), { p.tsBackLive }, { p.tsBackLive = it }),
-        Item.Toggle(getString(R.string.setting_allow_buffer_in_device_storage), { p.tsInternalOk }, { v ->
-            p.tsInternalOk = v
-            if (!v && p.tsDir.isBlank()) p.tsMin = 0        // bez zgody i bez dysku — timeshift wyłączony
-        }),
                 Item.Header(getString(R.string.setting_audio)),
         Item.Text(getString(R.string.setting_preferred_language), { p.audioLang }, { p.audioLang = it }, hint = "Kody lub nazwy, np. pl/pol/Polish, en/eng/English"),
         Item.Toggle(getString(R.string.setting_prefer_ac3_e_ac3), { p.preferAc3 }, { p.preferAc3 = it }),
@@ -306,8 +279,6 @@ class SettingsActivity : Activity() {
                     { getString(R.string.settings_set_decoder) }) { openSection("Dekoder Enigma2") },
         Item.Action(getString(R.string.setting_send_log_to_receiver), { "${p.ftpDir}/${Tools.logName(p)}" }) { Tools.uploadLog(this, p, true) { toast(it) } },
         Item.Action(getString(R.string.setting_send_ts_dumps_to_receiver)) { Tools.uploadDumps(this, p) { toast(it) } },
-        Item.Action(getString(R.string.setting_log_and_dump_storage_location), { Storage.dir(this, p).absolutePath }) { chooseStorage() },
-        Item.Action(getString(R.string.setting_app_storage), { getString(R.string.setting_app_storage_value) }) { showAppStorage() },
         Item.Toggle(getString(R.string.setting_clean_stream_damaged_packets_invalid_timestamps), { p.cleanTs }, { p.cleanTs = it }),
         Item.Toggle(getString(R.string.setting_save_ts_dump_on_freeze), { p.saveTs }, { p.saveTs = it }),
         num(getString(R.string.setting_ts_dump_size_mb), { p.tsRingMb }, { p.tsRingMb = it }, 2..64),
@@ -439,7 +410,7 @@ class SettingsActivity : Activity() {
         listView.setSelection(0)
         listView.requestFocus()
         if (intent.getBooleanExtra(EXTRA_FOCUS_TIMESHIFT, false)) {
-            openSection("Odtwarzanie i obraz")
+            openSection("Pamięć masowa")
             val index = items.indexOfFirst { it is Item.Action && it.label == getString(R.string.setting_timeshift) }
             check(index >= 0) { "Brak ustawienia timeshiftu" }
             listView.setSelection(index)
@@ -571,6 +542,69 @@ class SettingsActivity : Activity() {
         }
     }
 
+    // ------------------------------------------------------------ pamięć masowa
+
+    /**
+     * Jedno miejsce na nośnik (dysk USB / pamięć urządzenia za zgodą / brak) i wszystko, co z niego korzysta:
+     * timeshift, nagrania lokalne, logi. Bez dostępnego nośnika pozycje są nieaktywne (opis zamiast wartości);
+     * ustawienia zostają — po podłączeniu dysku wszystko działa jak przedtem.
+     */
+    private fun storageItems(): List<Item> = listOf(
+        Item.Header(getString(R.string.storage_header_medium)),
+        Item.Action(getString(R.string.storage_medium), { tsPlace() }) { chooseTsDir() },
+        Item.Header(getString(R.string.setting_timeshift_pause_and_rewind_live_tv)),
+        gated(getString(R.string.setting_timeshift), { tsValue() }) { chooseTs() },
+        gated(getString(R.string.setting_automatic_timeshift), { tsDelayName(p.tsDelay) }) { chooseTsDelay() },
+        gated(getString(R.string.setting_seek_seconds), { "${p.tsStepSec} s" }) {
+            val o = listOf(5, 10, 15, 30)
+            TvDialog.single(this, getString(R.string.message_seek), o.map { "$it s" }, o.indexOf(p.tsStepSec).coerceAtLeast(0)) { w -> p.tsStepSec = o[w]; markChanged("timeshift: krok ◀ ▶ = ${o[w]} s"); items = buildItems(); refresh() }
+        },
+        gated(getString(R.string.setting_seek_minutes), { "${p.tsStepMin} min" }) {
+            val o = listOf(1, 3, 5, 10, 15)
+            TvDialog.single(this, getString(R.string.message_seek_2), o.map { "$it min" }, o.indexOf(p.tsStepMin).coerceAtLeast(0)) { w -> p.tsStepMin = o[w]; markChanged("timeshift: krok ▲ ▼ = ${o[w]} min"); items = buildItems(); refresh() }
+        },
+        Item.Toggle(getString(R.string.setting_back_on_empty_screen_live_tv), { p.tsBackLive }, { p.tsBackLive = it }),
+        Item.Header(getString(R.string.storage_header_recordings)),
+        gated(getString(R.string.setting_rec_max_hours), { "${p.recMaxHours} h" }, needTimeshift = true) {
+            val o = (1..6).toList()
+            TvDialog.single(this, getString(R.string.setting_rec_max_hours), o.map { "$it h" }, o.indexOf(p.recMaxHours).coerceAtLeast(0)) { w ->
+                p.recMaxHours = o[w]; markChanged("nagrania lokalne: limit nagrania = ${o[w]} h"); items = buildItems(); refresh()
+            }
+        },
+        gated(getString(R.string.setting_rec_max_pct), { "${p.recMaxPct}%" }, needTimeshift = true) {
+            val o = listOf(30, 50, 60, 70, 80, 90)
+            TvDialog.single(this, getString(R.string.setting_rec_max_pct), o.map { "$it%" }, o.indexOf(p.recMaxPct).coerceAtLeast(0)) { w ->
+                p.recMaxPct = o[w]; markChanged("nagrania lokalne: limit miejsca = ${o[w]}%"); items = buildItems(); refresh()
+            }
+        },
+        Item.Header(getString(R.string.storage_header_logs)),
+        Item.Action(getString(R.string.setting_log_and_dump_storage_location), { Storage.dir(this, p).absolutePath }) { chooseStorage() },
+        Item.Action(getString(R.string.setting_app_storage), { getString(R.string.setting_app_storage_value) }) { showAppStorage() },
+    )
+
+    /** Nośnik wybrany i dostępny (dysk podłączony / zgoda na pamięć urządzenia). */
+    private fun mediumReady(): Boolean = TimeshiftBuffer.dir(this, p) != null
+
+    private fun mediumMissing(): String = getString(when {
+        p.tsDir.isNotBlank() -> R.string.storage_medium_unavailable
+        else -> R.string.storage_requires_medium
+    })
+
+    /** Pozycja zależna od nośnika (i opcjonalnie od włączonego timeshiftu): bez niego opis i wybór nośnika. */
+    private fun gated(label: String, value: () -> String, needTimeshift: Boolean = false, run: () -> Unit) = Item.Action(label, {
+        when {
+            !mediumReady() -> mediumMissing()
+            needTimeshift && p.tsMin <= 0 -> getString(R.string.storage_requires_timeshift)
+            else -> value()
+        }
+    }) {
+        when {
+            !mediumReady() -> { toast(mediumMissing()); chooseTsDir() }
+            needTimeshift && p.tsMin <= 0 -> { toast(getString(R.string.storage_requires_timeshift)); chooseTs() }
+            else -> run()
+        }
+    }
+
     // ------------------------------------------------------------ timeshift
 
     /** Czy wybrany jest dysk USB / karta SD (nie pamięć urządzenia). */
@@ -651,7 +685,17 @@ class SettingsActivity : Activity() {
                 else getString(R.string.ts_space_choice, TimeshiftBuffer.gb(java.io.File(o.path).usableSpace), fmtMin(fit)) + if (rec > 0) getString(R.string.ts_recommended_choice, fmtMin(rec)) else "",
                 if (cur) 3 else 0)
         }
-        TvDialog.list(this, getString(R.string.message_timeshift_buffer_location), items, -1, widthFrac = 0.6f) { w ->
+        val none = TvDialog.Item(getString(R.string.storage_none), getString(R.string.storage_none_desc),
+            if (p.tsDir.isBlank() && !p.tsInternalOk) 3 else 0)
+        TvDialog.list(this, getString(R.string.message_timeshift_buffer_location), items + none, -1, widthFrac = 0.6f) { w ->
+            if (w >= opts.size) {
+                // bez nośnika: timeshift wyłączony, zgoda na pamięć urządzenia cofnięta, logi wracają do pamięci aplikacji
+                p.tsDir = ""; p.tsInternalOk = false; p.tsMin = 0
+                markChanged("pamięć masowa: brak nośnika")
+                if (Storage.followTimeshift(p)) AppLog.init(this, Storage.dir(this, p))
+                this.items = buildItems(); refresh()
+                return@list
+            }
             val o = opts[w]
             if (o.path == internal) {
                 if (!p.tsInternalOk) {
