@@ -3,6 +3,10 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.3.6
+
+- Brak obrazu — właściwa przyczyna: w Javie dołączonej do instalatora brakowało modułu jdk.unsupported, którego vlcj używa do buforów klatek (VLC: „video format setup failure (no pictures)”). Moduł dołączony; błędy w wywołaniach zwrotnych VLC trafiają do logu
+
 ## 0.3.5
 
 - Brak obrazu: VLC w kółko zmieniał format klatek (wysokość 1088 / 1090) i nie oddawał żadnej klatki — format ustalany raz na strumień; gdy po 5 s nadal brak klatek, odtwarzacz sam próbuje bez usuwania przeplotu VLC (komunikat i wpis w logu)

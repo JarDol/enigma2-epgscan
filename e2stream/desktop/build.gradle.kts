@@ -38,13 +38,14 @@ compose.desktop {
         nativeDistributions {
             // jdk.net: TCP keep-alive klienta WinLIRC/LIRC (ExtendedSocketOptions).
             // jdk.localedata: polskie nazwy języków ścieżek dźwięku (Locale.getDisplayLanguage).
-            modules("jdk.net", "jdk.localedata")
+            // jdk.unsupported: vlcj rezerwuje bufory klatek przez sun.misc.Unsafe (bez niego VLC: „video format setup failure”)
+            modules("jdk.net", "jdk.localedata", "jdk.unsupported")
             targetFormats(
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe,
             )
             packageName = "E2Stream"
-            packageVersion = "0.3.5"
+            packageVersion = "0.3.6"
         }
     }
 }

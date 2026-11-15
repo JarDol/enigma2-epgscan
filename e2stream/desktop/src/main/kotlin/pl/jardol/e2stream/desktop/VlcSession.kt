@@ -171,6 +171,10 @@ class VlcSession(private val onError: (String) -> Unit) {
                 "Nie znaleziono 64-bitowego VLC. Zainstaluj VLC 3.x i uruchom aplikację ponownie.",
             )
         }
+        // Wyjątek w wywołaniu zwrotnym z VLC (JNA) jest inaczej niewidoczny — do logu.
+        com.sun.jna.Native.setCallbackExceptionHandler { _, error ->
+            AppLog.i("VLC: błąd w wywołaniu zwrotnym: $error")
+        }
         try {
             factory = MediaPlayerFactory()
             player = factory.mediaPlayers().newEmbeddedMediaPlayer()
