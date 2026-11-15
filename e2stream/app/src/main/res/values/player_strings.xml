@@ -84,7 +84,7 @@
     <string name="player_localrec_internal_consent">Bufor timeshiftu jest w pamięci urządzenia, więc nagrania też trafią do pamięci urządzenia (zużywają pamięć flash). Zezwolić na nagrania w pamięci urządzenia?</string>
     <string name="player_localrec_allow">Zezwól</string>
     <string name="player_localrec_limit_reached">Nagrania zajmują już %2$s z %3$s – limit to %1$d%% pojemności nośnika (reszta dla timeshiftu). Usuń starsze nagrania albo zmień limit w ustawieniach.</string>
-    <string name="player_localrec_event">Bufor do końca audycji: %1$s (%2$s–%3$s)</string>
+    <string name="player_localrec_event">Audycja: %1$s (%2$s–%3$s)</string>
     <string name="player_localrec_buffer_now">Bufor do teraz (%1$s)</string>
     <string name="player_localrec_buffer_until_zap">Cały bufor do zmiany kanału</string>
     <string name="player_localrec_failed">Nie udało się rozpocząć nagrania (%1$s)</string>

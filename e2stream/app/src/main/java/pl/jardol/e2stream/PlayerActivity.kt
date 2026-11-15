@@ -690,6 +690,13 @@ class PlayerActivity : Activity() {
                 if (playbackState == Player.STATE_READY && !readyLogged) {
                     readyLogged = true
                     AppLog.i("start: READY po ${SystemClock.elapsedRealtime() - streamStartAt} ms")
+                    if (recMode) recItem?.let { r ->
+                        val local = LocalRecordings.isLocal(r.path)
+                        val parts = if (local) LocalRecordings.parts(LocalRecordings.dirOf(r.path)).size else 0
+                        AppLog.i("nagranie: długość wg odtwarzacza ${if (p.duration > 0) fmtMs(p.duration) else "nieznana"}, " +
+                            "wg opisu ${fmtMs(r.lengthSec * 1000)}, przewijanie: ${if (p.isCurrentMediaItemSeekable) "tak" else "NIE"}" +
+                            (if (local) ", plików: $parts" else ""))
+                    }
                 }
                 if (playbackState == Player.STATE_ENDED) {
                     if (recMode) recEnded() else if (tsMode) tsGoLive("koniec bufora") else scheduleRestart("koniec strumienia")
@@ -2462,8 +2469,8 @@ class PlayerActivity : Activity() {
         val nowEpoch = System.currentTimeMillis()
         val nowWall = SystemClock.elapsedRealtime()
         fun wallOf(epochSec: Long) = nowWall - (nowEpoch - epochSec * 1000)
-        // każdy tryb bierze cały bufor (także audycję oglądaną wcześniej); „audycja” różni się tylko końcem wg EPG
-        val from = b.oldestOffset
+        // „audycja”: od jej początku wg EPG (wcześniejsze audycje z bufora pomijane), pozostałe — cały bufor
+        val from = if (mode == REC_EVENT && ev != null) b.offsetAt(wallOf(ev.begin)) else b.oldestOffset
         val dir = LocalRecordings.newDir(LocalRecordings.base(b.dir), ch.name, nowEpoch)
         val pin = b.startPin(dir, from)
         if (pin == null) { showMessage(getString(R.string.player_localrec_failed, b.failed ?: "?")); return }
@@ -2502,7 +2509,8 @@ class PlayerActivity : Activity() {
         r.meta.put("lengthSec", lengthSec).put("size", pin.bytes).put("done", true).put("end", reason)
         // spis audycji z dziennika bufora; „do teraz” / „do zmiany kanału” — także tytuł i opis
         val from = r.meta.optLong("begin")
-        val chapters = ProgramJournal.chapters(journal.snapshot(), from, from + lengthSec)
+        val chapters = ProgramJournal.chapters(journal.snapshot(), from, from + lengthSec,
+            minEdgeSec = if (r.mode == REC_EVENT) 90 else ProgramJournal.MIN_CHAPTER_SEC)
         if (chapters.isNotEmpty()) LocalRecordings.putChapters(r.meta, chapters)
         val desc = { ProgramJournal.describe(chapters, getString(R.string.player_localrec_from_middle), getString(R.string.player_localrec_no_end)) }
         if (r.mode != REC_EVENT && chapters.isNotEmpty()) {
@@ -2510,7 +2518,7 @@ class PlayerActivity : Activity() {
             r.meta.put("title", ProgramJournal.title(prefix, chapters))
             r.meta.put("desc", desc())
         } else if (r.mode == REC_EVENT && chapters.size > 1) {
-            r.meta.put("desc", desc())                 // tytuł zostaje — nagrywana audycja; w opisie także poprzednie z bufora
+            r.meta.put("desc", desc())                 // tytuł zostaje — nagrywana audycja (np. EPG zmienione w trakcie)
         }
         if (chapters.size > 1) AppLog.i("nagranie lokalne: audycje: " + chapters.joinToString(" | ") { "${ProgramJournal.hms(it.start)} ${it.title}" })
         LocalRecordings.writeMeta(pin.dir, r.meta)
@@ -2822,6 +2830,7 @@ class PlayerActivity : Activity() {
         ui.removeCallbacks(restartRunnable)
         restartPending = false
         recBqRef = if (LocalRecordings.isLocal(r.path)) REC_LOCAL_BOUQUET else REC_REF
+        recSeekWarned = false
         recChapters = if (LocalRecordings.isLocal(r.path))
             LocalRecordings.readMeta(LocalRecordings.dirOf(r.path))?.let { LocalRecordings.chapters(it) } ?: emptyList()
         else emptyList()
@@ -2877,9 +2886,15 @@ class PlayerActivity : Activity() {
         showRecordings()
     }
 
+    private var recSeekWarned = false
+
     private fun recSeek(deltaMs: Long) {
         val p = player ?: return
         val dur = p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+        if (!p.isCurrentMediaItemSeekable && !recSeekWarned) {
+            recSeekWarned = true
+            AppLog.i("nagranie: odtwarzacz nie pozwala przewijać (długość ${if (p.duration > 0) fmtMs(p.duration) else "nieznana"}, pozycja ${fmtMs(p.currentPosition)})")
+        }
         p.seekTo((p.currentPosition + deltaMs).coerceIn(0, maxOf(0, dur - 1000)))
         showRecBanner()
     }

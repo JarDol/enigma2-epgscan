@@ -70,4 +70,18 @@ class ProgramJournalTest {
         j.trimBefore(t0 + 10_000)
         assertEquals(listOf("C"), j.snapshot().map { it.title })
     }
+
+    @Test
+    fun eventModeDropsShortEdges() {
+        val ev = listOf(
+            JournalEvent(t0 - 3600, t0 + 40, "Poprzednia", ""),
+            JournalEvent(t0 + 40, t0 + 3640, "Film", "opis"),
+            JournalEvent(t0 + 3640, t0 + 7000, "Następna", ""),
+        )
+        val ch = ProgramJournal.chapters(ev, t0, t0 + 3700, minEdgeSec = 90)
+        assertEquals(listOf("Film"), ch.map { it.title })
+        assertEquals(0L, ch[0].start)
+        assertEquals(3700L, ch[0].end)
+        assertEquals(3, ProgramJournal.chapters(ev, t0, t0 + 3700).size)
+    }
 }

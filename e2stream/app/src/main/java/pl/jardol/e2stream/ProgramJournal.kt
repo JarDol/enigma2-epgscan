@@ -55,8 +55,9 @@ class ProgramJournal {
         /**
          * Audycje nagrania obejmującego [from]..[to] (sekundy epoki). Granice: początek audycji,
          * koniec = początek następnej zauważonej (ostatnia — do końca nagrania, nawet gdy wg ramówki już się skończyła).
+         * [minEdgeSec] — krótsze audycje na początku / końcu nagrania doliczane do sąsiedniej (tryb „audycja”).
          */
-        fun chapters(events: List<JournalEvent>, from: Long, to: Long): List<Chapter> {
+        fun chapters(events: List<JournalEvent>, from: Long, to: Long, minEdgeSec: Long = MIN_CHAPTER_SEC): List<Chapter> {
             if (to <= from) return emptyList()
             val ev = events.sortedBy { it.begin }
             val out = ArrayList<Chapter>()
@@ -69,6 +70,9 @@ class ProgramJournal {
                 if (t - s < MIN_CHAPTER_SEC) continue
                 out += Chapter(s - from, t - from, e.title, e.desc, cutStart = e.begin < from - 30, cutEnd = e.end > to + 30 && next == null)
             }
+            // skrawki na brzegach (minutowe kawałki bufora, zapas po końcu audycji) krótsze niż minEdgeSec — pomijane
+            while (out.size > 1 && out.first().let { it.end - it.start } < minEdgeSec) out.removeAt(0)
+            while (out.size > 1 && out.last().let { it.end - it.start } < minEdgeSec) out.removeAt(out.size - 1)
             // przerwy (brak danych) i nakładki: każda audycja zaczyna się tam, gdzie kończy poprzednia; pierwsza od 0
             for (i in out.indices) {
                 val c = out[i]
