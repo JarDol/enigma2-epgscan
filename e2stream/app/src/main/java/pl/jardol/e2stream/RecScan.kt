@@ -27,12 +27,19 @@ object RecScan {
         val syncLoss: Int,
         /** Pierwszy bajt nie jest początkiem pakietu TS. */
         val badStart: Boolean,
+        /** PCR_PID z pierwszego PMT (tak jak go bierze ExoPlayer); -1 — brak PMT. */
+        val pmtPcrPid: Int = -1,
+        /** Jak ExoPlayer: PCR (pid z PMT) w pierwszych / ostatnich [EXO_WINDOW] bajtach; null — nie znalazł. */
+        val exoFirstMs: Long? = null,
+        val exoLastMs: Long? = null,
     ) {
         /** Tak liczy długość ExoPlayer: ostatni − pierwszy PCR (ujemna = nagranie „nieprzewijalne”). */
         val playerMs get() = wrapMs(lastMs - firstMs)
     }
 
     private const val SYNC = 0x47
+    /** Tyle bajtów z początku i końca czyta ExoPlayer, szukając PCR do wyliczenia długości (600 pakietów). */
+    const val EXO_WINDOW = 600 * 188
     private const val MOD_MS = (1L shl 33) / 90
     const val MAX_JUMPS = 20
 
@@ -43,7 +50,112 @@ object RecScan {
         return x
     }
 
-    fun scan(files: List<File>): Result = scanStreams(files.map { { it.inputStream() } to it.length() })
+    fun scan(files: List<File>): Result {
+        val r = scanStreams(files.map { { it.inputStream() } to it.length() })
+        return try { withExoProbe(r, head(files), tail(files)) } catch (_: Exception) { r }
+    }
+
+    private fun head(files: List<File>): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        for (f in files) {
+            if (out.size() >= EXO_WINDOW) break
+            f.inputStream().use { inp ->
+                val b = ByteArray(minOf(EXO_WINDOW - out.size(), f.length().toInt().coerceAtLeast(0)))
+                var n = 0
+                while (n < b.size) { val k = inp.read(b, n, b.size - n); if (k <= 0) break; n += k }
+                out.write(b, 0, n)
+            }
+        }
+        return out.toByteArray()
+    }
+
+    private fun tail(files: List<File>): ByteArray {
+        var need = EXO_WINDOW.toLong()
+        val chunks = ArrayList<ByteArray>()
+        for (f in files.reversed()) {
+            if (need <= 0) break
+            val take = minOf(need, f.length())
+            java.io.RandomAccessFile(f, "r").use { r ->
+                val b = ByteArray(take.toInt())
+                r.seek(f.length() - take)
+                r.readFully(b)
+                chunks.add(0, b)
+            }
+            need -= take
+        }
+        return chunks.fold(ByteArray(0)) { a, b -> a + b }
+    }
+
+    /** Odtworzenie odczytu długości przez ExoPlayer (TsDurationReader): PCR_PID z PMT, PCR w oknie początku i końca. */
+    fun withExoProbe(r: Result, head: ByteArray, tail: ByteArray): Result {
+        val pcrPid = pmtPcrPid(head)
+        if (pcrPid < 0) return r.copy(pmtPcrPid = -1)
+        // początek: każdy bajt 0x47 (także nie na granicy pakietu), pierwszy pasujący PCR
+        var first: Long? = null
+        for (i in 0 until head.size - 11) {
+            if ((head[i].toInt() and 0xff) != SYNC) continue
+            val v = exoPcr(head, i, pcrPid)
+            if (v != null) { first = v; break }
+        }
+        // koniec: od końca, tylko pozycje wyglądające na początek pakietu
+        var last: Long? = null
+        var i = tail.size - 188
+        while (i >= 0) {
+            if ((tail[i].toInt() and 0xff) == SYNC && (i - 188 < 0 || (tail[i - 188].toInt() and 0xff) == SYNC) &&
+                (i + 188 >= tail.size || (tail[i + 188].toInt() and 0xff) == SYNC)) {
+                val v = exoPcr(tail, i, pcrPid)
+                if (v != null) { last = v; break }
+            }
+            i--
+        }
+        return r.copy(pmtPcrPid = pcrPid, exoFirstMs = first, exoLastMs = last)
+    }
+
+    /** Jak TsUtil.readPcrFromPacket: bez pakietów z TEI, PID = [pid], pole adaptacji ≥ 7 B z flagą PCR. */
+    private fun exoPcr(b: ByteArray, i: Int, pid: Int): Long? {
+        if (i + 11 >= b.size) return null
+        if ((b[i + 1].toInt() and 0x80) != 0) return null
+        val p = ((b[i + 1].toInt() and 0x1f) shl 8) or (b[i + 2].toInt() and 0xff)
+        if (p != pid || (b[i + 3].toInt() and 0x20) == 0) return null
+        if ((b[i + 4].toInt() and 0xff) < 7 || (b[i + 5].toInt() and 0x10) == 0) return null
+        val v = { k: Int -> (b[i + k].toLong() and 0xff) }
+        return ((v(6) shl 25) or (v(7) shl 17) or (v(8) shl 9) or (v(9) shl 1) or (v(10) shr 7)) / 90
+    }
+
+    /** PCR_PID pierwszego programu z PAT → jego PMT (pakiety na granicy 188 B od pierwszego synchronizowanego). */
+    fun pmtPcrPid(b: ByteArray): Int {
+        var start = 0
+        while (start + 376 < b.size && !((b[start].toInt() and 0xff) == SYNC && (b[start + 188].toInt() and 0xff) == SYNC)) start++
+        var pmtPid = -1
+        var o = start
+        while (o + 188 <= b.size) {
+            if ((b[o].toInt() and 0xff) == SYNC && (b[o + 1].toInt() and 0x40) != 0) {
+                val pid = ((b[o + 1].toInt() and 0x1f) shl 8) or (b[o + 2].toInt() and 0xff)
+                val afc = (b[o + 3].toInt() shr 4) and 3
+                var p = o + 4
+                if (afc == 2) { o += 188; continue }
+                if (afc == 3) p += 1 + (b[p].toInt() and 0xff)
+                if (p < o + 188) {
+                    p += 1 + (b[p].toInt() and 0xff)            // pointer_field
+                    if (pid == 0 && pmtPid < 0 && p + 8 < o + 188 && (b[p].toInt() and 0xff) == 0) {
+                        val len = ((b[p + 1].toInt() and 0x0f) shl 8) or (b[p + 2].toInt() and 0xff)
+                        var q = p + 8
+                        val end = minOf(p + 3 + len - 4, o + 188)
+                        while (q + 4 <= end) {
+                            val prog = ((b[q].toInt() and 0xff) shl 8) or (b[q + 1].toInt() and 0xff)
+                            val pp = ((b[q + 2].toInt() and 0x1f) shl 8) or (b[q + 3].toInt() and 0xff)
+                            if (prog != 0) { pmtPid = pp; break }
+                            q += 4
+                        }
+                    } else if (pmtPid >= 0 && pid == pmtPid && p + 10 < o + 188 && (b[p].toInt() and 0xff) == 2) {
+                        return ((b[p + 8].toInt() and 0x1f) shl 8) or (b[p + 9].toInt() and 0xff)
+                    }
+                }
+            }
+            o += 188
+        }
+        return -1
+    }
 
     /** [parts] — (otwarcie strumienia, długość) kolejnych kawałków. */
     fun scanStreams(parts: List<Pair<() -> InputStream, Long>>): Result {
@@ -136,9 +248,13 @@ object RecScan {
         val sb = StringBuilder()
         sb.append("${r.parts} plików, ${r.bytes / 1_000_000} MB, PCR pid ${r.pcrPid} (${r.pcrCount}×), ")
         sb.append("długość: wg nagrywania ${t(lengthSec * 1000)}, ciągła wg PCR ${t(r.continuousMs)}, ")
-        sb.append("wg odtwarzacza (ostatni−pierwszy PCR) ${t(r.playerMs)}")
-        if (r.playerMs <= 0) sb.append(" → NIEPRZEWIJALNE")
+        sb.append("ostatni−pierwszy PCR ${t(r.playerMs)}")
         if (r.badStart) sb.append(", początek nie na granicy pakietu")
+        if (r.pmtPcrPid >= 0 || r.exoFirstMs != null) {
+            sb.append(", ExoPlayer: PCR pid z PMT ${r.pmtPcrPid}, PCR na początku ${if (r.exoFirstMs != null) "jest" else "BRAK"}, na końcu ${if (r.exoLastMs != null) "jest" else "BRAK"}")
+            val f = r.exoFirstMs; val l = r.exoLastMs
+            if (f != null && l != null) sb.append(" → długość ${t(wrapMs(l - f))}") else sb.append(" → NIEPRZEWIJALNE")
+        } else sb.append(", ExoPlayer: brak PMT w pierwszych ${EXO_WINDOW / 1000} kB")
         if (r.syncLoss > 0) sb.append(", utrata synchronizacji ×${r.syncLoss}")
         if (r.jumpCount == 0) sb.append(", zegar ciągły") else {
             sb.append(", skoki zegara ×${r.jumpCount}: ")

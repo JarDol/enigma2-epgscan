@@ -48,7 +48,6 @@ class RecScanTest {
         assertEquals(564L, r.jumps[0].offset)
         assertTrue(r.playerMs < 0)
         val d = RecScan.describe(r, 48)
-        assertTrue(d, d.contains("NIEPRZEWIJALNE"))
         assertTrue(d, d.contains("kawałek 1"))
     }
 
@@ -60,5 +59,29 @@ class RecScanTest {
         assertTrue(r.badStart)
         assertEquals(2L, r.pcrCount)
         assertEquals(0, r.jumpCount)
+    }
+
+    private fun psi(pid: Int, table: ByteArray): ByteArray {
+        val p = ByteArray(188) { 0xff.toByte() }
+        p[0] = 0x47; p[1] = (0x40 or (pid shr 8)).toByte(); p[2] = pid.toByte(); p[3] = 0x10; p[4] = 0
+        System.arraycopy(table, 0, p, 5, table.size)
+        return p
+    }
+
+    @Test
+    fun exoProbeFindsPcrPidAndWindows() {
+        // PAT: program 1 → PMT pid 0x100; PMT: PCR_PID 534
+        val pat = byteArrayOf(0, 0xb0.toByte(), 13, 0, 1, 0xc1.toByte(), 0, 0, 0, 1, 0xe1.toByte(), 0, 0, 0, 0, 0)
+        val pmt = byteArrayOf(2, 0xb0.toByte(), 13, 0, 1, 0xc1.toByte(), 0, 0, (0xe0 or (534 shr 8)).toByte(), (534 and 0xff).toByte(), 0xf0.toByte(), 0, 0, 0, 0, 0)
+        val head = psi(0, pat) + psi(0x100, pmt) + stream(1000, 1040)
+        val tail = stream(9000, 9040)
+        val r0 = RecScan.scanStreams(listOf(part(head)))
+        val r = RecScan.withExoProbe(r0, head, tail)
+        assertEquals(534, r.pmtPcrPid)
+        assertEquals(1000L, r.exoFirstMs)
+        assertEquals(9040L, r.exoLastMs)
+        assertTrue(RecScan.describe(r, 8).contains("PCR na początku jest, na końcu jest"))
+        val noTail = RecScan.withExoProbe(r0, head, ByteArray(188 * 3) { if (it % 188 == 0) 0x47 else 0 })
+        assertTrue(RecScan.describe(noTail, 8).contains("na końcu BRAK → NIEPRZEWIJALNE"))
     }
 }

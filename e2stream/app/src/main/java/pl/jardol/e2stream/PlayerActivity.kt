@@ -2577,6 +2577,8 @@ class PlayerActivity : Activity() {
      * Diagnostyka: przegląd zegara PCR całego nagrania w tle (niski priorytet), wynik do logu i do opisu nagrania
      * (pole "scan" — przy następnym odtwarzaniu bez ponownego czytania plików).
      */
+    private val SCAN_V = 2
+
     private fun scanRecording(dir: File, title: String) {
         Thread({
             try {
@@ -2587,7 +2589,7 @@ class PlayerActivity : Activity() {
                 val meta = LocalRecordings.readMeta(dir) ?: org.json.JSONObject()
                 val d = RecScan.describe(res, meta.optLong("lengthSec"))
                 AppLog.i("nagranie: skan zegara „$title” (${SystemClock.elapsedRealtime() - t0} ms): $d")
-                meta.put("scan", d)
+                meta.put("scan", d).put("scanV", SCAN_V)
                 LocalRecordings.writeMeta(dir, meta)
             } catch (e: Exception) {
                 AppLog.i("nagranie: skan zegara nieudany ($e)")
@@ -2866,8 +2868,9 @@ class PlayerActivity : Activity() {
         recSeekWarned = false
         if (LocalRecordings.isLocal(r.path)) {
             val dir = LocalRecordings.dirOf(r.path)
-            val done = LocalRecordings.readMeta(dir)?.optString("scan").orEmpty()
-            if (done.isEmpty()) scanRecording(dir, r.title) else AppLog.i("nagranie: skan zegara (zapisany): $done")
+            val m = LocalRecordings.readMeta(dir)
+            val done = m?.optString("scan").orEmpty()
+            if (done.isEmpty() || m?.optInt("scanV") != SCAN_V) scanRecording(dir, r.title) else AppLog.i("nagranie: skan zegara (zapisany): $done")
         }
         recChapters = if (LocalRecordings.isLocal(r.path))
             LocalRecordings.readMeta(LocalRecordings.dirOf(r.path))?.let { LocalRecordings.chapters(it) } ?: emptyList()
