@@ -2462,7 +2462,8 @@ class PlayerActivity : Activity() {
         val nowEpoch = System.currentTimeMillis()
         val nowWall = SystemClock.elapsedRealtime()
         fun wallOf(epochSec: Long) = nowWall - (nowEpoch - epochSec * 1000)
-        val from = if (mode == REC_EVENT && ev != null) b.offsetAt(wallOf(ev.begin)) else b.oldestOffset
+        // każdy tryb bierze cały bufor (także audycję oglądaną wcześniej); „audycja” różni się tylko końcem wg EPG
+        val from = b.oldestOffset
         val dir = LocalRecordings.newDir(LocalRecordings.base(b.dir), ch.name, nowEpoch)
         val pin = b.startPin(dir, from)
         if (pin == null) { showMessage(getString(R.string.player_localrec_failed, b.failed ?: "?")); return }
@@ -2503,10 +2504,13 @@ class PlayerActivity : Activity() {
         val from = r.meta.optLong("begin")
         val chapters = ProgramJournal.chapters(journal.snapshot(), from, from + lengthSec)
         if (chapters.isNotEmpty()) LocalRecordings.putChapters(r.meta, chapters)
+        val desc = { ProgramJournal.describe(chapters, getString(R.string.player_localrec_from_middle), getString(R.string.player_localrec_no_end)) }
         if (r.mode != REC_EVENT && chapters.isNotEmpty()) {
             val prefix = "${r.ch.name} ${hm.format(Date(from * 1000))}–${hm.format(Date((from + lengthSec) * 1000))}"
             r.meta.put("title", ProgramJournal.title(prefix, chapters))
-            r.meta.put("desc", ProgramJournal.describe(chapters, getString(R.string.player_localrec_from_middle), getString(R.string.player_localrec_no_end)))
+            r.meta.put("desc", desc())
+        } else if (r.mode == REC_EVENT && chapters.size > 1) {
+            r.meta.put("desc", desc())                 // tytuł zostaje — nagrywana audycja; w opisie także poprzednie z bufora
         }
         if (chapters.size > 1) AppLog.i("nagranie lokalne: audycje: " + chapters.joinToString(" | ") { "${ProgramJournal.hms(it.start)} ${it.title}" })
         LocalRecordings.writeMeta(pin.dir, r.meta)

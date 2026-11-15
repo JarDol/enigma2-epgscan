@@ -15,7 +15,7 @@ import java.io.RandomAccessFile
  * bufora są przenoszone, nie kopiowane). Każde nagranie to katalog z part-00001.ts… i opisem meta.json.
  */
 /** Rodzaj nagrania lokalnego. */
-const val REC_EVENT = 0          // bieżąca audycja (od jej początku w buforze do końca wg EPG)
+const val REC_EVENT = 0          // cały bufor do końca bieżącej audycji wg EPG
 const val REC_NOW = 1            // bufor do teraz
 const val REC_UNTIL_ZAP = 2      // cały bufor i dalej, do zmiany kanału
 

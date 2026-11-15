@@ -84,7 +84,7 @@
     <string name="player_localrec_internal_consent">The timeshift buffer is in device storage, so recordings will be stored there too (they wear the flash memory). Allow recordings in device storage?</string>
     <string name="player_localrec_allow">Allow</string>
     <string name="player_localrec_limit_reached">Recordings already use %2$s of %3$s – the limit is %1$d%% of the storage capacity (the rest is for timeshift). Delete older recordings or change the limit in settings.</string>
-    <string name="player_localrec_event">Programme: %1$s (%2$s–%3$s)</string>
+    <string name="player_localrec_event">Buffer until the end of: %1$s (%2$s–%3$s)</string>
     <string name="player_localrec_buffer_now">Buffer until now (%1$s)</string>
     <string name="player_localrec_buffer_until_zap">Whole buffer until channel change</string>
     <string name="player_localrec_failed">Could not start recording (%1$s)</string>

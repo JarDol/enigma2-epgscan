@@ -126,7 +126,7 @@ PIN do ustawień może mieć maksymalnie 6 cyfr. Historię przełączeń można 
 Pasek timeshiftu pozostaje na ekranie w czasie pauzy, a po wznowieniu znika po czasie ustawionym w Ogólnych.
 
 **Nagrania lokalne z bufora timeshiftu.** Menu (długie OK przy schowanym pasku) → *Nagraj…* / *Zatrzymaj nagrywanie* (pozycje na górze, do ukrycia w konfiguracji menu); długie OK na pasku timeshiftu otwiera od razu wybór nagrania:
-*Audycja* (od początku bieżącej audycji w buforze do jej końca wg EPG, +1 min), *Bufor do teraz* (natychmiast) albo
+*Bufor do końca audycji* (cały bufor, także audycje oglądane wcześniej, do końca bieżącej audycji wg EPG, +1 min), *Bufor do teraz* (natychmiast) albo
 *Cały bufor do zmiany kanału*. Kawałki bufora nie są kopiowane — przenoszone (zmiana nazwy) do katalogu `nagrania/`
 obok katalogu bufora (ten sam nośnik); po zakończeniu nagrania timeshift zaczyna od nowa, a odtwarzanie z bufora wraca na żywo.
 Podczas nagrywania pasek pokazuje *● REC*, a pierwszą pozycją menu długiego OK jest *Zatrzymaj nagrywanie*. Nagranie kończy się
