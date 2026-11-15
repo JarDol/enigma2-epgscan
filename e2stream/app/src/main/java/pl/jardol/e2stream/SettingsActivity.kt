@@ -131,6 +131,7 @@ class SettingsActivity : Activity() {
         num(getString(R.string.setting_playback_buffer_ms), { p.rebufferMs }, { p.rebufferMs = it }, 1000..15_000),
         Item.Toggle(getString(R.string.setting_build_buffer_by_slowing_playback_slightly_5_without_tun), { p.cushionSlow }, { p.cushionSlow = it }),
     )) + listOf(
+        Item.Toggle(getString(R.string.setting_keep_frame_on_zap), { p.keepFrame }, { p.keepFrame = it }),
         Item.Toggle(getString(R.string.setting_restart_frozen_video_watchdog), { p.watchdog }, { p.watchdog = it }),
         num(getString(R.string.setting_freeze_after_seconds_without_new_frames), { p.stallSec }, { p.stallSec = it }, 1..30),
         num(getString(R.string.setting_startup_buffer_ms_fast_picture), { p.bufferMs }, { p.bufferMs = it }, 250..10_000),

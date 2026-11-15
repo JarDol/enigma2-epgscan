@@ -110,4 +110,5 @@
     <string name="setting_app_storage" formatted="false">Pamięć zajmowana przez aplikację</string>
     <string name="setting_app_storage_value" formatted="false">pokaż</string>
     <string name="setting_fast_channel_start" formatted="false">Przyspiesz start kanałów</string>
+    <string name="setting_keep_frame_on_zap" formatted="false">Zostaw obraz poprzedniego kanału do pojawienia się nowego</string>
 </resources>

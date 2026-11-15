@@ -110,4 +110,5 @@
     <string name="setting_app_storage" formatted="false">Storage used by the app</string>
     <string name="setting_app_storage_value" formatted="false">show</string>
     <string name="setting_fast_channel_start" formatted="false">Faster channel start</string>
+    <string name="setting_keep_frame_on_zap" formatted="false">Keep the previous channel picture until the new one appears</string>
 </resources>

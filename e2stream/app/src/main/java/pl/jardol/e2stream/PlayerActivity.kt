@@ -274,6 +274,7 @@ class PlayerActivity : Activity() {
 
         playerView = findViewById(R.id.playerView)
         vlcLayout = findViewById(R.id.vlcLayout)
+        zapFrame = findViewById(R.id.zapFrame)
         panel = findViewById(R.id.panel)
         panelTitle = findViewById(R.id.panelTitle)
         list = findViewById(R.id.list)
@@ -709,6 +710,8 @@ class PlayerActivity : Activity() {
             }
 
             override fun onTracksChanged(tracks: Tracks) {
+                // kanał bez obrazu (radio) — stary obraz nie czeka na pierwszą klatkę, której nie będzie
+                if (!tracks.isEmpty && tracks.groups.none { it.type == C.TRACK_TYPE_VIDEO }) hideZapFrame()
                 val aud = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
                 if (aud.isNotEmpty() && aud.none { it.isSelected }) {
                     val available = audioTracks().firstOrNull()
@@ -1162,6 +1165,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun logFirstStreamFrame(source: String) {
+        hideZapFrame()
         if (firstStreamFrameLogged || streamStartAt <= 0) return
         logFirstStreamByte()
         val now = SystemClock.elapsedRealtime()
@@ -1603,12 +1607,87 @@ class PlayerActivity : Activity() {
         watchdog?.paused = false
         analyzer?.takeScramble()
         AppLog.i("kanał: ${ch.num} ${ch.name} [${bouquets.getOrNull(bIdx)?.name}] ${api.streamUrl(ch)}")
-        startStream(api.streamUrl(ch))
+        val gen = ++zapGen
+        keepFrameThen { if (gen == zapGen) startStream(api.streamUrl(ch)) }
         showBanner(ch)
         fetchNow(ch)
     }
 
     private fun play(index: Int) = playIn(playBouquet, playList, index)
+
+    // --- obraz poprzedniego kanału na czas przełączania (jak w wersji Windows): zamiast czarnego ekranu
+    private lateinit var zapFrame: android.widget.ImageView
+    private var zapGen = 0
+    private var zapFrameBitmap: android.graphics.Bitmap? = null
+    private var keepFrameLoggedFail = false
+    private val zapFrameTimeout = Runnable { hideZapFrame() }
+
+    private fun findSurface(v: View): android.view.SurfaceView? = when (v) {
+        is android.view.SurfaceView -> v.takeIf { it.visibility == View.VISIBLE && it.width > 0 && it.height > 0 }
+        is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { findSurface(v.getChildAt(it)) }
+        else -> null
+    }
+
+    /** Czy kopia klatki jest czarna / pusta (obraz w tunelu albo na nakładce sprzętowej nie daje się skopiować). */
+    private fun isBlank(b: android.graphics.Bitmap): Boolean {
+        for (y in 1..7) for (x in 1..7) {
+            val c = b.getPixel(b.width * x / 8, b.height * y / 8)
+            if ((c shr 16 and 0xff) > 24 || (c shr 8 and 0xff) > 24 || (c and 0xff) > 24) return false
+        }
+        return true
+    }
+
+    /**
+     * Przed zmianą kanału: kopia ostatniej klatki (PixelCopy z powierzchni obrazu) pokazana do pierwszej klatki
+     * nowego kanału; potem [go]. Najwyżej ~150 ms opóźnienia; gdy kopia się nie uda (np. tunelowanie) — od razu.
+     */
+    private fun keepFrameThen(go: () -> Unit) {
+        if (!prefs.keepFrame || recMode || Build.VERSION.SDK_INT < 24) { hideZapFrame(); go(); return }
+        if (zapFrame.visibility == View.VISIBLE) { armZapFrameTimeout(); go(); return }   // szybkie przełączanie — stary obraz zostaje
+        val sv = (if (vlcLayout.visibility == View.VISIBLE) findSurface(vlcLayout) else playerView.videoSurfaceView as? android.view.SurfaceView)
+            ?.takeIf { it.holder.surface.isValid && it.width > 0 && it.height > 0 }
+        if (sv == null || !firstStreamFrameLogged) { go(); return }
+        val w = 960
+        val h = (w.toLong() * sv.height / sv.width).toInt().coerceIn(1, 1080)
+        val bmp = try { android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888) } catch (_: Throwable) { go(); return }
+        var done = false
+        val t0 = SystemClock.elapsedRealtime()
+        val finish = finish@{ ok: Boolean ->
+            if (done) return@finish
+            done = true
+            if (ok && !isBlank(bmp)) {
+                zapFrameBitmap = bmp
+                zapFrame.setImageBitmap(bmp)
+                zapFrame.visibility = View.VISIBLE
+                armZapFrameTimeout()
+                AppLog.i("przełączanie: obraz poprzedniego kanału zachowany (${SystemClock.elapsedRealtime() - t0} ms)")
+            } else if (!keepFrameLoggedFail) {
+                keepFrameLoggedFail = true
+                AppLog.i("przełączanie: obrazu nie da się skopiować" + (if (prefs.tunneling && vlcLayout.visibility != View.VISIBLE) " (tunelowanie)" else "") +
+                    " — czarny ekran do pierwszej klatki")
+            }
+            go()
+        }
+        try {
+            android.view.PixelCopy.request(sv, bmp, { r -> finish(r == android.view.PixelCopy.SUCCESS) }, ui)
+        } catch (_: Exception) {
+            finish(false); return
+        }
+        ui.postDelayed({ finish(false) }, 150)
+    }
+
+    private fun armZapFrameTimeout() {
+        ui.removeCallbacks(zapFrameTimeout)
+        ui.postDelayed(zapFrameTimeout, 12_000)       // brak obrazu nowego kanału (radio, błąd) — nie wisieć ze starym
+    }
+
+    private fun hideZapFrame() {
+        if (!::zapFrame.isInitialized || zapFrame.visibility != View.VISIBLE) return
+        ui.removeCallbacks(zapFrameTimeout)
+        zapFrame.visibility = View.GONE
+        zapFrame.setImageDrawable(null)
+        zapFrameBitmap = null
+    }
 
     private fun recall() {
         val ref = prevRef ?: return

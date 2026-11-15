@@ -275,6 +275,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("fastStart", true)
         set(v) = putB("fastStart", v)
 
+    /** Przy przełączaniu kanału ostatnia klatka poprzedniego zostaje na ekranie do pojawienia się nowego obrazu. */
+    var keepFrame: Boolean
+        get() = sp.getBoolean("keepFrame", true)
+        set(v) = putB("keepFrame", v)
+
     var dropRestart: Boolean
         get() = sp.getBoolean("dropRestart", true)
         set(v) = putB("dropRestart", v)
@@ -376,7 +381,7 @@ class Prefs(ctx: Context) {
      * (lekkie zwolnienie) i tyle czeka po niedoborze. Klucz „rebufferMs” zostaje dla synchronizacji.
      */
     var rebufferMs: Int
-        get() = sp.getInt("rebufferMs", 4000)
+        get() = sp.getInt("rebufferMs", 4500)
         set(v) = putI("rebufferMs", v)
 
     /** Wygląd (%): lista kanałów — czcionka i ikony, EPG, pasek kanału. */

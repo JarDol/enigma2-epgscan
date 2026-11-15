@@ -25,6 +25,17 @@
         android:focusable="false"
         android:visibility="gone" />
 
+    <!-- ostatnia klatka poprzedniego kanału na czas przełączania (zamiast czarnego ekranu) -->
+    <ImageView
+        android:id="@+id/zapFrame"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:focusable="false"
+        android:importantForAccessibility="no"
+        android:scaleType="fitCenter"
+        android:visibility="gone" />
+
     <!-- Lista kanałów: cały ekran, 3/4 lista, 1/4 bieżąca audycja zaznaczonego kanału -->
     <LinearLayout
         android:id="@+id/panel"
