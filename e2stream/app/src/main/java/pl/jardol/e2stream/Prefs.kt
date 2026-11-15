@@ -162,6 +162,11 @@ class Prefs(ctx: Context) {
         get() = s("storageDir")
         set(v) = putS("storageDir", v)
 
+    /** Miejsce logów ustawione automatycznie (za dyskiem timeshiftu), a nie ręcznie. */
+    var storageDirAuto: Boolean
+        get() = sp.getBoolean("storageDirAuto", false)
+        set(v) = putB("storageDirAuto", v)
+
     /** Zapis ostatnich sekund strumienia TS przy zawieszeniu. */
     var saveTs: Boolean
         get() = sp.getBoolean("saveTs", true)

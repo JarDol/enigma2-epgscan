@@ -245,6 +245,7 @@ class PlayerActivity : Activity() {
         api = OpenWebif(prefs)
         prefs.migrate()
         AppLog.init(this, Storage.dir(this, prefs))
+        if (Storage.followTimeshift(prefs)) AppLog.init(this, Storage.dir(this, prefs))
         tsCleanupAtStart()
         val appCtx = applicationContext
         val storePrefs = prefs

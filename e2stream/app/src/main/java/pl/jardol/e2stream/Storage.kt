@@ -36,9 +36,30 @@ object Storage {
         val p = prefs.storageDir
         if (p.isNotBlank()) {
             val f = File(p)
-            if ((f.isDirectory || f.mkdirs()) && f.canWrite()) return f
+            // dysk odłączony (pusty punkt montowania) — zapis w pamięci urządzenia, do ponownego podłączenia
+            if (mounted(f) && (f.isDirectory || f.mkdirs()) && f.canWrite()) return f
         }
         return ctx.getExternalFilesDir(null) ?: ctx.filesDir
+    }
+
+    private fun mounted(f: File): Boolean = try {
+        f.absolutePath.startsWith("/data/") || Environment.getExternalStorageState(f) == Environment.MEDIA_MOUNTED
+    } catch (_: Exception) { false }
+
+    /**
+     * Logi i zrzuty za dyskiem timeshiftu: po wybraniu dysku na timeshift (i przy starcie dla wcześniejszych
+     * ustawień) miejsce logów przechodzi na ten dysk — chyba że użytkownik wybrał je ręcznie. Gdy timeshift
+     * wraca do pamięci urządzenia, logi też. Odłączony dysk: [dir] zapisuje w pamięci urządzenia.
+     */
+    fun followTimeshift(prefs: Prefs): Boolean {
+        val manual = prefs.storageDir.isNotBlank() && !prefs.storageDirAuto
+        if (manual) return false
+        val want = prefs.tsDir
+        if (prefs.storageDir == want) return false
+        prefs.storageDir = want
+        prefs.storageDirAuto = want.isNotBlank()
+        AppLog.i("logi i zrzuty: miejsce za dyskiem timeshiftu → ${want.ifBlank { "pamięć urządzenia" }}")
+        return true
     }
 
     /** Usuwa najstarsze pliki o danym prefiksie, zostawiając [keep] najnowszych. */

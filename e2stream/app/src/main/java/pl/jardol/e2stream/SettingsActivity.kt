@@ -677,6 +677,7 @@ class SettingsActivity : Activity() {
             toast(getString(R.string.ts_capacity_recommended, fmtMin(fit), fmtMin(rec)))
         }
         markChanged("timeshift: miejsce = ${path.ifBlank { "pamięć urządzenia" }}")
+        if (Storage.followTimeshift(p)) AppLog.init(this, Storage.dir(this, p))
         items = buildItems(); refresh()
     }
 
@@ -737,7 +738,8 @@ class SettingsActivity : Activity() {
     private fun chooseStorage() {
         val opts = Storage.options(this)
         TvDialog.single(this, getString(R.string.message_log_and_ts_dump_storage_location), opts.map { it.label }, opts.indexOfFirst { it.path == p.storageDir }) { w ->
-            p.storageDir = opts[w].path; markChanged("zapis = ${opts[w].path}")
+            p.storageDir = opts[w].path; p.storageDirAuto = false; markChanged("zapis = ${opts[w].path}")
+            AppLog.init(this, Storage.dir(this, p))
         }
     }
 
