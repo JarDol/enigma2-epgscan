@@ -254,8 +254,11 @@ def state(dev_id, old_id=None):
 
 # ustawienia zalezne od urzadzenia (silnik, obraz, bufory, wyglad) - nie trafiaja do czesci wspolnej,
 # nowy odbiornik dostaje dla nich wartosci domyslne aplikacji, a nie ustawienia innego telewizora
+# ustawienia usuniete z E2Stream - znikaja z plikow odbiornikow i czesci wspolnej przy najblizszej synchronizacji
+REMOVED = set(["exoFps"])
+
 DEVICE_ONLY = set([
-	"engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps",
+	"engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma",
 	"uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon",
 	"bufferMs", "rebufferMs", "cushionSlow", "afrMode", "stallSec", "dropRestart", "watchdog",
 	"showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3", "discoverySubnet",
@@ -287,8 +290,14 @@ def push(dev_id, body):
 		old = cdata.get(k)
 		if old is None or int(e.get("t", 0)) >= int(old.get("t", 0)):
 			cdata[k] = e
+	for k in [k for k in cdata if k in REMOVED]:
+		del cdata[k]
 	cur["data"] = cdata
 	cur["device"] = dev.get("device") or cur.get("device") or {}
+	backup = cur["device"].get("backup")
+	if isinstance(backup, dict):
+		for k in [k for k in backup if k in REMOVED]:
+			del backup[k]
 	cur["device"]["seen"] = _now_ms()
 	_save(path, cur)
 
@@ -296,7 +305,7 @@ def push(dev_id, body):
 	for k, e in list(data.items()) + list((body.get("common_add") or {}).items()):
 		if not isinstance(e, dict):
 			continue
-		if k in DEVICE_ONLY:
+		if k in DEVICE_ONLY or k in REMOVED:
 			continue
 		old = cd.get(k)
 		if _is_pmt(k):
@@ -306,7 +315,7 @@ def push(dev_id, body):
 		elif old is None:
 			cd[k] = e      # domyslne dla nowych odbiornikow
 			changed = True
-	for k in [k for k in cd if k in DEVICE_ONLY]:      # sprzatanie po starszych wersjach
+	for k in [k for k in cd if k in DEVICE_ONLY or k in REMOVED]:      # sprzatanie po starszych wersjach
 		del cd[k]
 		changed = True
 	if changed or "data" not in common:

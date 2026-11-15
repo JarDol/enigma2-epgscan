@@ -2,6 +2,7 @@
 
 ## EPG Scan (wtyczka Enigma2)
 
+- **2.19.2** – synchronizacja E2Stream: usunięte z aplikacji ustawienie „liczba klatek dla dekodera” (`exoFps`) znika z plików odbiorników, kopii ustawień i części wspólnej
 - **2.19.1** – serwer dla E2Stream: `/api/info` podaje ustawienie Enigma2 „Include EIT in http streams” (dla opcji EIT w aplikacji); czytelne nazwy profili Androida `device-android-<model>-<znacznik>.json` – dawny `device-<ANDROID_ID>.json` przenoszony raz przy synchronizacji
 - **2.19.0** – wszystkie pliki wtyczki w `/etc/enigma2/epgscan/` (pliki SatWatch z przedrostkiem `satwatch-`) i w katalogu kopii (`satwatch.log` obok `epgscan.log`, raporty w `raporty/`); stare miejsca przenoszone raz przy starcie; wspólne ustawienie „Logi i raporty: usuwaj starsze niż” dla EPG Scan i SatWatch; naprawione zapamiętywanie preferowanego tunera SatWatch
 - **2.18.3** – SatWatch: metoda okna decyzji nie zasłania `dict.update` ekranu (zapobiegawczo)

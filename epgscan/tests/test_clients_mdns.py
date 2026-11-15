@@ -100,6 +100,19 @@ class ClientMigrationTests(unittest.TestCase):
 		backup = next(name for name in os.listdir(self.directory.name) if name.startswith("device-tv.json.bak-"))
 		self.assertEqual(self.read(backup), original)
 
+	def test_push_drops_removed_settings_from_profile_backup_and_common(self):
+		self.write("device-tv.json", {"data": {"exoFps": {"v": 25, "t": 1}, "engine": {"v": "exo", "t": 1}},
+			"device": {"backup": {"exoFps": 25}}})
+		self.write("common.json", {"data": {"exoFps": {"v": 25, "t": 1}, "pin": {"v": "", "t": 1}}})
+		body = {"device": {"device": {"name": "TV", "backup": {"exoFps": 50, "engine": "exo"}},
+			"data": {"exoFps": {"v": 50, "t": 9}, "engine": {"v": "exo", "t": 2}}}}
+		result = clients.push("tv", body)
+		self.assertNotIn("exoFps", result["device"]["data"])
+		self.assertNotIn("exoFps", result["device"]["device"]["backup"])
+		self.assertEqual(self.read("device-tv.json")["data"]["engine"]["v"], "exo")
+		self.assertNotIn("exoFps", self.read("common.json")["data"])
+		self.assertIn("pin", self.read("common.json")["data"])
+
 	def test_failed_backup_aborts_push_without_losing_profile_or_common(self):
 		original = {"data": {"pmts_10": {"v": "old"}, "audio_x": {"v": "keep"}}}
 		self.write("device-tv.json", original)
