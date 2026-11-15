@@ -112,13 +112,17 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
                 lockedWidth = requestedWidth
                 lockedHeight = requestedHeight
             }
+            if (onUhd != null && lockedWidth >= UHD_WIDTH) runCatching { onUhd?.invoke() }
+            if (yuvMode) return yuvFormat(requestedWidth, requestedHeight)
+            yuvState.value = null
             val (outWidth, outHeight) = frameSize(lockedWidth, lockedHeight, if (fullResolution) null else screenPixels())
-            if (outWidth == width && outHeight == height && bitmaps.isNotEmpty()) {
+            if (outWidth == width && outHeight == height && bitmaps.isNotEmpty() && !lastWasYuv) {
                 if (formatCalls == 2 || formatCalls % 500 == 0) AppLog.i("obraz: ponowne ustawienie formatu ($formatCalls×, VLC podał ${requestedWidth}x$requestedHeight)")
                 return BufferFormat("RV32", outWidth, outHeight, intArrayOf(outWidth * 4), intArrayOf(outHeight))
             }
             width = outWidth
             height = outHeight
+            lastWasYuv = false
             // RV32 = BGRX w pamięci, jak natywny format Skia na Windows (bez przeliczania przy rysowaniu);
             // OPAQUE — czwarty bajt (pusty w RV32) nie jest traktowany jako przezroczystość.
             val info = ImageInfo(outWidth, outHeight, ColorType.BGRA_8888, ColorAlphaType.OPAQUE)
@@ -137,6 +141,10 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
 
     override fun display(mediaPlayer: uk.co.caprica.vlcj.player.base.MediaPlayer, nativeBuffers: Array<out ByteBuffer>, bufferFormat: BufferFormat) {
         synchronized(this) {
+            if (lastWasYuv) {
+                displayYuv(nativeBuffers)
+                return
+            }
             if (bitmaps.isEmpty()) return
             val bitmap = bitmaps[next]
             next = (next + 1) % bitmaps.size
@@ -156,9 +164,65 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
 
     fun clear() {
         frame.value = null
+        yuvState.value = null
+    }
+
+    // ---------- Tryb YUV: VLC oddaje płaszczyzny 4:2:0 bez przeliczania na RGB, kolory i skalowanie liczy karta graficzna ----------
+
+    /** Klatki YUV (I420) zamiast RGB — przeliczanie na kolory ekranu w shaderze przy rysowaniu. */
+    @Volatile var yuvMode = false
+    /** Bieżąca klatka YUV (wątek rysowania czyta płaszczyzny pod blokadą tego obiektu). */
+    val yuvState = mutableStateOf<YuvFrame?>(null)
+    /** Wywoływane przy formacie obrazu ≥ 3840 px szerokości (lżejsze dekodowanie 4K). */
+    @Volatile var onUhd: (() -> Unit)? = null
+    private var lastWasYuv = false
+    private var yuvSets: Array<Array<Bitmap>> = emptyArray()
+    private var yuvNext = 0
+    private var yuvSeq = 0L
+
+    private fun yuvFormat(requestedWidth: Int, requestedHeight: Int): BufferFormat {
+        val w = (requestedWidth + 1) and 1.inv()
+        val h = (requestedHeight + 1) and 1.inv()
+        val cw = w / 2
+        val ch = h / 2
+        if (!(lastWasYuv && w == width && h == height && yuvSets.isNotEmpty())) {
+            width = w
+            height = h
+            lastWasYuv = true
+            frame.value = null
+            fun plane(pw: Int, ph: Int) = Bitmap().apply { allocPixels(ImageInfo(pw, ph, ColorType.GRAY_8, ColorAlphaType.OPAQUE)) }
+            yuvSets = Array(3) { arrayOf(plane(w, h), plane(cw, ch), plane(cw, ch)) }
+            yuvNext = 0
+            bitmaps = emptyArray()
+            AppLog.i("obraz: format klatek ${w}x$h YUV 4:2:0 — kolory i skalowanie na karcie graficznej (VLC podał ${requestedWidth}x$requestedHeight)")
+        } else if (formatCalls == 2 || formatCalls % 500 == 0) {
+            AppLog.i("obraz: ponowne ustawienie formatu ($formatCalls×, VLC podał ${requestedWidth}x$requestedHeight)")
+        }
+        return BufferFormat("I420", w, h, intArrayOf(w, cw, cw), intArrayOf(h, ch, ch))
+    }
+
+    private fun displayYuv(nativeBuffers: Array<out ByteBuffer>) {
+        if (yuvSets.isEmpty() || nativeBuffers.size < 3) return
+        val set = yuvSets[yuvNext]
+        yuvNext = (yuvNext + 1) % yuvSets.size
+        for (plane in 0 until 3) {
+            val pixmap = set[plane].peekPixels() ?: return
+            val size = minOf(pixmap.rowBytes.toLong() * set[plane].height, nativeBuffers[plane].capacity().toLong())
+            val source = nativeBuffers[plane].duplicate().apply { rewind(); limit(size.toInt()) }
+            Pointer(pixmap.addr).getByteBuffer(0, size).put(source)
+            set[plane].notifyPixelsChanged()
+        }
+        yuvState.value = YuvFrame(set, width, height, ++yuvSeq)
+        if (count.incrementAndGet() == 1L) AppLog.i("obraz: pierwsza klatka ${width}x$height (YUV)")
+        if (awaitingFirst) {
+            awaitingFirst = false
+            runCatching { onFirstFrame?.invoke() }
+        }
     }
 
     companion object {
+        const val UHD_WIDTH = 3000
+
         /** Rozdzielczość ekranu w pikselach (największy monitor). */
         fun screenPixels(): Pair<Int, Int>? = runCatching {
             java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
@@ -183,7 +247,9 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
 
     fun close() = synchronized(this) {
         frame.value = null
+        yuvState.value = null
         bitmaps = emptyArray()
+        yuvSets = emptyArray()
     }
 }
 
@@ -222,6 +288,25 @@ class VlcSession(private val onError: (String) -> Unit) {
             throw IllegalStateException("Nie można załadować bibliotek VLC. Sprawdź instalację VLC 64-bit.", e)
         }
         player.videoSurface().set(factory.videoSurfaces().newVideoSurface(frames, frames, true))
+        // Obraz 4K wykryty po formacie (nazwa kanału bez „4K”): jednorazowe wznowienie z lżejszym dekodowaniem.
+        frames.onUhd = {
+            if (lightMode == "uhd" && !uhdHint && !uhdDetected) {
+                uhdDetected = true
+                val url = lastUrl
+                val generation = playGeneration
+                if (url != null && LIGHT_DECODE_OPTION !in lastOptions) {
+                    AppLog.i("obraz: kanał 4K — lżejsze dekodowanie (bez filtra wygładzającego), wznawiam strumień")
+                    val options = lastOptions + LIGHT_DECODE_OPTION
+                    lastOptions = options
+                    SwingUtilities.invokeLater {
+                        if (!closed && generation == playGeneration) runCatching {
+                            frames.resetFormat()
+                            player.media().play(url, *options.toTypedArray())
+                        }
+                    }
+                }
+            }
+        }
         // Ostrzeżenia i błędy VLC do logu aplikacji (każdy komunikat najwyżej 3 razy, razem najwyżej 400).
         nativeLog = runCatching {
             factory.application().newLog().apply {
@@ -327,6 +412,7 @@ class VlcSession(private val onError: (String) -> Unit) {
 
     /** Nowy kanał: przełączenia awaryjne (dekodowanie programowe, bez usuwania przeplotu) obowiązują tylko na kanale, na którym zadziałały. */
     fun resetFallbacks() {
+        uhdDetected = false
         if (softwareFallback || deinterlaceFallback) AppLog.i("obraz: nowy kanał — znów ustawienia dekodowania z konfiguracji")
         softwareFallback = false
         deinterlaceFallback = false
@@ -395,9 +481,19 @@ class VlcSession(private val onError: (String) -> Unit) {
         }
     }
 
+    /** Kanał 4K (nazwa z „4K”/„UHD” albo wykryty po formacie) — lżejsze dekodowanie do zmiany kanału. */
+    @Volatile var uhdHint = false
+    @Volatile private var uhdDetected = false
+    @Volatile private var lightMode = "uhd"
+
+    private fun lightDecoding(): Boolean = lightMode == "always" || (lightMode == "uhd" && (uhdHint || uhdDetected))
+
     fun play(url: String, config: DesktopConfig, startMs: Long = 0) {
+        lightMode = config.lightDecode
         val options = vlcMediaOptions(config).map { if (softwareFallback && it.startsWith(":avcodec-hw=")) ":avcodec-hw=none" else it } +
+            (if (lightDecoding()) listOf(LIGHT_DECODE_OPTION) else emptyList()) +
             if (startMs > 0) listOf(":start-time=%.1f".format(java.util.Locale.US, startMs / 1000.0)) else emptyList()
+        frames.yuvMode = config.vlcRender != "cpu" && YuvShader.available
         lastUrl = url
         lastOptions = options
         playGeneration++
@@ -487,6 +583,9 @@ class VlcSession(private val onError: (String) -> Unit) {
     }
 
     private companion object {
+        /** Bez filtra wygładzającego (deblocking) — HEVC/H.264 4K dekoduje się wyraźnie lżej, różnica w obrazie znikoma. */
+        const val LIGHT_DECODE_OPTION = ":avcodec-skiploopfilter=4"
+
         /** Bez możliwości zmiany dekodowania: po tylu ms od formatu klatek bez obrazu jedno wznowienie strumienia. */
         const val QUICK_RETRY_MS = 6000L
         /** Po tylu ms od ustalenia formatu klatek bez żadnej klatki — przełączenie awaryjne dekodowania. */

@@ -639,6 +639,7 @@ fun main() {
                     }.onFailure { AppLog.i("strumień: tunel nie działa (${it.message})") }.getOrNull()
                     streamTap = tap
                     session.resetFallbacks()
+                    session.uhdHint = Regex("""(?i)\b(4k|uhd)\b""").containsMatchIn(channel.name)
                     session.startLabel = "kanał ${channel.name}"
                     session.play(ts?.liveUrl() ?: tap?.url ?: url, config)
                     if (eit != null) scope.launch {
@@ -2747,9 +2748,40 @@ fun main() {
                 SettingsScreen.PLAYBACK -> listOf(
                     SettingItem.Header("VLC"),
                     SettingItem.Action(
+                        "Wyświetlanie obrazu",
+                        if (config.vlcRender == "cpu") "procesor — klatki RGB z VLC (jak do 0.5.1)"
+                        else "karta graficzna — kolory i skalowanie w shaderze (4K płynniej)" +
+                            if (!YuvShader.available) " — niedostępne, używany procesor" else "",
+                    ) {
+                        choose(
+                            "Wyświetlanie obrazu",
+                            listOf("Karta graficzna (zalecane)", "Procesor (klatki RGB)"),
+                            if (config.vlcRender == "cpu") 1 else 0,
+                        ) { choice ->
+                            saveConfig(config.copy(vlcRender = if (choice == 1) "cpu" else "gpu"), "Wyświetlanie obrazu: działa od następnego kanału.")
+                        }
+                    },
+                    SettingItem.Action(
+                        "Lżejsze dekodowanie",
+                        when (config.lightDecode) {
+                            "always" -> "zawsze — bez filtra wygładzającego"
+                            "off" -> "wyłączone — pełna jakość dekodowania"
+                            else -> "kanały 4K — bez filtra wygładzającego (mniej obciąża procesor)"
+                        },
+                    ) {
+                        val values = listOf("uhd", "always", "off")
+                        choose(
+                            "Lżejsze dekodowanie",
+                            listOf("Tylko kanały 4K (zalecane)", "Zawsze", "Wyłączone"),
+                            values.indexOf(config.lightDecode).coerceAtLeast(0),
+                        ) { choice ->
+                            saveConfig(config.copy(lightDecode = values[choice]), "Lżejsze dekodowanie: działa od następnego kanału.")
+                        }
+                    },
+                    SettingItem.Action(
                         "Rozdzielczość klatek",
-                        if (config.vlcFullRes) "pełna (4K przy dużym obciążeniu może klatkować)"
-                        else "do rozmiaru ekranu — 4K zmniejszane przez VLC (płynniej)",
+                        (if (config.vlcFullRes) "pełna (4K przy dużym obciążeniu może klatkować)"
+                        else "do rozmiaru ekranu — 4K zmniejszane przez VLC") + if (config.vlcRender != "cpu") " (tylko przy wyświetlaniu przez procesor)" else "",
                     ) {
                         choose(
                             "Rozdzielczość klatek",

@@ -694,7 +694,19 @@ internal fun VideoView(session: VlcSession, mode: VideoScaleMode, modifier: Modi
         }
     }
     val frameState = session.frames.frame
+    val yuvState = session.frames.yuvState
     androidx.compose.foundation.Canvas(modifier) {
+        val yuv = yuvState.value
+        if (yuv != null) {
+            val ratio = if (aspect > 0f) aspect else yuv.width.toFloat() / yuv.height
+            val place = videoPlacement(mode, size.width, size.height, yuv.width, yuv.height, ratio)
+            YuvShader.draw(
+                this, session.frames, yuv,
+                place.srcX.toFloat(), place.srcY.toFloat(), place.srcW.toFloat(), place.srcH.toFloat(),
+                place.dstX, place.dstY, place.dstW, place.dstH,
+            )
+            return@Canvas
+        }
         val image = frameState.value ?: return@Canvas
         val ratio = if (aspect > 0f) aspect else image.width.toFloat() / image.height
         val place = videoPlacement(mode, size.width, size.height, image.width, image.height, ratio)

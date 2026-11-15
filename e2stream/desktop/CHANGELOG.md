@@ -3,6 +3,11 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.6.0
+
+- Wyświetlanie obrazu przez kartę graficzną (domyślnie): VLC oddaje klatki YUV 4:2:0 bez przeliczania, a kolory (BT.601/709/2020) i skalowanie do okna liczy shader przy rysowaniu — jak wyjście Direct3D 11 w zwykłym VLC. Procesor tylko kopiuje dane; przy 4K HEVC 10-bit (dekodowanym programowo — karty w laptopach tej generacji go nie dekodują) zostaje zapas na dekodowanie. Obraz BT.2020 (4K, HLG) — przybliżona konwersja barw do ekranu. Ustawienia → Odtwarzanie → „Wyświetlanie obrazu”: karta graficzna / procesor (jak do 0.5.1)
+- „Lżejsze dekodowanie” (domyślnie: kanały 4K): bez filtra wygładzającego HEVC/H.264 — wyraźnie mniejsze obciążenie procesora, różnica w obrazie znikoma. Kanał 4K rozpoznawany po nazwie („4K”, „UHD”) albo po rozdzielczości (wtedy jednorazowe wznowienie strumienia)
+
 ## 0.5.1
 
 - Kanały 4K: klatkowanie i zatrzymujący się obraz. VLC od razu zmniejsza klatki większe niż ekran (np. 3840×2160 → 1920×1080) i podaje je w formacie BGRA, natywnym dla rysowania w oknie — 4× mniej danych do przeliczenia i skopiowania na każdą klatkę. Ustawienia → Odtwarzanie → „Rozdzielczość klatek”: do rozmiaru ekranu (domyślnie) albo pełna

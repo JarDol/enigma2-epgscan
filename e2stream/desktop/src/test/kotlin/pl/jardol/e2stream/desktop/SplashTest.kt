@@ -24,3 +24,13 @@ class FrameSizeTest {
         assertEquals(1280 to 720, VideoFrames.frameSize(3840, 2160, 1024 to 600))
     }
 }
+
+class YuvMatrixTest {
+    @Test
+    fun matrixBySize() {
+        assertEquals(YuvMatrix.BT2020, YuvMatrix.forSize(3840, 2160))
+        assertEquals(YuvMatrix.BT709, YuvMatrix.forSize(1920, 1088))
+        assertEquals(YuvMatrix.BT709, YuvMatrix.forSize(1280, 720))
+        assertEquals(YuvMatrix.BT601, YuvMatrix.forSize(720, 576))
+    }
+}

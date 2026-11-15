@@ -131,6 +131,10 @@ data class DesktopConfig(
     val vlcInternal: Boolean = true,
     /** Klatki VLC w pełnej rozdzielczości (false — zmniejszane do rozmiaru ekranu, np. 4K → 1080p). */
     val vlcFullRes: Boolean = false,
+    /** Wyświetlanie obrazu: "gpu" — klatki YUV, kolory i skalowanie na karcie graficznej; "cpu" — klatki RGB z VLC. */
+    val vlcRender: String = "gpu",
+    /** Lżejsze dekodowanie (bez filtra wygładzającego HEVC/H.264): "uhd" — kanały 4K, "always", "off". */
+    val lightDecode: String = "uhd",
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -233,6 +237,8 @@ data class DesktopConfig(
             setProperty("remoteTrace", remoteTrace.toString())
             setProperty("vlcInternal", vlcInternal.toString())
             setProperty("vlcFullRes", vlcFullRes.toString())
+            setProperty("vlcRender", vlcRender)
+            setProperty("lightDecode", lightDecode)
     }
 
     companion object {
@@ -385,6 +391,8 @@ data class DesktopConfig(
                 remoteTrace = bool("remoteTrace", defaults.remoteTrace),
                 vlcInternal = bool("vlcInternal", defaults.vlcInternal),
                 vlcFullRes = bool("vlcFullRes", defaults.vlcFullRes),
+                vlcRender = properties.getProperty("vlcRender")?.takeIf { it in setOf("gpu", "cpu") } ?: defaults.vlcRender,
+                lightDecode = properties.getProperty("lightDecode")?.takeIf { it in setOf("uhd", "always", "off") } ?: defaults.lightDecode,
             )
         }
 
