@@ -129,6 +129,8 @@ data class DesktopConfig(
     val remoteTrace: Boolean = false,
     /** VLC dołączony do instalatora (true) albo zainstalowany w systemie (false). */
     val vlcInternal: Boolean = true,
+    /** Klatki VLC w pełnej rozdzielczości (false — zmniejszane do rozmiaru ekranu, np. 4K → 1080p). */
+    val vlcFullRes: Boolean = false,
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -230,6 +232,7 @@ data class DesktopConfig(
             setProperty("blockOnDisconnect", blockOnDisconnect.toString())
             setProperty("remoteTrace", remoteTrace.toString())
             setProperty("vlcInternal", vlcInternal.toString())
+            setProperty("vlcFullRes", vlcFullRes.toString())
     }
 
     companion object {
@@ -381,6 +384,7 @@ data class DesktopConfig(
                 blockOnDisconnect = bool("blockOnDisconnect", defaults.blockOnDisconnect),
                 remoteTrace = bool("remoteTrace", defaults.remoteTrace),
                 vlcInternal = bool("vlcInternal", defaults.vlcInternal),
+                vlcFullRes = bool("vlcFullRes", defaults.vlcFullRes),
             )
         }
 

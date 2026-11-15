@@ -93,28 +93,43 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
         formatCalls = 0
     }
 
+    /** Pełna rozdzielczość klatek (true) albo zmniejszenie do rozmiaru ekranu (domyślnie — 4K na ekranie 1080p). */
+    @Volatile var fullResolution = false
+    /** Chwila ustalenia formatu klatek dla bieżącego odtwarzania (0 — jeszcze nie). */
+    @Volatile var formatAtNs = 0L
+    /** Pomiar startu: włącz [awaitingFirst] dopiero przy formacie nowego strumienia (nie liczyć klatek poprzedniego). */
+    @Volatile var armOnFormat = false
+
     override fun getBufferFormat(requestedWidth: Int, requestedHeight: Int): BufferFormat {
         synchronized(this) {
             formatCalls++
+            formatAtNs = System.nanoTime()
+            if (armOnFormat) {
+                armOnFormat = false
+                awaitingFirst = true
+            }
             if (lockedWidth != requestedWidth || lockedHeight <= 0) {
                 lockedWidth = requestedWidth
                 lockedHeight = requestedHeight
             }
-            val sourceWidth = lockedWidth
-            val sourceHeight = lockedHeight
-            if (sourceWidth == width && sourceHeight == height && bitmaps.isNotEmpty()) {
+            val (outWidth, outHeight) = frameSize(lockedWidth, lockedHeight, if (fullResolution) null else screenPixels())
+            if (outWidth == width && outHeight == height && bitmaps.isNotEmpty()) {
                 if (formatCalls == 2 || formatCalls % 500 == 0) AppLog.i("obraz: ponowne ustawienie formatu ($formatCalls×, VLC podał ${requestedWidth}x$requestedHeight)")
-                return BufferFormat("RGBA", sourceWidth, sourceHeight, intArrayOf(sourceWidth * 4), intArrayOf(sourceHeight))
+                return BufferFormat("RV32", outWidth, outHeight, intArrayOf(outWidth * 4), intArrayOf(outHeight))
             }
-            width = sourceWidth
-            height = sourceHeight
-            // RGBA: VLC wypełnia kanał alfa (RV32 zostawia czwarty bajt pusty — obraz byłby przezroczysty, czyli czarny).
-            val info = ImageInfo(sourceWidth, sourceHeight, ColorType.RGBA_8888, ColorAlphaType.UNPREMUL)
+            width = outWidth
+            height = outHeight
+            // RV32 = BGRX w pamięci, jak natywny format Skia na Windows (bez przeliczania przy rysowaniu);
+            // OPAQUE — czwarty bajt (pusty w RV32) nie jest traktowany jako przezroczystość.
+            val info = ImageInfo(outWidth, outHeight, ColorType.BGRA_8888, ColorAlphaType.OPAQUE)
             // Stare bitmapy mogą być jeszcze rysowane — zwalnia je GC, bez close().
             bitmaps = Array(3) { Bitmap().apply { allocPixels(info) } }
             next = 0
-            AppLog.i("obraz: format klatek ${sourceWidth}x$sourceHeight RGBA (VLC podał ${requestedWidth}x$requestedHeight)")
-            return BufferFormat("RGBA", sourceWidth, sourceHeight, intArrayOf(sourceWidth * 4), intArrayOf(sourceHeight))
+            AppLog.i(
+                "obraz: format klatek ${outWidth}x$outHeight BGRA (VLC podał ${requestedWidth}x$requestedHeight" +
+                    (if (outWidth != lockedWidth) ", zmniejszone do ekranu" else "") + ")",
+            )
+            return BufferFormat("RV32", outWidth, outHeight, intArrayOf(outWidth * 4), intArrayOf(outHeight))
         }
     }
 
@@ -141,6 +156,29 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
 
     fun clear() {
         frame.value = null
+    }
+
+    companion object {
+        /** Rozdzielczość ekranu w pikselach (największy monitor). */
+        fun screenPixels(): Pair<Int, Int>? = runCatching {
+            java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
+                .map { it.displayMode.width to it.displayMode.height }
+                .maxByOrNull { it.first * it.second }
+        }.getOrNull()
+
+        /**
+         * Rozmiar klatek przekazywanych przez VLC: obraz większy niż ekran (np. 4K na 1080p) VLC od razu zmniejsza —
+         * 4× mniej danych do przeliczenia, skopiowania i narysowania. Proporcje zachowane, wymiary parzyste, bez powiększania.
+         */
+        internal fun frameSize(width: Int, height: Int, screen: Pair<Int, Int>?): Pair<Int, Int> {
+            if (screen == null || width <= 0 || height <= 0) return width to height
+            val maxW = maxOf(screen.first, 1280)
+            val maxH = maxOf(screen.second, 720)
+            val scale = minOf(1.0, maxW.toDouble() / width, maxH.toDouble() / height)
+            if (scale >= 1.0) return width to height
+            fun even(v: Double) = (Math.round(v / 2.0) * 2).toInt().coerceAtLeast(2)
+            return even(width * scale) to even(height * scale)
+        }
     }
 
     fun close() = synchronized(this) {
@@ -287,9 +325,18 @@ class VlcSession(private val onError: (String) -> Unit) {
     /** Opis bieżącego startu w logu (np. „kanał TVP 2 HD”). */
     @Volatile var startLabel: String = ""
 
+    /** Nowy kanał: przełączenia awaryjne (dekodowanie programowe, bez usuwania przeplotu) obowiązują tylko na kanale, na którym zadziałały. */
+    fun resetFallbacks() {
+        if (softwareFallback || deinterlaceFallback) AppLog.i("obraz: nowy kanał — znów ustawienia dekodowania z konfiguracji")
+        softwareFallback = false
+        deinterlaceFallback = false
+    }
+
     /**
-     * Strumień z obrazem, a po kilku sekundach żadnej klatki przy dekodowaniu sprzętowym — ponowne otwarcie
-     * z dekodowaniem programowym (do końca tej sesji odtwarzacza).
+     * Strumień z obrazem, a brak klatek: przy dekodowaniu sprzętowym — ponowne otwarcie z programowym, przy usuwaniu
+     * przeplotu — bez niego (oba do zmiany kanału), w pozostałych przypadkach jedno szybkie wznowienie.
+     * Czas liczony od ustalenia formatu klatek (VLC utworzył wyjście obrazu) — kanały 4K startują wolniej; bez formatu
+     * czekamy do [NO_FORMAT_LIMIT_MS].
      */
     private fun checkFrames() {
         val generation = playGeneration
@@ -298,16 +345,25 @@ class VlcSession(private val onError: (String) -> Unit) {
         val hardware = lastOptions.any { it.startsWith(":avcodec-hw=") && it != ":avcodec-hw=none" }
         val deinterlacing = lastDeinterlace != null
         val canFallback = !((softwareFallback || !hardware) && (deinterlaceFallback || !deinterlacing))
+        val startedNs = System.nanoTime()
         kotlin.concurrent.thread(name = "vlc-kontrola-obrazu", isDaemon = true) {
-            Thread.sleep(if (canFallback) 5000 else QUICK_RETRY_MS)
-            if (closed || generation != playGeneration || frames.count.get() != before) return@thread
+            val limitAfterFormat = if (canFallback) FALLBACK_AFTER_FORMAT_MS else QUICK_RETRY_MS
+            while (true) {
+                Thread.sleep(250)
+                if (closed || generation != playGeneration || frames.count.get() != before) return@thread
+                val now = System.nanoTime()
+                val formatAt = frames.formatAtNs.takeIf { it >= startedNs }
+                val waited = if (formatAt != null) (now - formatAt) / 1_000_000 else (now - startedNs) / 1_000_000
+                if (formatAt != null && waited >= limitAfterFormat) break
+                if (formatAt == null && waited >= NO_FORMAT_LIMIT_MS) break
+            }
             val hasVideo = runCatching { player.video().trackCount() > 0 }.getOrDefault(false)
             if (!hasVideo) return@thread
             if (!canFallback) {
                 // Ścieżka wideo jest, dane płyną, a obraz nie ruszył — jedno szybkie wznowienie zamiast czekania na watchdog.
                 if (quickRetryGeneration == generation) return@thread
                 quickRetryGeneration = generation
-                AppLog.i("start: brak obrazu po ${QUICK_RETRY_MS / 1000} s mimo ścieżki wideo — wznawiam strumień")
+                AppLog.i("start: brak obrazu mimo ścieżki wideo — wznawiam strumień")
                 SwingUtilities.invokeLater {
                     if (!closed && generation == playGeneration) runCatching {
                         frames.resetFormat()
@@ -318,12 +374,12 @@ class VlcSession(private val onError: (String) -> Unit) {
             }
             val message = if (hardware && !softwareFallback) {
                 softwareFallback = true
-                AppLog.i("obraz: brak klatek przy dekodowaniu sprzętowym — przełączam na programowe")
-                "Brak obrazu przy akceleracji sprzętowej — włączono dekodowanie programowe."
+                AppLog.i("obraz: brak klatek przy dekodowaniu sprzętowym — przełączam na programowe (do zmiany kanału)")
+                "Brak obrazu przy akceleracji sprzętowej — na tym kanale dekodowanie programowe."
             } else {
                 deinterlaceFallback = true
-                AppLog.i("obraz: brak klatek z usuwaniem przeplotu VLC — próba bez usuwania przeplotu")
-                "Brak obrazu z usuwaniem przeplotu — odtwarzanie bez usuwania przeplotu (do ponownego uruchomienia)."
+                AppLog.i("obraz: brak klatek z usuwaniem przeplotu VLC — próba bez usuwania przeplotu (do zmiany kanału)")
+                "Brak obrazu z usuwaniem przeplotu — na tym kanale bez usuwania przeplotu."
             }
             val options = lastOptions.map { if (softwareFallback && it.startsWith(":avcodec-hw=")) ":avcodec-hw=none" else it }
             SwingUtilities.invokeLater {
@@ -351,7 +407,9 @@ class VlcSession(private val onError: (String) -> Unit) {
             val ms = (System.nanoTime() - playStartedNs) / 1_000_000
             AppLog.i("start: obraz po $ms ms" + if (label.isNotBlank()) " ($label)" else "")
         }
-        frames.awaitingFirst = true
+        frames.awaitingFirst = false
+        frames.armOnFormat = true
+        frames.fullResolution = config.vlcFullRes
         frames.resetFormat()
         val deinterlace = if (deinterlaceFallback) null else vlcDeinterlaceMode(config.vlcDeint)
         lastDeinterlace = deinterlace
@@ -429,7 +487,11 @@ class VlcSession(private val onError: (String) -> Unit) {
     }
 
     private companion object {
-        /** Bez możliwości zmiany dekodowania: po tylu ms bez obrazu jedno wznowienie strumienia. */
-        const val QUICK_RETRY_MS = 8000L
+        /** Bez możliwości zmiany dekodowania: po tylu ms od formatu klatek bez obrazu jedno wznowienie strumienia. */
+        const val QUICK_RETRY_MS = 6000L
+        /** Po tylu ms od ustalenia formatu klatek bez żadnej klatki — przełączenie awaryjne dekodowania. */
+        const val FALLBACK_AFTER_FORMAT_MS = 4000L
+        /** VLC nie utworzył wyjścia obrazu (brak formatu) — po tylu ms od startu odtwarzania. */
+        const val NO_FORMAT_LIMIT_MS = 15_000L
     }
 }

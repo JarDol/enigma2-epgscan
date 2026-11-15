@@ -3,6 +3,14 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.5.1
+
+- Kanały 4K: klatkowanie i zatrzymujący się obraz. VLC od razu zmniejsza klatki większe niż ekran (np. 3840×2160 → 1920×1080) i podaje je w formacie BGRA, natywnym dla rysowania w oknie — 4× mniej danych do przeliczenia i skopiowania na każdą klatkę. Ustawienia → Odtwarzanie → „Rozdzielczość klatek”: do rozmiaru ekranu (domyślnie) albo pełna
+- Przełączenie awaryjne na dekodowanie programowe (albo bez usuwania przeplotu) obowiązuje już tylko na kanale, na którym zadziałało — wcześniej zostawało do zamknięcia aplikacji, także na kanałach 4K, których procesor programowo nie nadąża dekodować
+- Kontrola braku obrazu liczy czas od chwili, gdy VLC utworzył wyjście obrazu (4K startuje wolniej) — wolny start nie jest już brany za brak obrazu przy akceleracji sprzętowej
+- Pomiar „start: obraz po … ms” liczy tylko klatki nowego strumienia (wcześniej ostatnią klatkę poprzedniego kanału)
+- Ekran startowy: licznik czasu trwającego etapu
+
 ## 0.5.0
 
 - Szybszy i „żywy” start: ekran startowy z logo i etapami (ustawienia, biblioteki VLC, wtyczki VLC, okno odtwarzacza — z czasami). VLC ładuje się w tle; wcześniej ładował się w wątku okna przy pierwszym kanale i aplikacja przez kilka sekund nie reagowała

@@ -638,6 +638,7 @@ fun main() {
                         StreamTap(url, TimeshiftSession.basicAuth(config), eit?.let { reader -> reader::feed }) { fixer(waitForPcr = false) }
                     }.onFailure { AppLog.i("strumień: tunel nie działa (${it.message})") }.getOrNull()
                     streamTap = tap
+                    session.resetFallbacks()
                     session.startLabel = "kanał ${channel.name}"
                     session.play(ts?.liveUrl() ?: tap?.url ?: url, config)
                     if (eit != null) scope.launch {
@@ -2745,6 +2746,19 @@ fun main() {
                 )
                 SettingsScreen.PLAYBACK -> listOf(
                     SettingItem.Header("VLC"),
+                    SettingItem.Action(
+                        "Rozdzielczość klatek",
+                        if (config.vlcFullRes) "pełna (4K przy dużym obciążeniu może klatkować)"
+                        else "do rozmiaru ekranu — 4K zmniejszane przez VLC (płynniej)",
+                    ) {
+                        choose(
+                            "Rozdzielczość klatek",
+                            listOf("Do rozmiaru ekranu (zalecane)", "Pełna rozdzielczość źródła"),
+                            if (config.vlcFullRes) 1 else 0,
+                        ) { choice ->
+                            saveConfig(config.copy(vlcFullRes = choice == 1), "Rozdzielczość klatek: działa od następnego kanału.")
+                        }
+                    },
                     SettingItem.Action(
                         "Biblioteki VLC",
                         (if (config.vlcInternal) "VLC wewnętrzny (z instalatora)" else "VLC zewnętrzny (zainstalowany w systemie)") +

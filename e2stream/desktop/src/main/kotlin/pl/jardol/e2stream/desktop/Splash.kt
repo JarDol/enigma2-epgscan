@@ -16,6 +16,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -116,7 +122,19 @@ private fun StageRow(stage: StartStage) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        stage.ms?.let { Text(formatStageTime(it), color = Color(0xFF78909C), fontSize = 12.sp) }
+        val shown = if (stage.state == StageState.RUNNING) {
+            // licznik trwającego etapu
+            var elapsed by remember(stage.label) { mutableStateOf(0L) }
+            LaunchedEffect(stage.label) {
+                val started = System.nanoTime()
+                while (true) {
+                    elapsed = (System.nanoTime() - started) / 1_000_000
+                    delay(100)
+                }
+            }
+            elapsed.takeIf { it >= 300 }
+        } else stage.ms
+        shown?.let { Text(formatStageTime(it), color = Color(0xFF78909C), fontSize = 12.sp) }
     }
 }
 
