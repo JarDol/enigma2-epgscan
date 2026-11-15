@@ -2339,6 +2339,7 @@ class PlayerActivity : Activity() {
         @Volatile var chan: BgChan? = null
         var failLogged = false
         var firstLogged = false
+        var misses = 0
     }
     private val pipWins = arrayOfNulls<PipWin>(2)
     @Volatile private var pipWorker: Thread? = null
@@ -2408,7 +2409,7 @@ class PlayerActivity : Activity() {
             val v = pipView(i)
             v.frame.layoutParams = pipLayout(i)
             if (v.chan !== c) {
-                v.chan = c; v.failLogged = false; v.firstLogged = false
+                v.chan = c; v.failLogged = false; v.firstLogged = false; v.misses = 0
                 v.label.text = "${i + 1}  ${c.name}"
                 AppLog.i("PiP ${i + 1}: ${c.name} — klatka co ${prefs.pipFrameMs} ms")
             }
@@ -2422,6 +2423,7 @@ class PlayerActivity : Activity() {
     /** Jeden wątek dla wszystkich okien: na zmianę, każde okno co prefs.pipFrameMs. */
     private fun pipLoop() {
         var turn = 0
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_LOWEST)
         try {
             while (true) {
                 val open = pipWins.filter { it?.chan != null }.filterNotNull()
@@ -2432,8 +2434,13 @@ class PlayerActivity : Activity() {
                 val surf = w.surface
                 if (c != null && surf != null && surf.isValid) {
                     try {
-                        val ms = pipGrab(c, surf)
-                        if (ms >= 0 && !w.firstLogged) { w.firstLogged = true; AppLog.i("PiP ${w.idx + 1}: ${c.name} — pierwsza klatka po $ms ms") }
+                        val r = pipGrab(c, surf)
+                        if (r.ms >= 0 && !w.firstLogged) { w.firstLogged = true; AppLog.i("PiP ${w.idx + 1}: ${c.name} — pierwsza klatka po ${r.ms} ms (${r.info})") }
+                        // brak klatki — powód do logu (raz na kanał w oknie, potem co 20 nieudanych)
+                        if (r.ms < 0) {
+                            w.misses++
+                            if (!w.firstLogged && (w.misses == 2 || w.misses % 20 == 0)) AppLog.i("PiP ${w.idx + 1} (${c.name}): brak klatki ×${w.misses} — ${r.info}")
+                        }
                     } catch (e: Exception) {
                         if (!w.failLogged) { w.failLogged = true; AppLog.i("PiP ${w.idx + 1} (${c.name}): klatka nieudana ($e)") }
                     }
@@ -2447,14 +2454,14 @@ class PlayerActivity : Activity() {
         ui.post { if (pipWins.any { it?.chan != null } && pipWorker == null) pipRefresh() }
     }
 
-    private class BytesSource(private val d: ByteArray) : android.media.MediaDataSource() {
+    private class BytesSource(private val d: ByteArray, private val len: Int = d.size) : android.media.MediaDataSource() {
         override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
-            if (position >= d.size) return -1
-            val n = minOf(size.toLong(), d.size - position).toInt()
+            if (position >= len) return -1
+            val n = minOf(size.toLong(), len - position).toInt()
             System.arraycopy(d, position.toInt(), buffer, offset, n)
             return n
         }
-        override fun getSize(): Long = d.size.toLong()
+        override fun getSize(): Long = len.toLong()
         override fun close() {}
     }
 
@@ -2472,41 +2479,59 @@ class PlayerActivity : Activity() {
         name?.let { android.media.MediaCodec.createByCodecName(it) } ?: android.media.MediaCodec.createDecoderByType(mime)
     }
 
-    /** Końcówka bufora (z PAT/PMT) w pamięci → pierwsza klatka kluczowa → dekoder → okno. Zwraca czas w ms albo -1. */
-    private fun pipGrab(c: BgChan, surf: android.view.Surface): Long {
+    private class Grab(val ms: Long, val info: String)
+    private var pipData = ByteArray(0)         // tylko wątek PiP — bez nowych 1,5 MB przy każdej klatce
+
+    /** Końcówka bufora (z PAT/PMT) w pamięci → pierwsza klatka kluczowa → dekoder → okno. */
+    private fun pipGrab(c: BgChan, surf: android.view.Surface): Grab {
         val t0 = SystemClock.elapsedRealtime()
         val b = c.buf
         val total = b.total
-        if (total < 300_000) return -1
+        if (total < 300_000) return Grab(-1, "za mało danych w buforze (${total / 1000} kB)")
         var pos = maxOf(b.oldestOffset, total - PIP_TAIL)
         pos -= (pos - b.oldestOffset) % 188
         val hdr = c.an.psiHeader() ?: ByteArray(0)
-        val data = ByteArray(hdr.size + (total - pos).toInt())
+        val need = hdr.size + (total - pos).toInt()
+        if (pipData.size < need) pipData = ByteArray(need + 188 * 1000)
+        val data = pipData
         System.arraycopy(hdr, 0, data, 0, hdr.size)
         var w = hdr.size
-        while (pos < total && w < data.size) {
-            val n = b.read(pos, data, w, minOf(188 * 700, data.size - w))
+        while (pos < total && w < need) {
+            val n = b.read(pos, data, w, minOf(188 * 700, need - w))
             if (n <= 0) break
             w += n; pos += n
+        }
+        // pakiety z ustawionymi bitami kodowania (po odszyfrowaniu część dekoderów ich nie zeruje) — MediaExtractor je odrzuca
+        var scr = 0
+        var o = hdr.size
+        while (o + 188 <= w) {
+            if (data[o] == 0x47.toByte() && (data[o + 3].toInt() and 0xC0) != 0) { data[o + 3] = (data[o + 3].toInt() and 0x3F).toByte(); scr++ }
+            o += 188
         }
         val ex = android.media.MediaExtractor()
         var codec: android.media.MediaCodec? = null
         try {
-            ex.setDataSource(BytesSource(if (w == data.size) data else data.copyOf(w)))
-            val t = (0 until ex.trackCount).firstOrNull { ex.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("video/") == true } ?: return -1
+            ex.setDataSource(BytesSource(data, w))
+            val t = (0 until ex.trackCount).firstOrNull { ex.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("video/") == true }
+                ?: return Grab(-1, "brak ścieżki obrazu w ${w / 1000} kB (ścieżek: ${ex.trackCount}, PAT/PMT ${hdr.size} B, bity kodowania w $scr pakietach)")
             val fmt = ex.getTrackFormat(t)
             val mime = fmt.getString(android.media.MediaFormat.KEY_MIME)!!
+            val desc = "$mime ${fmt.optInt(android.media.MediaFormat.KEY_WIDTH)}×${fmt.optInt(android.media.MediaFormat.KEY_HEIGHT)}" +
+                (if (scr > 0) ", bity kodowania wyzerowane w $scr pakietach" else "")
             ex.selectTrack(t)
-            // do pierwszej próbki z klatką kluczową
             var guard = 0
-            while ((ex.sampleFlags and android.media.MediaExtractor.SAMPLE_FLAG_SYNC) == 0 && guard++ < 200) if (!ex.advance()) return -1
+            while ((ex.sampleFlags and android.media.MediaExtractor.SAMPLE_FLAG_SYNC) == 0 && guard++ < 300)
+                if (!ex.advance()) return Grab(-1, "$desc: brak klatki kluczowej w końcówce bufora")
+            if (guard >= 300) return Grab(-1, "$desc: brak klatki kluczowej w końcówce bufora")
+            // dekoder w trybie „najlepiej jak się da” — nie konkuruje z obrazem głównym
+            fmt.setInteger(android.media.MediaFormat.KEY_PRIORITY, 1)
             codec = swDecoder(mime)
             codec.configure(fmt, surf, null, 0)
             codec.start()
             val info = android.media.MediaCodec.BufferInfo()
             var fed = 0
             var eos = false
-            while (SystemClock.elapsedRealtime() - t0 < 1500) {
+            while (SystemClock.elapsedRealtime() - t0 < 2500) {
                 if (!eos) {
                     val ii = codec.dequeueInputBuffer(10_000)
                     if (ii >= 0) {
@@ -2517,19 +2542,21 @@ class PlayerActivity : Activity() {
                 }
                 val oi = codec.dequeueOutputBuffer(info, 10_000)
                 if (oi >= 0) {
-                    val frame = info.size > 0 || (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM) == 0
-                    codec.releaseOutputBuffer(oi, frame)
-                    if (frame) return SystemClock.elapsedRealtime() - t0
-                    if ((info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) return -1
+                    val end = (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                    codec.releaseOutputBuffer(oi, !end || info.size > 0)
+                    if (!end || info.size > 0) return Grab(SystemClock.elapsedRealtime() - t0, "$desc, ${codec.name}")
+                    return Grab(-1, "$desc, ${codec.name}: dekoder nie oddał obrazu z $fed próbek")
                 }
             }
-            return -1
+            return Grab(-1, "$desc, ${codec.name}: brak obrazu w 2,5 s ($fed próbek)")
         } finally {
             try { codec?.stop() } catch (_: Exception) {}
             try { codec?.release() } catch (_: Exception) {}
             ex.release()
         }
     }
+
+    private fun android.media.MediaFormat.optInt(k: String) = if (containsKey(k)) getInteger(k) else 0
 
     /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału z bufora w tle albo innego. */
     private fun showPipMenu() {

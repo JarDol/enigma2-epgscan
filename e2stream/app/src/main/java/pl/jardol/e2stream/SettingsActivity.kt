@@ -569,7 +569,7 @@ class SettingsActivity : Activity() {
             chooseBgBuffer()
         },
         gated(getString(R.string.setting_pip_mode), { pipName(p.pipFrameMs) }) {
-            val o = listOf(1000, 2000, 3000)
+            val o = listOf(1000, 2000, 3000, 5000)
             TvDialog.single(this, getString(R.string.setting_pip_mode), o.map { pipName(it) }, o.indexOf(p.pipFrameMs).coerceAtLeast(0)) { w ->
                 p.pipFrameMs = o[w]; markChanged("PiP: ${pipName(o[w])}"); items = buildItems(); refresh()
             }

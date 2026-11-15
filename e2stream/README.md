@@ -187,7 +187,7 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 * PiP (długie OK → *Obraz w obrazie (PiP)…*): najwyżej 2 okna bez dźwięku z kanałami z bufora w tle albo dowolnymi
   innymi z bukietu; *Zamień z głównym* (od razu, bieżący trafia do okna), *Zamknij okno*, *Zamknij PiP*. Otwarcie PiP
   usuwa pozostałe bufory poprzednich kanałów; po zamknięciu pierwszego okna drugie zajmuje jego miejsce. Obraz w oknach:
-  klatka kluczowa z końcówki bufora co 1 / 2 / 3 s, okna odświeżane na zmianę, dekoder programowy (nie zabiera
+  klatka kluczowa z końcówki bufora co 1 / 2 / 3 / 5 s, okna odświeżane na zmianę, dekoder programowy (nie zabiera
   sprzętowego dekodera obrazowi głównemu). Położenie okien: w rogach u góry / u dołu / po prawej / po lewej albo
   od jednego rogu w dół lub w górę,
 * timeshift (długość bufora, automatyczny start — przy odtwarzaniu przez bufor zawsze od razu, kroki przewijania, WSTECZ na pustym ekranie),
