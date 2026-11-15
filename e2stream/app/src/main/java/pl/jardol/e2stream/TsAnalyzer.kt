@@ -70,7 +70,9 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     // --- znaczniki czasu: PTS/DTS względem PCR (ms)
     private var lastPcrAny = -1L
     private var lastPcrTicks = -1L
-    private var pcrPid = -1
+    /** PID zegara PCR bieżącego programu (z PMT); -1 — jeszcze nieznany. */
+    @Volatile var pcrPid = -1
+        private set
     private val pidSeen = IntArray(8192)
     private val lastDts = LongArray(8192) { -1 }
     private val lastStep = LongArray(8192)

@@ -141,6 +141,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
      * nieprzewijalne (szuka PCR tylko w pierwszych 112 kB pliku).
      */
     private var waitPcr = true
+    /** PID zegara programu (z PMT, analizator); PCR innych programów multipleksu się nie liczy. */
+    @Volatile var pcrPid: () -> Int = { -1 }
     private var skipped = 0L
     private val skippedPids = HashMap<Int, Int>()
 
@@ -148,12 +150,15 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
     private fun admit(p: ByteArray, o: Int): Boolean {
         if (!waitPcr) return true
         val tei = (p[o + 1].toInt() and 0x80) != 0
-        val pcr = !tei && (p[o + 3].toInt() and 0x20) != 0 && (p[o + 4].toInt() and 0xff) >= 7 && (p[o + 5].toInt() and 0x10) != 0
+        val want = pcrPid()
+        val pid0 = ((p[o + 1].toInt() and 0x1f) shl 8) or (p[o + 2].toInt() and 0xff)
+        val pcr = want >= 0 && pid0 == want && !tei && (p[o + 3].toInt() and 0x20) != 0 &&
+            (p[o + 4].toInt() and 0xff) >= 7 && (p[o + 5].toInt() and 0x10) != 0
         if (pcr || skipped >= SKIP_MAX) {
             waitPcr = false
             if (skipped > 0) {
                 val pids = skippedPids.entries.sortedByDescending { it.value }.take(5).joinToString(", ") { "${it.key}×${it.value}" }
-                AppLog.i("timeshift: zapis od pierwszego pakietu z zegarem PCR — pominięto ${skipped / 1000} kB na początku strumienia (PID: $pids)" +
+                AppLog.i("timeshift: zapis od pierwszego pakietu z zegarem PCR (pid $want) — pominięto ${skipped / 1000} kB na początku strumienia (PID: $pids)" +
                     if (!pcr) " — PCR nie znaleziony, zapis bez czekania" else "")
             }
             skipped = 0; skippedPids.clear()

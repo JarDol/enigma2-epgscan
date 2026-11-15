@@ -258,28 +258,29 @@ class LocalRecordingDataSource(private val dir: File) : DataSource {
      * odczytuje wtedy długości i nie przewija. Odczyt zaczyna się od pierwszego pakietu z PCR (najwyżej 8 MB dalej).
      */
     private fun leadingWithoutPcr(f: File): Long = try {
-        java.io.RandomAccessFile(f, "r").use { r ->
-            val b = ByteArray(188 * 2048)
-            var base = 0L
-            var found = -1L
-            while (found < 0 && base < 8_000_000) {
-                r.seek(base)
-                val n = r.read(b)
-                if (n < 188 * 3) break
-                var o = 0
-                while (o + 188 * 2 < n) {
-                    if (b[o].toInt() == 0x47 && b[o + 188].toInt() == 0x47) {
-                        if ((b[o + 1].toInt() and 0x80) == 0 && (b[o + 3].toInt() and 0x20) != 0 &&
-                            (b[o + 4].toInt() and 0xff) >= 7 && (b[o + 5].toInt() and 0x10) != 0) { found = base + o; break }
-                        o += 188
-                    } else o++
-                }
-                base += o
-            }
-            val k = if (found > 0) found else 0L
-            if (k > 0) AppLog.i("nagranie: pomijam ${k / 1000} kB początku bez zegara PCR (${dir.name})")
-            k
+        val head = java.io.RandomAccessFile(f, "r").use { r ->
+            val b = ByteArray(minOf(f.length(), 4_000_000L).toInt())
+            r.readFully(b)
+            b
         }
+        // PID zegara z PMT (tak jak ExoPlayer) — PCR innych programów multipleksu się nie liczy
+        val pcrPid = RecScan.pmtPcrPid(head)
+        var found = -1L
+        if (pcrPid >= 0) {
+            var o = 0
+            while (o + 376 < head.size) {
+                if (head[o].toInt() == 0x47 && head[o + 188].toInt() == 0x47) {
+                    val pid = ((head[o + 1].toInt() and 0x1f) shl 8) or (head[o + 2].toInt() and 0xff)
+                    if (pid == pcrPid && (head[o + 1].toInt() and 0x80) == 0 && (head[o + 3].toInt() and 0x20) != 0 &&
+                        (head[o + 4].toInt() and 0xff) >= 7 && (head[o + 5].toInt() and 0x10) != 0) { found = o.toLong(); break }
+                    o += 188
+                } else o++
+            }
+        }
+        val k = if (found > 0) found else 0L
+        if (k > 0) AppLog.i("nagranie: pomijam ${k / 1000} kB początku bez zegara PCR (pid $pcrPid, ${dir.name})")
+        else if (pcrPid < 0) AppLog.i("nagranie: brak PAT/PMT w pierwszych 4 MB (${dir.name})")
+        k
     } catch (_: Exception) { 0L }
 
     override fun addTransferListener(transferListener: TransferListener) {}

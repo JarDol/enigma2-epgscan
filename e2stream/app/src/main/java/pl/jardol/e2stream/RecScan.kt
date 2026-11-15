@@ -145,11 +145,14 @@ object RecScan {
         return ((v(6) shl 25) or (v(7) shl 17) or (v(8) shl 9) or (v(9) shl 1) or (v(10) shr 7)) / 90
     }
 
-    /** PCR_PID pierwszego programu z PAT → jego PMT (pakiety na granicy 188 B od pierwszego synchronizowanego). */
+    /**
+     * PCR_PID tak jak w ExoPlayerze (tryb jednego PMT): PID-y PMT wszystkich programów z PAT, PCR_PID z pierwszego
+     * PMT, który faktycznie przyjdzie (analizator usuwa PMT innych programów multipleksu). -1 — brak.
+     */
     fun pmtPcrPid(b: ByteArray): Int {
         var start = 0
         while (start + 376 < b.size && !((b[start].toInt() and 0xff) == SYNC && (b[start + 188].toInt() and 0xff) == SYNC)) start++
-        var pmtPid = -1
+        val pmtPids = HashSet<Int>()
         var o = start
         while (o + 188 <= b.size) {
             if ((b[o].toInt() and 0xff) == SYNC && (b[o + 1].toInt() and 0x40) != 0) {
@@ -160,17 +163,17 @@ object RecScan {
                 if (afc == 3) p += 1 + (b[p].toInt() and 0xff)
                 if (p < o + 188) {
                     p += 1 + (b[p].toInt() and 0xff)            // pointer_field
-                    if (pid == 0 && pmtPid < 0 && p + 8 < o + 188 && (b[p].toInt() and 0xff) == 0) {
+                    if (pid == 0 && pmtPids.isEmpty() && p + 8 < o + 188 && (b[p].toInt() and 0xff) == 0) {
                         val len = ((b[p + 1].toInt() and 0x0f) shl 8) or (b[p + 2].toInt() and 0xff)
                         var q = p + 8
                         val end = minOf(p + 3 + len - 4, o + 188)
                         while (q + 4 <= end) {
                             val prog = ((b[q].toInt() and 0xff) shl 8) or (b[q + 1].toInt() and 0xff)
                             val pp = ((b[q + 2].toInt() and 0x1f) shl 8) or (b[q + 3].toInt() and 0xff)
-                            if (prog != 0) { pmtPid = pp; break }
+                            if (prog != 0) pmtPids += pp
                             q += 4
                         }
-                    } else if (pmtPid >= 0 && pid == pmtPid && p + 10 < o + 188 && (b[p].toInt() and 0xff) == 2) {
+                    } else if (pid in pmtPids && p + 10 < o + 188 && (b[p].toInt() and 0xff) == 2) {
                         return ((b[p + 8].toInt() and 0x1f) shl 8) or (b[p + 9].toInt() and 0xff)
                     }
                 }

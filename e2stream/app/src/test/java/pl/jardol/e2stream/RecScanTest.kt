@@ -99,4 +99,14 @@ class RecScanTest {
         assertTrue(d, d.contains("NIEPRZEWIJALNE"))
         assertTrue(d, d.contains("PID: 18×600"))
     }
+
+    @Test
+    fun pmtOfFirstArrivingProgramWins() {
+        // PAT: program 1 → PMT 0x100 (usunięty przez analizator), program 2 → PMT 0x101 (PCR_PID 534)
+        val pat = byteArrayOf(0, 0xb0.toByte(), 17, 0, 1, 0xc1.toByte(), 0, 0,
+            0, 1, 0xe1.toByte(), 0, 0, 2, 0xe1.toByte(), 1, 0, 0, 0, 0)
+        val pmt = byteArrayOf(2, 0xb0.toByte(), 13, 0, 2, 0xc1.toByte(), 0, 0, (0xe0 or (534 shr 8)).toByte(), (534 and 0xff).toByte(), 0xf0.toByte(), 0, 0, 0, 0, 0)
+        val b = psi(0, pat) + dataPacket(8191) + psi(0x101, pmt)
+        assertEquals(534, RecScan.pmtPcrPid(b))
+    }
 }

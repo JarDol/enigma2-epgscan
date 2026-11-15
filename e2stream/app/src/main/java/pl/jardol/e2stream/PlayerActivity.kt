@@ -2060,7 +2060,7 @@ class PlayerActivity : Activity() {
         val b = tsBuf
         if (b == null || b.dir != dir) {
             b?.reset()
-            tsBuf = TimeshiftBuffer(dir, min)
+            tsBuf = TimeshiftBuffer(dir, min).also { it.pcrPid = { analyzer?.pcrPid ?: -1 } }
             AppLog.i("timeshift: $min min w ${dir.absolutePath} (wolne ${TimeshiftBuffer.gb(dir.usableSpace)})")
         } else {
             b.maxMin = min
@@ -2567,7 +2567,7 @@ class PlayerActivity : Activity() {
      * Diagnostyka: przegląd zegara PCR całego nagrania w tle (niski priorytet), wynik do logu i do opisu nagrania
      * (pole "scan" — przy następnym odtwarzaniu bez ponownego czytania plików).
      */
-    private val SCAN_V = 3
+    private val SCAN_V = 4
 
     private fun scanRecording(dir: File, title: String) {
         Thread({
