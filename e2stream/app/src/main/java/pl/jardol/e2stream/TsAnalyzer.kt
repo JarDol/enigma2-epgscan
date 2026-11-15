@@ -599,11 +599,18 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         }
     }
 
-    /** Gdy po PAT przez 700 ms nie ma PMT, wstawia zapamiętany PMT kanału w miejsce mało ważnego pakietu. */
+    /**
+     * Gdy po PAT przez 300 ms nie ma PMT, wstawia zapamiętany PMT kanału w miejsce mało ważnego pakietu
+     * (dekoder zwykle przysyła PMT 10–50 ms po PAT). PCR_PID bierze z zapamiętanego PMT — bez tego bufor
+     * timeshiftu nie wiedział, od którego pakietu zacząć zapis.
+     */
     private fun maybeInject(p: ByteArray, o: Int): Boolean {
         if (pmtSeen || patSeenAt == 0L || pmtPid < 0 || cachedSection == null) return false
         val now = SystemClock.elapsedRealtime()
-        if (now - patSeenAt < 700) return false
+        if (now - patSeenAt < 300) return false
+        if (pcrPid < 0) cachedSection?.let { sec ->
+            if (sec.size >= 12 && u(sec, 0) == 0x02) pcrPid = ((u(sec, 8) and 0x1f) shl 8) or u(sec, 9)
+        }
         if (injectIdx == 0 && now - lastInjectAt < 300) return false
         val pk = injectPkts ?: buildInjection()?.also { injectPkts = it } ?: return false
         val src = injectIdx * 188

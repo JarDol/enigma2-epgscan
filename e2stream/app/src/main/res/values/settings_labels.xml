@@ -27,7 +27,6 @@
     <string name="setting_vlc_hardware_acceleration" formatted="false">VLC: akceleracja sprzętowa</string>
     <string name="setting_vlc_video_format_chroma" formatted="false">VLC: format obrazu (chroma)</string>
     <string name="setting_video_tunnelling" formatted="false">Tunelowanie wideo</string>
-    <string name="setting_exoplayer_decoder_frame_rate_experimental" formatted="false">ExoPlayer: liczba klatek dla dekodera (eksperyment)</string>
     <string name="setting_restart_on_stuttering_dropped_frames" formatted="false">Wznawiaj przy zacinaniu (utrata klatek)</string>
     <string name="setting_playback_buffer_ms" formatted="false">Zapas w trakcie oglądania (ms)</string>
     <string name="setting_build_buffer_by_slowing_playback_slightly_5_without_tun" formatted="false">Dobuduj zapas lekkim zwolnieniem (5%, tylko bez tunelowania)</string>

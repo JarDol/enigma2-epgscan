@@ -32,7 +32,7 @@ object SyncManager {
     /** Ustawienia synchronizowane (bez adresu dekodera, ścieżek lokalnych i stanu). */
     private val SETTINGS = setOf(
         "httpPort", "streamPort", "user", "pass", "blockOnDisconnect", "appLanguage", "discoverySubnet",
-        "tunneling", "engine", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps", "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon", "watchdog", "stallSec", "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "dropRestart",
+        "tunneling", "engine", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon", "watchdog", "stallSec", "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "dropRestart",
         "audioLang", "preferAc3",
         "logFtp", "ftpUser", "ftpPass", "ftpDir", "saveTs", "tsRingMb", "tsFtp", "cleanTs",
         "hiddenBouquets", "pin", "pinMin", "invertUpDown", "bannerSec", "tsBannerSec", "messageBar", "messageBarSec",
@@ -46,11 +46,14 @@ object SyncManager {
      * nigdy jako wartości domyślne dla innych — nowy telewizor dostaje domyślne aplikacji.
      */
     private val DEVICE_ONLY = setOf(
-        "engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "exoFps",
+        "engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma",
         "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon",
         "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "stallSec", "dropRestart", "watchdog",
         "showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3", "blockOnDisconnect", "appLanguage", "discoverySubnet",
     )
+
+    /** Ustawienia usunięte z aplikacji — znikają z kopii na dekoderze przy najbliższej synchronizacji. */
+    private val REMOVED = setOf("exoFps")
 
     /** Przy pierwszym uruchomieniu nie nadpisujemy tego, co użytkownik właśnie wpisał. */
     private val KEEP_ON_FIRST = setOf("ftpUser", "ftpPass", "ftpDir")
@@ -298,7 +301,8 @@ object SyncManager {
             .put("updated", now).put("backup", backup)
         val oldDevice = dev?.optJSONObject("device")
         val oldBackup = oldDevice?.optJSONObject("backup")
-        val backupMissing = oldBackup == null || backup.keys().asSequence().any { !oldBackup.has(it) }
+        val backupMissing = oldBackup == null || backup.keys().asSequence().any { !oldBackup.has(it) } ||
+            REMOVED.any { oldBackup.has(it) || dData?.has(it) == true }      // stare klucze do usunięcia
         // Bez „poprzedniej kopii": na dekoderze jest jedna kopia na urządzenie (pytanie o przywrócenie pada od razu
         // po wyborze dekodera, zanim cokolwiek zostanie zmienione). Stare pola previous* znikają przy tym zapisie.
         val myFile = JSONObject()
@@ -307,6 +311,7 @@ object SyncManager {
 
         // część wspólna: PMT (nowszy wygrywa), pozostałe tylko gdy brak klucza (domyślne dla nowych)
         var commonChanged = common == null || legacy != null
+        for (k in REMOVED) if (cData.has(k)) { cData.remove(k); commonChanged = true }
         for ((k, v) in all) {
             val t = meta.getLong("t_$k", 0)
             val j = toJson(v) ?: continue

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="message_decoder_frame_rate_experimental" formatted="false">Decoder frame rate (experimental)</string>
     <string name="message_seek" formatted="false">Seek ◀ ▶</string>
     <string name="message_seek_2" formatted="false">Seek ▲ ▼</string>
     <string name="message_epg_scan_update" formatted="false">EPG Scan update</string>

@@ -126,11 +126,6 @@ class SettingsActivity : Activity() {
         Item.Action(getString(R.string.setting_vlc_video_format_chroma), { p.vlcChroma }) { chooseChroma() },
     ) else listOf(
         Item.Toggle(getString(R.string.setting_video_tunnelling), { p.tunneling }, { p.tunneling = it }),
-        Item.Action(getString(R.string.setting_exoplayer_decoder_frame_rate_experimental), { if (p.exoFps > 0) getString(R.string.settings_fps_value, p.exoFps) else getString(R.string.settings_fps) }) {
-            val ids = intArrayOf(0, 25, 50)
-            TvDialog.single(this, getString(R.string.message_decoder_frame_rate_experimental), listOf(getString(R.string.settings_fps), getString(R.string.settings_fps_value, 25), getString(R.string.settings_fps_value, 50)),
-                ids.indexOf(p.exoFps)) { w -> p.exoFps = ids[w]; markChanged("ExoPlayer fps = ${ids[w]}") }
-        },
         Item.Toggle(getString(R.string.setting_restart_on_stuttering_dropped_frames), { p.dropRestart }, { p.dropRestart = it }),
         Item.Toggle(getString(R.string.setting_fast_channel_start), { p.fastStart }, { p.fastStart = it }),
         num(getString(R.string.setting_playback_buffer_ms), { p.rebufferMs }, { p.rebufferMs = it }, 1000..15_000),

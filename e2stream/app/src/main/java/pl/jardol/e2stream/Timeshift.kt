@@ -152,8 +152,9 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         val tei = (p[o + 1].toInt() and 0x80) != 0
         val want = pcrPid()
         val pid0 = ((p[o + 1].toInt() and 0x1f) shl 8) or (p[o + 2].toInt() and 0xff)
-        val pcr = want >= 0 && pid0 == want && !tei && (p[o + 3].toInt() and 0x20) != 0 &&
-            (p[o + 4].toInt() and 0xff) >= 7 && (p[o + 5].toInt() and 0x10) != 0
+        val hasPcr = !tei && (p[o + 3].toInt() and 0x20) != 0 && (p[o + 4].toInt() and 0xff) >= 7 && (p[o + 5].toInt() and 0x10) != 0
+        // PID zegara nieznany (brak PMT) po ~1 MB — dowolny PCR, żeby nie gubić początku strumienia
+        val pcr = hasPcr && (if (want >= 0) pid0 == want else skipped >= ANY_PCR_AFTER)
         if (pcr || skipped >= SKIP_MAX) {
             waitPcr = false
             if (skipped > 0) {
@@ -411,6 +412,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         private const val SYNC = 0x47.toByte()
         /** Najwięcej pomijanych danych przed pierwszym PCR (potem zapis bez czekania). */
         private const val SKIP_MAX = 8L * 1_000_000
+        /** Po tylu pominiętych bajtach bez znanego PID-u zegara przyjmujemy PCR z dowolnego PID-u. */
+        private const val ANY_PCR_AFTER = 1_000_000L
 
         /** Zapas wolnego miejsca, którego bufor nie rusza. */
         const val RESERVE = 400L * 1_000_000

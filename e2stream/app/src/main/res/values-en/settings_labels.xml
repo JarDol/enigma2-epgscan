@@ -27,7 +27,6 @@
     <string name="setting_vlc_hardware_acceleration" formatted="false">VLC: hardware acceleration</string>
     <string name="setting_vlc_video_format_chroma" formatted="false">VLC: video format (chroma)</string>
     <string name="setting_video_tunnelling" formatted="false">Video tunnelling</string>
-    <string name="setting_exoplayer_decoder_frame_rate_experimental" formatted="false">ExoPlayer: decoder frame rate (experimental)</string>
     <string name="setting_restart_on_stuttering_dropped_frames" formatted="false">Restart on stuttering (dropped frames)</string>
     <string name="setting_playback_buffer_ms" formatted="false">Playback buffer (ms)</string>
     <string name="setting_build_buffer_by_slowing_playback_slightly_5_without_tun" formatted="false">Build buffer by slowing playback slightly (5%, without tunnelling only)</string>

@@ -11,7 +11,7 @@ internal object SettingsBackup {
         "channelSync" to p.channelSync, "deviceName" to p.deviceName,
         "engine" to p.engine, "vlcDeint" to p.vlcDeint, "vlcHw" to p.vlcHw,
         "vlcHwMode" to p.vlcHwMode, "vlcChroma" to p.vlcChroma, "tunneling" to p.tunneling,
-        "exoFps" to p.exoFps, "dropRestart" to p.dropRestart, "watchdog" to p.watchdog,
+        "dropRestart" to p.dropRestart, "watchdog" to p.watchdog,
         "stallSec" to p.stallSec, "bufferMs" to p.bufferMs, "rebufferMs" to p.rebufferMs,
         "cushionSlow" to p.cushionSlow, "afrMode" to p.afrMode, "audioLang" to p.audioLang,
         "preferAc3" to p.preferAc3, "tsMin" to p.tsMin, "tsStepSec" to p.tsStepSec,

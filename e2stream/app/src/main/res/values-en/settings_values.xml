@@ -8,7 +8,6 @@
     <string name="settings_plugin_installed">installed — %1$s</string>
     <string name="settings_plugin_missing">not installed (OpenWebif + FTP)</string>
     <string name="settings_device_name">Name of this device (tag %1$s)</string>
-    <string name="settings_fps">Do not specify</string>
     <string name="settings_every_start">at every startup</string>
     <string name="settings_daily">once daily</string>
     <string name="settings_all">all</string>
@@ -50,5 +49,4 @@
     <string name="settings_map_without_banner">OK and arrows — no banner</string>
     <string name="settings_epg_status">last: %1$s • channels: %2$d</string>
     <string name="settings_screen_title">E2Stream %1$s — settings</string>
-    <string name="settings_fps_value">%1$d fps</string>
 </resources>

@@ -12,6 +12,8 @@ class Prefs(ctx: Context) {
 
     init {
         if (sp.contains("backLongExit")) sp.edit().remove("backLongExit").apply()
+        // usunięta opcja „liczba klatek dla dekodera” (eksperyment) — bez śladu w ustawieniach i kopii na dekoderze
+        if (sp.contains("exoFps")) sp.edit().remove("exoFps").apply()
     }
 
     private fun s(k: String, d: String = "") = sp.getString(k, d) ?: d
@@ -399,9 +401,6 @@ class Prefs(ctx: Context) {
         set(v) = putI("uiBannerIcon", v)
 
     /** ExoPlayer: podpowiedź liczby klatek dla dekodera (eksperyment): 0 = brak, 25, 50. */
-    var exoFps: Int
-        get() = sp.getInt("exoFps", 0)
-        set(v) = putI("exoFps", v)
 
     /** Silnik odtwarzania: exo (ExoPlayer) albo vlc (libVLC). */
     var engine: String
