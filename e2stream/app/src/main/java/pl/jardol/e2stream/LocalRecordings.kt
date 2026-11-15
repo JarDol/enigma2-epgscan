@@ -294,3 +294,37 @@ class LocalRecordingDataSource(private val dir: File) : DataSource {
         rafIdx = -1
     }
 }
+
+
+/**
+ * Przewijanie nagrania lokalnego, gdy ExoPlayer nie odczyta jego długości (pierwszy znacznik PCR w pliku późniejszy
+ * niż ostatni — wtedy TS jest „nieprzewijalny” i każde przewinięcie wraca na początek): pozycja liczona proporcjonalnie
+ * z rozmiaru plików i długości z opisu nagrania (stała przepływność, granica pakietu 188 B).
+ */
+class LocalSeekExtractor(
+    private val inner: androidx.media3.extractor.Extractor,
+    private val totalBytes: Long,
+    private val durationUs: Long,
+) : androidx.media3.extractor.Extractor {
+
+    override fun sniff(input: androidx.media3.extractor.ExtractorInput) = inner.sniff(input)
+
+    override fun init(output: androidx.media3.extractor.ExtractorOutput) {
+        inner.init(object : androidx.media3.extractor.ExtractorOutput by output {
+            override fun seekMap(seekMap: androidx.media3.extractor.SeekMap) {
+                if (seekMap.isSeekable || totalBytes <= 0 || durationUs <= 0) { output.seekMap(seekMap); return }
+                val bitrate = (totalBytes * 8 * 1_000_000.0 / durationUs).toLong().coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
+                AppLog.i("nagranie: odtwarzacz nie odczytał długości — przewijanie wg rozmiaru (${totalBytes / 1_000_000} MB, " +
+                    "${durationUs / 1_000_000} s, ${bitrate / 1000} kb/s)")
+                output.seekMap(androidx.media3.extractor.ConstantBitrateSeekMap(totalBytes, 0, bitrate, 188))
+            }
+        })
+    }
+
+    override fun read(input: androidx.media3.extractor.ExtractorInput, seekPosition: androidx.media3.extractor.PositionHolder) =
+        inner.read(input, seekPosition)
+
+    override fun seek(position: Long, timeUs: Long) = inner.seek(position, timeUs)
+
+    override fun release() = inner.release()
+}

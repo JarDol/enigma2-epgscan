@@ -1085,7 +1085,17 @@ class PlayerActivity : Activity() {
                 if (generation == streamGen) analyzer else null
             }
         }
-        return ProgressiveMediaSource.Factory(analyzing, extractors)
+        // nagranie lokalne: TS z zapasowym przewijaniem wg rozmiaru, gdy odtwarzacz nie odczyta długości
+        val factory = if (local != null) {
+            val lengthSec = LocalRecordings.readMeta(local)?.optLong("lengthSec") ?: 0L
+            val bytes = LocalRecordings.parts(local).sumOf { it.length() }
+            androidx.media3.extractor.ExtractorsFactory {
+                extractors.createExtractors().map { e ->
+                    if (e is androidx.media3.extractor.ts.TsExtractor) LocalSeekExtractor(e, bytes, lengthSec * 1_000_000) else e
+                }.toTypedArray()
+            }
+        } else extractors
+        return ProgressiveMediaSource.Factory(analyzing, factory)
             .createMediaSource(MediaItem.fromUri(url))
     }
 
