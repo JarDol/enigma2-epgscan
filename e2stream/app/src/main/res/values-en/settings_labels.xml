@@ -108,4 +108,6 @@
     <string name="setting_eit_only" formatted="false">EIT test: EPG from the stream only (clears EPG, no downloads)</string>
     <string name="setting_rec_max_hours" formatted="false">Timeshift recordings: limit per recording</string>
     <string name="setting_rec_max_pct" formatted="false">Timeshift recordings: at most % of storage capacity</string>
+    <string name="setting_app_storage" formatted="false">Storage used by the app</string>
+    <string name="setting_app_storage_value" formatted="false">show</string>
 </resources>

@@ -113,6 +113,9 @@ object Updater {
     }
 
     fun download(ctx: Context, info: Info, progress: (Int) -> Unit): File {
+        // poprzednie pobrane APK (~100 MB każdy) nie zostają w pamięci podręcznej
+        for (d in listOfNotNull(ctx.externalCacheDir, ctx.cacheDir).distinct())
+            d.listFiles { f -> f.name.startsWith("e2stream-") && (f.name.endsWith(".apk") || f.name.endsWith(".apk.part")) }?.forEach { it.delete() }
         val dir = ctx.externalCacheDir ?: ctx.cacheDir
         if (!dir.exists() && !dir.mkdirs()) throw IOException("Nie można utworzyć katalogu pobierania")
         val out = File(dir, info.name)

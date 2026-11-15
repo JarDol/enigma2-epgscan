@@ -439,8 +439,15 @@ class Prefs(ctx: Context) {
         set(v) = putS("quickMenuOrder", v.joinToString(","))
 
     var quickMenuVisible: Set<String>
-        get() = HashSet(sp.getStringSet("quickMenuVisible", QuickMenu.configurable.map { it.id }.toSet()) ?: emptySet())
-        set(v) = sp.edit().putStringSet("quickMenuVisible", HashSet(v)).apply()
+        get() {
+            val all = QuickMenu.configurable.map { it.id }.toSet()
+            val stored = sp.getStringSet("quickMenuVisible", null) ?: return HashSet(all)
+            // pozycje nieznane w chwili zapisu (nowsze wersje) — widoczne
+            val known = sp.getStringSet("quickMenuKnown", null) ?: (all - QuickMenu.TOP)
+            return HashSet(stored + (all - known))
+        }
+        set(v) = sp.edit().putStringSet("quickMenuVisible", HashSet(v))
+            .putStringSet("quickMenuKnown", HashSet(QuickMenu.configurable.map { it.id })).apply()
 
     /** PIN do ustawień (pusty = bez blokady). */
     var pin: String

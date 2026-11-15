@@ -310,6 +310,7 @@ class SettingsActivity : Activity() {
         Item.Action(getString(R.string.setting_send_log_to_receiver), { "${p.ftpDir}/${Tools.logName(p)}" }) { Tools.uploadLog(this, p, true) { toast(it) } },
         Item.Action(getString(R.string.setting_send_ts_dumps_to_receiver)) { Tools.uploadDumps(this, p) { toast(it) } },
         Item.Action(getString(R.string.setting_log_and_dump_storage_location), { Storage.dir(this, p).absolutePath }) { chooseStorage() },
+        Item.Action(getString(R.string.setting_app_storage), { getString(R.string.setting_app_storage_value) }) { showAppStorage() },
         Item.Toggle(getString(R.string.setting_clean_stream_damaged_packets_invalid_timestamps), { p.cleanTs }, { p.cleanTs = it }),
         Item.Toggle(getString(R.string.setting_save_ts_dump_on_freeze), { p.saveTs }, { p.saveTs = it }),
         num(getString(R.string.setting_ts_dump_size_mb), { p.tsRingMb }, { p.tsRingMb = it }, 2..64),
@@ -904,6 +905,27 @@ class SettingsActivity : Activity() {
                         TvDialog.Btn(getString(R.string.dialog_cancel)),
                     ))
                 }
+            }
+        }.start()
+    }
+
+    /** Zajętość pamięci przez aplikację z podziałem; czyszczenie pamięci podręcznej (ustawienia zostają). */
+    private fun showAppStorage() {
+        Thread {
+            val parts = AppStorage.report(this, p)
+            val text = parts.joinToString("\n") { "${it.label}: ${AppStorage.mb(it.bytes)}\n    ${it.path}" }
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                TvDialog.confirm(this, getString(R.string.setting_app_storage), text, listOf(
+                    TvDialog.Btn(getString(R.string.setting_app_storage_clear_cache)) {
+                        Thread {
+                            val freed = AppStorage.clearCache(this)
+                            AppLog.i("pamięć aplikacji: wyczyszczono pamięć podręczną (${AppStorage.mb(freed)})")
+                            runOnUiThread { toast(getString(R.string.setting_app_storage_cleared, AppStorage.mb(freed))) }
+                        }.start()
+                    },
+                    TvDialog.Btn(getString(R.string.message_close)),
+                ), timeoutSec = 0)
             }
         }.start()
     }

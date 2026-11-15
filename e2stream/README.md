@@ -25,6 +25,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 * Przy zawieszeniu zapis ostatnich sekund strumienia (`stall-*.ts`, bufor 16 MB) do analizy np. TSDuck; na urządzeniu najwyżej 3 zrzuty, po wysłaniu na dekoder kopia lokalna jest usuwana (na dekoderze sprząta je EPG Scan: Sprzątanie dysku → zrzuty starsze niż N dni).
 * Miejsce zapisu: pamięć urządzenia lub pendrive/karta (katalog `Android/data/pl.jardol.e2stream/files/`).
 * EPG pobierane codziennie wg harmonogramu (i na żądanie) z zapisem na urządzeniu; picony kanałów z dekodera (OpenWebif /picon/ lub FTP). Brakujące picony można zastąpić logo E2Stream; wyłączenie zastępowania zostawia puste miejsce, zachowując układ.
+* Ustawienia → Logi i zrzuty → *Pamięć zajmowana przez aplikację*: podział (ustawienia, EPG, picony, pamięć podręczna, logi, timeshift, nagrania) i *Wyczyść pamięć podręczną* (ustawień nie rusza). Przy starcie aplikacja usuwa pobrane pliki aktualizacji (APK ~100 MB każdy) i stare pliki pamięci podręcznej, a zajętość zapisuje w logu.
 * Opcjonalnie EIT „teraz/następne” ze strumienia (Ustawienia → EPG i picony kanałów → *EIT ze strumienia*): włączenie jest możliwe tylko, gdy Enigma2 wysyła EIT w strumieniu (*Include EIT in http streams*; sprawdza to wtyczka EPG Scan 2.19.1+). Zmiana programu nadawcy (inny tytuł lub przesunięte godziny bieżącej/następnej audycji) trafia do logu i — przy *Podmieniaj EPG po odebraniu EIT* — do EPG aplikacji do następnej aktualizacji z dekodera; bez podmiany dane z EIT są pokazywane tylko w pamięci, do końca audycji. Do sprawdzenia służy (tylko w wersjach beta) *Test EIT: EPG tylko ze strumienia* (usuwa EPG aplikacji i wyłącza pobieranie z dekodera, także bieżącą audycję listy kanałów) oraz linia EIT w statystykach odtwarzania.
 * EPG kanału, multi-EPG bukietu i wyszukiwanie w EPG; z audycji: przełącz na kanał, zaplanuj przełączenie lub nagraj na dekoderze.
 * Długie OK w EPG kanału i Multi-EPG otwiera wybór kanału/bukietu, a wyszukiwanie jest na końcu menu.
@@ -123,7 +124,7 @@ Na nagraniu długie OK otwiera wybór Odtwórz/Usuń; usunięcie wymaga potwierd
 PIN do ustawień może mieć maksymalnie 6 cyfr. Historię przełączeń można czyścić po 7, 14 lub 28 dniach albo zachować bez limitu.
 Pasek timeshiftu pozostaje na ekranie w czasie pauzy, a po wznowieniu znika po czasie ustawionym w Ogólnych.
 
-**Nagrania lokalne z bufora timeshiftu.** Długie OK przy schowanym pasku albo na pasku timeshiftu (menu) → *Nagraj…*:
+**Nagrania lokalne z bufora timeshiftu.** Menu (długie OK przy schowanym pasku) → *Nagraj…* / *Zatrzymaj nagrywanie* (pozycje na górze, do ukrycia w konfiguracji menu); długie OK na pasku timeshiftu otwiera od razu wybór nagrania:
 *Audycja* (od początku bieżącej audycji w buforze do jej końca wg EPG, +1 min), *Bufor do teraz* (natychmiast) albo
 *Cały bufor do zmiany kanału*. Kawałki bufora nie są kopiowane — przenoszone (zmiana nazwy) do katalogu `nagrania/`
 obok katalogu bufora (ten sam nośnik); po zakończeniu nagrania timeshift zaczyna od nowa, a odtwarzanie z bufora wraca na żywo.

@@ -246,6 +246,16 @@ class PlayerActivity : Activity() {
         prefs.migrate()
         AppLog.init(this, Storage.dir(this, prefs))
         tsCleanupAtStart()
+        val appCtx = applicationContext
+        val storePrefs = prefs
+        Thread({
+            try {
+                val freed = AppStorage.cleanup(appCtx)
+                val parts = AppStorage.report(appCtx, storePrefs)
+                AppLog.i("pamięć aplikacji: ${AppStorage.reportLine(parts)}" +
+                    if (freed > 0) " (usunięto z pamięci podręcznej ${AppStorage.mb(freed)}: pobrane aktualizacje i stare pliki)" else "")
+            } catch (e: Exception) { AppLog.i("pamięć aplikacji: $e") }
+        }, "pamiec-aplikacji").start()
         epgStore = EpgStore(this)
         epg = EpgUi(this, api, io, epgStore, object : EpgUi.Host {
             override fun current(): Channel? = playList.getOrNull(playIndex)
@@ -3190,7 +3200,7 @@ class PlayerActivity : Activity() {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
             // pasek timeshiftu (nie pasek kanału): menu z „Nagraj…”
-            if (!recMode && banner.visibility == View.VISIBLE && tsCtl && !tsChBar) { showQuickMenu(); return true }
+            if (!recMode && banner.visibility == View.VISIBLE && tsCtl && !tsChBar) { showRecordMenu(); return true }
             if (!recMode && banner.visibility == View.VISIBLE) {
                 val diskUnavailable = prefs.tsDir.isNotBlank() && !TimeshiftBuffer.available(prefs.tsDir)
                 val reason = when {
@@ -3465,14 +3475,16 @@ class PlayerActivity : Activity() {
             "zap_timers" to { showZapTimers() },
             "decoder_timers" to { showDecoderTimers() },
         )
-        val record = when {
-            localRec != null -> listOf(getString(R.string.player_localrec_stop_menu, localRec?.meta?.optString("title").orEmpty()) to
-                { finishLocalRec("zatrzymane", restartLive = true) })
-            !recMode && prefs.tsMin > 0 && currentUrl != null -> listOf(getString(R.string.player_localrec_menu) to { showRecordMenu() })
-            else -> emptyList()
-        }
-        val items = record + QuickMenu.ordered(prefs).map { getString(it.labelRes) to actions.getValue(it.id) } +
-            listOf(getString(R.string.message_settings) to { openSettings() })
+        val canRecord = !recMode && prefs.tsMin > 0 && currentUrl != null && localRec == null
+        val items = QuickMenu.ordered(prefs).mapNotNull { e ->
+            when (e.id) {
+                "record" -> if (canRecord) getString(R.string.player_localrec_menu) to { showRecordMenu() } else null
+                "record_stop" -> localRec?.let { r ->
+                    getString(R.string.player_localrec_stop_menu, r.meta.optString("title")) to { finishLocalRec("zatrzymane", restartLive = true) }
+                }
+                else -> getString(e.labelRes) to actions.getValue(e.id)
+            }
+        } + listOf(getString(R.string.message_settings) to { openSettings() })
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->
             items[which].second()
         }
