@@ -960,6 +960,12 @@ fun main() {
                 if (!navigator.isOpen) navigator.open(SettingsScreen.DECODER)
                 navigator.openChoice(choice)
             }
+            fun profileLabel(profile: DeviceProfile, stamp: DateTimeFormatter): String {
+                val own = profile.file == "device-${syncDeviceId()}.json"
+                val kind = if (own) "ten komputer" else if (profile.isWindows) "Windows" else "Android"
+                val time = Instant.ofEpochMilli(profile.updated).atZone(java.time.ZoneId.systemDefault()).format(stamp)
+                return "${profile.name.ifBlank { profile.model }}  •  $kind, $time"
+            }
             fun checkInitialBackup() {
                 if (backupCheckRunning || config.backupDecision || config.host.isBlank()) return
                 backupCheckRunning = true
@@ -969,7 +975,8 @@ fun main() {
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
                             parseDeviceProfiles(DecoderClient(current).syncDevices())
-                                .filter { it.backup != null && it.file != "device-${syncDeviceId()}.json" }
+                                .filter { it.backup != null }
+                                .sortedByDescending { it.file == "device-${syncDeviceId()}.json" }
                         }
                     }
                     backupCheckRunning = false
@@ -993,18 +1000,14 @@ fun main() {
                         }
                         AppLog.i("kopia ustawień: znaleziono ${profiles.size} profili")
                         val stamp = DateTimeFormatter.ofPattern("dd.MM HH:mm")
-                        val labels = profiles.map { profile ->
-                            val kind = if (profile.isWindows) "Windows" else "Android"
-                            val time = Instant.ofEpochMilli(profile.updated).atZone(java.time.ZoneId.systemDefault()).format(stamp)
-                            "${profile.name.ifBlank { profile.model }}  •  $kind, $time"
-                        }
+                        val labels = profiles.map { profileLabel(it, stamp) }
                         showChoice(
                             SettingsChoice(
                                 "Znaleziono kopie ustawień",
                                 labels + "Nie importuj — ustawienia domyślne",
                                 0,
-                                body = "Na dekoderze są zapisane profile innych odbiorników. Możesz przenieść ustawienia z jednego z nich " +
-                                    "albo zacząć od domyślnych. Import obejmuje też PIN, hasła i token wtyczki; adres dekodera pozostaje bez zmian." +
+                                body = "Na dekoderze są zapisane kopie ustawień (tego komputera i innych odbiorników). Możesz przywrócić " +
+                                    "jedną z nich albo zacząć od domyślnych. Import obejmuje też PIN, hasła i token wtyczki; adres dekodera pozostaje bez zmian." +
                                     " Z Androida przenoszone są ustawienia wspólne (porty, logowanie, czasy, wygląd, timeshift, EPG).",
                             ) { index ->
                                 val profile = profiles.getOrNull(index)
@@ -1034,24 +1037,21 @@ fun main() {
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
                             parseDeviceProfiles(DecoderClient(current).syncDevices())
-                                .filter { it.backup != null && it.file != "device-${syncDeviceId()}.json" }
+                                .filter { it.backup != null }
+                                .sortedByDescending { it.file == "device-${syncDeviceId()}.json" }
                         }
                     }
                     result.onFailure { status = "Nie udało się pobrać profili (wymaga wtyczki EPG Scan): ${it.message}" }
                         .onSuccess { profiles ->
                             if (profiles.isEmpty()) {
-                                status = "Na dekoderze nie ma profili innych odbiorników."
+                                status = "Na dekoderze nie ma kopii ustawień."
                                 return@onSuccess
                             }
                             val stamp = DateTimeFormatter.ofPattern("dd.MM HH:mm")
                             showChoice(
                                 SettingsChoice(
-                                    "Przenieś ustawienia z odbiornika",
-                                    profiles.map { profile ->
-                                        val kind = if (profile.isWindows) "Windows" else "Android"
-                                        val time = Instant.ofEpochMilli(profile.updated).atZone(java.time.ZoneId.systemDefault()).format(stamp)
-                                        "${profile.name.ifBlank { profile.model }}  •  $kind, $time"
-                                    },
+                                    "Przywróć lub przenieś ustawienia",
+                                    profiles.map { profileLabel(it, stamp) },
                                     0,
                                     body = "Ustawienia z wybranego profilu zastąpią bieżące (adres dekodera zostaje). Z Androida przenoszone są " +
                                         "ustawienia wspólne.",
@@ -2652,7 +2652,7 @@ fun main() {
                             else -> audioSyncStatus.ifBlank { "jeszcze nie synchronizowano" }
                         },
                     ) { syncAudio(manual = true) },
-                    SettingItem.Action("Przenieś ustawienia z innego odbiornika", "profile Androida i innych komputerów na dekoderze") {
+                    SettingItem.Action("Przywróć lub przenieś ustawienia", "kopie tego komputera, Androida i innych komputerów na dekoderze") {
                         importFromProfile()
                     },
                     SettingItem.Header("Bukiety i kanały"),

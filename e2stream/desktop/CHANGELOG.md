@@ -3,6 +3,10 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.4.1
+
+- Kopia ustawień: po wyczyszczeniu ustawień aplikacja nie proponowała kopii zapisanej przez ten sam komputer (pomijała własny plik device-win-<komputer>.json). Teraz kopia tego komputera jest pierwsza na liście, oznaczona „ten komputer”; tak samo w „Przywróć lub przenieś ustawienia” (wcześniej „Przenieś ustawienia z innego odbiornika”)
+
 ## 0.4.0
 
 - VLC wewnętrzny: instalator zawiera VLC 3.x 64-bit (biblioteki i wtyczki z videolan.org, bez interfejsu Qt) — osobna instalacja VLC nie jest już potrzebna
