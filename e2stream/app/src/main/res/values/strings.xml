@@ -47,6 +47,24 @@
     <string name="ts_delay_buffer_play">od razu (odtwarzanie przez bufor)</string>
     <string name="setting_bg_buffer">Bufor poprzednich kanałów (zapis w tle, razem najwyżej 3 kanały)</string>
     <string name="setting_bg_buffer_needs">wymaga odtwarzania przez bufor</string>
-    <string name="setting_bg_buffer_min">%1$d min</string>
-    <string name="setting_bg_buffer_h">%1$d h</string>
+    <string name="setting_bg_buffer_same">taki sam jak timeshift (%1$d min)</string>
+    <string name="setting_bg_buffer_manual">%1$d min</string>
+    <string name="setting_bg_buffer_manual_pick">Ręczny w minutach</string>
+    <string name="setting_bg_buffer_manual_hint">minuty: 1–%1$d (najwyżej jak timeshift)</string>
+    <string name="setting_bg_buffer_capped">Ograniczono do %1$d min (długość timeshiftu)</string>
+    <string name="setting_pip_mode">Obraz w oknach PiP</string>
+    <string name="setting_pip_smooth">płynny</string>
+    <string name="setting_pip_frames">klatka co %1$.1f s</string>
+    <string name="pip_menu">Obraz w obrazie (PiP)…</string>
+    <string name="pip_title">Obraz w obrazie (PiP)</string>
+    <string name="pip_add_buffered">Dodaj okno: %1$s (w buforze)</string>
+    <string name="pip_add_other">Dodaj okno: inny kanał…</string>
+    <string name="pip_window">Okno %1$d: %2$s</string>
+    <string name="pip_swap">Zamień z głównym</string>
+    <string name="pip_close">Zamknij okno</string>
+    <string name="pip_close_all">Zamknij PiP</string>
+    <string name="pip_full">Najwyżej 2 okna PiP</string>
+    <string name="pip_choose">Kanał do okna PiP</string>
+    <string name="pip_needs">PiP wymaga odtwarzania przez bufor i nośnika</string>
+    <string name="pip_no_slot">Brak wolnego miejsca na bufor PiP</string>
 </resources>

@@ -566,9 +566,12 @@ class SettingsActivity : Activity() {
             if (!p.bufPlay) getString(R.string.setting_bg_buffer_needs) else bgName(p.bgBufMin)
         }) {
             if (!p.bufPlay) { toast(getString(R.string.setting_bg_buffer_needs)); return@gated }
-            val o = listOf(0, 10, 30, 60, 120, 180)
-            TvDialog.single(this, getString(R.string.setting_bg_buffer), o.map { bgName(it) }, o.indexOf(p.bgBufMin).coerceAtLeast(0)) { w ->
-                p.bgBufMin = o[w]; markChanged("bufor poprzednich kanałów: ${bgName(o[w])}"); items = buildItems(); refresh()
+            chooseBgBuffer()
+        },
+        gated(getString(R.string.setting_pip_mode), { pipName(p.pipFrameMs) }) {
+            val o = listOf(0, 500, 1000, 2000)
+            TvDialog.single(this, getString(R.string.setting_pip_mode), o.map { pipName(it) }, o.indexOf(p.pipFrameMs).coerceAtLeast(0)) { w ->
+                p.pipFrameMs = o[w]; markChanged("PiP: ${pipName(o[w])}"); items = buildItems(); refresh()
             }
         },
         Item.Header(getString(R.string.setting_timeshift_pause_and_rewind_live_tv)),
@@ -604,10 +607,47 @@ class SettingsActivity : Activity() {
         Item.Action(getString(R.string.setting_app_storage), { getString(R.string.setting_app_storage_value) }) { showAppStorage() },
     )
 
+    /** Długość bufora bieżącego kanału (timeshift albo krótki bufor samego odtwarzania przez bufor). */
+    private fun mainBufMin() = if (p.tsMin > 0) p.tsMin else TimeshiftBuffer.BUF_PLAY_MIN
+
     private fun bgName(m: Int): String = when {
-        m <= 0 -> getString(R.string.settings_disabled)
-        m < 60 -> getString(R.string.setting_bg_buffer_min, m)
-        else -> getString(R.string.setting_bg_buffer_h, m / 60)
+        m == 0 -> getString(R.string.settings_disabled)
+        m < 0 -> getString(R.string.setting_bg_buffer_same, mainBufMin())
+        else -> getString(R.string.setting_bg_buffer_manual, minOf(m, mainBufMin()))
+    }
+
+    private fun pipName(ms: Int): String =
+        if (ms <= 0) getString(R.string.setting_pip_smooth) else getString(R.string.setting_pip_frames, ms / 1000.0)
+
+    /** Wyłączony / taki sam jak timeshift / ręczny w minutach (najwyżej długość bufora bieżącego kanału). */
+    private fun chooseBgBuffer() {
+        val opts = listOf(getString(R.string.settings_disabled), getString(R.string.setting_bg_buffer_same, mainBufMin()),
+            getString(R.string.setting_bg_buffer_manual_pick) + if (p.bgBufMin > 0) " (${minOf(p.bgBufMin, mainBufMin())} min)" else "")
+        val sel = when { p.bgBufMin == 0 -> 0; p.bgBufMin < 0 -> 1; else -> 2 }
+        TvDialog.single(this, getString(R.string.setting_bg_buffer), opts, sel) { w ->
+            when (w) {
+                0, 1 -> { p.bgBufMin = if (w == 0) 0 else -1; markChanged("bufor poprzednich kanałów: ${bgName(p.bgBufMin)}"); items = buildItems(); refresh() }
+                else -> {
+                    val max = mainBufMin()
+                    val et = EditText(this)
+                    et.inputType = InputType.TYPE_CLASS_NUMBER
+                    et.setText((if (p.bgBufMin > 0) minOf(p.bgBufMin, max) else minOf(10, max)).toString())
+                    et.setSelection(et.text.length)
+                    et.textSize = 22f
+                    et.imeOptions = EditorInfo.IME_ACTION_DONE
+                    et.setSingleLine(true)
+                    val hint = getString(R.string.setting_bg_buffer_manual_hint, max)
+                    et.hint = hint
+                    TvDialog.input(this, getString(R.string.setting_bg_buffer), hint, et) {
+                        val v = et.text.toString().toIntOrNull()
+                        if (v == null || v < 1) { toast(hint); return@input }
+                        p.bgBufMin = minOf(v, max)
+                        if (v > max) toast(getString(R.string.setting_bg_buffer_capped, max))
+                        markChanged("bufor poprzednich kanałów: ${bgName(p.bgBufMin)}"); items = buildItems(); refresh()
+                    }
+                }
+            }
+        }
     }
 
     /** Nośnik wybrany i dostępny (dysk podłączony / zgoda na pamięć urządzenia). */

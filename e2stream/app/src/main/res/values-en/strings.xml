@@ -46,6 +46,24 @@
     <string name="ts_delay_buffer_play">immediately (playback through buffer)</string>
     <string name="setting_bg_buffer">Previous channels buffer (background recording, up to 3 channels)</string>
     <string name="setting_bg_buffer_needs">requires playback through buffer</string>
-    <string name="setting_bg_buffer_min">%1$d min</string>
-    <string name="setting_bg_buffer_h">%1$d h</string>
+    <string name="setting_bg_buffer_same">same as timeshift (%1$d min)</string>
+    <string name="setting_bg_buffer_manual">%1$d min</string>
+    <string name="setting_bg_buffer_manual_pick">Manual (minutes)</string>
+    <string name="setting_bg_buffer_manual_hint">minutes: 1–%1$d (at most the timeshift length)</string>
+    <string name="setting_bg_buffer_capped">Limited to %1$d min (timeshift length)</string>
+    <string name="setting_pip_mode">Picture in PiP windows</string>
+    <string name="setting_pip_smooth">smooth</string>
+    <string name="setting_pip_frames">frame every %1$.1f s</string>
+    <string name="pip_menu">Picture in picture (PiP)…</string>
+    <string name="pip_title">Picture in picture (PiP)</string>
+    <string name="pip_add_buffered">Add window: %1$s (buffered)</string>
+    <string name="pip_add_other">Add window: other channel…</string>
+    <string name="pip_window">Window %1$d: %2$s</string>
+    <string name="pip_swap">Swap with main</string>
+    <string name="pip_close">Close window</string>
+    <string name="pip_close_all">Close PiP</string>
+    <string name="pip_full">At most 2 PiP windows</string>
+    <string name="pip_choose">Channel for PiP window</string>
+    <string name="pip_needs">PiP requires playback through buffer and a medium</string>
+    <string name="pip_no_slot">No free slot for a PiP buffer</string>
 </resources>

@@ -1147,7 +1147,9 @@ class PlayerActivity : Activity() {
             if (bufReady()) { startBufLive(url, bufReuse); return }
             if (bufLive) bufStop("nośnik niedostępny — odtwarzanie bezpośrednie")
         } else if (bufLive) bufStop(if (recMode) "nagranie" else "opcja wyłączona")
-        if (!bgEnabled()) bgDropAll("opcja wyłączona")
+        if (!bgAllowed() || recMode) bgDropAll("opcja wyłączona")
+        else if (prefs.bgBufMin == 0) for (c in bgChans.filter { it.pip < 0 }) bgDrop(c, "opcja wyłączona")
+        pipRefresh()
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
             return
@@ -2134,6 +2136,7 @@ class PlayerActivity : Activity() {
     private var tsLiveUrl: String? = null
 
     private val BG_MAX = 2      // kanały w tle (razem z bieżącym najwyżej 3)
+    private val PIP_TAIL = 2_000_000L
 
     // --- odtwarzanie przez bufor: jedno połączenie z dekoderem (TimeshiftRecorder) zapisuje do bufora,
     // odtwarzacz (ExoPlayer / VLC przez lokalny serwer) czyta koniec bufora; pauza i cofnięcie bez nowego połączenia
@@ -2185,16 +2188,31 @@ class PlayerActivity : Activity() {
     }
     private var tsRecAn: TsAnalyzer? = null
 
-    // --- bufory poprzednich kanałów: po przełączeniu poprzedni kanał zapisuje się w tle przez prefs.bgBufMin minut;
-    // powrót na niego — odtwarzanie od razu z jego bufora (połączenie z dekoderem już działa)
+    // --- bufory poprzednich kanałów i PiP: po przełączeniu poprzedni kanał zapisuje się dalej w tle (własne połączenie,
+    // analizator, bufor w podkatalogu); powrót — odtwarzanie od razu z jego bufora. Kanały w oknach PiP to też bufory w tle.
     private class BgChan(
         val url: String, val name: String, val buf: TimeshiftBuffer, val an: TsAnalyzer,
-        val rec: TimeshiftRecorder, val journal: ProgramJournal, val until: Long,
-    )
+        val rec: TimeshiftRecorder, val journal: ProgramJournal,
+        val ch: Channel?, val bIdx: Int, val list: List<Channel>,
+    ) {
+        var pip = -1                               // numer okna PiP albo -1
+        var leftAt = SystemClock.elapsedRealtime()
+    }
     private val bgChans = ArrayList<BgChan>()
     private var bgPromoted = false
 
-    private fun bgEnabled() = prefs.bgBufMin > 0 && prefs.bufPlay && TimeshiftBuffer.dir(this, prefs) != null
+    private fun bgAllowed() = prefs.bufPlay && TimeshiftBuffer.dir(this, prefs) != null
+    private fun bgEnabled() = bgAllowed() && prefs.bgBufMin != 0
+    private fun mainBufMin() = if (prefs.tsMin > 0) prefs.tsMin else TimeshiftBuffer.BUF_PLAY_MIN
+    /** Długość bufora poprzedniego kanału: jak bieżący albo ręczna (najwyżej jak bieżący). */
+    private fun bgBufLen() = if (prefs.bgBufMin < 0) mainBufMin() else minOf(maxOf(prefs.bgBufMin, 1), mainBufMin())
+    private fun pipBufLen() = if (prefs.bgBufMin == 0) mainBufMin() else bgBufLen()
+
+    private fun bgEit(j: ProgramJournal): (Long, Int, EitEvent?, EitEvent?) -> Unit = { _, _, now, _ ->
+        if (now != null) ui.post {
+            j.add(JournalEvent(now.begin, now.end, now.title, listOf(now.shortDesc, now.longDesc).filter { it.isNotBlank() }.distinct().joinToString("\n")))
+        }
+    }
 
     private fun bgDrop(c: BgChan, reason: String) {
         if (!bgChans.remove(c)) return
@@ -2202,6 +2220,7 @@ class PlayerActivity : Activity() {
         c.an.tee = null; c.an.onEit = null
         c.buf.reset()
         AppLog.i("bufor w tle: ${c.name} zamknięty ($reason)")
+        pipRefresh()
     }
 
     private fun bgDropAll(reason: String) { for (c in bgChans.toList()) bgDrop(c, reason) }
@@ -2209,11 +2228,7 @@ class PlayerActivity : Activity() {
     private val bgTick = object : Runnable {
         override fun run() {
             ui.removeCallbacks(this)
-            val now = SystemClock.elapsedRealtime()
-            for (c in bgChans.toList()) {
-                if (now >= c.until) bgDrop(c, "minął czas ${prefs.bgBufMin} min")
-                else if (c.buf.failed != null) bgDrop(c, "błąd zapisu")
-            }
+            for (c in bgChans.toList()) if (c.buf.failed != null) bgDrop(c, "błąd zapisu")
             if (bgChans.isNotEmpty()) ui.postDelayed(this, 30_000)
         }
     }
@@ -2221,49 +2236,59 @@ class PlayerActivity : Activity() {
     /**
      * Przełączenie na [url]: bieżący kanał (odtwarzany przez bufor) przechodzi do zapisu w tle, a gdy [url] jest już
      * buforowany w tle — jego bufor, połączenie i dziennik stają się bieżącymi (tsNewChannel ich nie resetuje).
+     * Kanał z okna PiP zamienia się miejscem z bieżącym (bieżący trafia do tego okna).
      */
     private fun bgSwitch(url: String, name: String) {
         if (recMode || url == tsLiveUrl && bufLive) return
-        if (!bgEnabled()) { bgDropAll("opcja wyłączona"); return }
+        if (!bgAllowed()) { bgDropAll("opcja wyłączona"); return }
+        if (prefs.bgBufMin == 0) for (c in bgChans.filter { it.pip < 0 }) bgDrop(c, "opcja wyłączona")
         val target = bgChans.firstOrNull { it.url == url }
+        val pipSlot = target?.pip ?: -1
         val curBuf = tsBuf
         val curRec = tsRec
         val curAn = tsRecAn
-        val curName = playList.getOrNull(playIndex)?.name ?: "?"
-        if (bufLive && curBuf != null && curRec != null && curAn != null && curAn === analyzer && curBuf.failed == null) {
-            if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
-            if (tsMode) tsLeave()
-            // bieżący → w tle: analizator, bufor i dziennik należą odtąd do niego
-            curAn.tee = { b, o, l -> curBuf.write(b, o, l) }
-            val j = journal
-            curAn.onEit = { _, _, now, _ -> if (now != null) ui.post {
-                j.add(JournalEvent(now.begin, now.end, now.title, listOf(now.shortDesc, now.longDesc).filter { it.isNotBlank() }.distinct().joinToString("\n")))
-            } }
-            curBuf.pcrPid = { curAn.pcrPid }
-            val until = SystemClock.elapsedRealtime() + prefs.bgBufMin * 60_000L
-            while (bgChans.count { it !== target } >= BG_MAX) bgChans.filter { it !== target }.minByOrNull { it.until }?.let { bgDrop(it, "limit $BG_MAX kanałów") } ?: break
-            bgChans += BgChan(tsLiveUrl ?: "", curName, curBuf, curAn, curRec, j, until)
-            AppLog.i("bufor w tle: $curName zapisywany jeszcze ${prefs.bgBufMin} min")
-            tsRec = null; tsRecAn = null; tsBuf = null
-            bufLive = false
-            journal = ProgramJournal()
-            analyzer = null
-            if (target == null) ensureAnalyzer()
-            ui.removeCallbacks(bgTick); ui.postDelayed(bgTick, 30_000)
+        val canDemote = bufLive && curBuf != null && curRec != null && curAn != null && curAn === analyzer && curBuf.failed == null
+        if (canDemote && (pipSlot >= 0 || prefs.bgBufMin != 0)) {
+            // miejsce: najdawniej opuszczony poprzedni kanał wypada (okna PiP zostają)
+            while (bgChans.count { it !== target } >= BG_MAX) {
+                val v = bgChans.filter { it !== target && it.pip < 0 }.minByOrNull { it.leftAt } ?: break
+                bgDrop(v, "limit ${BG_MAX + 1} kanałów")
+            }
+            if (bgChans.count { it !== target } < BG_MAX) {
+                if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
+                if (tsMode) tsLeave()
+                val cur = playList.getOrNull(playIndex)
+                // bieżący → w tle: analizator, bufor i dziennik należą odtąd do niego
+                curAn!!.tee = { b, o, l -> curBuf!!.write(b, o, l) }
+                curAn.onEit = bgEit(journal)
+                curBuf!!.pcrPid = { curAn.pcrPid }
+                curBuf.maxMin = if (pipSlot >= 0) pipBufLen() else bgBufLen()
+                val c = BgChan(tsLiveUrl ?: "", cur?.name ?: "?", curBuf, curAn, curRec!!, journal, cur, playBouquet, playList)
+                c.pip = pipSlot
+                bgChans += c
+                AppLog.i("bufor w tle: ${c.name} — zapis w tle, bufor ${curBuf.maxMin} min" + if (pipSlot >= 0) " (okno PiP ${pipSlot + 1})" else "")
+                tsRec = null; tsRecAn = null; tsBuf = null
+                bufLive = false
+                journal = ProgramJournal()
+                analyzer = null
+                if (target == null) ensureAnalyzer()
+                ui.removeCallbacks(bgTick); ui.postDelayed(bgTick, 30_000)
+            }
         }
         if (target != null) {
             bgChans.remove(target)
+            target.pip = -1
             if (tsMode) tsLeave()
             bufStop("powrót na kanał buforowany w tle")
             if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
             tsBuf?.reset()
-            if (tsBuf != null) tsBuf = null
+            tsBuf = null
             // przejęcie: ten sam analizator (bez resetu sesji), bufor, połączenie i dziennik
             analyzer = target.an
             mainAnalyzerHooks(target.an)
             target.an.clean = prefs.cleanTs
             target.buf.pcrPid = { analyzer?.pcrPid ?: -1 }
-            target.buf.maxMin = if (prefs.tsMin > 0) prefs.tsMin else TimeshiftBuffer.BUF_PLAY_MIN
+            target.buf.maxMin = mainBufMin()
             tsBuf = target.buf
             tsRec = target.rec; tsRecAn = target.an
             journal = target.journal
@@ -2271,6 +2296,224 @@ class PlayerActivity : Activity() {
             bufLive = true
             bgPromoted = true
             AppLog.i("bufor w tle: powrót na $name — odtwarzanie od razu z bufora (${target.buf.spanMs() / 1000} s zapisu)")
+        }
+        pipRefresh()
+    }
+
+    /** Nowy kanał buforowany w tle (dla okna PiP): własne połączenie, analizator i bufor w wolnym podkatalogu. */
+    private fun bgNew(ch: Channel): BgChan? {
+        val root = TimeshiftBuffer.dir(this, prefs) ?: return null
+        val used = bgChans.map { it.buf.dir }.toSet() + listOfNotNull(tsBuf?.dir)
+        val dir = TimeshiftBuffer.slotDirs(root).firstOrNull { it !in used } ?: return null
+        val url = api.streamUrl(ch)
+        val buf = TimeshiftBuffer(dir, pipBufLen(), root)
+        val an = TsAnalyzer(0) { msg -> AppLog.i("PiP ${ch.name}: $msg") }
+        an.pmtCacheGet = { sid -> prefs.pmtFor(sid) ?: PmtBuilder.build(sid, prefs.pidsFor(sid)) }
+        an.pmtCachePut = { sid, b -> prefs.setPmtFor(sid, b) }
+        an.clean = prefs.cleanTs
+        an.reset(url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1)
+        buf.pcrPid = { an.pcrPid }
+        an.tee = { b, o, l -> buf.write(b, o, l) }
+        val j = ProgramJournal()
+        an.onEit = bgEit(j)
+        lateinit var rec: TimeshiftRecorder
+        rec = TimeshiftRecorder(url, api.authHeader(), { an }, { an.dropCarry(); buf.resync() }, onFailure = {
+            runOnUiThread { bgChans.firstOrNull { it.rec === rec }?.let { bgDrop(it, "brak strumienia z dekodera") } }
+        })
+        val c = BgChan(url, ch.name, buf, an, rec, j, ch, playBouquet, playList)
+        bgChans += c
+        rec.start()
+        ui.removeCallbacks(bgTick); ui.postDelayed(bgTick, 30_000)
+        AppLog.i("bufor w tle: ${ch.name} — nowe połączenie dla PiP, bufor ${buf.maxMin} min w ${dir.absolutePath}")
+        return c
+    }
+
+    // --- PiP: najwyżej 2 okna z kanałami buforowanymi w tle (bez dźwięku); obraz płynny albo klatka co prefs.pipFrameMs
+    private inner class PipWin(val idx: Int) {
+        val frame = android.widget.FrameLayout(this@PlayerActivity)
+        val label = TextView(this@PlayerActivity)
+        var chan: BgChan? = null
+        var mode = -1
+        var exo: ExoPlayer? = null
+        @Volatile var gen = 0
+        var failLogged = false
+    }
+    private val pipWins = arrayOfNulls<PipWin>(2)
+
+    private fun pipView(i: Int): PipWin = pipWins[i] ?: PipWin(i).also { w ->
+        val dm = resources.displayMetrics
+        val wpx = (dm.widthPixels * 0.26f).toInt()
+        val hpx = wpx * 9 / 16
+        val m = (16 * dm.density).toInt()
+        w.frame.setBackgroundColor(0xFF000000.toInt())
+        w.frame.setPadding(3, 3, 3, 3)
+        w.frame.foreground = android.graphics.drawable.GradientDrawable().apply { setStroke(3, 0xCCFFFFFF.toInt()) }
+        w.label.setTextColor(0xFFFFFFFF.toInt()); w.label.textSize = 13f
+        w.label.setBackgroundColor(0x99000000.toInt()); w.label.setPadding(m / 3, 2, m / 3, 2)
+        val lp = android.widget.FrameLayout.LayoutParams(wpx, hpx, android.view.Gravity.TOP or android.view.Gravity.END)
+        lp.topMargin = m * 2 + i * (hpx + m); lp.rightMargin = m * 2
+        w.frame.isFocusable = false
+        (findViewById<ViewGroup>(android.R.id.content)).addView(w.frame, lp)
+        w.frame.visibility = View.GONE
+        pipWins[i] = w
+    }
+
+    /** Okna zgodnie z kanałami w tle oznaczonymi jako PiP (po przełączeniu, zamknięciu bufora, zmianie ustawień). */
+    private fun pipRefresh() {
+        for (i in 0 until 2) {
+            val c = bgChans.firstOrNull { it.pip == i }
+            val w = pipWins[i]
+            if (c == null) { if (w != null) pipUnbind(w); continue }
+            val v = pipView(i)
+            if (v.chan !== c || v.mode != prefs.pipFrameMs) pipBind(v, c, prefs.pipFrameMs)
+        }
+    }
+
+    private fun pipUnbind(w: PipWin) {
+        w.gen++
+        w.exo?.release(); w.exo = null
+        w.frame.removeAllViews()
+        w.frame.visibility = View.GONE
+        w.chan = null; w.mode = -1
+    }
+
+    private fun pipBind(w: PipWin, c: BgChan, mode: Int) {
+        pipUnbind(w)
+        w.chan = c; w.mode = mode
+        w.frame.visibility = View.VISIBLE
+        val gen = w.gen
+        if (mode <= 0) {
+            val tv = android.view.TextureView(this)
+            w.frame.addView(tv, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            val p = ExoPlayer.Builder(this).build()
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+            p.volume = 0f
+            p.setVideoTextureView(tv)
+            val b = c.buf
+            val start = if (b.total > 0) b.offsetAt(SystemClock.elapsedRealtime() - 2000) else 0L
+            val hdr = c.an.psiHeader()
+            val src = ProgressiveMediaSource.Factory(
+                DataSource.Factory { TimeshiftDataSource(b, start, hdr, onGone = { }, lateHeader = if (hdr == null) ({ c.an.psiHeader() }) else null) },
+                DefaultExtractorsFactory().setTsExtractorFlags(
+                    DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS),
+            ).createMediaSource(MediaItem.fromUri("pip://${w.idx}/$start"))
+            p.addListener(object : Player.Listener {
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    AppLog.i("PiP ${w.idx + 1} (${c.name}): odtwarzacz — ${error.errorCodeName} (${error.cause?.message ?: error.message}) — przechodzę na klatki co 0,5 s")
+                    ui.post { if (w.gen == gen && w.chan === c) pipBind(w, c, 500) }
+                }
+            })
+            p.setMediaSource(src); p.prepare(); p.playWhenReady = true
+            w.exo = p
+            AppLog.i("PiP ${w.idx + 1}: ${c.name} — obraz płynny")
+        } else {
+            val iv = android.widget.ImageView(this)
+            iv.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            w.frame.addView(iv, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            val tmp = File(cacheDir, "pip-${w.idx}.ts")
+            val wpx = w.frame.layoutParams.width
+            val hpx = w.frame.layoutParams.height
+            Thread({
+                var ok = 0
+                while (w.gen == gen) {
+                    val t0 = SystemClock.elapsedRealtime()
+                    val bmp = try { pipGrab(c, tmp, wpx, hpx) } catch (e: Exception) {
+                        if (!w.failLogged) { w.failLogged = true; AppLog.i("PiP ${w.idx + 1} (${c.name}): klatka nieudana ($e)") }
+                        null
+                    }
+                    if (bmp != null) {
+                        if (ok++ == 0) AppLog.i("PiP ${w.idx + 1}: ${c.name} — pierwsza klatka po ${SystemClock.elapsedRealtime() - t0} ms")
+                        ui.post { if (w.gen == gen) iv.setImageBitmap(bmp) }
+                    }
+                    val wait = mode - (SystemClock.elapsedRealtime() - t0)
+                    try { Thread.sleep(maxOf(100L, wait)) } catch (_: InterruptedException) { break }
+                }
+                tmp.delete()
+            }, "pip-klatki-${w.idx}").start()
+            AppLog.i("PiP ${w.idx + 1}: ${c.name} — klatka co ${mode} ms")
+        }
+        w.label.text = "${w.idx + 1}  ${c.name}"
+        w.frame.addView(w.label, android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM or android.view.Gravity.START))
+    }
+
+    /** Ostatnie ~2 MB bufora (z PAT/PMT) do pliku tymczasowego i pierwsza klatka kluczowa z nich. */
+    private fun pipGrab(c: BgChan, tmp: File, wpx: Int, hpx: Int): android.graphics.Bitmap? {
+        val b = c.buf
+        val total = b.total
+        if (total < 300_000) return null
+        var pos = maxOf(b.oldestOffset, total - PIP_TAIL)
+        pos -= (pos - b.oldestOffset) % 188
+        java.io.FileOutputStream(tmp).use { o ->
+            c.an.psiHeader()?.let { o.write(it) }
+            val chunk = ByteArray(188 * 700)
+            while (pos < total) {
+                val n = b.read(pos, chunk, 0, minOf(chunk.size.toLong(), total - pos).toInt())
+                if (n <= 0) break
+                o.write(chunk, 0, n); pos += n
+            }
+        }
+        val r = android.media.MediaMetadataRetriever()
+        try {
+            r.setDataSource(tmp.path)
+            return if (android.os.Build.VERSION.SDK_INT >= 27)
+                r.getScaledFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_NEXT_SYNC, wpx, hpx)
+            else r.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_NEXT_SYNC)
+        } finally { try { r.release() } catch (_: Exception) {} }
+    }
+
+    /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału z bufora w tle albo innego. */
+    private fun showPipMenu() {
+        if (recMode || !bgAllowed() || !bufLive) { showMessage(getString(R.string.pip_needs)); return }
+        val acts = ArrayList<Pair<String, () -> Unit>>()
+        val open = bgChans.filter { it.pip >= 0 }.sortedBy { it.pip }
+        for (c in open) {
+            acts += (getString(R.string.pip_window, c.pip + 1, c.name) + " — " + getString(R.string.pip_swap)) to { pipSwap(c) }
+            acts += (getString(R.string.pip_window, c.pip + 1, c.name) + " — " + getString(R.string.pip_close)) to { pipClose(c) }
+        }
+        if (open.size < 2) {
+            for (c in bgChans.filter { it.pip < 0 }) acts += getString(R.string.pip_add_buffered, c.name) to { pipOpen(c) }
+            acts += getString(R.string.pip_add_other) to { pipPickChannel() }
+        }
+        if (open.isNotEmpty()) acts += getString(R.string.pip_close_all) to { for (c in open) pipClose(c) }
+        TvDialog.list(this, getString(R.string.pip_title), acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f) { i -> acts[i].second() }
+    }
+
+    private fun pipOpen(c: BgChan) {
+        val free = (0 until 2).firstOrNull { i -> bgChans.none { it.pip == i } } ?: run { showMessage(getString(R.string.pip_full)); return }
+        // bufory poprzednich kanałów (poza wybranym) usuwane — miejsce dla PiP
+        for (o in bgChans.filter { it.pip < 0 && it !== c }) bgDrop(o, "otwarte PiP")
+        c.pip = free
+        c.buf.maxMin = pipBufLen()
+        pipRefresh()
+    }
+
+    private fun pipClose(c: BgChan) {
+        c.pip = -1
+        c.leftAt = SystemClock.elapsedRealtime()
+        // kanał wraca do zasad bufora poprzednich kanałów
+        if (prefs.bgBufMin == 0) bgDrop(c, "zamknięte okno PiP") else c.buf.maxMin = bgBufLen()
+        pipRefresh()
+    }
+
+    private fun pipSwap(c: BgChan) {
+        val ch = c.ch ?: return
+        val i = c.list.indexOf(ch)
+        if (i < 0) return
+        playIn(c.bIdx, c.list, i)
+    }
+
+    private fun pipPickChannel() {
+        val curUrl = tsLiveUrl
+        val chans = playList.filter { api.streamUrl(it) != curUrl && bgChans.none { b -> b.url == api.streamUrl(it) } }
+        if (chans.isEmpty()) return
+        TvDialog.list(this, getString(R.string.pip_choose), chans.map { TvDialog.Item("${it.num}  ${it.name}") }, 0, widthFrac = 0.45f) { i ->
+            // wolne miejsce: najpierw wypadają bufory poprzednich kanałów
+            for (o in bgChans.filter { it.pip < 0 }) bgDrop(o, "otwarte PiP")
+            if (bgChans.size >= BG_MAX) { showMessage(getString(R.string.pip_full)); return@list }
+            val c = bgNew(chans[i]) ?: run { showMessage(getString(R.string.pip_no_slot)); return@list }
+            pipOpen(c)
         }
     }
 
@@ -3934,7 +4177,9 @@ class PlayerActivity : Activity() {
                 }
                 else -> getString(e.labelRes) to actions.getValue(e.id)
             }
-        } + listOf(getString(R.string.message_settings) to { openSettings() })
+        } + listOfNotNull(
+            if (!recMode && prefs.bufPlay && currentUrl != null) getString(R.string.pip_menu) to { showPipMenu() } else null,
+            getString(R.string.message_settings) to { openSettings() })
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->
             items[which].second()
         }

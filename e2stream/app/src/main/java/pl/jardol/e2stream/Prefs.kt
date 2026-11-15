@@ -281,10 +281,15 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("bufPlay", false)
         set(v) = putB("bufPlay", v)
 
-    /** Bufor poprzednich kanałów: ile minut kanał po opuszczeniu jest jeszcze buforowany w tle (0 — wyłączony). */
+    /** Bufor poprzednich kanałów: długość bufora kanału w tle w minutach; 0 — wyłączony, -1 — taki sam jak bieżącego. */
     var bgBufMin: Int
         get() = sp.getInt("bgBufMin", 0)
         set(v) = putI("bgBufMin", v)
+
+    /** PiP: 0 — obraz płynny (osobny odtwarzacz), inaczej klatka co tyle ms. */
+    var pipFrameMs: Int
+        get() = sp.getInt("pipFrameMs", 1000)
+        set(v) = putI("pipFrameMs", v)
 
     var keepFrame: Boolean
         get() = sp.getBoolean("keepFrame", true)
