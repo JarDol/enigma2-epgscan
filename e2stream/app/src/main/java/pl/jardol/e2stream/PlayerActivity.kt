@@ -800,6 +800,8 @@ class PlayerActivity : Activity() {
                 onStall = { reason -> scheduleRestart(reason) },
                 onHealthy = { failStreak = 0 },
                 dropRestart = prefs.dropRestart,
+                startMs = start.toLong(),
+                reserveMs = reserve.toLong(),
             ).also { it.start() }
         }
         ui.removeCallbacks(statsTick)
@@ -1147,7 +1149,8 @@ class PlayerActivity : Activity() {
         if (startMs > 0) p.setMediaSource(buildSource(url), startMs) else p.setMediaSource(buildSource(url))
         p.prepare()
         p.playWhenReady = true
-        watchdog?.reset()
+        // tylko na żywo: nagranie czyta z dysku (inny przebieg startu)
+        watchdog?.newStream(prefs.fastStart && !recMode)
     }
 
     private fun logFirstStreamByte() {
@@ -2199,6 +2202,7 @@ class PlayerActivity : Activity() {
         p.prepare()
         p.playWhenReady = play
         watchdog?.reset()
+        watchdog?.endStart()
         watchdog?.paused = tsShifted
         // przeładowanie po przewinięciu nie może zastąpić paska kanału paskiem timeshiftu
         if (tsShifted && !(tsChBar && banner.visibility == View.VISIBLE)) tsShowBanner(sticky = !play)

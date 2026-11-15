@@ -110,4 +110,5 @@
     <string name="setting_rec_max_pct" formatted="false">Nagrania z timeshiftu: najwyżej % pojemności nośnika</string>
     <string name="setting_app_storage" formatted="false">Pamięć zajmowana przez aplikację</string>
     <string name="setting_app_storage_value" formatted="false">pokaż</string>
+    <string name="setting_fast_channel_start" formatted="false">Przyspiesz start kanałów</string>
 </resources>

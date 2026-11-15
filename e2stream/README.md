@@ -7,6 +7,10 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 
 * ExoPlayer (Media3) z **tunelowaniem wideo**
   (sprzętowy deinterlacer telewizora, płynne paski informacyjne).
+* **Przyspiesz start kanałów** (ExoPlayer, domyślnie włączone) – przy starcie kanału: gdy dane z dekodera już są
+  (zapas ≥ bufor startowy + 1,5 s), a odtwarzacz od 2 s nie rusza (np. pierwsza klatka i obraz stoi), strumień jest
+  wznawiany od razu, bez czekania na limit buforowania. Gdy danych jeszcze nie ma, działa zwykły watchdog. Wyłączone —
+  zachowanie jak w 0.18.46.
 * **Watchdog** – gdy obraz się zawiesi (licznik klatek dekodera albo zegar odtwarzania stoi
   dłużej niż ustawiony limit, zbyt długie buforowanie, błąd lub zerwane połączenie),
   strumień jest automatycznie otwierany ponownie. Przy braku komunikacji z dekoderem aplikacja

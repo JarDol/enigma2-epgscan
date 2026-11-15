@@ -29,7 +29,19 @@ class StreamWatchdog(
     private val onStall: (String) -> Unit,
     private val onHealthy: () -> Unit,
     private val dropRestart: Boolean = true,
+    /** Zapas, przy którym ExoPlayer rusza na starcie / po niedoborze (setBufferDurationsMs). */
+    private val startMs: Long = 0,
+    private val reserveMs: Long = 0,
 ) {
+    // --- start kanału: od nowego strumienia do chwili, gdy obraz naprawdę idzie
+    private var startPhase = false
+    private var startAt = 0L
+    private var everReady = false
+    private var startPos = -1L
+    private var startFrames = -1L
+    private var startLastPos = -1L
+    private var startProgressAt = 0L
+    private var fastSince = 0L
     private val hist = ArrayDeque<LongArray>()
 
     /** Wstrzymanie (np. kanał nierozkodowany) — bez restartów. */
@@ -71,6 +83,23 @@ class StreamWatchdog(
         h.post(tick)
     }
 
+    /**
+     * Nowy strumień na żywo (zmiana kanału, wznowienie): [fast] — ustawienie „Przyspiesz start kanałów”;
+     * do chwili, gdy obraz ruszy, działa dodatkowa reguła startu ([checkStart]).
+     */
+    fun newStream(fast: Boolean) {
+        reset()
+        val now = SystemClock.elapsedRealtime()
+        startPhase = fast
+        startAt = now
+        everReady = false
+        startPos = -1; startFrames = -1; startLastPos = -1
+        startProgressAt = now
+    }
+
+    /** Odtwarzanie z bufora / nagrania — bez reguły startu kanału. */
+    fun endStart() { startPhase = false }
+
     fun stop() {
         running = false
         h.removeCallbacks(tick)
@@ -89,6 +118,42 @@ class StreamWatchdog(
         hist.clear()
         healthySince = 0
         healthyReported = false
+        fastSince = 0
+    }
+
+    /**
+     * Start kanału: dane od dekodera są (zapas ≥ próg startu ExoPlayera + 1,5 s), a odtwarzacz od 2 s nie rusza —
+     * stoi w buforowaniu albo w gotowości bez nowych klatek i bez ruchu zegara. To zawieszony dekoder obrazu
+     * (np. pierwsza klatka i koniec), nie brak danych — wznowienie od razu, bez czekania na limit buforowania.
+     * Gdy danych nie ma (dekoder Enigmy2 jeszcze stroi), działają dotychczasowe reguły.
+     */
+    private fun checkStart(now: Long): Boolean {
+        val st = player.playbackState
+        if (st == Player.STATE_READY) everReady = true
+        val c = player.videoDecoderCounters
+        c?.ensureUpdated()
+        val rendered = c?.renderedOutputBufferCount?.toLong() ?: 0L
+        val f = if (c != null) rendered + c.skippedOutputBufferCount + c.droppedBufferCount else -1L
+        val pos = player.currentPosition
+        if (st == Player.STATE_READY && startPos < 0) startPos = pos
+        if (rendered >= 25 || (startPos >= 0 && pos - startPos >= 3000)) {
+            startPhase = false
+            AppLog.i("start kanału: obraz ruszył po ${now - startAt} ms")
+            return false
+        }
+        if (f != startFrames || pos != startLastPos) {
+            startFrames = f; startLastPos = pos; startProgressAt = now
+        }
+        val buffered = player.totalBufferedDuration
+        val need = (if (everReady) reserveMs else startMs) + 1500
+        val stuck = buffered >= need &&
+            (st == Player.STATE_BUFFERING || (st == Player.STATE_READY && now - startProgressAt > 1500))
+        if (!stuck) { fastSince = 0; return false }
+        if (fastSince == 0L) { fastSince = now; return false }
+        if (now - fastSince < 2000) return false
+        startPhase = false
+        fire("start kanału: dane są (zapas $buffered ms), odtwarzacz nie rusza od ${(now - startProgressAt) / 1000} s")
+        return true
     }
 
     private fun check() {
@@ -96,6 +161,7 @@ class StreamWatchdog(
         if (!player.playWhenReady || paused) {
             reset(); return
         }
+        if (startPhase && checkStart(now)) return
         when (player.playbackState) {
             Player.STATE_BUFFERING -> {
                 healthySince = 0

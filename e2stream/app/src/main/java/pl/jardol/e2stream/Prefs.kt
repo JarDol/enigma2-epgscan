@@ -268,6 +268,11 @@ class Prefs(ctx: Context) {
         set(v) = putS("chanAskedHost", v)
 
     /** Restart strumienia przy masowej utracie klatek (zacinanie). */
+    /** Szybszy start kanału: wznowienie, gdy dane są, a odtwarzacz nie rusza (zamiast czekać na limit buforowania). */
+    var fastStart: Boolean
+        get() = sp.getBoolean("fastStart", true)
+        set(v) = putB("fastStart", v)
+
     var dropRestart: Boolean
         get() = sp.getBoolean("dropRestart", true)
         set(v) = putB("dropRestart", v)
