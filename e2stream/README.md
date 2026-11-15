@@ -142,8 +142,9 @@ też przy zmianie kanału, wyjściu z aplikacji, po limicie jednego nagrania (1�
 Nagrania są w bukiecie *Nagrania lokalne* (wznawianie, opis z EPG, długie OK → Odtwórz / Eksportuj do jednego pliku .ts / Usuń); można go ukryć w *Widoczne bukiety*.
 Bufor timeshiftu na bieżąco zapisuje kolejne audycje kanału (z EPG, a przy włączonym EIT — z EIT ze strumienia). Nagranie
 *bufor do teraz* / *do zmiany kanału* dostaje spis audycji z czasami od początku nagrania i ich opisy, a w tytule — kanał,
-godziny i nazwy audycji. Podczas odtwarzania takiego nagrania przytrzymane OK otwiera listę audycji — wybór przeskakuje do jej
-początku (ostatnia pozycja: zwykłe menu). Bez EIT granice pochodzą z ramówki i mogą się przesuwać o kilka minut.
+godziny i nazwy audycji. Podczas odtwarzania każdego nagrania lokalnego przytrzymane OK otwiera menu: *Odtwórz od początku*,
+*Audycje* (gdy nagranie ma ich kilka — lista, wybór przeskakuje do początku audycji), *Konwertuj na jeden plik .ts* (znika po
+konwersji), *Eksportuj kopię* i *Usuń* (konwersja i usunięcie najpierw kończą odtwarzanie). Bez EIT granice pochodzą z ramówki i mogą się przesuwać o kilka minut.
 *Konwertuj na jeden plik .ts (bez kopii)* dokleja kolejne kawałki do pierwszego i od razu je usuwa (dodatkowe miejsce ≈ jeden kawałek; przerwanie, także zanik zasilania, nie psuje nagrania — konwersję można dokończyć), na końcu plik w katalogu nagrania dostaje czytelną nazwę i nadal jest w *Nagraniach lokalnych*. *Eksportuj kopię do jednego pliku .ts* skleja kawałki w tle (pasek postępu, czas do końca, *Ukryj* — eksport trwa dalej, *Anuluj* — częściowy plik usunięty) do pliku `nagrania/RRRR-MM-DD GG-MM Kanał - Tytuł.ts`; nagranie w kawałkach zostaje bez zmian, plik wlicza się do limitu miejsca.
 Opcja „Wstecz na pustym ekranie → na żywo” pozwala wrócić z cofniętego strumienia do transmisji na żywo.
 Wyjście z aplikacji wymaga dwóch osobnych naciśnięć WSTECZ; przytrzymanie nie zamyka aplikacji.
@@ -174,6 +175,11 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 
 **Pamięć masowa** – jedno miejsce na nośnik i wszystko, co z niego korzysta:
 * nośnik: dysk USB / karta, pamięć urządzenia (tylko za zgodą — zużycie pamięci flash) albo „Brak”,
+* odtwarzanie przez bufor (domyślnie wyłączone): jedno połączenie z dekoderem zapisuje strumień do bufora na
+  nośniku, a odtwarzacz (ExoPlayer, albo VLC przez lokalny serwer 127.0.0.1) czyta koniec bufora. Pauza, cofnięcie
+  i powrót na żywo nie otwierają nowego połączenia (bez dziury w buforze). Z timeshiftem bufor jest wspólny; bez
+  timeshiftu ma stałe 5 min. Bez nośnika (albo po jego awarii) odtwarzanie wraca do bezpośredniego, a po podłączeniu
+  dysku znów idzie przez bufor (od następnego startu kanału),
 * timeshift (długość bufora, automatyczny start, kroki przewijania, WSTECZ na pustym ekranie),
 * nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,
 * miejsce logów i zrzutów (domyślnie podąża za nośnikiem) oraz pamięć zajmowana przez aplikację.

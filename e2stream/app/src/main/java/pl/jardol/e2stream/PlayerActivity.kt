@@ -1115,7 +1115,9 @@ class PlayerActivity : Activity() {
         // SID serwisu = 4. pole referencji (hex), np. 1:0:19:3DD2:640:13E:820000:0:0:0:
         val sid = url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
         proxy?.invalidate()
-        analyzer?.reset(sid)
+        // odtwarzanie przez bufor: połączenie zapisu do bufora działa dalej (ten sam kanał) — analizator bez zmian
+        val bufReuse = !recMode && bufLive && tsRec != null && tsLiveUrl == url && bufReady()
+        if (!bufReuse) analyzer?.reset(sid)
         // EIT „teraz/następne” ze strumienia (opcja; nie przy nagraniach z dysku dekodera)
         eitChannel = if (!recMode) playList.getOrNull(playIndex) else null
         analyzer?.eitEnabled = prefs.eitStream && eitChannel != null && sid >= 0
@@ -1135,6 +1137,10 @@ class PlayerActivity : Activity() {
             return
         }
         if (!playbackRecovery.hasPlayed) prefs.playbackAttempt = "${appVersion()} / ${prefs.engine.uppercase()}"
+        if (!recMode && prefs.bufPlay) {
+            if (bufReady()) { startBufLive(url, bufReuse); return }
+            if (bufLive) bufStop("nośnik niedostępny — odtwarzanie bezpośrednie")
+        } else if (bufLive) bufStop(if (recMode) "nagranie" else "opcja wyłączona")
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
             return
@@ -1187,12 +1193,13 @@ class PlayerActivity : Activity() {
     private var vlcProgressAt = 0L
     private var vlcProgressPosition = 0L
 
-    private fun startVlc(url: String) {
+    private fun startVlc(url: String, fromBuf: TimeshiftBuffer? = null, bufStart: Long = 0) {
         player?.stop()
         playerView.visibility = View.GONE
         vlcLayout.visibility = View.VISIBLE
         val px = proxy ?: TsProxy({ analyzer }, { api.authHeader() }).also { it.start(); proxy = it }
         px.setTarget(url)
+        if (fromBuf != null) px.setBuffer(fromBuf, bufStart) { analyzer?.psiHeader() }
         val v = vlc ?: run {
             lateinit var created: VlcEngine
             created = VlcEngine(this, prefs, vlcLayout,
@@ -1311,8 +1318,9 @@ class PlayerActivity : Activity() {
                     ui.removeCallbacks(restartRunnable)
                     restartPending = false
                     dismissVlcFailureDialog()
-                    if (tsMode) {
+                    if (tsMode || bufLive) {
                         tsRec?.stop(); tsRec = null
+                        if (!tsMode) { player?.stop(); proxy?.stop(); proxy = null; vlc?.release(); vlc = null }
                     } else {
                         ui.removeCallbacks(vlcTick)
                         proxy?.stop(); proxy = null
@@ -1333,6 +1341,7 @@ class PlayerActivity : Activity() {
                     if (vlcFailureDialog?.isShowing == true && !wasUnavailable) return@runOnUiThread
                     if (!wasUnavailable) showMessage(getString(R.string.message_receiver_responds_but_no_stream_is_arriving_reconnectin))
                     if (tsMode) restartTimeshiftRecorder(url, generation) else {
+                        if (bufLive) { tsRec?.stop(); tsRec = null }          // nowe połączenie zapisu
                         failStreak = 0
                         restartPending = false
                         ui.removeCallbacks(restartRunnable)
@@ -2116,15 +2125,102 @@ class PlayerActivity : Activity() {
     private var tsPending = 0L                 // przewijanie zbierane z kilku naciśnięć
     private var tsLiveUrl: String? = null
 
+    // --- odtwarzanie przez bufor: jedno połączenie z dekoderem (TimeshiftRecorder) zapisuje do bufora,
+    // odtwarzacz (ExoPlayer / VLC przez lokalny serwer) czyta koniec bufora; pauza i cofnięcie bez nowego połączenia
+    private var bufLive = false
+    @Volatile private var bufGen = 0           // zmiana — źródło odtwarzacza z poprzedniego kanału przestaje czytać
+
+    /** Bufor gotowy do odtwarzania: włączona opcja, nośnik dostępny, bez błędu zapisu. */
+    private fun bufReady(): Boolean {
+        if (!prefs.bufPlay) return false
+        val dir = TimeshiftBuffer.dir(this, prefs) ?: return false
+        if (tsBuf == null) tsNewChannel()          // nośnik mógł wrócić po starcie
+        val b = tsBuf ?: return false
+        return b.failed == null && b.dir == dir
+    }
+
+    private fun bufStop(reason: String) {
+        if (!bufLive) return
+        bufLive = false
+        bufGen++
+        if (!tsMode) { tsRec?.stop(); tsRec = null }
+        AppLog.i("bufor: koniec odtwarzania przez bufor ($reason)")
+    }
+
+    private var bufFallbackWarned = false
+
+    private fun startBufRecorder(url: String) {
+        tsRec?.stop()
+        lateinit var recorder: TimeshiftRecorder
+        recorder = TimeshiftRecorder(
+            url, api.authHeader(), { analyzer },
+            { analyzer?.dropCarry(); tsBuf?.resync() },
+            onFailure = {
+                runOnUiThread {
+                    if (bufLive && tsLiveUrl == url && tsRec === recorder) {
+                        tsRec = null
+                        AppLog.i("bufor: brak strumienia z dekodera — sprawdzam dekoder")
+                        probeStalledStream()
+                    }
+                }
+            },
+        )
+        tsRec = recorder
+        recorder.start()
+    }
+
+    /** Start (albo wznowienie) odtwarzania z bufora; [reuse] — połączenie zapisu z dekoderem już działa. */
+    private fun startBufLive(url: String, reuse: Boolean) {
+        val b = tsBuf ?: return
+        val p = player ?: return
+        bufFallbackWarned = false
+        val now = SystemClock.elapsedRealtime()
+        val start = if (reuse) {
+            if (b.total > 0) b.offsetAt(now - 2000) else 0L         // tuż za końcem: odtwarzacz od razu ma zapas
+        } else {
+            tsLiveUrl = url
+            bufLive = true
+            tsWriteFrom = 0
+            val from = b.total                                       // nowe dane (0 — nowy kanał)
+            startBufRecorder(url)
+            from
+        }
+        AppLog.i("bufor: ${if (reuse) "wznowienie" else "start"} odtwarzania przez bufor (${prefs.engine.uppercase()}, od bajtu $start" +
+            (if (prefs.tsMin <= 0) ", bufor ${TimeshiftBuffer.BUF_PLAY_MIN} min" else "") + ")")
+        if (prefs.engine == "vlc") {
+            startVlc(url, b, start)
+            return
+        }
+        ui.removeCallbacks(vlcTick)
+        proxy?.stop(); proxy = null
+        vlc?.release(); vlc = null
+        val gen = streamGen
+        val myBuf = bufGen
+        val src = ProgressiveMediaSource.Factory(
+            DataSource.Factory { TimeshiftDataSource(b, start, null, {}, lateHeader = { analyzer?.psiHeader() }, alive = { bufGen == myBuf }) },
+            DefaultExtractorsFactory().setTsExtractorFlags(
+                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS),
+        ).createMediaSource(MediaItem.fromUri("bufor://na-zywo/$gen/$start"))
+        vlcLayout.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_AUDIO).build()
+        p.setMediaSource(src)
+        p.prepare()
+        p.playWhenReady = true
+        watchdog?.newStream(prefs.fastStart)
+    }
+
     /** Nowy kanał (albo zmiana ustawień): bufor od zera, odtwarzanie na żywo. */
     private fun tsNewChannel() {
         if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
         if (tsMode) tsLeave()
+        bufStop("zmiana kanału")
         journal.clear()
         ui.removeCallbacks(journalTick)
         ui.postDelayed(journalTick, 3000)
-        tsWriteFrom = if (prefs.tsDelay < 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + prefs.tsDelay * 1000L
-        val min = prefs.tsMin
+        // przy odtwarzaniu przez bufor zapis od razu (odtwarzacz czyta z bufora)
+        tsWriteFrom = if (prefs.bufPlay) 0L else if (prefs.tsDelay < 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + prefs.tsDelay * 1000L
+        val min = if (prefs.tsMin > 0) prefs.tsMin else if (prefs.bufPlay) TimeshiftBuffer.BUF_PLAY_MIN else 0
         if (min <= 0) {
             tsBuf?.reset(); tsBuf = null
             return
@@ -2135,7 +2231,7 @@ class PlayerActivity : Activity() {
             if (tsBuf != null || !tsWarned) {
                 tsWarned = true
                 AppLog.i("timeshift: nośnik ${prefs.tsDir.ifBlank { "pamięć urządzenia (brak zgody)" }} niedostępny — timeshift wyłączony")
-                showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)))
+                if (prefs.tsMin <= 0) showMessage(getString(R.string.player_bufplay_fallback)) else showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)))
             }
             tsBuf?.reset(); tsBuf = null
             return
@@ -2169,6 +2265,7 @@ class PlayerActivity : Activity() {
     private fun tsStopAll() {
         if (localRec != null) finishLocalRec("koniec odtwarzania", restartLive = false)
         if (tsMode) tsLeave()
+        bufStop("koniec odtwarzania na żywo")
         tsCtl = false; tsChBar = false
         tsBuf?.reset()
         journal.clear()
@@ -2181,7 +2278,7 @@ class PlayerActivity : Activity() {
         tsAudioPid = null
         tsSetShifted(false)
         tsCtl = false
-        tsRec?.stop(); tsRec = null
+        if (!bufLive) { tsRec?.stop(); tsRec = null }      // odtwarzanie przez bufor: zapis działa dalej
         ui.removeCallbacks(shiftTick)
         ui.removeCallbacks(tsApply)
         tsPending = 0
@@ -2189,6 +2286,7 @@ class PlayerActivity : Activity() {
 
     private fun restartTimeshiftRecorder(url: String, generation: Int) {
         if (!tsMode || tsLiveUrl != url || streamGen != generation) return
+        if (bufLive) { startBufRecorder(url); return }
         tsRec?.stop()
         lateinit var recorder: TimeshiftRecorder
         recorder = TimeshiftRecorder(
@@ -2251,7 +2349,7 @@ class PlayerActivity : Activity() {
         p.stop()
         tsLiveUrl = url
         tsMode = true
-        restartTimeshiftRecorder(url, streamGen)
+        if (!bufLive || tsRec == null) restartTimeshiftRecorder(url, streamGen)
         tsSetShifted(true)
         tsCtl = true
         tsPlayFrom(target, play = !pause)
@@ -3029,6 +3127,30 @@ class PlayerActivity : Activity() {
     }
 
     /** Długie OK w nagraniu z kilkoma audycjami: lista skoków do początku audycji (+ zwykłe menu na końcu). */
+    /** Długie OK podczas odtwarzania nagrania lokalnego: od początku, audycje, konwersja, eksport, usunięcie. */
+    private fun showRecMenu(): Boolean {
+        val r = recItem ?: return false
+        if (!LocalRecordings.isLocal(r.path)) return showChapters()
+        val dir = LocalRecordings.dirOf(r.path)
+        val acts = ArrayList<Pair<String, () -> Unit>>()
+        acts += getString(R.string.player_from_beginning) to {
+            player?.let { pl -> pl.seekTo(0); AppLog.i("nagranie: od początku"); showRecBanner(sticky = !pl.playWhenReady) }
+            Unit
+        }
+        if (recChapters.size >= 2) acts += getString(R.string.player_rec_chapters_title) to { showChapters(); Unit }
+        // konwersja i usunięcie dotyczą odtwarzanego pliku — najpierw wracamy do TV
+        if (!LocalRecordings.isSingleFile(dir))
+            acts += getString(R.string.player_localrec_convert) to { backToLive(); exportLocalRecording(r, convert = true) }
+        acts += getString(R.string.player_localrec_export) to { exportLocalRecording(r, convert = false) }
+        acts += getString(R.string.message_delete) to {
+            TvDialog.confirm(this, getString(R.string.message_delete_recording), "${r.title}\n${r.path}",
+                listOf(TvDialog.Btn(getString(R.string.message_delete)) { backToLive(); deleteRecording(r) }))
+            Unit
+        }
+        TvDialog.list(this, r.title, acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.45f) { i -> acts[i].second() }
+        return true
+    }
+
     private fun showChapters(): Boolean {
         if (recChapters.size < 2) return false
         val p = player ?: return false
@@ -3410,7 +3532,7 @@ class PlayerActivity : Activity() {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
             // nagranie lokalne z kilkoma audycjami: lista skoków
-            if (recMode && showChapters()) return true
+            if (recMode && showRecMenu()) return true
             // pasek timeshiftu (nie pasek kanału): menu z „Nagraj…”
             if (!recMode && banner.visibility == View.VISIBLE && tsCtl && !tsChBar) { showRecordMenu(); return true }
             if (!recMode && banner.visibility == View.VISIBLE) {

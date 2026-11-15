@@ -39,4 +39,9 @@
     <string name="storage_requires_medium">wymaga nośnika — wybierz w „Nośnik”</string>
     <string name="storage_medium_unavailable">nieaktywne — nośnik niedostępny (wróci po podłączeniu)</string>
     <string name="storage_requires_timeshift">wymaga włączonego timeshiftu</string>
+    <string name="storage_header_buffer_play">Odtwarzanie przez bufor</string>
+    <string name="setting_buffer_play">Odtwarzanie przez bufor (jedno połączenie z dekoderem)</string>
+    <string name="player_bufplay_fallback">Odtwarzanie przez bufor niedostępne (brak nośnika) — odtwarzam bezpośrednio</string>
+    <string name="buffer_play_shared">bufor timeshiftu %1$d min</string>
+    <string name="buffer_play_short">bufor %1$d min</string>
 </resources>

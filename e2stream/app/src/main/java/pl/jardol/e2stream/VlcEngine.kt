@@ -60,7 +60,15 @@ class TsProxy(private val analyzer: () -> TsAnalyzer?, private val auth: () -> S
     }
 
     /** Nowy kanał: poprzednie połączenia kończą się same (zmiana numeru). */
-    fun setTarget(url: String) { target = url; gen++ }
+    fun setTarget(url: String) { target = url; bufSrc = null; gen++ }
+
+    /** Odtwarzanie przez bufor: VLC czyta z bufora na nośniku od bajtu [start] (zapis prowadzi osobne połączenie). */
+    @Volatile private var bufSrc: TimeshiftBuffer? = null
+    @Volatile private var bufStart = 0L
+    @Volatile private var bufHeader: (() -> ByteArray?)? = null
+    fun setBuffer(b: TimeshiftBuffer, start: Long, header: () -> ByteArray?) {
+        bufSrc = b; bufStart = start; bufHeader = header; gen++
+    }
 
     fun invalidate() { gen++ }
 
@@ -85,6 +93,7 @@ class TsProxy(private val analyzer: () -> TsAnalyzer?, private val auth: () -> S
                 hdr.append(b.toChar())
             }
             val out = c.getOutputStream()
+            bufSrc?.let { b -> serveBuffer(b, out, g, id); return }
             up = (URL(target).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 8000
                 readTimeout = 6000
@@ -114,6 +123,27 @@ class TsProxy(private val analyzer: () -> TsAnalyzer?, private val auth: () -> S
             AppLog.i("VLC: połączenie #$id zakończone (aktywnych: ${active.decrementAndGet()})")
         }
     }
+
+    private fun serveBuffer(b: TimeshiftBuffer, out: java.io.OutputStream, g: Int, id: Int) {
+        // pierwsze połączenie po zmianie: od wskazanego miejsca; ponowne (VLC łączy się drugi raz) — od końca
+        var pos = if (servedGen == g) maxOf(0L, b.total - 188L * 2000) else bufStart
+        servedGen = g
+        AppLog.i("VLC: połączenie #$id czyta z bufora od bajtu $pos")
+        out.write("HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nConnection: close\r\n\r\n".toByteArray())
+        val buf = ByteArray(188 * 700)
+        var first = true
+        while (g == gen) {
+            if (!b.await(pos, 12_000, { g != gen })) {
+                if (g == gen) AppLog.i("VLC: bufor — brak nowych danych z dekodera")
+                break
+            }
+            if (first) { first = false; bufHeader?.invoke()?.let { out.write(it) } }
+            val n = b.read(pos, buf, 0, buf.size)
+            if (n < 0) { pos = maxOf(0L, b.total - 188L * 2000); continue }    // fragment usunięty — dogonienie
+            if (n > 0) { pos += n; out.write(buf, 0, n) }
+        }
+    }
+    @Volatile private var servedGen = -1
 
     fun stop() {
         gen++

@@ -552,6 +552,16 @@ class SettingsActivity : Activity() {
     private fun storageItems(): List<Item> = listOf(
         Item.Header(getString(R.string.storage_header_medium)),
         Item.Action(getString(R.string.storage_medium), { tsPlace() }) { chooseTsDir() },
+        Item.Header(getString(R.string.storage_header_buffer_play)),
+        gated(getString(R.string.setting_buffer_play), {
+            if (!p.bufPlay) getString(R.string.settings_disabled)
+            else if (p.tsMin > 0) getString(R.string.settings_enabled) + " — " + getString(R.string.buffer_play_shared, p.tsMin)
+            else getString(R.string.settings_enabled) + " — " + getString(R.string.buffer_play_short, TimeshiftBuffer.BUF_PLAY_MIN)
+        }) {
+            p.bufPlay = !p.bufPlay
+            markChanged("odtwarzanie przez bufor: ${if (p.bufPlay) "włączone" else "wyłączone"}")
+            items = buildItems(); refresh()
+        },
         Item.Header(getString(R.string.setting_timeshift_pause_and_rewind_live_tv)),
         gated(getString(R.string.setting_timeshift), { tsValue() }) { chooseTs() },
         gated(getString(R.string.setting_automatic_timeshift), { tsDelayName(p.tsDelay) }) { chooseTsDelay() },

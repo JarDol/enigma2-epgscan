@@ -419,6 +419,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         const val RESERVE = 400L * 1_000_000
         /** Ostrożne oszacowanie: kanał HD do ~8 Mb/s = 60 MB na minutę. */
         const val MB_PER_MIN = 60L
+        /** Długość bufora, gdy włączone jest tylko odtwarzanie przez bufor (bez timeshiftu). */
+        const val BUF_PLAY_MIN = 5
 
         /** Ile minut timeshiftu zmieści się w katalogu [dir] (z zapasem). */
         fun fitMinutes(dir: File): Int {
@@ -461,7 +463,11 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
 
 /** ExoPlayer czyta strumień z bufora timeshiftu od bajtu [start], doganiając zapis na bieżąco. */
 class TimeshiftDataSource(
-    private val buf: TimeshiftBuffer, private val start: Long, private val header: ByteArray?, private val onGone: () -> Unit,
+    private val buf: TimeshiftBuffer, private val start: Long, private var header: ByteArray?, private val onGone: () -> Unit,
+    /** Nagłówek PAT + PMT pobierany dopiero przy pierwszych danych (start kanału — analizator zna już PMT). */
+    private val lateHeader: (() -> ByteArray?)? = null,
+    /** false — bufor przejął już inny kanał: czekamy na zamknięcie (bez błędu, który restartowałby odtwarzanie). */
+    private val alive: () -> Boolean = { true },
 ) : DataSource {
     @Volatile private var closed = false
     private var pos = 0L
@@ -480,6 +486,15 @@ class TimeshiftDataSource(
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
+        if (!alive()) { while (!closed) Thread.sleep(100); return C.RESULT_END_OF_INPUT }
+        if (lateHeader != null && header == null && hdrPos == 0) {
+            if (!buf.await(pos, 12_000, { closed })) {
+                if (closed) return C.RESULT_END_OF_INPUT
+                throw IOException("timeshift: brak danych z dekodera")
+            }
+            header = lateHeader.invoke()
+            if (header == null) hdrPos = Int.MAX_VALUE
+        }
         // najpierw PAT + PMT — odtwarzacz od razu zna ścieżki, czeka tylko na klatkę kluczową
         val h = header
         if (h != null && hdrPos < h.size) {
@@ -493,6 +508,7 @@ class TimeshiftDataSource(
                 if (closed) break
                 throw IOException("timeshift: brak nowych danych z dekodera")
             }
+            if (!alive()) { while (!closed) Thread.sleep(100); break }
             val n = buf.read(pos, buffer, offset, length)
             if (n < 0) { onGone(); throw IOException("timeshift: fragment bufora już usunięty") }
             if (n > 0) { pos += n; return n }

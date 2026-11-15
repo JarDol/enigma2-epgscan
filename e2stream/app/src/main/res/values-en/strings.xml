@@ -38,4 +38,9 @@
     <string name="storage_requires_medium">requires a medium — choose it under “Medium”</string>
     <string name="storage_medium_unavailable">inactive — medium unavailable (resumes when connected)</string>
     <string name="storage_requires_timeshift">requires timeshift to be enabled</string>
+    <string name="storage_header_buffer_play">Playback through buffer</string>
+    <string name="setting_buffer_play">Playback through buffer (single connection to the receiver)</string>
+    <string name="player_bufplay_fallback">Playback through buffer unavailable (no medium) — playing directly</string>
+    <string name="buffer_play_shared">timeshift buffer %1$d min</string>
+    <string name="buffer_play_short">%1$d min buffer</string>
 </resources>

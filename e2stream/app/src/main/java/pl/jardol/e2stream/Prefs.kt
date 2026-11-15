@@ -276,6 +276,11 @@ class Prefs(ctx: Context) {
         set(v) = putB("fastStart", v)
 
     /** Przy przełączaniu kanału ostatnia klatka poprzedniego zostaje na ekranie do pojawienia się nowego obrazu. */
+    /** Odtwarzanie przez bufor: jedno połączenie z dekoderem zapisuje do bufora na nośniku, odtwarzacz czyta z bufora. */
+    var bufPlay: Boolean
+        get() = sp.getBoolean("bufPlay", false)
+        set(v) = putB("bufPlay", v)
+
     var keepFrame: Boolean
         get() = sp.getBoolean("keepFrame", true)
         set(v) = putB("keepFrame", v)
