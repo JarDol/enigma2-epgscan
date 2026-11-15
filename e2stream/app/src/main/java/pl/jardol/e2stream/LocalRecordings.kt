@@ -195,6 +195,24 @@ object LocalRecordings {
 
     fun readMeta(dir: File): JSONObject? = try { JSONObject(File(dir, META).readText()) } catch (_: Exception) { null }
 
+    /** Spis audycji nagrania w opisie (meta.json: "chapters"). */
+    fun putChapters(meta: JSONObject, ch: List<Chapter>) {
+        meta.put("chapters", org.json.JSONArray().apply {
+            ch.forEach { c ->
+                put(JSONObject().put("s", c.start).put("e", c.end).put("t", c.title).put("d", c.desc)
+                    .put("cs", c.cutStart).put("ce", c.cutEnd))
+            }
+        })
+    }
+
+    fun chapters(meta: JSONObject): List<Chapter> {
+        val a = meta.optJSONArray("chapters") ?: return emptyList()
+        return (0 until a.length()).mapNotNull { i ->
+            val o = a.optJSONObject(i) ?: return@mapNotNull null
+            Chapter(o.optLong("s"), o.optLong("e"), o.optString("t"), o.optString("d"), o.optBoolean("cs"), o.optBoolean("ce"))
+        }
+    }
+
     /** Lista nagrań (od najnowszego) w postaci jak nagrania z dekodera. */
     fun list(base: File): List<Recording> {
         val dirs = base.listFiles { f -> f.isDirectory } ?: return emptyList()

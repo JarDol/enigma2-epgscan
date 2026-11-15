@@ -843,6 +843,7 @@ class PlayerActivity : Activity() {
         val (now, next) = eitPending ?: return@Runnable
         eitPending = null
         if (playList.getOrNull(playIndex) !== ch) return@Runnable
+        now?.let { journalAdd(it.begin, it.end, it.title, it.shortDesc, it.longDesc) }
         epg.applyEit(ch, listOfNotNull(now, next), prefs.eitReplace) { changed ->
             if (!changed || playList.getOrNull(playIndex) !== ch) return@applyEit
             now?.let { ch.now = it.title; ch.nowBegin = it.begin; ch.nowEnd = it.end }
@@ -2028,6 +2029,9 @@ class PlayerActivity : Activity() {
     private fun tsNewChannel() {
         if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
         if (tsMode) tsLeave()
+        journal.clear()
+        ui.removeCallbacks(journalTick)
+        ui.postDelayed(journalTick, 3000)
         tsWriteFrom = if (prefs.tsDelay < 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + prefs.tsDelay * 1000L
         val min = prefs.tsMin
         if (min <= 0) {
@@ -2076,6 +2080,8 @@ class PlayerActivity : Activity() {
         if (tsMode) tsLeave()
         tsCtl = false; tsChBar = false
         tsBuf?.reset()
+        journal.clear()
+        ui.removeCallbacks(journalTick)
     }
 
     /** Koniec odtwarzania z bufora (bez uruchamiania strumienia na żywo). */
@@ -2358,6 +2364,31 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- nagrania lokalne (z bufora timeshiftu)
 
+    /** Audycje zauważone podczas zapisu bufora — spis i skoki w nagraniach z bufora. */
+    private val journal = ProgramJournal()
+
+    private fun journalAdd(begin: Long, end: Long, title: String, shortDesc: String, longDesc: String) {
+        journal.add(JournalEvent(begin, end, title, listOf(shortDesc, longDesc).filter { it.isNotBlank() }.distinct().joinToString("\n")))
+    }
+
+    /** Co minutę, póki działa bufor: bieżąca audycja kanału (EPG z pamięci, z EIT, gdy włączone) do dziennika. */
+    private val journalTick = object : Runnable {
+        override fun run() {
+            ui.removeCallbacks(this)
+            val b = tsBuf ?: return
+            if (recMode) return
+            val ch = playList.getOrNull(playIndex) ?: return
+            epg.nowNext(ch) { now, _ ->
+                if (now != null && playList.getOrNull(playIndex) === ch && tsBuf === b) {
+                    journalAdd(now.begin, now.end, now.title, now.shortDesc, now.longDesc)
+                    val oldestEpoch = (System.currentTimeMillis() - b.spanMs()) / 1000
+                    if (localRec == null) journal.trimBefore(oldestEpoch)
+                }
+            }
+            ui.postDelayed(this, 60_000)
+        }
+    }
+
     /** Trwające nagranie z bufora: przypięte kawałki, opis, koniec (zegar monotoniczny; MAX = do zmiany kanału). */
     private class LocalRec(
         val pin: TimeshiftBuffer.Pin, val mode: Int, val meta: org.json.JSONObject, val untilWall: Long,
@@ -2426,6 +2457,7 @@ class PlayerActivity : Activity() {
     private fun startLocalRec(mode: Int, ch: Channel, ev: EpgEvent?, usedBefore: Long, capacity: Long) {
         val b = tsBuf ?: return
         if (localRec != null || playList.getOrNull(playIndex) !== ch) return
+        ev?.let { journalAdd(it.begin, it.end, it.title, it.shortDesc, it.longDesc) }
         tsWriteFrom = 0                                   // bufor zapisuje od teraz (także przy starcie ręcznym)
         val nowEpoch = System.currentTimeMillis()
         val nowWall = SystemClock.elapsedRealtime()
@@ -2467,6 +2499,16 @@ class PlayerActivity : Activity() {
         val pin = tsBuf?.takeIf { it.pin === r.pin }?.finishPin() ?: r.pin
         val lengthSec = ((endWall - pin.fromWall) / 1000).coerceAtLeast(0)
         r.meta.put("lengthSec", lengthSec).put("size", pin.bytes).put("done", true).put("end", reason)
+        // spis audycji z dziennika bufora; „do teraz” / „do zmiany kanału” — także tytuł i opis
+        val from = r.meta.optLong("begin")
+        val chapters = ProgramJournal.chapters(journal.snapshot(), from, from + lengthSec)
+        if (chapters.isNotEmpty()) LocalRecordings.putChapters(r.meta, chapters)
+        if (r.mode != REC_EVENT && chapters.isNotEmpty()) {
+            val prefix = "${r.ch.name} ${hm.format(Date(from * 1000))}–${hm.format(Date((from + lengthSec) * 1000))}"
+            r.meta.put("title", ProgramJournal.title(prefix, chapters))
+            r.meta.put("desc", ProgramJournal.describe(chapters, getString(R.string.player_localrec_from_middle), getString(R.string.player_localrec_no_end)))
+        }
+        if (chapters.size > 1) AppLog.i("nagranie lokalne: audycje: " + chapters.joinToString(" | ") { "${ProgramJournal.hms(it.start)} ${it.title}" })
         LocalRecordings.writeMeta(pin.dir, r.meta)
         val title = r.meta.optString("title")
         AppLog.i("nagranie lokalne: koniec ($reason) „$title” ${fmtMs(lengthSec * 1000)}, ${pin.parts} plików, ${TimeshiftBuffer.gb(pin.bytes)}")
@@ -2518,6 +2560,8 @@ class PlayerActivity : Activity() {
     private val recStack = ArrayList<String>()    // katalogi nadrzędne (powrót „‹ wstecz”)
     private var recMode = false
     private var recItem: Recording? = null
+    /** Audycje odtwarzanego nagrania lokalnego (długie OK — lista skoków). */
+    private var recChapters: List<Chapter> = emptyList()
     private var recBannerUntil = 0L
     private var panelOnRec = false                // po powrocie z nagrania lista otwiera się na nagraniach
     private var recLastPath = ""
@@ -2774,6 +2818,9 @@ class PlayerActivity : Activity() {
         ui.removeCallbacks(restartRunnable)
         restartPending = false
         recBqRef = if (LocalRecordings.isLocal(r.path)) REC_LOCAL_BOUQUET else REC_REF
+        recChapters = if (LocalRecordings.isLocal(r.path))
+            LocalRecordings.readMeta(LocalRecordings.dirOf(r.path))?.let { LocalRecordings.chapters(it) } ?: emptyList()
+        else emptyList()
         val url = if (LocalRecordings.isLocal(r.path)) r.path else api.fileUrl(r.path)
         AppLog.i("nagranie: ${r.title} (${r.service}) $url od ${fmtMs(startMs)}")
         startStream(url, startMs)
@@ -2840,6 +2887,32 @@ class PlayerActivity : Activity() {
         showRecBanner(sticky = !p.playWhenReady)
     }
 
+    private fun chapterAt(posMs: Long): Int {
+        val sec = posMs / 1000
+        val i = recChapters.indexOfLast { it.start <= sec }
+        return i.coerceAtLeast(0)
+    }
+
+    /** Długie OK w nagraniu z kilkoma audycjami: lista skoków do początku audycji (+ zwykłe menu na końcu). */
+    private fun showChapters(): Boolean {
+        if (recChapters.size < 2) return false
+        val p = player ?: return false
+        val cur = chapterAt(p.currentPosition)
+        val items = recChapters.mapIndexed { i, c ->
+            val sub = c.desc.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: ""
+            TvDialog.Item("${ProgramJournal.hms(c.start)}   ${c.title}", sub, mark = if (i == cur) 3 else 0)
+        } + TvDialog.Item(getString(R.string.player_rec_chapters_menu))
+        TvDialog.list(this, getString(R.string.player_rec_chapters_title), items, cur, widthFrac = 0.6f) { i ->
+            if (i >= recChapters.size) { showQuickMenu(); return@list }
+            val pl = player ?: return@list
+            val dur = pl.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+            pl.seekTo((recChapters[i].start * 1000).coerceIn(0, maxOf(0, dur - 1000)))
+            AppLog.i("nagranie: skok do audycji „${recChapters[i].title}” ${ProgramJournal.hms(recChapters[i].start)}")
+            showRecBanner(sticky = !pl.playWhenReady)
+        }
+        return true
+    }
+
     /** Klawisze podczas odtwarzania nagrania. */
     private fun recKey(code: Int, e: KeyEvent): Boolean {
         val fast = e.repeatCount > 3          // przytrzymanie przyspiesza przewijanie
@@ -2886,12 +2959,13 @@ class PlayerActivity : Activity() {
         val pos = p.currentPosition
         val dur = p.duration.takeIf { it > 0 } ?: r.lengthSec * 1000
         val paused = !p.playWhenReady
-        bannerNow.text = (if (paused) "⏸  " else "▶  ") + listOf(r.service, if (r.begin > 0) dateFmt.format(Date(r.begin * 1000)) else "")
+        val chapter = if (recChapters.size > 1) recChapters[chapterAt(pos)].title else ""
+        bannerNow.text = (if (paused) "⏸  " else "▶  ") + listOf(chapter, r.service, if (r.begin > 0) dateFmt.format(Date(r.begin * 1000)) else "")
             .filter { it.isNotBlank() }.joinToString("  •  ")
         bannerStart.text = fmtMs(pos)
         bannerEnd.text = if (dur > 0) "${fmtMs(dur)}   (−${fmtMs(maxOf(0, dur - pos))})" else ""
         bannerProgress.progress = if (dur > 0) (pos * 1000 / dur).toInt().coerceIn(0, 1000) else 0
-        bannerNext.text = getString(R.string.player_recording_controls)
+        bannerNext.text = getString(if (recChapters.size > 1) R.string.player_recording_controls_chapters else R.string.player_recording_controls)
     }
 
     /** Co 0,5 s w trybie nagrania: odświeżenie paska, ukrycie po czasie, zapis miejsca co 15 s. */
@@ -3200,6 +3274,8 @@ class PlayerActivity : Activity() {
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
         if (panel.visibility != View.VISIBLE && isOk(keyCode)) {
             suppressOkUp = true
+            // nagranie lokalne z kilkoma audycjami: lista skoków
+            if (recMode && showChapters()) return true
             // pasek timeshiftu (nie pasek kanału): menu z „Nagraj…”
             if (!recMode && banner.visibility == View.VISIBLE && tsCtl && !tsChBar) { showRecordMenu(); return true }
             if (!recMode && banner.visibility == View.VISIBLE) {

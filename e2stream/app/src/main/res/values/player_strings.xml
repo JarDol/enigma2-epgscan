@@ -119,4 +119,9 @@
     <string name="player_localrec_convert_progress_title">Konwersja: %1$s</string>
     <string name="player_localrec_convert_done">Nagranie jest teraz jednym plikiem:\n%1$s\n\nKawałki usunięte – nagranie nadal jest w „Nagraniach lokalnych”.</string>
     <string name="player_localrec_convert_cancelled">Konwersja przerwana – nagranie jest całe, konwersję można dokończyć później</string>
+    <string name="player_localrec_from_middle">od środka</string>
+    <string name="player_localrec_no_end">bez zakończenia</string>
+    <string name="player_rec_chapters_title">Audycje w nagraniu</string>
+    <string name="player_rec_chapters_menu">Menu…</string>
+    <string name="player_recording_controls_chapters">◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pauza   przytrzymaj OK audycje   WSTECZ powrót do TV</string>
 </resources>

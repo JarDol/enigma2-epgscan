@@ -119,4 +119,9 @@
     <string name="player_localrec_convert_progress_title">Converting: %1$s</string>
     <string name="player_localrec_convert_done">The recording is now a single file:\n%1$s\n\nParts deleted – the recording is still in “Local recordings”.</string>
     <string name="player_localrec_convert_cancelled">Conversion stopped – the recording is intact, the conversion can be finished later</string>
+    <string name="player_localrec_from_middle">joined in progress</string>
+    <string name="player_localrec_no_end">not to the end</string>
+    <string name="player_rec_chapters_title">Programmes in this recording</string>
+    <string name="player_rec_chapters_menu">Menu…</string>
+    <string name="player_recording_controls_chapters">◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pause   hold OK programmes   BACK return to TV</string>
 </resources>

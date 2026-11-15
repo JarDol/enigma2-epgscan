@@ -133,6 +133,10 @@ Podczas nagrywania pasek pokazuje *● REC*, a pierwszą pozycją menu długiego
 też przy zmianie kanału, wyjściu z aplikacji, po limicie jednego nagrania (1–6 h, domyślnie 3 h) i po osiągnięciu limitu miejsca
 (domyślnie 70% pojemności nośnika — reszta dla timeshiftu). W pamięci urządzenia nagrania wymagają osobnej zgody.
 Nagrania są w bukiecie *Nagrania lokalne* (wznawianie, opis z EPG, długie OK → Odtwórz / Eksportuj do jednego pliku .ts / Usuń); można go ukryć w *Widoczne bukiety*.
+Bufor timeshiftu na bieżąco zapisuje kolejne audycje kanału (z EPG, a przy włączonym EIT — z EIT ze strumienia). Nagranie
+*bufor do teraz* / *do zmiany kanału* dostaje spis audycji z czasami od początku nagrania i ich opisy, a w tytule — kanał,
+godziny i nazwy audycji. Podczas odtwarzania takiego nagrania przytrzymane OK otwiera listę audycji — wybór przeskakuje do jej
+początku (ostatnia pozycja: zwykłe menu). Bez EIT granice pochodzą z ramówki i mogą się przesuwać o kilka minut.
 *Konwertuj na jeden plik .ts (bez kopii)* dokleja kolejne kawałki do pierwszego i od razu je usuwa (dodatkowe miejsce ≈ jeden kawałek; przerwanie, także zanik zasilania, nie psuje nagrania — konwersję można dokończyć), na końcu plik w katalogu nagrania dostaje czytelną nazwę i nadal jest w *Nagraniach lokalnych*. *Eksportuj kopię do jednego pliku .ts* skleja kawałki w tle (pasek postępu, czas do końca, *Ukryj* — eksport trwa dalej, *Anuluj* — częściowy plik usunięty) do pliku `nagrania/RRRR-MM-DD GG-MM Kanał - Tytuł.ts`; nagranie w kawałkach zostaje bez zmian, plik wlicza się do limitu miejsca.
 Opcja „Wstecz na pustym ekranie → na żywo” pozwala wrócić z cofniętego strumienia do transmisji na żywo.
 Wyjście z aplikacji wymaga dwóch osobnych naciśnięć WSTECZ; przytrzymanie nie zamyka aplikacji.
