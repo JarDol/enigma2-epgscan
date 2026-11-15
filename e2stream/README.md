@@ -180,7 +180,7 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
   i powrót na żywo nie otwierają nowego połączenia (bez dziury w buforze). Z timeshiftem bufor jest wspólny; bez
   timeshiftu ma stałe 5 min. Bez nośnika (albo po jego awarii) odtwarzanie wraca do bezpośredniego, a po podłączeniu
   dysku znów idzie przez bufor (od następnego startu kanału),
-* timeshift (długość bufora, automatyczny start, kroki przewijania, WSTECZ na pustym ekranie),
+* timeshift (długość bufora, automatyczny start — przy odtwarzaniu przez bufor zawsze od razu, kroki przewijania, WSTECZ na pustym ekranie),
 * nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,
 * miejsce logów i zrzutów (domyślnie podąża za nośnikiem) oraz pamięć zajmowana przez aplikację.
 

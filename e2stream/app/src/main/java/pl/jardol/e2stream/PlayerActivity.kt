@@ -3158,9 +3158,8 @@ class PlayerActivity : Activity() {
         val items = recChapters.mapIndexed { i, c ->
             val sub = c.desc.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: ""
             TvDialog.Item("${ProgramJournal.hms(c.start)}   ${c.title}", sub, mark = if (i == cur) 3 else 0)
-        } + TvDialog.Item(getString(R.string.player_rec_chapters_menu))
+        }
         TvDialog.list(this, getString(R.string.player_rec_chapters_title), items, cur, widthFrac = 0.6f) { i ->
-            if (i >= recChapters.size) { showQuickMenu(); return@list }
             val pl = player ?: return@list
             val dur = pl.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
             pl.seekTo((recChapters[i].start * 1000).coerceIn(0, maxOf(0, dur - 1000)))

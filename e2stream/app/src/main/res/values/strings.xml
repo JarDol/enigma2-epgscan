@@ -44,4 +44,5 @@
     <string name="player_bufplay_fallback">Odtwarzanie przez bufor niedostępne (brak nośnika) — odtwarzam bezpośrednio</string>
     <string name="buffer_play_shared">bufor timeshiftu %1$d min</string>
     <string name="buffer_play_short">bufor %1$d min</string>
+    <string name="ts_delay_buffer_play">od razu (odtwarzanie przez bufor)</string>
 </resources>

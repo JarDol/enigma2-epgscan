@@ -564,7 +564,10 @@ class SettingsActivity : Activity() {
         },
         Item.Header(getString(R.string.setting_timeshift_pause_and_rewind_live_tv)),
         gated(getString(R.string.setting_timeshift), { tsValue() }) { chooseTs() },
-        gated(getString(R.string.setting_automatic_timeshift), { tsDelayName(p.tsDelay) }) { chooseTsDelay() },
+        // przy odtwarzaniu przez bufor zapis rusza od razu (odtwarzacz czyta z bufora) — opóźnienie nieaktywne, ustawienie zostaje
+        gated(getString(R.string.setting_automatic_timeshift), {
+            if (p.bufPlay) getString(R.string.ts_delay_buffer_play) else tsDelayName(p.tsDelay)
+        }) { if (p.bufPlay) toast(getString(R.string.ts_delay_buffer_play)) else chooseTsDelay() },
         gated(getString(R.string.setting_seek_seconds), { "${p.tsStepSec} s" }) {
             val o = listOf(5, 10, 15, 30)
             TvDialog.single(this, getString(R.string.message_seek), o.map { "$it s" }, o.indexOf(p.tsStepSec).coerceAtLeast(0)) { w -> p.tsStepSec = o[w]; markChanged("timeshift: krok ◀ ▶ = ${o[w]} s"); items = buildItems(); refresh() }
