@@ -562,6 +562,15 @@ class SettingsActivity : Activity() {
             markChanged("odtwarzanie przez bufor: ${if (p.bufPlay) "włączone" else "wyłączone"}")
             items = buildItems(); refresh()
         },
+        gated(getString(R.string.setting_bg_buffer), {
+            if (!p.bufPlay) getString(R.string.setting_bg_buffer_needs) else bgName(p.bgBufMin)
+        }) {
+            if (!p.bufPlay) { toast(getString(R.string.setting_bg_buffer_needs)); return@gated }
+            val o = listOf(0, 10, 30, 60, 120, 180)
+            TvDialog.single(this, getString(R.string.setting_bg_buffer), o.map { bgName(it) }, o.indexOf(p.bgBufMin).coerceAtLeast(0)) { w ->
+                p.bgBufMin = o[w]; markChanged("bufor poprzednich kanałów: ${bgName(o[w])}"); items = buildItems(); refresh()
+            }
+        },
         Item.Header(getString(R.string.setting_timeshift_pause_and_rewind_live_tv)),
         gated(getString(R.string.setting_timeshift), { tsValue() }) { chooseTs() },
         // przy odtwarzaniu przez bufor zapis rusza od razu (odtwarzacz czyta z bufora) — opóźnienie nieaktywne, ustawienie zostaje
@@ -594,6 +603,12 @@ class SettingsActivity : Activity() {
         Item.Action(getString(R.string.setting_log_and_dump_storage_location), { Storage.dir(this, p).absolutePath }) { chooseStorage() },
         Item.Action(getString(R.string.setting_app_storage), { getString(R.string.setting_app_storage_value) }) { showAppStorage() },
     )
+
+    private fun bgName(m: Int): String = when {
+        m <= 0 -> getString(R.string.settings_disabled)
+        m < 60 -> getString(R.string.setting_bg_buffer_min, m)
+        else -> getString(R.string.setting_bg_buffer_h, m / 60)
+    }
 
     /** Nośnik wybrany i dostępny (dysk podłączony / zgoda na pamięć urządzenia). */
     private fun mediumReady(): Boolean = TimeshiftBuffer.dir(this, p) != null

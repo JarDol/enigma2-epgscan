@@ -44,4 +44,8 @@
     <string name="buffer_play_shared">timeshift buffer %1$d min</string>
     <string name="buffer_play_short">%1$d min buffer</string>
     <string name="ts_delay_buffer_play">immediately (playback through buffer)</string>
+    <string name="setting_bg_buffer">Previous channels buffer (background recording, up to 3 channels)</string>
+    <string name="setting_bg_buffer_needs">requires playback through buffer</string>
+    <string name="setting_bg_buffer_min">%1$d min</string>
+    <string name="setting_bg_buffer_h">%1$d h</string>
 </resources>

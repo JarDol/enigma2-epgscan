@@ -35,7 +35,7 @@ internal fun timeshiftBufferProgress(shownWall: Long, oldestWall: Long, now: Lon
  * odczyt może zacząć się w dowolnym bajcie. Najstarsza minuta wypada, gdy okno przekroczy [maxMin]
  * albo zabraknie miejsca. Czas to zegar monotoniczny (SystemClock.elapsedRealtime) chwili odbioru.
  */
-class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
+class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „timeshift” nośnika (bufory w tle: podkatalogi) */ val root: File = dir) {
 
     private class Seg(val file: File, val start: Long, val wall: Long) {
         @Volatile var len = 0L
@@ -456,6 +456,9 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
             if (p.isNotBlank() && available(p)) return File(p, "timeshift")
             return if (prefs.tsInternalOk) File(internalBase(ctx), "timeshift") else null
         }
+
+        /** Katalogi buforów: bieżący kanał + kanały buforowane w tle (bez wspólnych plików — każdy sprząta tylko swój). */
+        fun slotDirs(root: File): List<File> = listOf(root, File(root, "kanal-2"), File(root, "kanal-3"))
 
         fun gb(bytes: Long) = String.format(java.util.Locale("pl"), "%.1f GB", bytes / 1e9)
     }

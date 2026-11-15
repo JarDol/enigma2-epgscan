@@ -827,13 +827,19 @@ class PlayerActivity : Activity() {
                 // zapamiętany PMT kanału, a gdy go nie ma — PMT zbudowany z PID-ów z dekodera (EPG Scan)
                 a.pmtCacheGet = { sid -> prefs.pmtFor(sid) ?: PmtBuilder.build(sid, prefs.pidsFor(sid)) }
                 a.pmtCachePut = { sid, b -> prefs.setPmtFor(sid, b) }
-                a.onEit = { session, _, now, next -> ui.post { onStreamEit(session, now, next) } }
+                mainAnalyzerHooks(a)
             }
             analyzerRing = ring
         }
         analyzer?.clean = prefs.cleanTs
         // kopia strumienia na żywo do bufora timeshiftu (nie przy nagraniach z dekodera)
         analyzer?.tee = { b, o, l -> if (!recMode && SystemClock.elapsedRealtime() >= tsWriteFrom) tsBuf?.write(b, o, l) }
+    }
+
+    /** Analizator bieżącego kanału: EIT do EPG i dziennika, kopia do bufora bieżącego kanału. */
+    private fun mainAnalyzerHooks(a: TsAnalyzer) {
+        a.onEit = { session, _, now, next -> ui.post { onStreamEit(session, now, next) } }
+        a.tee = { b, o, l -> if (!recMode && SystemClock.elapsedRealtime() >= tsWriteFrom) tsBuf?.write(b, o, l) }
     }
 
     // --- EIT ze strumienia
@@ -1116,7 +1122,7 @@ class PlayerActivity : Activity() {
         val sid = url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
         proxy?.invalidate()
         // odtwarzanie przez bufor: połączenie zapisu do bufora działa dalej (ten sam kanał) — analizator bez zmian
-        val bufReuse = !recMode && bufLive && tsRec != null && tsLiveUrl == url && bufReady()
+        val bufReuse = !recMode && bufLive && tsRec != null && tsRecAn != null && tsRecAn === analyzer && tsLiveUrl == url && bufReady()
         if (!bufReuse) analyzer?.reset(sid)
         // EIT „teraz/następne” ze strumienia (opcja; nie przy nagraniach z dysku dekodera)
         eitChannel = if (!recMode) playList.getOrNull(playIndex) else null
@@ -1141,6 +1147,7 @@ class PlayerActivity : Activity() {
             if (bufReady()) { startBufLive(url, bufReuse); return }
             if (bufLive) bufStop("nośnik niedostępny — odtwarzanie bezpośrednie")
         } else if (bufLive) bufStop(if (recMode) "nagranie" else "opcja wyłączona")
+        if (!bgEnabled()) bgDropAll("opcja wyłączona")
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
             return
@@ -1594,8 +1601,9 @@ class PlayerActivity : Activity() {
         if (recMode) leaveRec()
         panelOnRec = false
         tsCtl = false; tsChBar = false
-        tsNewChannel()
         val i = ((index % chList.size) + chList.size) % chList.size
+        chList[i].let { bgSwitch(api.streamUrl(it), it.name) }
+        tsNewChannel()
         val cur = playList.getOrNull(playIndex)
         if (cur != null && !(bIdx == playBouquet && i == playIndex)) {
             prevBouquet = playBouquet
@@ -2125,6 +2133,8 @@ class PlayerActivity : Activity() {
     private var tsPending = 0L                 // przewijanie zbierane z kilku naciśnięć
     private var tsLiveUrl: String? = null
 
+    private val BG_MAX = 2      // kanały w tle (razem z bieżącym najwyżej 3)
+
     // --- odtwarzanie przez bufor: jedno połączenie z dekoderem (TimeshiftRecorder) zapisuje do bufora,
     // odtwarzacz (ExoPlayer / VLC przez lokalny serwer) czyta koniec bufora; pauza i cofnięcie bez nowego połączenia
     private var bufLive = false
@@ -2136,7 +2146,7 @@ class PlayerActivity : Activity() {
         val dir = TimeshiftBuffer.dir(this, prefs) ?: return false
         if (tsBuf == null) tsNewChannel()          // nośnik mógł wrócić po starcie
         val b = tsBuf ?: return false
-        return b.failed == null && b.dir == dir
+        return b.failed == null && b.root == dir
     }
 
     private fun bufStop(reason: String) {
@@ -2151,12 +2161,16 @@ class PlayerActivity : Activity() {
 
     private fun startBufRecorder(url: String) {
         tsRec?.stop()
+        // analizator i bufor przypięte do połączenia — po przełączeniu kanału zapis w tle pisze dalej do swojego bufora
+        val a = analyzer
+        val buf = tsBuf
         lateinit var recorder: TimeshiftRecorder
         recorder = TimeshiftRecorder(
-            url, api.authHeader(), { analyzer },
-            { analyzer?.dropCarry(); tsBuf?.resync() },
+            url, api.authHeader(), { a },
+            { a?.dropCarry(); buf?.resync() },
             onFailure = {
                 runOnUiThread {
+                    bgChans.firstOrNull { it.rec === recorder }?.let { bgDrop(it, "brak strumienia z dekodera"); return@runOnUiThread }
                     if (bufLive && tsLiveUrl == url && tsRec === recorder) {
                         tsRec = null
                         AppLog.i("bufor: brak strumienia z dekodera — sprawdzam dekoder")
@@ -2166,7 +2180,98 @@ class PlayerActivity : Activity() {
             },
         )
         tsRec = recorder
+        tsRecAn = a
         recorder.start()
+    }
+    private var tsRecAn: TsAnalyzer? = null
+
+    // --- bufory poprzednich kanałów: po przełączeniu poprzedni kanał zapisuje się w tle przez prefs.bgBufMin minut;
+    // powrót na niego — odtwarzanie od razu z jego bufora (połączenie z dekoderem już działa)
+    private class BgChan(
+        val url: String, val name: String, val buf: TimeshiftBuffer, val an: TsAnalyzer,
+        val rec: TimeshiftRecorder, val journal: ProgramJournal, val until: Long,
+    )
+    private val bgChans = ArrayList<BgChan>()
+    private var bgPromoted = false
+
+    private fun bgEnabled() = prefs.bgBufMin > 0 && prefs.bufPlay && TimeshiftBuffer.dir(this, prefs) != null
+
+    private fun bgDrop(c: BgChan, reason: String) {
+        if (!bgChans.remove(c)) return
+        c.rec.stop()
+        c.an.tee = null; c.an.onEit = null
+        c.buf.reset()
+        AppLog.i("bufor w tle: ${c.name} zamknięty ($reason)")
+    }
+
+    private fun bgDropAll(reason: String) { for (c in bgChans.toList()) bgDrop(c, reason) }
+
+    private val bgTick = object : Runnable {
+        override fun run() {
+            ui.removeCallbacks(this)
+            val now = SystemClock.elapsedRealtime()
+            for (c in bgChans.toList()) {
+                if (now >= c.until) bgDrop(c, "minął czas ${prefs.bgBufMin} min")
+                else if (c.buf.failed != null) bgDrop(c, "błąd zapisu")
+            }
+            if (bgChans.isNotEmpty()) ui.postDelayed(this, 30_000)
+        }
+    }
+
+    /**
+     * Przełączenie na [url]: bieżący kanał (odtwarzany przez bufor) przechodzi do zapisu w tle, a gdy [url] jest już
+     * buforowany w tle — jego bufor, połączenie i dziennik stają się bieżącymi (tsNewChannel ich nie resetuje).
+     */
+    private fun bgSwitch(url: String, name: String) {
+        if (recMode || url == tsLiveUrl && bufLive) return
+        if (!bgEnabled()) { bgDropAll("opcja wyłączona"); return }
+        val target = bgChans.firstOrNull { it.url == url }
+        val curBuf = tsBuf
+        val curRec = tsRec
+        val curAn = tsRecAn
+        val curName = playList.getOrNull(playIndex)?.name ?: "?"
+        if (bufLive && curBuf != null && curRec != null && curAn != null && curAn === analyzer && curBuf.failed == null) {
+            if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
+            if (tsMode) tsLeave()
+            // bieżący → w tle: analizator, bufor i dziennik należą odtąd do niego
+            curAn.tee = { b, o, l -> curBuf.write(b, o, l) }
+            val j = journal
+            curAn.onEit = { _, _, now, _ -> if (now != null) ui.post {
+                j.add(JournalEvent(now.begin, now.end, now.title, listOf(now.shortDesc, now.longDesc).filter { it.isNotBlank() }.distinct().joinToString("\n")))
+            } }
+            curBuf.pcrPid = { curAn.pcrPid }
+            val until = SystemClock.elapsedRealtime() + prefs.bgBufMin * 60_000L
+            while (bgChans.count { it !== target } >= BG_MAX) bgChans.filter { it !== target }.minByOrNull { it.until }?.let { bgDrop(it, "limit $BG_MAX kanałów") } ?: break
+            bgChans += BgChan(tsLiveUrl ?: "", curName, curBuf, curAn, curRec, j, until)
+            AppLog.i("bufor w tle: $curName zapisywany jeszcze ${prefs.bgBufMin} min")
+            tsRec = null; tsRecAn = null; tsBuf = null
+            bufLive = false
+            journal = ProgramJournal()
+            analyzer = null
+            if (target == null) ensureAnalyzer()
+            ui.removeCallbacks(bgTick); ui.postDelayed(bgTick, 30_000)
+        }
+        if (target != null) {
+            bgChans.remove(target)
+            if (tsMode) tsLeave()
+            bufStop("powrót na kanał buforowany w tle")
+            if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
+            tsBuf?.reset()
+            if (tsBuf != null) tsBuf = null
+            // przejęcie: ten sam analizator (bez resetu sesji), bufor, połączenie i dziennik
+            analyzer = target.an
+            mainAnalyzerHooks(target.an)
+            target.an.clean = prefs.cleanTs
+            target.buf.pcrPid = { analyzer?.pcrPid ?: -1 }
+            target.buf.maxMin = if (prefs.tsMin > 0) prefs.tsMin else TimeshiftBuffer.BUF_PLAY_MIN
+            tsBuf = target.buf
+            tsRec = target.rec; tsRecAn = target.an
+            journal = target.journal
+            tsLiveUrl = url
+            bufLive = true
+            bgPromoted = true
+            AppLog.i("bufor w tle: powrót na $name — odtwarzanie od razu z bufora (${target.buf.spanMs() / 1000} s zapisu)")
+        }
     }
 
     /** Start (albo wznowienie) odtwarzania z bufora; [reuse] — połączenie zapisu z dekoderem już działa. */
@@ -2212,6 +2317,14 @@ class PlayerActivity : Activity() {
 
     /** Nowy kanał (albo zmiana ustawień): bufor od zera, odtwarzanie na żywo. */
     private fun tsNewChannel() {
+        if (bgPromoted) {
+            // powrót na kanał buforowany w tle: bufor, zapis i dziennik przejęte — bez resetu
+            bgPromoted = false
+            ui.removeCallbacks(journalTick)
+            ui.postDelayed(journalTick, 3000)
+            tsWriteFrom = 0L
+            return
+        }
         if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
         if (tsMode) tsLeave()
         bufStop("zmiana kanału")
@@ -2238,10 +2351,14 @@ class PlayerActivity : Activity() {
         }
         tsWarned = false
         val b = tsBuf
-        if (b == null || b.dir != dir) {
+        if (b == null || b.root != dir) {
             b?.reset()
-            tsBuf = TimeshiftBuffer(dir, min).also { it.pcrPid = { analyzer?.pcrPid ?: -1 } }
-            AppLog.i("timeshift: $min min w ${dir.absolutePath} (wolne ${TimeshiftBuffer.gb(dir.usableSpace)})")
+            if (b != null) bgDropAll("zmiana nośnika")
+            // katalog nie zajęty przez kanały buforowane w tle
+            val used = bgChans.map { it.buf.dir }.toSet()
+            val slot = TimeshiftBuffer.slotDirs(dir).first { it !in used }
+            tsBuf = TimeshiftBuffer(slot, min, dir).also { it.pcrPid = { analyzer?.pcrPid ?: -1 } }
+            AppLog.i("timeshift: $min min w ${slot.absolutePath} (wolne ${TimeshiftBuffer.gb(dir.usableSpace)})")
         } else {
             b.maxMin = min
             b.reset()
@@ -2255,10 +2372,9 @@ class PlayerActivity : Activity() {
     private fun tsCleanupAtStart() {
         if (tsCleanedAtStart) return
         tsCleanedAtStart = true
-        TimeshiftBuffer.cleanupAsync(java.io.File(TimeshiftBuffer.internalBase(this), "timeshift"))
-        prefs.tsDir.takeIf { it.isNotBlank() && TimeshiftBuffer.available(it) }?.let {
-            TimeshiftBuffer.cleanupAsync(java.io.File(it, "timeshift"))
-        }
+        val roots = listOfNotNull(java.io.File(TimeshiftBuffer.internalBase(this), "timeshift"),
+            prefs.tsDir.takeIf { it.isNotBlank() && TimeshiftBuffer.available(it) }?.let { java.io.File(it, "timeshift") })
+        for (r in roots) for (d in TimeshiftBuffer.slotDirs(r)) TimeshiftBuffer.cleanupAsync(d)
     }
 
     /** Wyjście z aplikacji / nagranie: koniec timeshiftu, bufor skasowany (w tle). */
@@ -2266,6 +2382,7 @@ class PlayerActivity : Activity() {
         if (localRec != null) finishLocalRec("koniec odtwarzania", restartLive = false)
         if (tsMode) tsLeave()
         bufStop("koniec odtwarzania na żywo")
+        bgDropAll("koniec odtwarzania na żywo")
         tsCtl = false; tsChBar = false
         tsBuf?.reset()
         journal.clear()
@@ -2555,7 +2672,7 @@ class PlayerActivity : Activity() {
     // ---------------------------------------------------------------- nagrania lokalne (z bufora timeshiftu)
 
     /** Audycje zauważone podczas zapisu bufora — spis i skoki w nagraniach z bufora. */
-    private val journal = ProgramJournal()
+    private var journal = ProgramJournal()
 
     private fun journalAdd(begin: Long, end: Long, title: String, shortDesc: String, longDesc: String) {
         journal.add(JournalEvent(begin, end, title, listOf(shortDesc, longDesc).filter { it.isNotBlank() }.distinct().joinToString("\n")))
@@ -2586,7 +2703,7 @@ class PlayerActivity : Activity() {
     )
     private var localRec: LocalRec? = null
 
-    private fun localBase(): File? = (tsBuf?.dir ?: TimeshiftBuffer.dir(this, prefs))?.let { LocalRecordings.base(it) }
+    private fun localBase(): File? = (tsBuf?.root ?: TimeshiftBuffer.dir(this, prefs))?.let { LocalRecordings.base(it) }
 
     private fun isRecRef(ref: String?) = ref == REC_REF || ref == REC_LOCAL_BOUQUET
 
@@ -2608,8 +2725,8 @@ class PlayerActivity : Activity() {
         val b = tsBuf
         if (b == null) { showMessage(getString(R.string.message_timeshift_unavailable_usb_drive_unavailable_or_device_s)); return }
         b.failed?.let { showMessage(getString(R.string.player_ts_error, it)); return }
-        val base = LocalRecordings.base(b.dir)
-        val internal = b.dir.absolutePath.startsWith(TimeshiftBuffer.internalBase(this).absolutePath)
+        val base = LocalRecordings.base(b.root)
+        val internal = b.root.absolutePath.startsWith(TimeshiftBuffer.internalBase(this).absolutePath)
         if (internal && !prefs.recInternalOk) {
             TvDialog.confirm(this, getString(R.string.player_localrec_title), getString(R.string.player_localrec_internal_consent), listOf(
                 TvDialog.Btn(getString(R.string.player_localrec_allow)) { prefs.recInternalOk = true; showRecordMenu() },
@@ -2654,7 +2771,7 @@ class PlayerActivity : Activity() {
         fun wallOf(epochSec: Long) = nowWall - (nowEpoch - epochSec * 1000)
         // „audycja”: od jej początku wg EPG (wcześniejsze audycje z bufora pomijane), pozostałe — cały bufor
         val from = if (mode == REC_EVENT && ev != null) b.offsetAt(wallOf(ev.begin)) else b.oldestOffset
-        val dir = LocalRecordings.newDir(LocalRecordings.base(b.dir), ch.name, nowEpoch)
+        val dir = LocalRecordings.newDir(LocalRecordings.base(b.root), ch.name, nowEpoch)
         val pin = b.startPin(dir, from)
         if (pin == null) { showMessage(getString(R.string.player_localrec_failed, b.failed ?: "?")); return }
         val beginEpoch = nowEpoch - (nowWall - pin.fromWall)
