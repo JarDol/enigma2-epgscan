@@ -2366,7 +2366,7 @@ class PlayerActivity : Activity() {
         val hdr = analyzer?.psiHeader()
         val gen = streamGen
         val src = ProgressiveMediaSource.Factory(
-            DataSource.Factory { TimeshiftDataSource(b, off, hdr) { } },
+            DataSource.Factory { TimeshiftDataSource(b, off, hdr, onGone = { }) },
             DefaultExtractorsFactory().setTsExtractorFlags(
                 DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS),
         ).createMediaSource(MediaItem.fromUri("timeshift://bufor/$gen/$off"))
