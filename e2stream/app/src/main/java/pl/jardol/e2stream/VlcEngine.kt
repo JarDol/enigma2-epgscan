@@ -66,8 +66,14 @@ class TsProxy(private val analyzer: () -> TsAnalyzer?, private val auth: () -> S
 
     fun url(): String = "http://127.0.0.1:$port/stream-$gen.ts"
 
+    private val active = java.util.concurrent.atomic.AtomicInteger()
+    private val seq = java.util.concurrent.atomic.AtomicInteger()
+
     private fun serve(c: Socket, g: Int) {
         var up: HttpURLConnection? = null
+        val id = seq.incrementAndGet()
+        val n0 = active.incrementAndGet()
+        AppLog.i("VLC: połączenie #$id do dekodera (wątek ${Thread.currentThread().name}#${Thread.currentThread().id}, aktywnych: $n0)")
         try {
             c.soTimeout = 15000
             // nagłówki żądania VLC — ignorujemy (zawsze cały strumień od teraz)
@@ -105,6 +111,7 @@ class TsProxy(private val analyzer: () -> TsAnalyzer?, private val auth: () -> S
         } finally {
             try { up?.disconnect() } catch (_: Exception) {}
             try { c.close() } catch (_: Exception) {}
+            AppLog.i("VLC: połączenie #$id zakończone (aktywnych: ${active.decrementAndGet()})")
         }
     }
 

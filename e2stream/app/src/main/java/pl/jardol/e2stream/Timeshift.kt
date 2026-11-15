@@ -61,8 +61,61 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
 
     private fun newSession() = "ts-" + java.lang.Long.toString(System.currentTimeMillis(), 36) + "-"
 
+    // --- diagnostyka źródeł zapisu: do bufora powinien pisać jeden wątek (odtwarzacz / pośrednik VLC / zapis w tle)
+    private var writerId = -1L
+    private var writerName = ""
+    private var lastWriteAt = 0L
+    private var switches = 0
+    private var switchesLogged = 0
+    private var switchesReported = 0
+    /** Wątek piszący przed resetem (zmiana kanału) — jego dane przez kilka sekund po resecie są odrzucane. */
+    private var staleId = -1L
+    private var staleUntil = 0L
+    private var staleBytes = 0L
+    private var staleLogged = false
+
+    /** Źródło zapisu: zmiany wątku do logu (kilka pierwszych, potem podsumowania co minutę). */
+    private fun trackWriter(len: Int): Boolean {
+        val t = Thread.currentThread()
+        val now = SystemClock.elapsedRealtime()
+        if (t.id == staleId && now < staleUntil) {
+            staleBytes += len
+            if (!staleLogged) { staleLogged = true; AppLog.i("timeshift: odrzucam dane starego źródła ${t.name}#${t.id} po zmianie kanału") }
+            return false
+        }
+        if (t.id != writerId) {
+            if (writerId == -1L) AppLog.i("timeshift: źródło zapisu ${t.name}#${t.id}")
+            else {
+                switches++
+                if (switchesLogged < 8) {
+                    switchesLogged++
+                    AppLog.i("timeshift: ZMIANA źródła zapisu ${t.name}#${t.id} (wcześniej $writerName#$writerId, ostatni zapis ${now - lastWriteAt} ms temu)")
+                }
+            }
+            writerId = t.id
+            writerName = t.name
+        }
+        lastWriteAt = now
+        return true
+    }
+
+    private fun reportWriters() {
+        if (switches > switchesReported) {
+            AppLog.i("timeshift: zmian źródła zapisu: ${switches - switchesReported} (razem $switches)")
+            switchesReported = switches
+        }
+        if (staleBytes > 0) {
+            AppLog.i("timeshift: odrzucone dane starego źródła po zmianie kanału: ${staleBytes / 1000} kB")
+            staleBytes = 0
+        }
+    }
+
     /** Nowy kanał / koniec: wszystko od zera; stare pliki kasowane w tle (bez czekania). */
     fun reset() = synchronized(lock) {
+        reportWriters()
+        if (writerId != -1L) { staleId = writerId; staleUntil = SystemClock.elapsedRealtime() + 5000; staleLogged = false }
+        writerId = -1L
+        switches = 0; switchesLogged = 0; switchesReported = 0
         if (pin != null) finishPin()          // nagranie trwało — kawałki zachowane, nie skasowane
         try { out?.close() } catch (_: Exception) {}
         out = null
@@ -88,6 +141,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
         if (len <= 0) return
         synchronized(lock) {
             if (failed != null) return
+            if (!trackWriter(len)) return
             try {
                 var o = off
                 val end = off + len
@@ -140,6 +194,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int) {
     }
 
     private fun rotate(now: Long) {
+        reportWriters()
         try { out?.close() } catch (_: Exception) {}
         val f = File(dir, "$session${nextIdx++}.ts")
         out = FileOutputStream(f)
