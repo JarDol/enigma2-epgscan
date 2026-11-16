@@ -81,6 +81,9 @@
     <string name="player_localrec_stop_menu">Zatrzymaj nagrywanie: %1$s</string>
     <string name="player_localrec_running_title">Trwa nagrywanie</string>
     <string name="player_localrec_stop">Zatrzymaj nagrywanie</string>
+    <string name="player_rec_stop_menu">Zatrzymaj nagrywanie…</string>
+    <string name="player_rec_stop_title">Bieżące nagrania — OK zatrzymuje</string>
+    <string name="player_rec_stop_all">Zatrzymaj wszystkie</string>
     <string name="player_localrec_internal_consent">Bufor timeshiftu jest w pamięci urządzenia, więc nagrania też trafią do pamięci urządzenia (zużywają pamięć flash). Zezwolić na nagrania w pamięci urządzenia?</string>
     <string name="player_localrec_allow">Zezwól</string>
     <string name="player_localrec_limit_reached">Nagrania zajmują już %2$s z %3$s – limit to %1$d%% pojemności nośnika (reszta dla timeshiftu). Usuń starsze nagrania albo zmień limit w ustawieniach.</string>

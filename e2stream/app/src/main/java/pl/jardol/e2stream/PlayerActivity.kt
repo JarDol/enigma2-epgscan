@@ -3000,6 +3000,7 @@ class PlayerActivity : Activity() {
 
     /** Koniec odtwarzania z bufora (bez uruchamiania strumienia na żywo). */
     private fun tsLeave() {
+        pvCancel()
         tsMode = false
         tsAudioPid = null
         tsSetShifted(false)
@@ -3176,7 +3177,9 @@ class PlayerActivity : Activity() {
         val b = tsBuf ?: return
         val base = if (tsPending != 0L) tsPending else tsShownWall()
         tsPending = timeshiftSeekTarget(base, delta, b.oldestWall, SystemClock.elapsedRealtime())
-        tsShowBanner(sticky = player?.playWhenReady == false)
+        // podgląd: obraz zatrzymany, na ekranie klatka z miejsca na pasku
+        if (pvStart()) seekPreview.requestBuffer(b, tsPending, (tsRecAn ?: analyzer)?.videoStream)
+        tsShowBanner(sticky = !pvPlaying())
         ui.removeCallbacks(tsApply)
         ui.postDelayed(tsApply, 700)
     }
@@ -3189,13 +3192,61 @@ class PlayerActivity : Activity() {
         val now = SystemClock.elapsedRealtime()
         val earliest = timeshiftEarliestSeekWall(b.oldestWall, now)
         val target = maxOf(requested, earliest)
+        val play = pvPlaying()
         when {
             target >= now - 6000 -> tsGoLive("przewinięte do końca")
             target == earliest -> {
                 showMessage(getString(R.string.player_ts_start, fmtMs(now - earliest)))
-                tsPlayFrom(earliest, play = player?.playWhenReady != false)
+                tsPlayFrom(earliest, play = play)
             }
-            else -> tsPlayFrom(target, play = player?.playWhenReady != false)
+            else -> tsPlayFrom(target, play = play)
+        }
+        pvFinish()
+    }
+
+    // --- podgląd klatek przy przewijaniu (timeshift, nagrania): obraz główny zatrzymany, klatka kluczowa z miejsca
+    // na pasku na całym ekranie (dekoder programowy); po puszczeniu klawiszy odtwarzanie od tego miejsca
+    private val seekPreview by lazy { SeekPreview(this, playerView) }
+    private var pvActive = false
+    private var pvWasPlaying = true
+
+    /** Początek przewijania z podglądem (tylko ExoPlayer); false — bez podglądu. */
+    private fun pvStart(): Boolean {
+        val p = player ?: return false
+        if (!pvActive) {
+            pvActive = true
+            pvWasPlaying = p.playWhenReady
+            p.playWhenReady = false
+            seekPreview.show()
+        }
+        ui.removeCallbacks(pvHideCheck)
+        return true
+    }
+
+    /** Czy odtwarzanie ma iść (stan sprzed przewijania, gdy podgląd zatrzymał obraz). */
+    private fun pvPlaying() = if (pvActive) pvWasPlaying else player?.playWhenReady != false
+
+    /** Koniec przewijania: nakładka znika, gdy obraz główny jest gotowy w nowym miejscu (najpóźniej po 4 s). */
+    private fun pvFinish() {
+        if (!pvActive) return
+        pvActive = false
+        pvHideAt = SystemClock.elapsedRealtime() + 4000
+        ui.removeCallbacks(pvHideCheck)
+        ui.postDelayed(pvHideCheck, 250)
+    }
+
+    private fun pvCancel() {
+        pvActive = false
+        ui.removeCallbacks(pvHideCheck)
+        if (seekPreview.shown) seekPreview.hide()
+    }
+
+    private var pvHideAt = 0L
+    private val pvHideCheck = object : Runnable {
+        override fun run() {
+            val ready = player?.playbackState == Player.STATE_READY
+            if (ready || SystemClock.elapsedRealtime() > pvHideAt || player == null) seekPreview.hide(if (ready) 300 else 0)
+            else ui.postDelayed(this, 100)
         }
     }
 
@@ -3248,7 +3299,7 @@ class PlayerActivity : Activity() {
         val behind = (now - shown).coerceAtLeast(0)
         val oldest = b.oldestWall
         val span = timeshiftAvailableSpan(oldest, now)
-        val paused = player?.playWhenReady == false
+        val paused = !pvPlaying()
         refreshBannerTop()
         bannerNow.text = getString(R.string.player_ts_shifted_buffer,
             if (paused) "⏸" else "▶", fmtMs(behind), fmtMs(span))
@@ -3531,6 +3582,26 @@ class PlayerActivity : Activity() {
             }
         } ?: TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bufRecMenu(null, c, ev) },
     )
+
+    /** Lista bieżących nagrań (oglądany kanał i bufory w tle): stacja + tytuł; OK zatrzymuje od razu (bez pytania). */
+    private fun showStopRecs() {
+        val recs = ArrayList<Triple<String, String, () -> Unit>>()
+        localRec?.let { r ->
+            recs += Triple(r.meta.optString("service").ifBlank { r.ch.name }, r.meta.optString("title"),
+                { if (localRec === r) finishLocalRec("zatrzymane", restartLive = true) })
+        }
+        for (bg in bgChans.toList()) bg.lrec?.let { r ->
+            recs += Triple(bg.name, r.meta.optString("title"), {
+                if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false); refreshPanelRows() }
+            })
+        }
+        if (recs.isEmpty()) return
+        val items = recs.map { TvDialog.Item(it.first, it.second) } +
+            (if (recs.size > 1) listOf(TvDialog.Item(getString(R.string.player_rec_stop_all))) else emptyList())
+        TvDialog.list(this, getString(R.string.player_rec_stop_title), items, 0, widthFrac = 0.55f) { i ->
+            if (i < recs.size) recs[i].third() else recs.asReversed().forEach { it.third() }
+        }
+    }
 
     /** Zakończenie bufora w tle; przy nagraniu audycji — pytanie (bufor chroniony do końca audycji). */
     private fun bgCloseAsk(bg: BgChan) {
@@ -3984,6 +4055,7 @@ class PlayerActivity : Activity() {
     /** Koniec nagrania albo wyjście: zapamiętanie miejsca. */
     private fun leaveRec() {
         if (!recMode) return
+        ui.removeCallbacks(recApply); recPending = -1; pvCancel()
         saveRecPos()
         recMode = false
         recItem = null
@@ -4016,6 +4088,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun recEnded() {
+        ui.removeCallbacks(recApply); recPending = -1; pvCancel()
         recItem?.let { recPos.edit().remove(recPosKey(it)).apply() }
         AppLog.i("nagranie: koniec")
         recMode = false
@@ -4034,8 +4107,47 @@ class PlayerActivity : Activity() {
             recSeekWarned = true
             AppLog.i("nagranie: odtwarzacz nie pozwala przewijać (długość ${if (p.duration > 0) fmtMs(p.duration) else "nieznana"}, pozycja ${fmtMs(p.currentPosition)})")
         }
-        p.seekTo((p.currentPosition + deltaMs).coerceIn(0, maxOf(0, dur - 1000)))
-        showRecBanner()
+        val src = recByteSrc()
+        val known = recItem?.let { r -> p.duration.takeIf { it > 0 } ?: (r.lengthSec * 1000).takeIf { it > 0 } } ?: 0L
+        if (src == null || known <= 0 || !pvStart()) {
+            p.seekTo((p.currentPosition + deltaMs).coerceIn(0, maxOf(0, dur - 1000)))
+            showRecBanner()
+            return
+        }
+        // przewijanie zbierane z kilku naciśnięć; podgląd klatki, odtwarzanie od miejsca po 0,7 s bez klawiszy
+        val base = if (recPending >= 0) recPending else p.currentPosition
+        recPending = (base + deltaMs).coerceIn(0, maxOf(0, known - 1000))
+        seekPreview.requestRecording(src, recPending, known)
+        showRecBanner(sticky = !pvWasPlaying)
+        ui.removeCallbacks(recApply)
+        ui.postDelayed(recApply, 700)
+    }
+
+    private var recPending = -1L
+    private val recApply = Runnable {
+        val p = player
+        val t = recPending
+        recPending = -1
+        if (p != null && recMode && t >= 0) {
+            p.seekTo(t)
+            p.playWhenReady = pvPlaying()
+            pvFinish()
+            showRecBanner(sticky = !p.playWhenReady)
+        } else pvCancel()
+    }
+
+    // źródło bajtów odtwarzanego nagrania (podgląd przewijania): pliki lokalne albo plik na dekoderze (HTTP Range)
+    private var recSrc: ByteSrc? = null
+    private var recSrcPath = ""
+
+    private fun recByteSrc(): ByteSrc? {
+        val r = recItem ?: return null
+        if (recSrcPath != r.path || recSrc == null) {
+            recSrcPath = r.path
+            recSrc = if (LocalRecordings.isLocal(r.path)) LocalRecordings.parts(LocalRecordings.dirOf(r.path)).takeIf { it.isNotEmpty() }?.let { PartsSrc(it) }
+                else HttpSrc(api.fileUrl(r.path), api.authHeader())
+        }
+        return recSrc
     }
 
     private fun recTogglePause() {
@@ -4137,9 +4249,9 @@ class PlayerActivity : Activity() {
     private fun updateRecBanner() {
         val r = recItem ?: return
         val p = player ?: return
-        val pos = p.currentPosition
+        val pos = if (recPending >= 0) recPending else p.currentPosition
         val dur = p.duration.takeIf { it > 0 } ?: r.lengthSec * 1000
-        val paused = !p.playWhenReady
+        val paused = !pvPlaying()
         val chapter = if (recChapters.size > 1) recChapters[chapterAt(pos)].title else ""
         bannerNow.text = (if (paused) "⏸  " else "▶  ") + listOf(chapter, r.service, if (r.begin > 0) dateFmt.format(Date(r.begin * 1000)) else "")
             .filter { it.isNotBlank() }.joinToString("  •  ")
@@ -4922,9 +5034,7 @@ class PlayerActivity : Activity() {
         val items = QuickMenu.ordered(prefs).mapNotNull { e ->
             when (e.id) {
                 "record" -> if (canRecord) getString(R.string.player_localrec_menu) to { showRecordMenu() } else null
-                "record_stop" -> localRec?.let { r ->
-                    getString(R.string.player_localrec_stop_menu, r.meta.optString("title")) to { finishLocalRec("zatrzymane", restartLive = true) }
-                }
+                "record_stop" -> if (activeRecs() > 0) getString(R.string.player_rec_stop_menu) to { showStopRecs() } else null
                 "buffered" -> if (!recMode && (bgChans.isNotEmpty() || (bufLive && tsBuf != null)))
                     getString(R.string.player_bg_menu) to { showBufferedMenu() } else null
                 else -> getString(e.labelRes) to actions.getValue(e.id)
