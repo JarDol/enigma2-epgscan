@@ -214,7 +214,11 @@ ani nagrań — działa przy odtwarzaniu.
   Odtwarzanie nagrania (z dekodera albo lokalnego) nie kasuje buforów: bufor ostatnio oglądanego kanału zapisuje się dalej
   w tle (także przy wyłączonym buforze poprzednich kanałów), zostają też kanały w tle z trwającym zapisem; pozostałe
   bufory są usuwane. Po wyjściu z nagrania powrót na ostatni kanał — od razu z jego bufora,
-* PiP (okna z kanałami z bufora w tle) — w przygotowaniu, ukryte w wydaniu stabilnym,
+* PiP (eksperymentalne, domyślnie wyłączone) — do 2 okien z kanałami z bufora w tle: klatka co 1/2/3/5 s z ostatniej
+  klatki kluczowej w pamięci bufora (własny demultiplekser — także kanały kodowane po odszyfrowaniu), tylko dekoder
+  programowy (jeden na okno, bez sprzętowego; gdy go brak — „brak dekodera”), położenie okien; kanał do okna z listy
+  kanałów (◀ ▶ bukiety, OK dodaje okno). Bezpiecznik: po awarii albo zawieszeniu z otwartym PiP przy następnym starcie
+  PiP wyłącza się samo i proponuje wysłanie logu PiP (osobny plik e2stream-pip.log, 3 ostatnie sesje),
 * timeshift (długość bufora, automatyczny start — przy odtwarzaniu przez bufor zawsze od razu, kroki przewijania, WSTECZ na pustym ekranie),
 * nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,
 * miejsce logów i zrzutów (domyślnie podąża za nośnikiem) oraz pamięć zajmowana przez aplikację.

@@ -92,6 +92,9 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         return r
     }
     private val videoPids = HashSet<Int>()
+    /** Główna ścieżka obrazu z PMT: (PID, „H264” / „HEVC” / „MPEG2-V”) — dla PiP (inny wątek). */
+    @Volatile var videoStream: Pair<Int, String>? = null
+        private set
     private val audioPids = HashSet<Int>()
     private var mainAudioPid = -1
     private var ivVMin = Long.MAX_VALUE
@@ -203,7 +206,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         secLen = 0
         secPkts = java.io.ByteArrayOutputStream()
         lastPcrAny = -1
-        videoPids.clear(); audioPids.clear(); mainAudioPid = -1
+        videoPids.clear(); audioPids.clear(); mainAudioPid = -1; videoStream = null
         ivVMin = Long.MAX_VALUE; ivVMax = Long.MIN_VALUE; ivAMin = Long.MAX_VALUE; ivAMax = Long.MIN_VALUE
         lastAvDiff = Long.MIN_VALUE
         avDiffMs = 0; videoLeadMs = 0
@@ -745,6 +748,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
             if (n == "MPEG-A" || n == "AC3" || n == "EAC3" || n == "AAC" || n == "LATM") audioPids.add(pid)
         }
         mainAudioPid = audioPids.minOrNull() ?: -1
+        videoStream = videoPids.minOrNull()?.let { it to (pidType[it] ?: "") }
         if (pmtVersion >= 0) {
             pmtChanges++
             event("zmiana PMT wersja $pmtVersion → $version: ${list.joinToString(" ")}")

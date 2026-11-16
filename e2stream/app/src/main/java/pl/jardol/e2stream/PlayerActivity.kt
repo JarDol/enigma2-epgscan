@@ -340,6 +340,15 @@ class PlayerActivity : Activity() {
             true
         }
 
+        // bezpiecznik PiP: poprzednia sesja skończyła się z otwartymi oknami (awaria, zabicie, zawieszenie Androida)
+        if (prefs.pipActive) {
+            prefs.pipActive = false
+            if (prefs.pipEnabled) {
+                prefs.pipEnabled = false
+                PipLog.i("bezpiecznik: poprzednia sesja zakończona z otwartym PiP — PiP wyłączone")
+                ui.postDelayed({ if (!isFinishing) showPipTripped() }, 2500)
+            }
+        }
         val crash = prefs.lastCrash
         val attempt = prefs.playbackAttempt
         if (crash.isNotEmpty() || attempt.isNotEmpty()) {
@@ -363,6 +372,12 @@ class PlayerActivity : Activity() {
         if (safeMode) return
         startUp()
         showWakeTestResult()
+    }
+
+    private fun showPipTripped() {
+        TvDialog.confirm(this, getString(R.string.pip_tripped_title), getString(R.string.pip_tripped_msg), listOf(
+            TvDialog.Btn(getString(R.string.pip_send_log)) { Tools.uploadPipLog(this, prefs) { showMessage(it) } },
+            TvDialog.Btn(getString(R.string.message_close))))
     }
 
     private fun showRecoveryDialog(detail: String, stopPlayback: Boolean = false) {
@@ -632,6 +647,9 @@ class PlayerActivity : Activity() {
         dismissVlcFailureDialog()
         if (!safeMode && prefs.playbackAttempt.isNotEmpty()) prefs.playbackAttempt = ""
         releasePlayer()
+        for (c in bgChans.filter { it.pip >= 0 }) c.pip = -1
+        pipRefresh()
+        if (prefs.pipActive) prefs.pipActive = false
         ui.removeCallbacks(logTick)
         if (!safeMode) {
             if (AppLog.dirty) uploadLog(false)
@@ -1767,6 +1785,8 @@ class PlayerActivity : Activity() {
 
     /** Lista „Historia” jako osobne okno (klawisz w dół): ostatnio oglądane kanały ze wszystkich bukietów. */
     private var panelHist = false
+    /** Lista kanałów w trybie wyboru kanału do okna PiP. */
+    private var panelPip = false
 
     private fun showHistory() {
         if (bouquets.isEmpty() || recMode) { showPanel(); return }
@@ -1786,6 +1806,7 @@ class PlayerActivity : Activity() {
 
     private fun showPanel() {
         panelHist = false
+        panelPip = false
         if (bouquets.isEmpty()) return
         // w trakcie nagrania albo po powrocie z niego — lista otwiera się na nagraniach
         if ((recMode || panelOnRec) && bouquets.any { it.ref == recBqRef }) { showRecordings(); return }
@@ -1801,6 +1822,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun hidePanel() {
+        panelPip = false
         panelTimer.setActive(false)
         panel.visibility = View.GONE
     }
@@ -1835,7 +1857,8 @@ class PlayerActivity : Activity() {
     private fun refreshPanel(sel: Int) {
         val bn = bouquets.getOrNull(panelBouquet)
         val sub = if (bn?.ref == REC_REF && recStack.isNotEmpty()) "  ›  " + recDir.trimEnd('/').substringAfterLast('/') else ""
-        panelTitle.text = if (panelHist) getString(R.string.player_history) else "◀  ${bn?.name ?: ""}$sub  ▶"
+        panelTitle.text = if (panelHist) getString(R.string.player_history)
+            else (if (panelPip) getString(R.string.pip_pick_title) + ":   " else "") + "◀  ${bn?.name ?: ""}$sub  ▶"
         adapter.notifyDataSetChanged()
         if (panelList.isNotEmpty()) list.setSelection(sel.coerceIn(0, panelList.size - 1))
     }
@@ -1912,6 +1935,12 @@ class PlayerActivity : Activity() {
             if (it.isDir) pickRecording(it) else showRecordingDetails(it)
             return
         }
+        if (panelPip) {
+            val b = panelBouquet
+            hidePanel()
+            pipAdd(l[pos], b, l)
+            return
+        }
         panelOnRec = false          // wybrany kanał TV — lista znów otwiera się na bukiecie kanału
         hidePanel()
         // okno historii: kanał z jego bukietu (bieżący albo wyszukany w widocznych bukietach)
@@ -1949,7 +1978,7 @@ class PlayerActivity : Activity() {
             name.text = if (bg == null && !mainBuf) label else android.text.SpannableStringBuilder(label).apply {
                 append("  ")
                 val st = length
-                append(if (rec) " ● B " else " B ")
+                append(when { bg != null && bg.pip >= 0 -> if (rec) " ● PiP ${bg.pip + 1} " else " PiP ${bg.pip + 1} "; rec -> " ● B "; else -> " B " })
                 setSpan(android.text.style.BackgroundColorSpan(if (rec) 0xFFC62828.toInt() else 0xFF1565C0.toInt()), st, length, 0)
                 setSpan(android.text.style.ForegroundColorSpan(0xFFFFFFFF.toInt()), st, length, 0)
                 setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), st, length, 0)
@@ -2199,7 +2228,8 @@ class PlayerActivity : Activity() {
 
     /** Ile kanałów w tle (ustawienie 1–3; PiP wymaga 2). */
     private val BG_MAX get() = maxOf(prefs.bgCount, if (Features.PIP && bgChans.any { it.pip >= 0 }) 2 else 0)
-    private val PIP_TAIL = 1_500_000L
+    /** PiP: najwięcej danych od klatki kluczowej czytanych z pamięci bufora. */
+    private val PIP_READ_MAX = 3_000_000L
 
     // --- odtwarzanie przez bufor: jedno połączenie z dekoderem (TimeshiftRecorder) zapisuje do bufora,
     // odtwarzacz (ExoPlayer / VLC przez lokalny serwer) czyta koniec bufora; pauza i cofnięcie bez nowego połączenia
@@ -2298,6 +2328,7 @@ class PlayerActivity : Activity() {
         if (!bgChans.remove(c)) return
         c.lrec?.let { c.lrec = null; finishRec(it, "bufor zamknięty", restartLive = false, main = false) }
         c.rec.stop()
+        if (c.pip >= 0) { c.pip = -1; pipRefresh() }
         c.an.tee = null; c.an.onEit = null
         c.buf.reset()
         AppLog.i("bufor w tle: ${c.name} zamknięty ($reason)")
@@ -2438,7 +2469,7 @@ class PlayerActivity : Activity() {
     }
 
     /** Nowy kanał buforowany w tle (dla okna PiP): własne połączenie, analizator i bufor w wolnym podkatalogu. */
-    private fun bgNew(ch: Channel): BgChan? {
+    private fun bgNew(ch: Channel, bIdx: Int = playBouquet, list: List<Channel> = playList): BgChan? {
         val root = TimeshiftBuffer.dir(this, prefs) ?: return null
         val used = bgChans.map { it.buf.dir }.toSet() + listOfNotNull(tsBuf?.dir)
         val dir = TimeshiftBuffer.slotDirs(root).firstOrNull { it !in used } ?: return null
@@ -2457,7 +2488,7 @@ class PlayerActivity : Activity() {
         rec = TimeshiftRecorder(url, api.authHeader(), { an }, { an.dropCarry(); buf.resync() }, onFailure = {
             runOnUiThread { bgChans.firstOrNull { it.rec === rec }?.let { bgDrop(it, "brak strumienia z dekodera") } }
         })
-        val c = BgChan(url, ch.name, buf, an, rec, j, ch, playBouquet, playList)
+        val c = BgChan(url, ch.name, buf, an, rec, j, ch, bIdx, list)
         bgChans += c
         rec.start()
         ui.removeCallbacks(bgTick); ui.postDelayed(bgTick, 30_000)
@@ -2471,15 +2502,22 @@ class PlayerActivity : Activity() {
     private inner class PipWin(val idx: Int) {
         val frame = android.widget.FrameLayout(this@PlayerActivity)
         val label = TextView(this@PlayerActivity)
+        val note = TextView(this@PlayerActivity)              // „brak dekodera …” na środku okna
         val tv = android.view.TextureView(this@PlayerActivity)
         @Volatile var surface: android.view.Surface? = null
         @Volatile var chan: BgChan? = null
+        @Volatile var gen = 0                                // zmiana kanału w oknie — dekoder od nowa
+        // tylko wątek PiP
+        var codec: PipCodec? = null
+        var codecGen = -1
+        var noDecoder: String? = null
         var failLogged = false
         var firstLogged = false
         var misses = 0
     }
     private val pipWins = arrayOfNulls<PipWin>(2)
     @Volatile private var pipWorker: Thread? = null
+    private var pipSessionStarted = false
 
     private fun pipView(i: Int): PipWin = pipWins[i] ?: PipWin(i).also { w ->
         val m = (16 * resources.displayMetrics.density).toInt()
@@ -2488,6 +2526,8 @@ class PlayerActivity : Activity() {
         w.frame.foreground = android.graphics.drawable.GradientDrawable().apply { setStroke(3, 0xCCFFFFFF.toInt()) }
         w.label.setTextColor(0xFFFFFFFF.toInt()); w.label.textSize = 13f
         w.label.setBackgroundColor(0x99000000.toInt()); w.label.setPadding(m / 3, 2, m / 3, 2)
+        w.note.setTextColor(0xFFB0BEC5.toInt()); w.note.textSize = 13f
+        w.note.visibility = View.GONE
         w.tv.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(st: android.graphics.SurfaceTexture, width: Int, height: Int) { w.surface = android.view.Surface(st) }
             override fun onSurfaceTextureSizeChanged(st: android.graphics.SurfaceTexture, width: Int, height: Int) {}
@@ -2495,6 +2535,8 @@ class PlayerActivity : Activity() {
             override fun onSurfaceTextureUpdated(st: android.graphics.SurfaceTexture) {}
         }
         w.frame.addView(w.tv, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        w.frame.addView(w.note, android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.CENTER))
         w.frame.addView(w.label, android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM or android.view.Gravity.START))
         w.frame.isFocusable = false
@@ -2540,163 +2582,231 @@ class PlayerActivity : Activity() {
             val c = bgChans.firstOrNull { it.pip == i }
             val w = pipWins[i]
             if (c == null) {
-                if (w != null) { w.chan = null; w.frame.visibility = View.GONE }
+                if (w != null) { w.chan = null; w.gen++; w.frame.visibility = View.GONE }
                 continue
             }
             val v = pipView(i)
             v.frame.layoutParams = pipLayout(i)
             if (v.chan !== c) {
-                v.chan = c; v.failLogged = false; v.firstLogged = false; v.misses = 0
+                v.chan = c; v.gen++
+                v.note.visibility = View.GONE
                 v.label.text = "${i + 1}  ${c.name}"
-                AppLog.i("PiP ${i + 1}: ${c.name} — klatka co ${prefs.pipFrameMs} ms")
+                if (!pipSessionStarted) {
+                    pipSessionStarted = true
+                    PipLog.newSession("E2Stream ${appVersion()} | ${Build.MANUFACTURER} ${Build.MODEL} | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+                }
+                PipLog.i("okno ${i + 1}: ${c.name} — klatka co ${prefs.pipFrameMs} ms")
             }
             v.frame.visibility = View.VISIBLE
         }
-        if (pipWins.any { it?.chan != null } && pipWorker == null) {
+        val open = pipWins.any { it?.chan != null }
+        // bezpiecznik: znacznik zostaje, gdy aplikacja padnie albo Android się zawiesi z otwartym PiP
+        if (prefs.pipActive != open) prefs.pipActive = open
+        if (open && pipWorker == null) {
             pipWorker = Thread({ pipLoop() }, "pip-klatki").also { it.start() }
         }
     }
 
-    /** Jeden wątek dla wszystkich okien: na zmianę, każde okno co prefs.pipFrameMs. */
+    /** Jeden wątek dla wszystkich okien: na zmianę, każde okno co prefs.pipFrameMs; dekodery tylko w tym wątku. */
     private fun pipLoop() {
         var turn = 0
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_LOWEST)
         try {
             while (true) {
-                val open = pipWins.filter { it?.chan != null }.filterNotNull()
+                // okna zamknięte albo z innym kanałem — dekoder zwalniany
+                for (w in pipWins) if (w != null && w.codec != null && (w.chan == null || w.codecGen != w.gen)) pipRelease(w)
+                val open = pipWins.filterNotNull().filter { it.chan != null }
                 if (open.isEmpty()) break
                 val w = open[turn++ % open.size]
+                if (w.codecGen != w.gen) {
+                    w.codecGen = w.gen; w.noDecoder = null; w.failLogged = false; w.firstLogged = false; w.misses = 0
+                }
                 val t0 = SystemClock.elapsedRealtime()
                 val c = w.chan
                 val surf = w.surface
-                if (c != null && surf != null && surf.isValid) {
+                if (c != null && surf != null && surf.isValid && w.noDecoder == null) {
                     try {
-                        val r = pipGrab(c, surf)
-                        if (r.ms >= 0 && !w.firstLogged) { w.firstLogged = true; AppLog.i("PiP ${w.idx + 1}: ${c.name} — pierwsza klatka po ${r.ms} ms (${r.info})") }
-                        // brak klatki — powód do logu (raz na kanał w oknie, potem co 20 nieudanych)
-                        if (r.ms < 0) {
-                            w.misses++
-                            if (!w.firstLogged && (w.misses == 2 || w.misses % 20 == 0)) AppLog.i("PiP ${w.idx + 1} (${c.name}): brak klatki ×${w.misses} — ${r.info}")
+                        val r = pipGrab(w, c, surf)
+                        when {
+                            r.ms >= 0 -> if (!w.firstLogged) { w.firstLogged = true; PipLog.i("okno ${w.idx + 1}: ${c.name} — pierwsza klatka po ${r.ms} ms (${r.info})") }
+                            r.ms == -2L -> {
+                                w.noDecoder = r.info
+                                PipLog.i("okno ${w.idx + 1}: ${c.name} — ${r.info}")
+                                val g = w.gen
+                                ui.post { if (w.gen == g) { w.note.text = getString(R.string.pip_no_decoder, r.info.substringAfterLast(' ')); w.note.visibility = View.VISIBLE } }
+                            }
+                            else -> {
+                                // brak klatki — powód do logu (raz na kanał w oknie, potem co 20 nieudanych)
+                                w.misses++
+                                if (!w.firstLogged && (w.misses == 2 || w.misses % 20 == 0)) PipLog.i("okno ${w.idx + 1} (${c.name}): brak klatki ×${w.misses} — ${r.info}")
+                            }
                         }
                     } catch (e: Exception) {
-                        if (!w.failLogged) { w.failLogged = true; AppLog.i("PiP ${w.idx + 1} (${c.name}): klatka nieudana ($e)") }
+                        pipRelease(w)
+                        if (!w.failLogged) { w.failLogged = true; PipLog.i("okno ${w.idx + 1} (${c.name}): klatka nieudana ($e)") }
                     }
                 }
                 val step = prefs.pipFrameMs.coerceAtLeast(1000).toLong() / open.size
-                Thread.sleep(maxOf(100L, step - (SystemClock.elapsedRealtime() - t0)))
+                Thread.sleep(maxOf(200L, step - (SystemClock.elapsedRealtime() - t0)))
             }
         } catch (_: InterruptedException) {
-        } finally { pipWorker = null }
+        } finally {
+            for (w in pipWins) if (w != null) pipRelease(w)
+            pipWorker = null
+        }
         // okno otwarte w chwili kończenia wątku — nowy wątek
         ui.post { if (pipWins.any { it?.chan != null } && pipWorker == null) pipRefresh() }
     }
 
-    private class BytesSource(private val d: ByteArray, private val len: Int = d.size) : android.media.MediaDataSource() {
-        override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
-            if (position >= len) return -1
-            val n = minOf(size.toLong(), len - position).toInt()
-            System.arraycopy(d, position.toInt(), buffer, offset, n)
-            return n
-        }
-        override fun getSize(): Long = len.toLong()
-        override fun close() {}
+    /** Dekoder okna PiP: programowy, tworzony raz na kanał w oknie (typ obrazu, powierzchnia), między klatkami flush. */
+    private class PipCodec(val codec: android.media.MediaCodec, val mime: String, val surface: android.view.Surface, val maxIn: Int)
+
+    private fun pipRelease(w: PipWin) {
+        val pc = w.codec ?: return
+        w.codec = null
+        try { pc.codec.stop() } catch (_: Exception) {}
+        try { pc.codec.release() } catch (_: Exception) {}
     }
 
-    private val swDecoders = HashMap<String, String?>()
+    private val swNames = HashMap<String, String?>()
 
-    /** Programowy dekoder dla typu (c2.android / OMX.google), gdy jest; inaczej dowolny. */
-    private fun swDecoder(mime: String): android.media.MediaCodec = synchronized(swDecoders) {
-        val name = swDecoders.getOrPut(mime) {
+    private fun isSwCodec(i: android.media.MediaCodecInfo): Boolean =
+        i.name.startsWith("c2.android.") || i.name.startsWith("OMX.google.") ||
+            (Build.VERSION.SDK_INT >= 29 && i.isSoftwareOnly && !i.isAlias && !i.isVendor)
+
+    /** Programowy dekoder dla typu (c2.android / OMX.google); null — brak. Sprzętowego PiP nie używa nigdy. */
+    private fun swDecoderName(mime: String): String? = synchronized(swNames) {
+        swNames.getOrPut(mime) {
             val all = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
                 .filter { !it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }
-            val sw = all.firstOrNull { it.name.startsWith("c2.android.") || it.name.startsWith("OMX.google.") }
-            AppLog.i("PiP: dekoder dla $mime: ${sw?.name ?: all.firstOrNull()?.name ?: "brak"}" + if (sw == null) " (brak programowego)" else " (programowy)")
-            sw?.name ?: all.firstOrNull()?.name
+            val sw = all.firstOrNull { isSwCodec(it) }
+            PipLog.i("dekoder dla $mime: ${sw?.name ?: "brak programowego"} (dostępne: ${all.joinToString { it.name }.ifEmpty { "żaden" }})")
+            sw?.name
         }
-        // tylko programowy: sprzętowy tworzony co klatkę obok obrazu głównego potrafi zawiesić sterownik telewizora
-        val swName = name?.takeIf { it.startsWith("c2.android.") || it.startsWith("OMX.google.") }
-            ?: throw IllegalStateException("brak programowego dekodera dla $mime")
-        android.media.MediaCodec.createByCodecName(swName)
     }
 
     private class Grab(val ms: Long, val info: String)
-    private var pipData = ByteArray(0)         // tylko wątek PiP — bez nowych 1,5 MB przy każdej klatce
+    private var pipData = ByteArray(0)         // tylko wątek PiP — bez nowych buforów przy każdej klatce
+    private var pipAu = ByteArray(0)
 
-    /** Końcówka bufora (z PAT/PMT) w pamięci → pierwsza klatka kluczowa → dekoder → okno. */
-    private fun pipGrab(c: BgChan, surf: android.view.Surface): Grab {
+    /**
+     * Ostatnia kompletna klatka kluczowa z pamięci bufora (indeks klatek kluczowych) → własny demultiplekser TS
+     * (bity kodowania po odszyfrowaniu bez znaczenia) → programowy dekoder okna → obraz w oknie.
+     * Wynik: ms ≥ 0 — klatka pokazana; -1 — chwilowo brak; -2 — brak dekodera (okno przestaje próbować).
+     */
+    private fun pipGrab(w: PipWin, c: BgChan, surf: android.view.Surface): Grab {
         val t0 = SystemClock.elapsedRealtime()
+        val (vpid, type) = c.an.videoStream ?: return Grab(-1, "brak PMT / ścieżki obrazu")
+        val mime = when (type) {
+            "H264" -> "video/avc"
+            "HEVC" -> "video/hevc"
+            "MPEG2-V" -> "video/mpeg2"
+            else -> return Grab(-2, "nieobsługiwany obraz $type")
+        }
+        val swName = swDecoderName(mime) ?: return Grab(-2, "brak programowego dekodera $type")
         val b = c.buf
-        val total = b.total
-        if (total < 300_000) return Grab(-1, "za mało danych w buforze (${total / 1000} kB)")
-        var pos = maxOf(b.oldestOffset, total - PIP_TAIL)
-        pos -= (pos - b.oldestOffset) % 188
-        val hdr = c.an.psiHeader() ?: ByteArray(0)
-        val need = hdr.size + (total - pos).toInt()
-        if (pipData.size < need) pipData = ByteArray(need + 188 * 1000)
-        val data = pipData
-        System.arraycopy(hdr, 0, data, 0, hdr.size)
-        var w = hdr.size
-        while (pos < total && w < need) {
-            val n = b.read(pos, data, w, minOf(188 * 700, need - w))
-            if (n <= 0) break
-            w += n; pos += n
+        val kfs = b.recentKeyframes(4)
+        if (kfs.isEmpty()) return Grab(-1, "brak klatki kluczowej w pamięci (bufor ${b.total / 1000} kB)")
+        var au = 0
+        for (kf in kfs) {
+            val len = minOf(b.total - kf, PIP_READ_MAX).toInt()
+            if (len < 188 * 4) continue
+            if (pipData.size < len) pipData = ByteArray(len)
+            val got = b.readRam(kf, pipData, 0, len)
+            if (got < 188 * 4) continue
+            au = pipDemux(pipData, got, vpid)
+            if (au > 0) break
         }
-        // pakiety z ustawionymi bitami kodowania (po odszyfrowaniu część dekoderów ich nie zeruje) — MediaExtractor je odrzuca
-        var scr = 0
-        var o = hdr.size
-        while (o + 188 <= w) {
-            if (data[o] == 0x47.toByte() && (data[o + 3].toInt() and 0xC0) != 0) { data[o + 3] = (data[o + 3].toInt() and 0x3F).toByte(); scr++ }
-            o += 188
-        }
-        val ex = android.media.MediaExtractor()
-        var codec: android.media.MediaCodec? = null
-        try {
-            ex.setDataSource(BytesSource(data, w))
-            val t = (0 until ex.trackCount).firstOrNull { ex.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("video/") == true }
-                ?: return Grab(-1, "brak ścieżki obrazu w ${w / 1000} kB (ścieżek: ${ex.trackCount}, PAT/PMT ${hdr.size} B, bity kodowania w $scr pakietach)")
-            val fmt = ex.getTrackFormat(t)
-            val mime = fmt.getString(android.media.MediaFormat.KEY_MIME)!!
-            val desc = "$mime ${fmt.optInt(android.media.MediaFormat.KEY_WIDTH)}×${fmt.optInt(android.media.MediaFormat.KEY_HEIGHT)}" +
-                (if (scr > 0) ", bity kodowania wyzerowane w $scr pakietach" else "")
-            ex.selectTrack(t)
-            var guard = 0
-            while ((ex.sampleFlags and android.media.MediaExtractor.SAMPLE_FLAG_SYNC) == 0 && guard++ < 300)
-                if (!ex.advance()) return Grab(-1, "$desc: brak klatki kluczowej w końcówce bufora")
-            if (guard >= 300) return Grab(-1, "$desc: brak klatki kluczowej w końcówce bufora")
-            // dekoder w trybie „najlepiej jak się da” — nie konkuruje z obrazem głównym
+        if (au <= 0) return Grab(-1, "klatka kluczowa jeszcze niekompletna (PID $vpid $type)")
+        var pc = w.codec
+        if (pc != null && (pc.mime != mime || pc.surface !== surf || pc.maxIn < au)) { pipRelease(w); pc = null }
+        if (pc == null) {
+            val maxIn = maxOf(au + 65536, 1 shl 20)
+            val fmt = android.media.MediaFormat.createVideoFormat(mime, 1920, 1088)
+            fmt.setInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE, maxIn)
+            // tryb „najlepiej jak się da” — nie konkuruje z obrazem głównym
             fmt.setInteger(android.media.MediaFormat.KEY_PRIORITY, 1)
-            codec = swDecoder(mime)
-            codec.configure(fmt, surf, null, 0)
-            codec.start()
-            val info = android.media.MediaCodec.BufferInfo()
-            var fed = 0
-            var eos = false
-            while (SystemClock.elapsedRealtime() - t0 < 2500) {
+            val codec = android.media.MediaCodec.createByCodecName(swName)
+            try { codec.configure(fmt, surf, null, 0); codec.start() } catch (e: Exception) { codec.release(); throw e }
+            pc = PipCodec(codec, mime, surf, maxIn)
+            w.codec = pc
+            PipLog.i("okno ${w.idx + 1}: ${c.name} — dekoder ${codec.name} ($type)")
+        }
+        val codec = pc.codec
+        val info = android.media.MediaCodec.BufferInfo()
+        var queued = false
+        var eos = false
+        var shown = false
+        var ok = false
+        try {
+            while (SystemClock.elapsedRealtime() - t0 < 3000) {
                 if (!eos) {
                     val ii = codec.dequeueInputBuffer(10_000)
                     if (ii >= 0) {
-                        val n = if (fed < 12) ex.readSampleData(codec.getInputBuffer(ii)!!, 0) else -1
-                        if (n < 0) { codec.queueInputBuffer(ii, 0, 0, 0, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM); eos = true }
-                        else { codec.queueInputBuffer(ii, 0, n, ex.sampleTime, 0); ex.advance(); fed++ }
+                        if (!queued) {
+                            val ib = codec.getInputBuffer(ii)!!
+                            ib.clear(); ib.put(pipAu, 0, au)
+                            codec.queueInputBuffer(ii, 0, au, 0, android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME)
+                            queued = true
+                        } else {
+                            codec.queueInputBuffer(ii, 0, 0, 0, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            eos = true
+                        }
                     }
                 }
                 val oi = codec.dequeueOutputBuffer(info, 10_000)
                 if (oi >= 0) {
                     val end = (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                    codec.releaseOutputBuffer(oi, !end || info.size > 0)
-                    if (!end || info.size > 0) return Grab(SystemClock.elapsedRealtime() - t0, "$desc, ${codec.name}")
-                    return Grab(-1, "$desc, ${codec.name}: dekoder nie oddał obrazu z $fed próbek")
+                    val frame = !end || info.size > 0
+                    codec.releaseOutputBuffer(oi, frame)
+                    if (frame) shown = true
+                    if (shown || end) break
                 }
             }
-            return Grab(-1, "$desc, ${codec.name}: brak obrazu w 2,5 s ($fed próbek)")
+            ok = true
         } finally {
-            try { codec?.stop() } catch (_: Exception) {}
-            try { codec?.release() } catch (_: Exception) {}
-            ex.release()
+            // gotowy na następną klatkę; dekoder, który nie odpowiada albo zgłosił błąd — zwalniany
+            if (!ok || !shown) pipRelease(w) else try { codec.flush() } catch (_: Exception) { pipRelease(w) }
         }
+        return if (shown) Grab(SystemClock.elapsedRealtime() - t0, "$type ${au / 1000} kB, ${codec.name}")
+        else Grab(-1, "$type ${au / 1000} kB, ${codec.name}: brak obrazu w 3 s")
     }
 
-    private fun android.media.MediaFormat.optInt(k: String) = if (containsKey(k)) getInteger(k) else 0
+    /**
+     * Pierwszy PES obrazu [vpid] od początku [d] (pakiet z PUSI klatki kluczowej) do początku następnego PES
+     * → pipAu (strumień elementarny). 0 — PES jeszcze się nie skończył w danych.
+     */
+    private fun pipDemux(d: ByteArray, len: Int, vpid: Int): Int {
+        if (pipAu.size < len) pipAu = ByteArray(len)
+        var o = 0
+        var n = 0
+        var started = false
+        while (o + 188 <= len) {
+            if (d[o] != 0x47.toByte()) { o++; continue }
+            val pid = ((d[o + 1].toInt() and 0x1F) shl 8) or (d[o + 2].toInt() and 0xFF)
+            if (pid == vpid) {
+                val pusi = (d[o + 1].toInt() and 0x40) != 0
+                val afc = (d[o + 3].toInt() shr 4) and 3
+                var p = o + 4
+                if (afc and 2 != 0) p += 1 + (d[o + 4].toInt() and 0xFF)
+                if (afc and 1 != 0 && p < o + 188) {
+                    if (pusi) {
+                        if (started) return n
+                        // uszkodzony nagłówek PES klatki kluczowej — nie bierzemy następnej (nie-kluczowej) klatki
+                        if (p + 9 > o + 188 || d[p] != 0.toByte() || d[p + 1] != 0.toByte() || d[p + 2] != 1.toByte()) return 0
+                        p += 9 + (d[p + 8].toInt() and 0xFF)
+                        started = true
+                    }
+                    if (started && p < o + 188) {
+                        System.arraycopy(d, p, pipAu, n, o + 188 - p)
+                        n += o + 188 - p
+                    }
+                }
+            }
+            o += 188
+        }
+        return 0
+    }
 
     /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału z bufora w tle albo innego. */
     private fun showPipMenu() {
@@ -2712,13 +2822,14 @@ class PlayerActivity : Activity() {
             acts += getString(R.string.pip_add_other) to { pipPickChannel() }
         }
         if (open.isNotEmpty()) acts += getString(R.string.pip_close_all) to { for (c in open) pipClose(c) }
+        acts += getString(R.string.pip_send_log) to { Tools.uploadPipLog(this, prefs) { showMessage(it) } }
         TvDialog.list(this, getString(R.string.pip_title), acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f) { i -> acts[i].second() }
     }
 
     private fun pipOpen(c: BgChan) {
         val free = (0 until 2).firstOrNull { i -> bgChans.none { it.pip == i } } ?: run { showMessage(getString(R.string.pip_full)); return }
         // bufory poprzednich kanałów (poza wybranym) usuwane — miejsce dla PiP
-        for (o in bgChans.filter { it.pip < 0 && it !== c }) bgDrop(o, "otwarte PiP")
+        for (o in bgChans.filter { it.pip < 0 && it !== c && it.lrec == null }) bgDrop(o, "otwarte PiP")
         c.pip = free
         c.buf.maxMin = pipBufLen()
         pipRefresh()
@@ -2739,17 +2850,26 @@ class PlayerActivity : Activity() {
         playIn(c.bIdx, c.list, i)
     }
 
+    /** Wybór kanału do PiP na zwykłej liście kanałów (◀ ▶ bukiety, OK dodaje okno bez przełączania, WSTECZ anuluje). */
     private fun pipPickChannel() {
-        val curUrl = tsLiveUrl
-        val chans = playList.filter { api.streamUrl(it) != curUrl && bgChans.none { b -> b.url == api.streamUrl(it) } }
-        if (chans.isEmpty()) return
-        TvDialog.list(this, getString(R.string.pip_choose), chans.map { TvDialog.Item("${it.num}  ${it.name}") }, 0, widthFrac = 0.45f) { i ->
-            // wolne miejsce: najpierw wypadają bufory poprzednich kanałów
-            for (o in bgChans.filter { it.pip < 0 }) bgDrop(o, "otwarte PiP")
-            if (bgChans.size >= BG_MAX) { showMessage(getString(R.string.pip_full)); return@list }
-            val c = bgNew(chans[i]) ?: run { showMessage(getString(R.string.pip_no_slot)); return@list }
-            pipOpen(c)
-        }
+        showPanel()
+        if (panel.visibility != View.VISIBLE || recMode) return
+        panelPip = true
+        refreshPanel(list.selectedItemPosition.coerceAtLeast(0))
+    }
+
+    private fun pipAdd(ch: Channel, bIdx: Int, l: List<Channel>) {
+        if (recMode || !bgAllowed() || !bufLive) { showMessage(getString(R.string.pip_needs)); return }
+        val url = api.streamUrl(ch)
+        val cur = playList.getOrNull(playIndex)
+        if (url == tsLiveUrl || (cur != null && OpenWebif.key(cur.ref) == OpenWebif.key(ch.ref))) { showMessage(getString(R.string.pip_is_main)); return }
+        bgOf(ch)?.let { if (it.pip >= 0) showMessage(getString(R.string.pip_already)) else pipOpen(it); return }
+        if (bgChans.count { it.pip >= 0 } >= 2) { showMessage(getString(R.string.pip_full)); return }
+        // wolne miejsce: wypadają bufory poprzednich kanałów (poza nagrywanymi)
+        for (o in bgChans.filter { it.pip < 0 && it.lrec == null }) bgDrop(o, "otwarte PiP")
+        if (bgChans.size >= 3) { showMessage(getString(R.string.pip_full)); return }
+        val c = bgNew(ch, bIdx, l) ?: run { showMessage(getString(R.string.pip_no_slot)); return }
+        pipOpen(c)
     }
 
     /** Start (albo wznowienie) odtwarzania z bufora; [reuse] — połączenie zapisu z dekoderem już działa. */
@@ -4810,7 +4930,7 @@ class PlayerActivity : Activity() {
                 else -> getString(e.labelRes) to actions.getValue(e.id)
             }
         } + listOfNotNull(
-            if (Features.PIP && !recMode && prefs.bufPlay && currentUrl != null) getString(R.string.pip_menu) to { showPipMenu() } else null,
+            if (Features.PIP && prefs.pipEnabled && !recMode && prefs.bufPlay && currentUrl != null) getString(R.string.pip_menu) to { showPipMenu() } else null,
             getString(R.string.message_settings) to { openSettings() })
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->
             items[which].second()

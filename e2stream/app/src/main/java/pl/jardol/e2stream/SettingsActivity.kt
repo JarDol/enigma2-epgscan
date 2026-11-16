@@ -582,7 +582,11 @@ class SettingsActivity : Activity() {
         gated(getString(R.string.setting_bg_buffer_time), { bgName(p.bgBufMin) }) { chooseBgBuffer() },
         Item.Toggle(getString(R.string.setting_bg_full_msg), { p.bgFullMsg }, { p.bgFullMsg = it }),
         Item.Toggle(getString(R.string.setting_bg_status_msg), { p.bgStatusMsg }, { p.bgStatusMsg = it }),
-    )) + (if (!Features.PIP) emptyList<Item>() else listOf(
+    )) + (if (!Features.PIP || !p.bufPlay) emptyList<Item>() else listOf(
+        gated(getString(R.string.setting_pip_enabled), { getString(if (p.pipEnabled) R.string.settings_enabled else R.string.settings_disabled) }) {
+            p.pipEnabled = !p.pipEnabled; markChanged("PiP (eksperymentalne) = ${p.pipEnabled}"); items = buildItems(); refresh()
+        },
+    )) + (if (!Features.PIP || !p.bufPlay || !p.pipEnabled) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_pip_mode), { pipName(p.pipFrameMs) }) {
             val o = listOf(1000, 2000, 3000, 5000)
             TvDialog.single(this, getString(R.string.setting_pip_mode), o.map { pipName(it) }, o.indexOf(p.pipFrameMs).coerceAtLeast(0)) { w ->
