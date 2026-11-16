@@ -2476,7 +2476,10 @@ class PlayerActivity : Activity() {
             AppLog.i("PiP: dekoder dla $mime: ${sw?.name ?: all.firstOrNull()?.name ?: "brak"}" + if (sw == null) " (brak programowego)" else " (programowy)")
             sw?.name ?: all.firstOrNull()?.name
         }
-        name?.let { android.media.MediaCodec.createByCodecName(it) } ?: android.media.MediaCodec.createDecoderByType(mime)
+        // tylko programowy: sprzętowy tworzony co klatkę obok obrazu głównego potrafi zawiesić sterownik telewizora
+        val swName = name?.takeIf { it.startsWith("c2.android.") || it.startsWith("OMX.google.") }
+            ?: throw IllegalStateException("brak programowego dekodera dla $mime")
+        android.media.MediaCodec.createByCodecName(swName)
     }
 
     private class Grab(val ms: Long, val info: String)
@@ -4277,7 +4280,7 @@ class PlayerActivity : Activity() {
                 else -> getString(e.labelRes) to actions.getValue(e.id)
             }
         } + listOfNotNull(
-            if (!recMode && prefs.bufPlay && currentUrl != null) getString(R.string.pip_menu) to { showPipMenu() } else null,
+            if (Features.PIP && !recMode && prefs.bufPlay && currentUrl != null) getString(R.string.pip_menu) to { showPipMenu() } else null,
             getString(R.string.message_settings) to { openSettings() })
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->
             items[which].second()

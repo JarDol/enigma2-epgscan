@@ -568,6 +568,7 @@ class SettingsActivity : Activity() {
             if (!p.bufPlay) { toast(getString(R.string.setting_bg_buffer_needs)); return@gated }
             chooseBgBuffer()
         },
+    ) + (if (!Features.PIP) emptyList() else listOf(
         gated(getString(R.string.setting_pip_mode), { pipName(p.pipFrameMs) }) {
             val o = listOf(1000, 2000, 3000, 5000)
             TvDialog.single(this, getString(R.string.setting_pip_mode), o.map { pipName(it) }, o.indexOf(p.pipFrameMs).coerceAtLeast(0)) { w ->
@@ -580,6 +581,7 @@ class SettingsActivity : Activity() {
                 p.pipPos = w; markChanged("PiP: położenie okien = ${o[w]}"); items = buildItems(); refresh()
             }
         },
+    )) + listOf(
         Item.Header(getString(R.string.setting_timeshift_pause_and_rewind_live_tv)),
         gated(getString(R.string.setting_timeshift), { tsValue() }) { chooseTs() },
         // przy odtwarzaniu przez bufor zapis rusza od razu (odtwarzacz czyta z bufora) — opóźnienie nieaktywne, ustawienie zostaje

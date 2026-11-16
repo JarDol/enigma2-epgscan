@@ -5,6 +5,12 @@ import android.content.SharedPreferences
 
 internal fun normalizePin(value: String) = value.filter { it in '0'..'9' }.take(6)
 
+/** Funkcje w przygotowaniu (ukryte w wydaniu stabilnym). */
+object Features {
+    /** PiP — zawieszało Androida (dekoder obrazu tworzony przy każdej klatce); wraca w becie po poprawkach. */
+    const val PIP = false
+}
+
 class Prefs(ctx: Context) {
     private val app: Context = ctx.applicationContext ?: ctx
     private val sp: SharedPreferences =
