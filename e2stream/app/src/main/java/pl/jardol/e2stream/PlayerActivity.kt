@@ -372,6 +372,7 @@ class PlayerActivity : Activity() {
         if (safeMode) return
         startUp()
         showWakeTestResult()
+        ui.removeCallbacks(netTick); ui.postDelayed(netTick, 30_000)
     }
 
     private fun showPipTripped() {
@@ -641,6 +642,7 @@ class PlayerActivity : Activity() {
         ui.removeCallbacks(epgTick)
         ui.removeCallbacks(zapTick)
         ui.removeCallbacks(connectionGuardTick)
+        ui.removeCallbacks(netTick)
         connectionProbeId++
         connectionProbePending = false
         dismissConnectionDialog()
@@ -2293,6 +2295,7 @@ class PlayerActivity : Activity() {
         val ch: Channel?, val bIdx: Int, val list: List<Channel>,
     ) {
         var pip = -1                               // numer okna PiP albo -1
+        val addedAt = SystemClock.elapsedRealtime() // kolejność otwarcia (samozamykanie przy słabym łączu)
         var leftAt = SystemClock.elapsedRealtime()
         var lrec: LocalRec? = null                 // zapis z tego bufora na dysk (nagranie lokalne)
     }
@@ -2391,6 +2394,78 @@ class PlayerActivity : Activity() {
      * buforowany w tle — jego bufor, połączenie i dziennik stają się bieżącymi (tsNewChannel ich nie resetuje).
      * Kanał z okna PiP zamienia się miejscem z bieżącym (bieżący trafia do tego okna).
      */
+    // --- łącze: limit strumieni (bufory w tle, okna PiP) wg prędkości WiFi / Ethernetu i luk w strumieniach
+    private val rateSamples = java.util.WeakHashMap<TimeshiftBuffer, LongArray>()
+
+    /** Przepływność zapisu bufora (Mb/s, pomiar co ≥ 10 s); nieznana — 8. */
+    private fun bufMbps(b: TimeshiftBuffer): Double {
+        val now = SystemClock.elapsedRealtime()
+        val s = rateSamples.getOrPut(b) { longArrayOf(b.total, now, -1) }
+        if (now - s[1] >= 10_000) { s[2] = (b.total - s[0]) * 8 / (now - s[1]); s[0] = b.total; s[1] = now }
+        return if (s[2] > 0) s[2] / 1000.0 else 8.0
+    }
+
+    /** Strumienie z dekodera teraz: (liczba, razem Mb/s). */
+    private fun streamsMbps(): Pair<Int, Double> {
+        var n = 0
+        var sum = 0.0
+        if (currentUrl != null && !recMode) {
+            n++
+            sum += tsBuf?.let { bufMbps(it) } ?: analyzer?.bitrateKbps?.takeIf { it > 0 }?.let { it / 1000.0 } ?: 8.0
+        }
+        for (c in bgChans) { n++; sum += bufMbps(c.buf) }
+        return n to sum
+    }
+
+    private var netCooldownUntil = 0L
+    private var netLink: NetInfo.Link? = null
+
+    /** Czy limit łącza mieści dodatkowy strumień [extra] Mb/s (bez limitu — gdy łącze nieznane). */
+    private fun netBudgetOk(extra: Double = 8.0): Boolean {
+        val l = NetInfo.read(this) ?: return true
+        netLink = l
+        val budget = l.budgetMbps ?: return true
+        return streamsMbps().second + extra <= budget
+    }
+
+    /** Nowy strumień dozwolony: limit łącza i brak niedawnych luk (po samozamknięciu — 3 min przerwy). */
+    private fun netAllows(extra: Double = 8.0) = SystemClock.elapsedRealtime() >= netCooldownUntil && netBudgetOk(extra)
+
+    private fun netSlowText(): String = getString(R.string.net_slow, netLink?.toString() ?: "?")
+
+    private val gapSeen = java.util.WeakHashMap<TsAnalyzer, Long>()
+    private var netLogN = 0
+
+    /** Co 30 s: luki (skoki PCR) w ≥ 2 strumieniach — zamknięcie ostatnio otwartego bufora w tle / okna PiP; co minutę log łącza. */
+    private val netTick = object : Runnable {
+        override fun run() {
+            ui.removeCallbacks(this)
+            if (isFinishing) return
+            ui.postDelayed(this, 30_000)
+            if (recMode || currentUrl == null) return
+            val (n, sum) = streamsMbps()
+            val l = NetInfo.read(this@PlayerActivity)
+            netLink = l
+            if (++netLogN % 2 == 0) AppLog.i("łącze: ${l ?: "?"}, limit ${l?.budgetMbps?.let { "%.0f Mb/s".format(it) } ?: "brak"}; strumienie $n × razem ${"%.1f".format(sum)} Mb/s")
+            var gaps = 0
+            for (a in listOfNotNull(analyzer) + bgChans.map { it.an }) {
+                val prev = gapSeen[a]
+                if (prev != null && a.pcrJumps > prev) gaps++
+                gapSeen[a] = a.pcrJumps
+            }
+            if (gaps >= 2) {
+                netCooldownUntil = SystemClock.elapsedRealtime() + 180_000
+                val v = bgChans.filter { it.lrec == null }.maxByOrNull { it.addedAt }
+                AppLog.i("łącze: luki w $gaps strumieniach (${l ?: "?"}) — " + (v?.let { "zamykam ${it.name}" } ?: "nie ma czego zamknąć"))
+                if (v != null) {
+                    bgDrop(v, "słabe łącze")
+                    refreshPanelRows()
+                    showMessage(getString(R.string.net_closed, v.name, l?.toString() ?: "?"))
+                }
+            }
+        }
+    }
+
     private fun bgSwitch(url: String, name: String) {
         if (recMode || url == tsLiveUrl && bufLive) return
         if (!bgAllowed()) { bgDropAll("opcja wyłączona"); return }
@@ -2401,7 +2476,17 @@ class PlayerActivity : Activity() {
         val curRec = tsRec
         val curAn = tsRecAn
         val canDemote = bufLive && curBuf != null && curRec != null && curAn != null && curAn === analyzer && curBuf.failed == null
-        if (canDemote && (pipSlot >= 0 || prefs.bgCount > 0)) {
+        // słabe łącze: bufor poprzedniego kanału nie powstaje, najstarsze wypadają, póki nowy kanał się nie mieści
+        val netBlock = canDemote && target == null && prefs.bgCount > 0 && !netAllows()
+        if (netBlock) {
+            AppLog.i("łącze: ${netLink ?: "?"} — za słabe na kolejny strumień, ${playList.getOrNull(playIndex)?.name} bez bufora w tle")
+            while (!netBudgetOk()) {
+                val v = bgChans.filter { it.pip < 0 && it.lrec == null }.minByOrNull { it.leftAt } ?: break
+                bgDrop(v, "słabe łącze")
+            }
+            if (prefs.bgFullMsg) showMessage(netSlowText())
+        }
+        if (canDemote && !netBlock && (pipSlot >= 0 || prefs.bgCount > 0)) {
             // miejsce: najdawniej opuszczony poprzedni kanał wypada (okna PiP i nagrania audycji zostają)
             while (bgChans.count { it !== target } >= BG_MAX) {
                 val v = bgChans.filter { it !== target && it.pip < 0 && !bgProtected(it) }.minByOrNull { it.leftAt } ?: break
@@ -2725,16 +2810,27 @@ class PlayerActivity : Activity() {
         if (kfs.isEmpty()) return Grab(-1, "brak klatki kluczowej w pamięci (bufor ${b.total / 1000} kB)")
         var ends = IntArray(0)
         var gap = false
-        for (kf in kfs) {
+        var fallback: IntArray? = null           // niepełny obraz bez następnej klatki kluczowej — gdy nic lepszego
+        for ((ki, kf) in kfs.withIndex()) {
             val len = minOf(b.total - kf, PIP_READ_MAX).toInt()
             if (len < 188 * 4) continue
             if (pipData.size < len) pipData = ByteArray(len)
             if (pipAu.size < len) pipAu = ByteArray(len)
             val got = b.readRam(kf, pipData, 0, len)
             if (got < 188 * 4) continue
-            ends = TsFrames.picture(pipData, got, vpid, type, 0, pipAu)
-            if (TsFrames.lastGap && ends.isEmpty()) gap = true
-            if (ends.isNotEmpty()) break
+            val pic = TsFrames.picture(pipData, got, vpid, type, 0, pipAu)
+            if (pic.gap && pic.ends.isEmpty()) gap = true
+            if (pic.ends.isEmpty()) continue
+            // odświeżanie pasami: obraz pełny dopiero przed następną klatką kluczową — starsza klatka, jeśli trzeba
+            if (pic.full || pic.toNextKey || ki == kfs.size - 1) { ends = pic.ends; break }
+            if (fallback == null && !pic.gap) fallback = pic.ends
+        }
+        if (ends.isEmpty() && fallback != null) {
+            // ponownie (pipAu nadpisany przez starsze próby) — najnowsza klatka
+            val kf = kfs[0]
+            val len = minOf(b.total - kf, PIP_READ_MAX).toInt()
+            val got = b.readRam(kf, pipData, 0, len)
+            if (got >= 188 * 4) ends = TsFrames.picture(pipData, got, vpid, type, 0, pipAu).ends
         }
         if (ends.isEmpty()) return if (gap) Grab(-3, "luka") else Grab(-1, "klatka kluczowa jeszcze niekompletna (PID $vpid $type)")
         val au = ends.last()
@@ -2858,6 +2954,10 @@ class PlayerActivity : Activity() {
             val v = bgChans.filter { it.pip < 0 && it.lrec == null }.minByOrNull { it.leftAt }
                 ?: run { showMessage(getString(R.string.pip_recording_busy)); return }
             bgDrop(v, "miejsce dla okna PiP")
+        } else if (!netAllows()) {
+            // nowy strumień ponad możliwości łącza
+            AppLog.i("łącze: ${netLink ?: "?"} — za słabe na okno PiP ${ch.name}")
+            showMessage(netSlowText()); return
         }
         val c = bgNew(ch, bIdx, l) ?: run { showMessage(getString(R.string.pip_no_slot)); return }
         pipOpen(c)
@@ -4355,7 +4455,37 @@ class PlayerActivity : Activity() {
         }
         return sb
     }
-    private val hideMessage = Runnable { message.visibility = View.GONE }
+    private val hideMessage = Runnable {
+        message.visibility = View.GONE
+        try { msgPopup?.dismiss() } catch (_: Exception) {}
+        msgPopup = null
+    }
+
+    /** Komunikat nad otwartym menu (okno menu przykrywa pasek komunikatu odtwarzacza) — ten sam wygląd i miejsce. */
+    private var msgPopup: android.widget.PopupWindow? = null
+
+    private fun messageOverDialog(text: CharSequence) {
+        try { msgPopup?.dismiss() } catch (_: Exception) {}
+        msgPopup = null
+        val d = TvDialog.top() ?: return
+        val anchor = d.window?.decorView ?: return
+        val tv = TextView(this).apply {
+            background = message.background?.constantState?.newDrawable()
+            setPadding(message.paddingLeft, message.paddingTop, message.paddingRight, message.paddingBottom)
+            setTextColor(message.currentTextColor)
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, message.textSize)
+            gravity = android.view.Gravity.CENTER
+            maxWidth = message.maxWidth
+            this.text = text
+        }
+        val pw = android.widget.PopupWindow(tv, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, false)
+        pw.isTouchable = false
+        try {
+            pw.showAtLocation(anchor, android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL, 0,
+                (message.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin ?: 0)
+            msgPopup = pw
+        } catch (_: Exception) {}
+    }
 
     private fun t(sec: Long) = hm.format(Date(sec * 1000))
 
@@ -4424,6 +4554,7 @@ class PlayerActivity : Activity() {
         message.maxWidth = (resources.displayMetrics.widthPixels * 0.7f).toInt()
         message.text = prettyMessage(t)
         message.visibility = View.VISIBLE
+        messageOverDialog(message.text)
         ui.postDelayed(hideMessage, prefs.messageBarSec * 1000L)
     }
 

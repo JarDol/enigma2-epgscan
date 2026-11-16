@@ -63,6 +63,8 @@
     <string name="pip_tripped_title">PiP wyłączone</string>
     <string name="pip_tripped_msg">Poprzednia sesja z włączonym PiP zakończyła się awarią albo zawieszeniem, więc PiP zostało wyłączone (można włączyć w Ustawieniach → Pamięć masowa).\n\nWyślij log PiP, żeby można było sprawdzić przyczynę.</string>
     <string name="pip_send_log">Wyślij log PiP</string>
+    <string name="net_slow">Za słabe łącze (%1$s) — bez kolejnego strumienia z dekodera</string>
+    <string name="net_closed">Słabe łącze (%2$s) — zamknięto bufor w tle: %1$s</string>
     <string name="pip_menu">Obraz w obrazie (PiP)…</string>
     <string name="pip_title">Obraz w obrazie (PiP)</string>
     <string name="pip_add_buffered">Dodaj okno: %1$s (w buforze)</string>

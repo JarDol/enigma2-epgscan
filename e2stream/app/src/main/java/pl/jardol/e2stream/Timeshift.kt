@@ -705,12 +705,64 @@ class TimeshiftDataSource(
  * Pobieranie strumienia na żywo do bufora, gdy odtwarzacz gra z bufora (pauza / cofnięcie):
  * dane idą przez analizator (statystyki, PMT, czyszczenie) i dalej do bufora.
  */
+/**
+ * Kolejka bajtów w pamięci między odczytem z sieci a zapisem na nośnik: odczyt nie czeka na kartę / USB
+ * (przestój zapisu nie zatrzymuje pobierania — dekoder nie gubi danych). Przy przepełnieniu najnowsze dane
+ * są odrzucane (z logiem) — jak dotąd przy zbyt wolnym odbiorze.
+ */
+class ByteQueue(private val cap: Int) {
+    private val buf = ByteArray(cap)
+    private var head = 0       // następny do odczytu
+    private var size = 0
+    private val lock = Object()
+    @Volatile var closed = false
+    var dropped = 0L
+        private set
+    val used: Int get() = synchronized(lock) { size }
+
+    fun put(b: ByteArray, off: Int, len: Int): Boolean = synchronized(lock) {
+        if (len > cap - size) { dropped += len; return false }
+        var tail = (head + size) % cap
+        var o = off
+        var left = len
+        while (left > 0) {
+            val n = minOf(left, cap - tail)
+            System.arraycopy(b, o, buf, tail, n)
+            o += n; left -= n; tail = (tail + n) % cap
+        }
+        size += len
+        lock.notifyAll()
+        true
+    }
+
+    /** Do [max] bajtów (wielokrotność 188, gdy się da); 0 — zamknięta i pusta. Czeka na dane. */
+    fun take(dst: ByteArray, max: Int): Int = synchronized(lock) {
+        while (size == 0 && !closed) lock.wait(500)
+        if (size == 0) return 0
+        var n = minOf(max, size)
+        if (n > 188) n -= n % 188
+        var o = 0
+        var left = n
+        while (left > 0) {
+            val c = minOf(left, cap - head)
+            System.arraycopy(buf, head, dst, o, c)
+            o += c; left -= c; head = (head + c) % cap
+        }
+        size -= n
+        n
+    }
+
+    fun close() = synchronized(lock) { closed = true; lock.notifyAll() }
+}
+
 class TimeshiftRecorder(
     private val url: String, private val auth: String?, private val analyzer: () -> TsAnalyzer?, private val onConnect: () -> Unit = {},
     private val onFailure: () -> Unit,
 ) {
     @Volatile private var running = true
     private var conn: HttpURLConnection? = null
+    /** Zapas w RAM między siecią a nośnikiem (~10 s przy 6 Mb/s). */
+    private val queue = ByteQueue(8 * 1024 * 1024)
 
     fun start() {
         Thread({
@@ -726,15 +778,17 @@ class TimeshiftRecorder(
                 val b = ByteArray(188 * 700)
                 val sourceAnalyzer = analyzer()
                 val analyzerSession = sourceAnalyzer?.sessionId
+                // zapis (analizator → bufor na nośniku) w osobnym wątku
+                Thread({ writeLoop(sourceAnalyzer, analyzerSession) }, "timeshift-nosnik").apply { priority = Thread.NORM_PRIORITY }.start()
+                var dropLogged = 0L
                 while (running) {
                     val t0 = SystemClock.elapsedRealtime()
                     val n = inp.read(b)
                     if (n < 0 || !running) break
-                    analyzer()?.let { a ->
-                        if (a === sourceAnalyzer) {
-                            a.readTime(SystemClock.elapsedRealtime() - t0, analyzerSession)
-                            if (n > 0) a.feed(b, 0, n, analyzerSession)
-                        }
+                    if (sourceAnalyzer != null && analyzer() === sourceAnalyzer) sourceAnalyzer.readTime(SystemClock.elapsedRealtime() - t0, analyzerSession)
+                    if (n > 0 && !queue.put(b, 0, n) && queue.dropped - dropLogged > 4_000_000) {
+                        dropLogged = queue.dropped
+                        AppLog.i("timeshift: nośnik nie nadąża — kolejka pełna, odrzucono ${queue.dropped / 1000} kB")
                     }
                 }
                 if (running) AppLog.i("timeshift: strumień na żywo zakończył się")
@@ -742,13 +796,41 @@ class TimeshiftRecorder(
                 if (running) AppLog.i("timeshift: zapis na żywo przerwany ($e)")
             } finally {
                 try { conn?.disconnect() } catch (_: Exception) {}
+                queue.close()
             }
             if (running) onFailure()
         }, "timeshift-zapis").start()
     }
 
+    /** Wątek zapisu: dane z kolejki do analizatora (który zapisuje do bufora); wolne zapisy do logu. */
+    private fun writeLoop(source: TsAnalyzer?, session: Long?) {
+        val b = ByteArray(188 * 700)
+        var slowLogged = 0L
+        var slowCount = 0
+        var maxMs = 0L
+        try {
+            while (true) {
+                val n = queue.take(b, b.size)
+                if (n <= 0) break
+                val t0 = SystemClock.elapsedRealtime()
+                analyzer()?.let { a -> if (a === source) a.feed(b, 0, n, session) }
+                val ms = SystemClock.elapsedRealtime() - t0
+                if (ms > 300) {
+                    slowCount++; maxMs = maxOf(maxMs, ms)
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - slowLogged > 30_000) {
+                        slowLogged = now
+                        AppLog.i("timeshift: wolny zapis na nośnik — ${slowCount}× > 300 ms (najdłużej $maxMs ms), w kolejce ${queue.used / 1000} kB")
+                        slowCount = 0; maxMs = 0
+                    }
+                }
+            }
+        } catch (_: InterruptedException) {}
+    }
+
     fun stop() {
         running = false
+        queue.close()
         try { conn?.disconnect() } catch (_: Exception) {}
     }
 }

@@ -62,6 +62,8 @@
     <string name="pip_tripped_title">PiP turned off</string>
     <string name="pip_tripped_msg">The previous session with PiP on ended with a crash or a freeze, so PiP has been turned off (it can be turned on in Settings → Storage).\n\nSend the PiP log so the cause can be checked.</string>
     <string name="pip_send_log">Send PiP log</string>
+    <string name="net_slow">Connection too slow (%1$s) — no further stream from the receiver</string>
+    <string name="net_closed">Slow connection (%2$s) — background buffer closed: %1$s</string>
     <string name="pip_menu">Picture in picture (PiP)…</string>
     <string name="pip_title">Picture in picture (PiP)</string>
     <string name="pip_add_buffered">Add window: %1$s (buffered)</string>

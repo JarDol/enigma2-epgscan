@@ -76,6 +76,11 @@ object TvDialog {
     /** Otwarte okna — zamykane przy wyjściu z aplikacji (po powrocie zawsze sam odtwarzacz). */
     private val open = java.util.Collections.newSetFromMap(java.util.WeakHashMap<Dialog, Boolean>())
 
+    private var lastShown: java.lang.ref.WeakReference<Dialog>? = null
+
+    /** Okno na wierzchu (ostatnio otwarte i wciąż widoczne) — komunikaty pokazywane nad nim. */
+    fun top(): Dialog? = lastShown?.get()?.takeIf { it.isShowing } ?: open.firstOrNull { it.isShowing }
+
     fun dismissAll() {
         for (d in open.toList()) try { if (d.isShowing) d.dismiss() } catch (_: Exception) {}
         open.clear()
@@ -192,6 +197,7 @@ object TvDialog {
         if (onBack != null) dlg.setOnCancelListener { onBack() }
         dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         open += dlg
+        lastShown = java.lang.ref.WeakReference(dlg)
         dlg.setOnDismissListener { open -= dlg }
         dlg.show()
         dlg.window?.setLayout((dm.widthPixels * widthFrac).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)

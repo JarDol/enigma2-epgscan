@@ -195,88 +195,102 @@ object TsFrames {
         return -1
     }
 
-    /** Czy jednostka w [o] zaczyna się od ogranicznika jednostki dostępu (H.264 typ 9, HEVC typ 35). */
-    private fun isAud(b: ByteArray, o: Int, end: Int): Boolean {
-        var i = o
-        while (i < end && i < o + 4 && b[i] == 0.toByte()) i++
-        if (i - o < 2 || i + 1 >= end || b[i] != 1.toByte()) return false
-        val x = u(b, i + 1)
-        return (x and 0x9F) == 0x09 || x == 0x46
-    }
+    /** Wynik [picture]: końce kolejnych jednostek dostępu w buforze, czy pierwsza to pełny obraz, czy była luka. */
+    class Pic(val ends: IntArray, val full: Boolean, val toNextKey: Boolean, val gap: Boolean)
 
     /**
-     * Klatka kluczowa i następne jednostki dostępu od pakietu [from] → [out]; zwraca końce kolejnych pełnych
-     * jednostek (najwyżej [want]) albo pustą tablicę. Jednostka = PES-y od ogranicznika (AUD) do następnego —
-     * nadawcy dzielą duże klatki na kilka PES-ów albo nadają półobrazy osobno (obraz z przeplotem); bez AUD — PES.
-     * Kilka jednostek, żeby dekoder złożył pełną klatkę z obu półobrazów.
+     * Strumień elementarny obrazu [vpid] od pakietu [from] (klatka kluczowa) do [out] — PES po PES, aż do początku
+     * następnej klatki kluczowej, końca danych albo luki (błąd ciągłości). Wynik: (bajtów, doszło do następnej
+     * klatki kluczowej, luka).
      */
-    /** Ostatnie wywołanie [units] trafiło na lukę w danych obrazu (błąd ciągłości) — klatka byłaby uszkodzona. */
-    @Volatile var lastGap = false
-
-    fun units(d: ByteArray, len: Int, vpid: Int, from: Int, out: ByteArray, want: Int = 3, stopAtKey: Boolean = false): IntArray {
-        val pesStart = ArrayList<Int>()      // początek każdego PES-u w [out]
-        val pesAud = ArrayList<Boolean>()    // czy PES zaczyna się od ogranicznika (AUD)
+    private fun collect(d: ByteArray, len: Int, vpid: Int, from: Int, out: ByteArray): Triple<Int, Boolean, Boolean> {
         var n = 0
         var o = from
         var cc = -1
-        lastGap = false
-        // granice jednostek: PES z AUD (gdy strumień ma AUD), inaczej każdy PES; [open] — PES-y od indeksu open nie są pełne
-        fun ends(open: Int): List<Int> {
-            val aud = pesAud[0]
-            return (1..minOf(open, pesStart.size - 1)).filter { !aud || pesAud[it] }.map { pesStart[it] }
-        }
+        var started = false
         while (o + 188 <= len) {
             if (d[o] != 0x47.toByte()) { o++; continue }
             val pid = ((u(d, o + 1) and 0x1F) shl 8) or u(d, o + 2)
             if (pid == vpid) {
                 val pusi = (u(d, o + 1) and 0x40) != 0
                 val afc = (u(d, o + 3) shr 4) and 3
-                // ciągłość pakietów obrazu: luka = uszkodzona klatka (pokazujemy poprzednią)
                 if (afc and 1 != 0) {
                     val c = u(d, o + 3) and 0x0F
-                    if (cc >= 0 && c != cc && c != (cc + 1) and 0x0F) {
-                        lastGap = true
-                        val e = if (pesStart.isEmpty()) emptyList() else ends(pesStart.size - 1)
-                        return if (e.size >= minOf(2, want)) e.take(want).toIntArray() else IntArray(0)
-                    }
+                    if (cc >= 0 && c != cc && c != (cc + 1) and 0x0F) return Triple(n, false, true)
                     cc = c
                 }
                 var p = o + 4
                 if (afc and 2 != 0) p += 1 + u(d, o + 4)
                 if (afc and 1 != 0 && p < o + 188) {
                     if (pusi) {
+                        if (started && isKeyStart(d, o)) return Triple(n, true, false)
                         if (p + 9 > o + 188 || d[p] != 0.toByte() || d[p + 1] != 0.toByte() || d[p + 2] != 1.toByte()) {
-                            if (pesStart.isEmpty()) return IntArray(0)
-                            break
-                        }
-                        // do następnej klatki kluczowej (odświeżanie obrazu pasami — pełny obraz dopiero przed nią)
-                        if (stopAtKey && pesStart.isNotEmpty() && isKeyStart(d, o)) {
-                            pesStart += n; pesAud += true
-                            val e = (1 until pesStart.size).filter { !pesAud[0] || pesAud[it] }.map { pesStart[it] }
-                            return e.take(want).toIntArray()
+                            if (!started) return Triple(0, false, false)
+                            return Triple(n, false, true)
                         }
                         p += 9 + u(d, p + 8)
-                        pesStart += n
-                        pesAud += isAud(d, p, o + 188)
-                        // wszystkie PES-y przed bieżącym są pełne
-                        val e = ends(pesStart.size - 1)
-                        if (e.size >= want) return e.take(want).toIntArray()
+                        started = true
                     }
-                    if (pesStart.isNotEmpty() && p < o + 188) {
+                    if (started && p < o + 188) {
                         val c = o + 188 - p
-                        if (n + c > out.size) break
+                        if (n + c > out.size) return Triple(n, false, false)
                         System.arraycopy(d, p, out, n, c); n += c
                     }
                 }
             }
             o += 188
         }
-        // koniec danych: tyle pełnych jednostek, ile jest (co najmniej 2 — przy przeplocie oba półobrazy)
-        if (pesStart.size >= 2) {
-            val e = ends(pesStart.size - 1)
-            if (e.size >= minOf(2, want)) return e.take(want).toIntArray()
+        return Triple(n, false, false)
+    }
+
+    /**
+     * Początki kolejnych jednostek dostępu (obrazów / półobrazów) w strumieniu elementarnym — wg jednostek NAL,
+     * niezależnie od podziału na PES: nowy obraz zaczyna ogranicznik / SPS / PPS / SEI po wycinkach albo wycinek
+     * z pierwszym makroblokiem 0 (H.264), pierwszy segment obrazu (HEVC), nagłówek obrazu / sekwencji / GOP (MPEG-2).
+     */
+    private fun auStarts(b: ByteArray, n: Int, type: String): List<Int> {
+        val out = ArrayList<Int>()
+        var inPic = false
+        var i = 0
+        while (i + 3 < n) {
+            if (b[i] != 0.toByte() || b[i + 1] != 0.toByte() || b[i + 2] != 1.toByte()) { i++; continue }
+            val s = if (i > 0 && b[i - 1] == 0.toByte()) i - 1 else i
+            val h = i + 3
+            when (type) {
+                "H264" -> {
+                    val t = u(b, h) and 0x1F
+                    if (t in 1..5) {
+                        val first = h + 1 < n && (u(b, h + 1) and 0x80) != 0
+                        if (inPic && first && s > 0) out += s
+                        inPic = true
+                    } else if (t == 6 || t == 7 || t == 8 || t == 9 || t in 14..18) {
+                        if (inPic && s > 0) out += s
+                        inPic = false
+                    }
+                }
+                "HEVC" -> {
+                    val t = (u(b, h) shr 1) and 0x3F
+                    if (t <= 31) {
+                        val first = h + 2 < n && (u(b, h + 2) and 0x80) != 0
+                        if (inPic && first && s > 0) out += s
+                        inPic = true
+                    } else if (t in 32..35 || t == 39 || t in 41..44 || t in 48..55) {
+                        if (inPic && s > 0) out += s
+                        inPic = false
+                    }
+                }
+                else -> {
+                    val c = u(b, h)
+                    if (c in 0x01..0xAF) inPic = true
+                    else if (c == 0x00 || c == 0xB3 || c == 0xB8) {
+                        if (inPic && s > 0) out += s
+                        inPic = false
+                    }
+                }
+            }
+            i += 3
         }
-        return IntArray(0)
+        return out
     }
 
     /**
@@ -298,15 +312,20 @@ object TsFrames {
     }
 
     /**
-     * Klatka z bufora/nagrania gotowa do dekodera: od klatki kluczowej w [d] (pakiet [from]) jednostki dostępu
-     * do [out]. Pełny obraz (IDR) — 3 jednostki (oba półobrazy); inaczej — aż do następnej klatki kluczowej
-     * (najwyżej [maxUnits]), bo obraz uzupełnia się pasami. Pusta tablica — dane niekompletne albo z luką.
+     * Klatka gotowa do dekodera: od klatki kluczowej w [d] (pakiet [from]) jednostki dostępu do [out].
+     * Pełny obraz (IDR / IRAP / MPEG-2) — 3 jednostki (oba półobrazy); inaczej (odświeżanie pasami) — wszystkie do
+     * następnej klatki kluczowej (najwyżej [maxUnits]). Pusta tablica — dane niekompletne.
      */
-    fun picture(d: ByteArray, len: Int, vpid: Int, type: String, from: Int, out: ByteArray, maxUnits: Int = 40): IntArray {
-        val first = units(d, len, vpid, from, out, 3)
-        if (first.isEmpty() || fullPicture(out, first[0], type)) return first
-        val all = units(d, len, vpid, from, out, maxUnits, stopAtKey = true)
-        return if (all.size >= 2) all else IntArray(0)
+    fun picture(d: ByteArray, len: Int, vpid: Int, type: String, from: Int, out: ByteArray, maxUnits: Int = 40): Pic {
+        val (n, toKey, gap) = collect(d, len, vpid, from, out)
+        if (n == 0) return Pic(IntArray(0), false, false, gap)
+        val ends = ArrayList(auStarts(out, n, type))
+        if (toKey) ends += n                     // ostatnia jednostka kończy się przed następną klatką kluczową
+        if (ends.isEmpty()) return Pic(IntArray(0), false, toKey, gap)
+        val full = fullPicture(out, ends[0], type)
+        val take = if (full) ends.take(3) else ends.take(maxUnits)
+        if (!full && take.size < 2) return Pic(IntArray(0), false, toKey, gap)
+        return Pic(take.toIntArray(), full, toKey, gap)
     }
 
     /**
@@ -568,7 +587,7 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
         val name = TsFrames.swDecoder(mime) ?: run { AppLog.i("podgląd przewijania: brak programowego dekodera ${video.second}"); return }
         val k = TsFrames.keyframe(data, len, video.first, from)
         if (k < 0) return
-        val ends = TsFrames.picture(data, len, video.first, video.second, k, au, 25)
+        val ends = TsFrames.picture(data, len, video.first, video.second, k, au, 25).ends
         if (ends.isEmpty() || s != seq.get()) return
         var c = codec
         if (c != null && codecMime != mime) { release(); c = null }
