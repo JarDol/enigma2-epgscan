@@ -90,4 +90,27 @@
     <string name="player_bgrec_title">Nagraj bufor: %1$s</string>
     <string name="player_bg_menu">Buforowane kanały</string>
     <string name="player_bg_span">w buforze %1$s</string>
+    <string name="action_record">Nagraj (nagranie lokalne)</string>
+    <string name="action_recordings">Nagrania z dekodera</string>
+    <string name="action_local_recordings">Nagrania lokalne</string>
+    <string name="action_buffered">Buforowane kanały</string>
+    <string name="action_zap_timers">Zaplanowane przełączenia</string>
+    <string name="action_decoder_timers">Timery dekodera</string>
+    <string name="action_restart_channel">Uruchom kanał od nowa</string>
+    <string name="action_bouquet_next">Następny bukiet (lista kanałów)</string>
+    <string name="action_bouquet_prev">Poprzedni bukiet (lista kanałów)</string>
+    <string name="action_engine">Silnik odtwarzania (PIN)</string>
+    <string name="action_tunneling">Tunelowanie obrazu wł./wył. (PIN)</string>
+    <string name="action_buffer_play">Odtwarzanie przez bufor wł./wył. (PIN)</string>
+    <string name="action_bg_buffer">Bufor poprzednich kanałów (PIN)</string>
+    <string name="action_send_log">Wyślij log na dekoder teraz</string>
+    <string name="action_hidden_bouquet">Ten bukiet jest ukryty (Widoczne bukiety)</string>
+    <string name="action_no_buffered">Brak kanałów buforowanych w tle</string>
+    <string name="action_restarting">Uruchamiam kanał od nowa…</string>
+    <string name="action_engine_set">Silnik odtwarzania: %1$s</string>
+    <string name="action_tunneling_on">Tunelowanie obrazu: włączone</string>
+    <string name="action_tunneling_off">Tunelowanie obrazu: wyłączone</string>
+    <string name="action_buffer_play_on">Odtwarzanie przez bufor: włączone</string>
+    <string name="action_buffer_play_off">Odtwarzanie przez bufor: wyłączone</string>
+    <string name="action_sending_log">Wysyłam log na dekoder…</string>
 </resources>

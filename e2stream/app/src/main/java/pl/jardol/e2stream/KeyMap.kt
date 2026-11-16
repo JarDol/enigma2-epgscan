@@ -24,6 +24,20 @@ enum class Act(val labelRes: Int) {
     TS_REWIND(R.string.action_rewind),
     TS_FORWARD(R.string.action_forward),
     TS_LIVE(R.string.action_live),
+    RECORD(R.string.action_record),
+    RECORDINGS(R.string.action_recordings),
+    LOCAL_RECORDINGS(R.string.action_local_recordings),
+    BUFFERED(R.string.action_buffered),
+    ZAP_TIMERS(R.string.action_zap_timers),
+    DECODER_TIMERS(R.string.action_decoder_timers),
+    RESTART_CHANNEL(R.string.action_restart_channel),
+    BOUQUET_NEXT(R.string.action_bouquet_next),
+    BOUQUET_PREV(R.string.action_bouquet_prev),
+    ENGINE(R.string.action_engine),
+    TUNNELING(R.string.action_tunneling),
+    BUFFER_PLAY(R.string.action_buffer_play),
+    BG_BUFFER(R.string.action_bg_buffer),
+    SEND_LOG(R.string.action_send_log),
 }
 
 /** Mapowanie klawiszy w trybie oglądania (bez otwartej listy kanałów). */
@@ -56,6 +70,7 @@ object KeyMap {
         KeyEvent.KEYCODE_MEDIA_REWIND to Act.TS_REWIND,
         KeyEvent.KEYCODE_MEDIA_FAST_FORWARD to Act.TS_FORWARD,
         KeyEvent.KEYCODE_MEDIA_STOP to Act.TS_LIVE,
+        KeyEvent.KEYCODE_MEDIA_RECORD to Act.RECORD,
     )
 
     val navigation = linkedMapOf(

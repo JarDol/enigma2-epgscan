@@ -4303,7 +4303,91 @@ class PlayerActivity : Activity() {
                 tsMode -> { tsSetShifted(true); player?.playWhenReady = false; tsShowBanner(sticky = true) }   // już z bufora
                 else -> tsEnter(pause = true, backMs = 0)
             }
+            Act.RECORD -> when {
+                localRec != null -> localRec?.let { r ->
+                    TvDialog.confirm(this, getString(R.string.player_localrec_title), getString(R.string.player_localrec_stop_menu, r.meta.optString("title")),
+                        listOf(TvDialog.Btn(getString(R.string.player_localrec_stop)) { if (localRec === r) finishLocalRec("zatrzymane", restartLive = true) },
+                            TvDialog.Btn(getString(R.string.dialog_cancel))))
+                }
+                recMode || currentUrl == null -> {}
+                prefs.tsMin <= 0 -> tsConfigured()
+                else -> showRecordMenu()
+            }
+            Act.RECORDINGS -> if (bouquets.any { it.ref == REC_REF }) showRecordings(REC_REF) else showMessage(getString(R.string.action_hidden_bouquet))
+            Act.LOCAL_RECORDINGS -> if (bouquets.any { it.ref == REC_LOCAL_BOUQUET }) showRecordings(REC_LOCAL_BOUQUET) else showMessage(getString(R.string.action_hidden_bouquet))
+            Act.BUFFERED -> if (bgChans.isEmpty()) showMessage(getString(R.string.action_no_buffered)) else showBufferedMenu()
+            Act.ZAP_TIMERS -> showZapTimers()
+            Act.DECODER_TIMERS -> showDecoderTimers()
+            Act.RESTART_CHANNEL -> if (!recMode) currentUrl?.let { url ->
+                AppLog.i("kanał: ręczne uruchomienie od nowa")
+                if (tsMode) tsLeave()
+                if (bufLive) { tsRec?.stop(); tsRec = null }        // nowe połączenie z dekoderem
+                showMessage(getString(R.string.action_restarting))
+                startStream(url)
+            }
+            Act.BOUQUET_NEXT -> bouquetFromKey(1)
+            Act.BOUQUET_PREV -> bouquetFromKey(-1)
+            Act.ENGINE -> pinThen {
+                val o = listOf("exo" to "ExoPlayer", "vlc" to "VLC")
+                TvDialog.single(this, getString(R.string.setting_playback_engine), o.map { it.second }, o.indexOfFirst { it.first == prefs.engine }.coerceAtLeast(0)) { w ->
+                    if (prefs.engine != o[w].first) {
+                        prefs.engine = o[w].first
+                        applyStreamSetting("silnik odtwarzania = ${o[w].second}", getString(R.string.action_engine_set, o[w].second))
+                    }
+                }
+            }
+            Act.TUNNELING -> pinThen {
+                prefs.tunneling = !prefs.tunneling
+                applyStreamSetting("tunelowanie obrazu = ${prefs.tunneling}",
+                    getString(if (prefs.tunneling) R.string.action_tunneling_on else R.string.action_tunneling_off))
+            }
+            Act.BUFFER_PLAY -> pinThen {
+                if (!prefs.bufPlay && TimeshiftBuffer.dir(this, prefs) == null) { showMessage(getString(R.string.storage_requires_medium)); return@pinThen }
+                prefs.bufPlay = !prefs.bufPlay
+                AppLog.i("klawisz: odtwarzanie przez bufor = ${prefs.bufPlay}")
+                showMessage(getString(if (prefs.bufPlay) R.string.action_buffer_play_on else R.string.action_buffer_play_off))
+                if (!recMode) currentUrl?.let { startStream(it) }
+            }
+            Act.BG_BUFFER -> pinThen {
+                if (!prefs.bufPlay) { showMessage(getString(R.string.setting_bg_buffer_needs)); return@pinThen }
+                val o = listOf(0, 1, 2, 3)
+                val names = o.map { if (it == 0) getString(R.string.settings_disabled) else if (it == 1) getString(R.string.setting_bg_buffer_1) else getString(R.string.setting_bg_buffer_n, it) }
+                TvDialog.single(this, getString(R.string.setting_bg_buffer), names, prefs.bgCount.coerceIn(0, 3)) { w ->
+                    prefs.bgCount = o[w]
+                    AppLog.i("klawisz: bufor poprzednich kanałów = ${o[w]}")
+                    showMessage(getString(R.string.setting_bg_buffer) + ": " + names[w])
+                    if (!recMode) currentUrl?.let { startStream(it) }
+                }
+            }
+            Act.SEND_LOG -> {
+                showMessage(getString(R.string.action_sending_log))
+                Tools.uploadLog(this, prefs, true) { showMessage(it) }
+            }
         }
+    }
+
+    /** Akcje zmieniające ustawienia — z PIN-em, jak wejście do ustawień. */
+    private fun pinThen(go: () -> Unit) = PinLock.ask(this, prefs, onCancel = {}) { go() }
+
+    /** Zmiana ustawienia strumienia z klawisza: odtwarzacz od nowa (jak po powrocie z ustawień). */
+    private fun applyStreamSetting(log: String, msg: String) {
+        AppLog.i("klawisz: $log — odtwarzacz od nowa")
+        val url = currentUrl
+        releasePlayer()
+        buildPlayer()
+        if (url != null && !recMode) startStream(url)
+        settingsSig = streamSig()
+        showMessage(msg)
+    }
+
+    /** Następny / poprzedni bukiet z klawisza podczas oglądania: lista kanałów na sąsiednim bukiecie (bez przełączania). */
+    private fun bouquetFromKey(d: Int) {
+        if (bouquets.isEmpty() || recMode) return
+        if (panel.visibility != View.VISIBLE || panelHist) {
+            panelOnRec = false
+            showPanel()
+        }
+        panelBouquetStep(d)
     }
 
     private fun openSettings(onCancel: () -> Unit = {}, focusTimeshift: Boolean = false) {

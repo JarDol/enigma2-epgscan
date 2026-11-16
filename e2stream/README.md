@@ -111,7 +111,14 @@ Ustawienia → Synchronizacja: nazwa odbiornika, synchronizuj teraz, przenieś u
 | MENU | menu |
 | cyfry | wybór numeru kanału (OK zatwierdza od razu) |
 | LAST / ⏮ | poprzedni kanał |
+| REC | nagraj (nagranie lokalne; w trakcie — zakończenie nagrania) |
 | WSTECZ ×2 | wyjście |
+
+Do dowolnego klawisza można też przypisać: nagrania z dekodera, nagrania lokalne, buforowane kanały, zaplanowane
+przełączenia, timery dekodera, uruchomienie kanału od nowa, następny / poprzedni bukiet (podczas oglądania otwiera
+listę kanałów na sąsiednim bukiecie; na liście bukiety jak dotąd ◀ ▶), wysłanie logu na dekoder oraz — z PIN-em, jak
+wejście do ustawień — silnik odtwarzania (ExoPlayer / VLC), tunelowanie obrazu, odtwarzanie przez bufor i bufor
+poprzednich kanałów (zmiana działa od razu, z komunikatem na ekranie).
 
 EPG kanału pokazuje datę oraz godzinę rozpoczęcia i zakończenia każdej audycji; ◀ ▶ przewijają listę o stronę. Jeśli brak krótkiego opisu, lista pokazuje początek opisu rozszerzonego. Multi EPG pokazuje zakresy godzin bieżącej i następnej audycji oraz nazwy kanałów w maksymalnie dwóch liniach. Listy EPG kanału, kanałów Multi EPG i wyboru bukietu przewijają się w pętli.
 

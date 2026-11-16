@@ -89,4 +89,27 @@
     <string name="player_bgrec_title">Record buffer: %1$s</string>
     <string name="player_bg_menu">Buffered channels</string>
     <string name="player_bg_span">%1$s in buffer</string>
+    <string name="action_record">Record (local recording)</string>
+    <string name="action_recordings">Receiver recordings</string>
+    <string name="action_local_recordings">Local recordings</string>
+    <string name="action_buffered">Buffered channels</string>
+    <string name="action_zap_timers">Scheduled switches</string>
+    <string name="action_decoder_timers">Receiver timers</string>
+    <string name="action_restart_channel">Restart channel</string>
+    <string name="action_bouquet_next">Next bouquet (channel list)</string>
+    <string name="action_bouquet_prev">Previous bouquet (channel list)</string>
+    <string name="action_engine">Playback engine (PIN)</string>
+    <string name="action_tunneling">Video tunnelling on/off (PIN)</string>
+    <string name="action_buffer_play">Playback through buffer on/off (PIN)</string>
+    <string name="action_bg_buffer">Previous channels buffer (PIN)</string>
+    <string name="action_send_log">Send log to receiver now</string>
+    <string name="action_hidden_bouquet">This bouquet is hidden (Visible bouquets)</string>
+    <string name="action_no_buffered">No channels buffered in background</string>
+    <string name="action_restarting">Restarting channel…</string>
+    <string name="action_engine_set">Playback engine: %1$s</string>
+    <string name="action_tunneling_on">Video tunnelling: on</string>
+    <string name="action_tunneling_off">Video tunnelling: off</string>
+    <string name="action_buffer_play_on">Playback through buffer: on</string>
+    <string name="action_buffer_play_off">Playback through buffer: off</string>
+    <string name="action_sending_log">Sending log to receiver…</string>
 </resources>
