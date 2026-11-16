@@ -2646,8 +2646,9 @@ class PlayerActivity : Activity() {
                         if (!w.failLogged) { w.failLogged = true; PipLog.i("okno ${w.idx + 1} (${c.name}): klatka nieudana ($e)") }
                     }
                 }
-                val step = prefs.pipFrameMs.coerceAtLeast(1000).toLong() / open.size
-                Thread.sleep(maxOf(200L, step - (SystemClock.elapsedRealtime() - t0)))
+                // każde okno co pipFrameMs; gdy dekodowanie trwa dłużej — od razu następne (bez zatrzymywania wątku na długo)
+                val step = prefs.pipFrameMs.coerceAtLeast(250).toLong() / open.size
+                Thread.sleep(maxOf(30L, step - (SystemClock.elapsedRealtime() - t0)))
             }
         } catch (_: InterruptedException) {
         } finally {
@@ -4980,11 +4981,12 @@ class PlayerActivity : Activity() {
                 "record_stop" -> if (activeRecs() > 0) getString(R.string.player_rec_stop_menu) to { showStopRecs() } else null
                 "buffered" -> if (!recMode && (bgChans.isNotEmpty() || (bufLive && tsBuf != null)))
                     getString(R.string.player_bg_menu) to { showBufferedMenu() } else null
+                // PiP — tylko przy włączonym ustawieniu „PiP (eksperymentalne)”
+                "pip" -> if (Features.PIP && prefs.pipEnabled && !recMode && prefs.bufPlay && currentUrl != null)
+                    getString(R.string.pip_menu) to { showPipMenu() } else null
                 else -> getString(e.labelRes) to actions.getValue(e.id)
             }
-        } + listOfNotNull(
-            if (Features.PIP && prefs.pipEnabled && !recMode && prefs.bufPlay && currentUrl != null) getString(R.string.pip_menu) to { showPipMenu() } else null,
-            getString(R.string.message_settings) to { openSettings() })
+        } + listOf(getString(R.string.message_settings) to { openSettings() })
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->
             items[which].second()
         }
