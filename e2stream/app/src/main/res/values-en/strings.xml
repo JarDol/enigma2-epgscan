@@ -70,7 +70,12 @@
     <string name="pip_swap">Swap with main</string>
     <string name="pip_close">Close window</string>
     <string name="pip_close_all">Close PiP</string>
-    <string name="pip_full">At most 2 PiP windows</string>
+    <string name="pip_full">At most 3 PiP windows</string>
+    <string name="pip_no_window">No PiP window %1$d</string>
+    <string name="pip_recording_busy">Recording in progress — cannot add a PiP window (all background buffers are recording)</string>
+    <string name="action_pip_1">PiP window 1 — swap with main</string>
+    <string name="action_pip_2">PiP window 2 — swap with main</string>
+    <string name="action_pip_3">PiP window 3 — swap with main</string>
     <string name="pip_choose">Channel for PiP window</string>
     <string name="pip_needs">PiP requires playback through buffer and a medium</string>
     <string name="pip_no_slot">No free slot for a PiP buffer</string>

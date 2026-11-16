@@ -71,7 +71,12 @@
     <string name="pip_swap">Zamień z głównym</string>
     <string name="pip_close">Zamknij okno</string>
     <string name="pip_close_all">Zamknij PiP</string>
-    <string name="pip_full">Najwyżej 2 okna PiP</string>
+    <string name="pip_full">Najwyżej 3 okna PiP</string>
+    <string name="pip_no_window">Brak okna PiP %1$d</string>
+    <string name="pip_recording_busy">Trwa nagrywanie — nie można dodać okna PiP (wszystkie bufory w tle nagrywają)</string>
+    <string name="action_pip_1">PiP okno 1 — zamiana z głównym</string>
+    <string name="action_pip_2">PiP okno 2 — zamiana z głównym</string>
+    <string name="action_pip_3">PiP okno 3 — zamiana z głównym</string>
     <string name="pip_choose">Kanał do okna PiP</string>
     <string name="pip_needs">PiP wymaga odtwarzania przez bufor i nośnika</string>
     <string name="pip_no_slot">Brak wolnego miejsca na bufor PiP</string>

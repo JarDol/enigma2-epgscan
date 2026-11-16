@@ -1,7 +1,7 @@
 package pl.jardol.e2stream
 
 import android.app.Activity
-import android.graphics.SurfaceTexture
+import android.graphics.Bitmap
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
@@ -10,10 +10,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.Surface
-import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import java.io.File
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
@@ -196,38 +195,6 @@ object TsFrames {
         return -1
     }
 
-    /** Strumień elementarny PES zaczynającego się w pakiecie [from] (do początku następnego PES) → [out]; 0 — niekompletny. */
-    fun frame(d: ByteArray, len: Int, vpid: Int, from: Int, out: ByteArray): Int {
-        var o = from
-        var n = 0
-        var started = false
-        while (o + 188 <= len) {
-            if (d[o] != 0x47.toByte()) { o++; continue }
-            val pid = ((u(d, o + 1) and 0x1F) shl 8) or u(d, o + 2)
-            if (pid == vpid) {
-                val pusi = (u(d, o + 1) and 0x40) != 0
-                val afc = (u(d, o + 3) shr 4) and 3
-                var p = o + 4
-                if (afc and 2 != 0) p += 1 + u(d, o + 4)
-                if (afc and 1 != 0 && p < o + 188) {
-                    if (pusi) {
-                        if (started) return n
-                        if (p + 9 > o + 188 || d[p] != 0.toByte() || d[p + 1] != 0.toByte() || d[p + 2] != 1.toByte()) return 0
-                        p += 9 + u(d, p + 8)
-                        started = true
-                    }
-                    if (started && p < o + 188) {
-                        val c = o + 188 - p
-                        if (n + c > out.size) return 0
-                        System.arraycopy(d, p, out, n, c); n += c
-                    }
-                }
-            }
-            o += 188
-        }
-        return 0
-    }
-
     /** Czy jednostka w [o] zaczyna się od ogranicznika jednostki dostępu (H.264 typ 9, HEVC typ 35). */
     private fun isAud(b: ByteArray, o: Int, end: Int): Boolean {
         var i = o
@@ -243,11 +210,16 @@ object TsFrames {
      * nadawcy dzielą duże klatki na kilka PES-ów albo nadają półobrazy osobno (obraz z przeplotem); bez AUD — PES.
      * Kilka jednostek, żeby dekoder złożył pełną klatkę z obu półobrazów.
      */
-    fun units(d: ByteArray, len: Int, vpid: Int, from: Int, out: ByteArray, want: Int = 3): IntArray {
+    /** Ostatnie wywołanie [units] trafiło na lukę w danych obrazu (błąd ciągłości) — klatka byłaby uszkodzona. */
+    @Volatile var lastGap = false
+
+    fun units(d: ByteArray, len: Int, vpid: Int, from: Int, out: ByteArray, want: Int = 3, stopAtKey: Boolean = false): IntArray {
         val pesStart = ArrayList<Int>()      // początek każdego PES-u w [out]
         val pesAud = ArrayList<Boolean>()    // czy PES zaczyna się od ogranicznika (AUD)
         var n = 0
         var o = from
+        var cc = -1
+        lastGap = false
         // granice jednostek: PES z AUD (gdy strumień ma AUD), inaczej każdy PES; [open] — PES-y od indeksu open nie są pełne
         fun ends(open: Int): List<Int> {
             val aud = pesAud[0]
@@ -259,6 +231,16 @@ object TsFrames {
             if (pid == vpid) {
                 val pusi = (u(d, o + 1) and 0x40) != 0
                 val afc = (u(d, o + 3) shr 4) and 3
+                // ciągłość pakietów obrazu: luka = uszkodzona klatka (pokazujemy poprzednią)
+                if (afc and 1 != 0) {
+                    val c = u(d, o + 3) and 0x0F
+                    if (cc >= 0 && c != cc && c != (cc + 1) and 0x0F) {
+                        lastGap = true
+                        val e = if (pesStart.isEmpty()) emptyList() else ends(pesStart.size - 1)
+                        return if (e.size >= minOf(2, want)) e.take(want).toIntArray() else IntArray(0)
+                    }
+                    cc = c
+                }
                 var p = o + 4
                 if (afc and 2 != 0) p += 1 + u(d, o + 4)
                 if (afc and 1 != 0 && p < o + 188) {
@@ -266,6 +248,12 @@ object TsFrames {
                         if (p + 9 > o + 188 || d[p] != 0.toByte() || d[p + 1] != 0.toByte() || d[p + 2] != 1.toByte()) {
                             if (pesStart.isEmpty()) return IntArray(0)
                             break
+                        }
+                        // do następnej klatki kluczowej (odświeżanie obrazu pasami — pełny obraz dopiero przed nią)
+                        if (stopAtKey && pesStart.isNotEmpty() && isKeyStart(d, o)) {
+                            pesStart += n; pesAud += true
+                            val e = (1 until pesStart.size).filter { !pesAud[0] || pesAud[it] }.map { pesStart[it] }
+                            return e.take(want).toIntArray()
                         }
                         p += 9 + u(d, p + 8)
                         pesStart += n
@@ -292,39 +280,126 @@ object TsFrames {
     }
 
     /**
-     * Jednostki [ends] z [buf] do dekodera (pierwsza jako klatka kluczowa), potem koniec strumienia; pokazana
-     * zostaje tylko pierwsza oddana klatka (gdy [render] pozwala). Wynik: true — dekoder oddał obraz.
-     * Dekoder po tym gotowy do flush() (wywołuje strona wołająca).
+     * Czy pierwsza jednostka [0, end) jest pełnym obrazem: H.264 z wycinkiem IDR (typ 5), HEVC z obrazem IRAP
+     * (typ 16–21), MPEG-2 zawsze. Inaczej (np. punkt odtwarzania z odświeżaniem pasami) — trzeba dekodować dalej.
      */
-    fun decodeFirst(c: MediaCodec, buf: ByteArray, ends: IntArray, timeoutMs: Long, render: () -> Boolean): Boolean {
+    fun fullPicture(b: ByteArray, end: Int, type: String): Boolean {
+        if (type == "MPEG2-V") return true
+        var i = 0
+        while (i + 3 < end) {
+            if (b[i] == 0.toByte() && b[i + 1] == 0.toByte() && b[i + 2] == 1.toByte()) {
+                val x = u(b, i + 3)
+                if (type == "H264" && (x and 0x1F) == 5) return true
+                if (type == "HEVC" && ((x shr 1) and 0x3F) in 16..21) return true
+                i += 3
+            } else i++
+        }
+        return false
+    }
+
+    /**
+     * Klatka z bufora/nagrania gotowa do dekodera: od klatki kluczowej w [d] (pakiet [from]) jednostki dostępu
+     * do [out]. Pełny obraz (IDR) — 3 jednostki (oba półobrazy); inaczej — aż do następnej klatki kluczowej
+     * (najwyżej [maxUnits]), bo obraz uzupełnia się pasami. Pusta tablica — dane niekompletne albo z luką.
+     */
+    fun picture(d: ByteArray, len: Int, vpid: Int, type: String, from: Int, out: ByteArray, maxUnits: Int = 40): IntArray {
+        val first = units(d, len, vpid, from, out, 3)
+        if (first.isEmpty() || fullPicture(out, first[0], type)) return first
+        val all = units(d, len, vpid, from, out, maxUnits, stopAtKey = true)
+        return if (all.size >= 2) all else IntArray(0)
+    }
+
+    /**
+     * Jednostki [ends] z [buf] do dekodera (pierwsza jako klatka kluczowa), potem koniec strumienia; obraz
+     * z ostatniej oddanej klatki (najpełniejszy przy odświeżaniu pasami) trafia do [take]. Wynik: true — był obraz.
+     * Dekoder bez powierzchni (obraz do pamięci); po tym gotowy do flush() (wywołuje strona wołająca).
+     */
+    fun decodeImage(c: MediaCodec, buf: ByteArray, ends: IntArray, timeoutMs: Long, take: (android.media.Image) -> Unit): Boolean {
         val t0 = SystemClock.elapsedRealtime()
         val info = MediaCodec.BufferInfo()
         var next = 0
         var eos = false
-        while (SystemClock.elapsedRealtime() - t0 < timeoutMs) {
-            if (!eos) {
-                val ii = c.dequeueInputBuffer(10_000)
-                if (ii >= 0) {
-                    if (next < ends.size) {
-                        val st = if (next == 0) 0 else ends[next - 1]
-                        val sz = ends[next] - st
-                        val ib = c.getInputBuffer(ii)!!
-                        ib.clear(); ib.put(buf, st, sz)
-                        c.queueInputBuffer(ii, 0, sz, next * 40_000L, if (next == 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
-                        next++
-                    } else { c.queueInputBuffer(ii, 0, 0, next * 40_000L, MediaCodec.BUFFER_FLAG_END_OF_STREAM); eos = true }
+        var held = -1
+        try {
+            while (SystemClock.elapsedRealtime() - t0 < timeoutMs) {
+                if (!eos) {
+                    val ii = c.dequeueInputBuffer(5_000)
+                    if (ii >= 0) {
+                        if (next < ends.size) {
+                            val st = if (next == 0) 0 else ends[next - 1]
+                            val sz = ends[next] - st
+                            val ib = c.getInputBuffer(ii)!!
+                            ib.clear(); ib.put(buf, st, sz)
+                            c.queueInputBuffer(ii, 0, sz, next * 20_000L, if (next == 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+                            next++
+                        } else { c.queueInputBuffer(ii, 0, 0, next * 20_000L, MediaCodec.BUFFER_FLAG_END_OF_STREAM); eos = true }
+                    }
+                }
+                val oi = c.dequeueOutputBuffer(info, 5_000)
+                if (oi >= 0) {
+                    val end = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                    if (info.size > 0) { if (held >= 0) c.releaseOutputBuffer(held, false); held = oi }
+                    else c.releaseOutputBuffer(oi, false)
+                    if (end) break
                 }
             }
-            val oi = c.dequeueOutputBuffer(info, 10_000)
-            if (oi >= 0) {
-                val end = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                val img = !end || info.size > 0
-                c.releaseOutputBuffer(oi, img && render())
-                if (img) return true
-                if (end) return false
+            if (held < 0) return false
+            val img = c.getOutputImage(held) ?: return false
+            try { take(img) } finally { img.close() }
+            return true
+        } finally {
+            if (held >= 0) try { c.releaseOutputBuffer(held, false) } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Jeden półobraz (parzyste linie — bez „grzebienia” przeplotu) z [img], zmniejszony do [w]×[h], jako ARGB
+     * w [out] (BT.709, zakres ograniczony).
+     */
+    fun fieldArgb(img: android.media.Image, w: Int, h: Int, out: IntArray) {
+        val crop = img.cropRect
+        val cw = crop.width()
+        val ch = crop.height()
+        val py = img.planes[0]; val pu = img.planes[1]; val pv = img.planes[2]
+        val yb = py.buffer; val ub = pu.buffer; val vb = pv.buffer
+        val ys = py.rowStride; val yp = py.pixelStride
+        val us = pu.rowStride; val up = pu.pixelStride
+        val vs = pv.rowStride; val vp = pv.pixelStride
+        val rows = maxOf(1, ch / 2)
+        var o = 0
+        for (y in 0 until h) {
+            val sy = crop.top + (y * rows / h) * 2
+            val cy = sy shr 1
+            val yRow = sy * ys
+            val uRow = cy * us
+            val vRow = cy * vs
+            for (x in 0 until w) {
+                val sx = crop.left + x * cw / w
+                val cx = sx shr 1
+                val yy = ((yb.get(yRow + sx * yp).toInt() and 0xFF) - 16) * 298
+                val uu = (ub.get(uRow + cx * up).toInt() and 0xFF) - 128
+                val vv = (vb.get(vRow + cx * vp).toInt() and 0xFF) - 128
+                var r = (yy + 459 * vv + 128) shr 8
+                var g = (yy - 55 * uu - 136 * vv + 128) shr 8
+                var bl = (yy + 541 * uu + 128) shr 8
+                if (r < 0) r = 0 else if (r > 255) r = 255
+                if (g < 0) g = 0 else if (g > 255) g = 255
+                if (bl < 0) bl = 0 else if (bl > 255) bl = 255
+                out[o++] = (0xFF shl 24) or (r shl 16) or (g shl 8) or bl
             }
         }
-        throw java.io.IOException("dekoder nie oddał obrazu w $timeoutMs ms")
+    }
+
+    /** Dekoder programowy do pamięci (bez powierzchni), YUV w formacie elastycznym (Image). */
+    fun openDecoder(name: String, mime: String, maxIn: Int): MediaCodec {
+        val fmt = MediaFormat.createVideoFormat(mime, 1920, 1088)
+        fmt.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, maxIn)
+        fmt.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+        // tryb „najlepiej jak się da” — nie konkuruje z obrazem głównym
+        fmt.setInteger(MediaFormat.KEY_PRIORITY, 1)
+        val c = MediaCodec.createByCodecName(name)
+        try { c.configure(fmt, null, null, 0); c.start() } catch (e: Exception) { c.release(); throw e }
+        return c
     }
 
     fun mime(type: String) = when (type) { "H264" -> "video/avc"; "HEVC" -> "video/hevc"; "MPEG2-V" -> "video/mpeg2"; else -> null }
@@ -345,13 +420,13 @@ object TsFrames {
 }
 
 /**
- * Podgląd przy przewijaniu (timeshift, nagrania): na całym ekranie klatka kluczowa z miejsca na pasku,
- * dekodowana programowo; obraz główny w tym czasie zatrzymany. Zawsze liczy się tylko najnowsze żądanie.
+ * Podgląd przy przewijaniu (timeshift, nagrania): na całym ekranie klatka z miejsca na pasku (dekoder programowy
+ * do pamięci, jeden półobraz — bez „grzebienia” przeplotu); obraz główny w tym czasie zatrzymany.
+ * Zawsze liczy się tylko najnowsze żądanie.
  */
 class SeekPreview(private val act: Activity, private val anchor: View) {
     private val ui = Handler(Looper.getMainLooper())
-    private var tv: TextureView? = null
-    @Volatile private var surface: Surface? = null
+    private var iv: ImageView? = null
     private val seq = AtomicLong()
     @Volatile private var job: (() -> Unit)? = null
     private var worker: Thread? = null
@@ -359,39 +434,34 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
     // tylko wątek podglądu
     private var codec: MediaCodec? = null
     private var codecMime = ""
-    private var codecSurface: Surface? = null
     private var data = ByteArray(3_000_000)
     private var au = ByteArray(3_000_000)
+    private val W = 960
+    private val H = 540
+    private val px = IntArray(W * H)
+    private val bmps = arrayOfNulls<Bitmap>(2)
+    private var bmpTurn = 0
 
-    /**
-     * Nakładka nad obrazem głównym: TextureView zawsze dołączony (powierzchnia istnieje), niewidoczny przez alpha 0;
-     * widoczny dopiero po pierwszej klatce podglądu — do tego czasu widać zatrzymany obraz główny.
-     */
     private fun ensureView() {
-        if (tv != null) return
-        val t = TextureView(act)
-        t.isOpaque = false
-        t.alpha = 0f
-        t.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) { surface = Surface(st) }
-            override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {}
-            override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean { surface?.release(); surface = null; return true }
-            override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
-        }
+        if (iv != null) return
+        val v = ImageView(act)
+        v.scaleType = ImageView.ScaleType.FIT_XY
+        v.setBackgroundColor(0xFF000000.toInt())
+        v.visibility = View.GONE
         val parent = anchor.parent as ViewGroup
-        parent.addView(t, parent.indexOfChild(anchor) + 1, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        tv = t
+        parent.addView(v, parent.indexOfChild(anchor) + 1, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        iv = v
     }
 
-    /** Początek przewijania (nakładka gotowa; pokazuje się z pierwszą klatką). */
+    /** Początek przewijania (nakładka pokazuje się z pierwszą klatką). */
     fun show() {
         ensureView()
         ui.removeCallbacks(hideRun)
     }
 
-    val shown: Boolean get() = (tv?.alpha ?: 0f) > 0f
+    val shown: Boolean get() = iv?.visibility == View.VISIBLE
 
-    private val hideRun = Runnable { tv?.alpha = 0f }
+    private val hideRun = Runnable { iv?.visibility = View.GONE }
 
     /** Ukrycie po [delayMs] (obraz główny zdąży już pokazać miejsce po przewinięciu). */
     fun hide(delayMs: Long = 0) {
@@ -498,25 +568,24 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
         val name = TsFrames.swDecoder(mime) ?: run { AppLog.i("podgląd przewijania: brak programowego dekodera ${video.second}"); return }
         val k = TsFrames.keyframe(data, len, video.first, from)
         if (k < 0) return
-        val ends = TsFrames.units(data, len, video.first, k, au)
-        if (ends.isEmpty()) return
-        var surf = surface
-        var wait = 0
-        while (surf == null && wait++ < 20) { Thread.sleep(25); surf = surface }
-        if (surf == null || !surf.isValid || s != seq.get()) return
+        val ends = TsFrames.picture(data, len, video.first, video.second, k, au, 25)
+        if (ends.isEmpty() || s != seq.get()) return
         var c = codec
-        if (c != null && (codecMime != mime || codecSurface !== surf)) { release(); c = null }
+        if (c != null && codecMime != mime) { release(); c = null }
         if (c == null) {
-            val fmt = MediaFormat.createVideoFormat(mime, 1920, 1088)
-            fmt.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, au.size)
-            c = MediaCodec.createByCodecName(name)
-            try { c.configure(fmt, surf, null, 0); c.start() } catch (e: Exception) { c.release(); throw e }
-            codec = c; codecMime = mime; codecSurface = surf
+            c = TsFrames.openDecoder(name, mime, au.size)
+            codec = c; codecMime = mime
         }
         var ok = false
         try {
-            val shown = TsFrames.decodeFirst(c, au, ends, 2000) { s == seq.get() }
-            if (shown) ui.post { if (s == seq.get()) tv?.alpha = 1f }
+            val bmp = bmps[bmpTurn] ?: Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888).also { bmps[bmpTurn] = it }
+            val shown = TsFrames.decodeImage(c, au, ends, 3000) { img ->
+                if (s == seq.get()) { TsFrames.fieldArgb(img, W, H, px); bmp.setPixels(px, 0, W, 0, 0, W, H) }
+            }
+            if (shown && s == seq.get()) {
+                bmpTurn = 1 - bmpTurn
+                ui.post { if (s == seq.get()) iv?.let { it.setImageBitmap(bmp); it.visibility = View.VISIBLE } }
+            }
             ok = true
         } finally {
             if (!ok) release() else try { c.flush() } catch (_: Exception) { release() }
@@ -525,7 +594,7 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
 
     private fun release() {
         val c = codec ?: return
-        codec = null; codecSurface = null
+        codec = null
         try { c.stop() } catch (_: Exception) {}
         try { c.release() } catch (_: Exception) {}
     }

@@ -1476,6 +1476,7 @@ class PlayerActivity : Activity() {
         failStreak++
         dumpStall(reason)
         AppLog.i("WZNOWIENIE za $d ms: $reason")
+        pipHoldUntil = SystemClock.elapsedRealtime() + 8000
         ui.postDelayed(restartRunnable, d)
     }
 
@@ -1939,6 +1940,7 @@ class PlayerActivity : Activity() {
             val b = panelBouquet
             hidePanel()
             pipAdd(l[pos], b, l)
+            pipMenuAgain()
             return
         }
         panelOnRec = false          // wybrany kanał TV — lista znów otwiera się na bukiecie kanału
@@ -2227,7 +2229,9 @@ class PlayerActivity : Activity() {
     private var tsLiveUrl: String? = null
 
     /** Ile kanałów w tle (ustawienie 1–3; PiP wymaga 2). */
-    private val BG_MAX get() = maxOf(prefs.bgCount, if (Features.PIP && bgChans.any { it.pip >= 0 }) 2 else 0)
+    private val BG_MAX get() = minOf(BG_SLOTS, prefs.bgCount + bgChans.count { it.pip >= 0 })
+    /** Miejsc na bufory w tle (katalogi kanal-2…4): bufory poprzednich kanałów i okna PiP razem. */
+    private val BG_SLOTS = 3
     /** PiP: najwięcej danych od klatki kluczowej czytanych z pamięci bufora. */
     private val PIP_READ_MAX = 3_000_000L
 
@@ -2496,17 +2500,20 @@ class PlayerActivity : Activity() {
         return c
     }
 
-    // --- PiP: najwyżej 2 okna z kanałami buforowanymi w tle (bez dźwięku): klatka kluczowa z końcówki bufora co
-    // prefs.pipFrameMs, okna odświeżane na zmianę przez jeden wątek; dekoder programowy (bez zajmowania sprzętowego
-    // dekodera obrazu głównego), obraz prosto na TextureView okna
+    // --- PiP: najwyżej 3 okna z kanałami buforowanymi w tle (bez dźwięku): klatka z pamięci bufora co
+    // prefs.pipFrameMs, okna odświeżane na zmianę przez jeden wątek; dekoder programowy do pamięci (bez zajmowania
+    // sprzętowego dekodera obrazu głównego), jeden półobraz zmniejszony do okna (ImageView)
+    private val PIP_MAX = 3
+
     private inner class PipWin(val idx: Int) {
         val frame = android.widget.FrameLayout(this@PlayerActivity)
         val label = TextView(this@PlayerActivity)
         val note = TextView(this@PlayerActivity)              // „brak dekodera …” na środku okna
-        val tv = android.view.TextureView(this@PlayerActivity)
-        @Volatile var surface: android.view.Surface? = null
+        val iv = android.widget.ImageView(this@PlayerActivity)
         @Volatile var chan: BgChan? = null
         @Volatile var gen = 0                                // zmiana kanału w oknie — dekoder od nowa
+        @Volatile var pw = 0                                 // rozmiar obrazu w oknie (px)
+        @Volatile var ph = 0
         // tylko wątek PiP
         var codec: PipCodec? = null
         var codecGen = -1
@@ -2514,10 +2521,16 @@ class PlayerActivity : Activity() {
         var failLogged = false
         var firstLogged = false
         var misses = 0
+        var gaps = 0
+        var px = IntArray(0)
+        val bmps = arrayOfNulls<android.graphics.Bitmap>(2)
+        var bmpTurn = 0
     }
-    private val pipWins = arrayOfNulls<PipWin>(2)
+    private val pipWins = arrayOfNulls<PipWin>(PIP_MAX)
     @Volatile private var pipWorker: Thread? = null
     private var pipSessionStarted = false
+    /** PiP wstrzymane do tej chwili (zacięcie / wznowienie obrazu głównego — procesor dla obrazu głównego). */
+    @Volatile private var pipHoldUntil = 0L
 
     private fun pipView(i: Int): PipWin = pipWins[i] ?: PipWin(i).also { w ->
         val m = (16 * resources.displayMetrics.density).toInt()
@@ -2528,13 +2541,8 @@ class PlayerActivity : Activity() {
         w.label.setBackgroundColor(0x99000000.toInt()); w.label.setPadding(m / 3, 2, m / 3, 2)
         w.note.setTextColor(0xFFB0BEC5.toInt()); w.note.textSize = 13f
         w.note.visibility = View.GONE
-        w.tv.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(st: android.graphics.SurfaceTexture, width: Int, height: Int) { w.surface = android.view.Surface(st) }
-            override fun onSurfaceTextureSizeChanged(st: android.graphics.SurfaceTexture, width: Int, height: Int) {}
-            override fun onSurfaceTextureDestroyed(st: android.graphics.SurfaceTexture): Boolean { w.surface?.release(); w.surface = null; return true }
-            override fun onSurfaceTextureUpdated(st: android.graphics.SurfaceTexture) {}
-        }
-        w.frame.addView(w.tv, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        w.iv.scaleType = android.widget.ImageView.ScaleType.FIT_XY
+        w.frame.addView(w.iv, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         w.frame.addView(w.note, android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.CENTER))
         w.frame.addView(w.label, android.widget.FrameLayout.LayoutParams(
@@ -2548,6 +2556,7 @@ class PlayerActivity : Activity() {
     /**
      * Położenie okna [i] (0 — pierwsze): 0 na górze w rogach, 1 na dole w rogach, 2 prawa strona w rogach,
      * 3 lewa strona w rogach, 4 lewy górny róg w dół, 5 prawy górny róg w dół, 6 lewy dolny róg w górę, 7 prawy dolny róg w górę.
+     * Trzecie okno w trybach „w rogach”: pod/nad pierwszym (0, 1) albo na środku boku (2, 3).
      */
     private fun pipLayout(i: Int): android.widget.FrameLayout.LayoutParams {
         val dm = resources.displayMetrics
@@ -2557,11 +2566,12 @@ class PlayerActivity : Activity() {
         val step = hpx + m / 2
         val G = android.view.Gravity.TOP; val B = android.view.Gravity.BOTTOM
         val L = android.view.Gravity.START; val R = android.view.Gravity.END
+        val C = android.view.Gravity.CENTER_VERTICAL
         val (g, off) = when (prefs.pipPos) {
-            0 -> (G or if (i == 0) R else L) to 0
-            1 -> (B or if (i == 0) R else L) to 0
-            2 -> (R or if (i == 0) G else B) to 0
-            3 -> (L or if (i == 0) G else B) to 0
+            0 -> when (i) { 0 -> (G or R) to 0; 1 -> (G or L) to 0; else -> (G or R) to step }
+            1 -> when (i) { 0 -> (B or R) to 0; 1 -> (B or L) to 0; else -> (B or R) to step }
+            2 -> when (i) { 0 -> (R or G) to 0; 1 -> (R or B) to 0; else -> (R or C) to 0 }
+            3 -> when (i) { 0 -> (L or G) to 0; 1 -> (L or B) to 0; else -> (L or C) to 0 }
             4 -> (G or L) to i * step
             6 -> (B or L) to i * step
             7 -> (B or R) to i * step
@@ -2576,20 +2586,23 @@ class PlayerActivity : Activity() {
 
     /** Okna zgodnie z kanałami w tle oznaczonymi jako PiP (po przełączeniu, zamknięciu bufora, zmianie ustawień). */
     private fun pipRefresh() {
-        // numeracja bez dziur: po zamknięciu pierwszego okna drugie zajmuje jego miejsce
+        // numeracja bez dziur: po zamknięciu pierwszego okna kolejne przesuwają się
         bgChans.filter { it.pip >= 0 }.sortedBy { it.pip }.forEachIndexed { n, c -> c.pip = n }
-        for (i in 0 until 2) {
+        for (i in 0 until PIP_MAX) {
             val c = bgChans.firstOrNull { it.pip == i }
             val w = pipWins[i]
             if (c == null) {
-                if (w != null) { w.chan = null; w.gen++; w.frame.visibility = View.GONE }
+                if (w != null) { w.chan = null; w.gen++; w.frame.visibility = View.GONE; w.iv.setImageDrawable(null) }
                 continue
             }
             val v = pipView(i)
-            v.frame.layoutParams = pipLayout(i)
+            val lp = pipLayout(i)
+            v.frame.layoutParams = lp
+            v.pw = maxOf(16, lp.width - 6); v.ph = maxOf(16, lp.height - 6)
             if (v.chan !== c) {
                 v.chan = c; v.gen++
                 v.note.visibility = View.GONE
+                v.iv.setImageDrawable(null)
                 v.label.text = "${i + 1}  ${c.name}"
                 if (!pipSessionStarted) {
                     pipSessionStarted = true
@@ -2607,7 +2620,11 @@ class PlayerActivity : Activity() {
         }
     }
 
-    /** Jeden wątek dla wszystkich okien: na zmianę, każde okno co prefs.pipFrameMs; dekodery tylko w tym wątku. */
+    /**
+     * Jeden wątek dla wszystkich okien: na zmianę, każde okno co prefs.pipFrameMs; dekodery tylko w tym wątku.
+     * Limit obciążenia: po każdej klatce przerwa co najmniej 3× czas jej przygotowania (PiP ≤ ~25% czasu procesora),
+     * więc krótkie odstępy (0,25 / 0,5 s) są tylko górną granicą. Przy zacięciu obrazu głównego PiP czeka.
+     */
     private fun pipLoop() {
         var turn = 0
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_LOWEST)
@@ -2617,16 +2634,17 @@ class PlayerActivity : Activity() {
                 for (w in pipWins) if (w != null && w.codec != null && (w.chan == null || w.codecGen != w.gen)) pipRelease(w)
                 val open = pipWins.filterNotNull().filter { it.chan != null }
                 if (open.isEmpty()) break
+                val hold = pipHoldUntil - SystemClock.elapsedRealtime()
+                if (hold > 0) { Thread.sleep(minOf(hold, 1000L)); continue }
                 val w = open[turn++ % open.size]
                 if (w.codecGen != w.gen) {
-                    w.codecGen = w.gen; w.noDecoder = null; w.failLogged = false; w.firstLogged = false; w.misses = 0
+                    w.codecGen = w.gen; w.noDecoder = null; w.failLogged = false; w.firstLogged = false; w.misses = 0; w.gaps = 0
                 }
                 val t0 = SystemClock.elapsedRealtime()
                 val c = w.chan
-                val surf = w.surface
-                if (c != null && surf != null && surf.isValid && w.noDecoder == null) {
+                if (c != null && w.noDecoder == null) {
                     try {
-                        val r = pipGrab(w, c, surf)
+                        val r = pipGrab(w, c)
                         when {
                             r.ms >= 0 -> if (!w.firstLogged) { w.firstLogged = true; PipLog.i("okno ${w.idx + 1}: ${c.name} — pierwsza klatka po ${r.ms} ms (${r.info})") }
                             r.ms == -2L -> {
@@ -2634,6 +2652,11 @@ class PlayerActivity : Activity() {
                                 PipLog.i("okno ${w.idx + 1}: ${c.name} — ${r.info}")
                                 val g = w.gen
                                 ui.post { if (w.gen == g) { w.note.text = getString(R.string.pip_no_decoder, r.info.substringAfterLast(' ')); w.note.visibility = View.VISIBLE } }
+                            }
+                            r.ms == -3L -> {
+                                // luka w danych — zostaje poprzednia klatka
+                                w.gaps++
+                                if (w.gaps == 1 || w.gaps % 20 == 0) PipLog.i("okno ${w.idx + 1} (${c.name}): luka w danych obrazu ×${w.gaps} — klatka pominięta")
                             }
                             else -> {
                                 // brak klatki — powód do logu (raz na kanał w oknie, potem co 20 nieudanych)
@@ -2646,9 +2669,9 @@ class PlayerActivity : Activity() {
                         if (!w.failLogged) { w.failLogged = true; PipLog.i("okno ${w.idx + 1} (${c.name}): klatka nieudana ($e)") }
                     }
                 }
-                // każde okno co pipFrameMs; gdy dekodowanie trwa dłużej — od razu następne (bez zatrzymywania wątku na długo)
+                val spent = SystemClock.elapsedRealtime() - t0
                 val step = prefs.pipFrameMs.coerceAtLeast(250).toLong() / open.size
-                Thread.sleep(maxOf(30L, step - (SystemClock.elapsedRealtime() - t0)))
+                Thread.sleep(maxOf(30L, step - spent, 3 * spent))
             }
         } catch (_: InterruptedException) {
         } finally {
@@ -2659,8 +2682,8 @@ class PlayerActivity : Activity() {
         ui.post { if (pipWins.any { it?.chan != null } && pipWorker == null) pipRefresh() }
     }
 
-    /** Dekoder okna PiP: programowy, tworzony raz na kanał w oknie (typ obrazu, powierzchnia), między klatkami flush. */
-    private class PipCodec(val codec: android.media.MediaCodec, val mime: String, val surface: android.view.Surface, val maxIn: Int)
+    /** Dekoder okna PiP: programowy, do pamięci, tworzony raz na kanał w oknie; między klatkami flush. */
+    private class PipCodec(val codec: android.media.MediaCodec, val mime: String, val maxIn: Int)
 
     private fun pipRelease(w: PipWin) {
         val pc = w.codec ?: return
@@ -2669,21 +2692,17 @@ class PlayerActivity : Activity() {
         try { pc.codec.release() } catch (_: Exception) {}
     }
 
-    private val swNames = HashMap<String, String?>()
+    private val swLogged = HashSet<String>()
 
-    private fun isSwCodec(i: android.media.MediaCodecInfo): Boolean =
-        i.name.startsWith("c2.android.") || i.name.startsWith("OMX.google.") ||
-            (Build.VERSION.SDK_INT >= 29 && i.isSoftwareOnly && !i.isAlias && !i.isVendor)
-
-    /** Programowy dekoder dla typu (c2.android / OMX.google); null — brak. Sprzętowego PiP nie używa nigdy. */
-    private fun swDecoderName(mime: String): String? = synchronized(swNames) {
-        swNames.getOrPut(mime) {
+    /** Programowy dekoder dla typu; null — brak. Sprzętowego PiP nie używa nigdy. */
+    private fun swDecoderName(mime: String): String? {
+        val n = TsFrames.swDecoder(mime)
+        if (synchronized(swLogged) { swLogged.add(mime) }) {
             val all = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
                 .filter { !it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }
-            val sw = all.firstOrNull { isSwCodec(it) }
-            PipLog.i("dekoder dla $mime: ${sw?.name ?: "brak programowego"} (dostępne: ${all.joinToString { it.name }.ifEmpty { "żaden" }})")
-            sw?.name
+            PipLog.i("dekoder dla $mime: ${n ?: "brak programowego"} (dostępne: ${all.joinToString { it.name }.ifEmpty { "żaden" }})")
         }
+        return n
     }
 
     private class Grab(val ms: Long, val info: String)
@@ -2691,24 +2710,21 @@ class PlayerActivity : Activity() {
     private var pipAu = ByteArray(0)
 
     /**
-     * Ostatnia kompletna klatka kluczowa z pamięci bufora (indeks klatek kluczowych) → własny demultiplekser TS
-     * (bity kodowania po odszyfrowaniu bez znaczenia) → programowy dekoder okna → obraz w oknie.
-     * Wynik: ms ≥ 0 — klatka pokazana; -1 — chwilowo brak; -2 — brak dekodera (okno przestaje próbować).
+     * Klatka z pamięci bufora: klatka kluczowa z indeksu → własny demultiplekser TS (bity kodowania po odszyfrowaniu
+     * bez znaczenia) → jednostki dostępu (pełny obraz: 3; odświeżanie pasami: do następnej klatki kluczowej) →
+     * programowy dekoder → ostatnia klatka, jeden półobraz zmniejszony do okna.
+     * Wynik: ms ≥ 0 — klatka pokazana; -1 — chwilowo brak; -2 — brak dekodera; -3 — luka w danych (bez zmiany obrazu).
      */
-    private fun pipGrab(w: PipWin, c: BgChan, surf: android.view.Surface): Grab {
+    private fun pipGrab(w: PipWin, c: BgChan): Grab {
         val t0 = SystemClock.elapsedRealtime()
         val (vpid, type) = c.an.videoStream ?: return Grab(-1, "brak PMT / ścieżki obrazu")
-        val mime = when (type) {
-            "H264" -> "video/avc"
-            "HEVC" -> "video/hevc"
-            "MPEG2-V" -> "video/mpeg2"
-            else -> return Grab(-2, "nieobsługiwany obraz $type")
-        }
+        val mime = TsFrames.mime(type) ?: return Grab(-2, "nieobsługiwany obraz $type")
         val swName = swDecoderName(mime) ?: return Grab(-2, "brak programowego dekodera $type")
         val b = c.buf
         val kfs = b.recentKeyframes(4)
         if (kfs.isEmpty()) return Grab(-1, "brak klatki kluczowej w pamięci (bufor ${b.total / 1000} kB)")
         var ends = IntArray(0)
+        var gap = false
         for (kf in kfs) {
             val len = minOf(b.total - kf, PIP_READ_MAX).toInt()
             if (len < 188 * 4) continue
@@ -2716,44 +2732,49 @@ class PlayerActivity : Activity() {
             if (pipAu.size < len) pipAu = ByteArray(len)
             val got = b.readRam(kf, pipData, 0, len)
             if (got < 188 * 4) continue
-            // klatka kluczowa i 2 następne jednostki (przeplot: drugi półobraz; duże klatki w kilku PES-ach)
-            ends = TsFrames.units(pipData, got, vpid, 0, pipAu)
+            ends = TsFrames.picture(pipData, got, vpid, type, 0, pipAu)
+            if (TsFrames.lastGap && ends.isEmpty()) gap = true
             if (ends.isNotEmpty()) break
         }
-        if (ends.isEmpty()) return Grab(-1, "klatka kluczowa jeszcze niekompletna (PID $vpid $type)")
+        if (ends.isEmpty()) return if (gap) Grab(-3, "luka") else Grab(-1, "klatka kluczowa jeszcze niekompletna (PID $vpid $type)")
         val au = ends.last()
         var maxUnit = ends[0]
         for (i in 1 until ends.size) maxUnit = maxOf(maxUnit, ends[i] - ends[i - 1])
         var pc = w.codec
-        if (pc != null && (pc.mime != mime || pc.surface !== surf || pc.maxIn < maxUnit)) { pipRelease(w); pc = null }
+        if (pc != null && (pc.mime != mime || pc.maxIn < maxUnit)) { pipRelease(w); pc = null }
         if (pc == null) {
             val maxIn = maxOf(maxUnit + 65536, 1 shl 20)
-            val fmt = android.media.MediaFormat.createVideoFormat(mime, 1920, 1088)
-            fmt.setInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE, maxIn)
-            // tryb „najlepiej jak się da” — nie konkuruje z obrazem głównym
-            fmt.setInteger(android.media.MediaFormat.KEY_PRIORITY, 1)
-            val codec = android.media.MediaCodec.createByCodecName(swName)
-            try { codec.configure(fmt, surf, null, 0); codec.start() } catch (e: Exception) { codec.release(); throw e }
-            pc = PipCodec(codec, mime, surf, maxIn)
+            val codec = TsFrames.openDecoder(swName, mime, maxIn)
+            pc = PipCodec(codec, mime, maxIn)
             w.codec = pc
             PipLog.i("okno ${w.idx + 1}: ${c.name} — dekoder ${codec.name} ($type)")
         }
         val codec = pc.codec
+        val pw = w.pw; val ph = w.ph
+        if (w.px.size != pw * ph) w.px = IntArray(pw * ph)
+        val bmp = w.bmps[w.bmpTurn]?.takeIf { it.width == pw && it.height == ph }
+            ?: android.graphics.Bitmap.createBitmap(pw, ph, android.graphics.Bitmap.Config.ARGB_8888).also { w.bmps[w.bmpTurn] = it }
         var shown = false
         var ok = false
         try {
-            shown = TsFrames.decodeFirst(codec, pipAu, ends, 3000) { true }
+            shown = TsFrames.decodeImage(codec, pipAu, ends, 4000) { img ->
+                TsFrames.fieldArgb(img, pw, ph, w.px)
+                bmp.setPixels(w.px, 0, pw, 0, 0, pw, ph)
+            }
             ok = true
         } finally {
             // gotowy na następną klatkę; dekoder, który nie odpowiada albo zgłosił błąd — zwalniany
             if (!ok || !shown) pipRelease(w) else try { codec.flush() } catch (_: Exception) { pipRelease(w) }
         }
-        return if (shown) Grab(SystemClock.elapsedRealtime() - t0, "$type ${ends.size} jedn. ${au / 1000} kB, ${codec.name}")
-        else Grab(-1, "$type ${au / 1000} kB, ${codec.name}: dekoder nie oddał obrazu")
+        if (!shown) return Grab(-1, "$type ${au / 1000} kB, ${codec.name}: dekoder nie oddał obrazu")
+        w.bmpTurn = 1 - w.bmpTurn
+        val g = w.gen
+        ui.post { if (w.gen == g) w.iv.setImageBitmap(bmp) }
+        return Grab(SystemClock.elapsedRealtime() - t0, "$type ${ends.size} jedn. ${au / 1000} kB, ${codec.name}")
     }
 
-    /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału z bufora w tle albo innego. */
-    private fun showPipMenu() {
+    /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału; menu zostaje otwarte do WSTECZ. */
+    private fun showPipMenu(sel: Int = 0) {
         if (recMode || !bgAllowed() || !bufLive) { showMessage(getString(R.string.pip_needs)); return }
         val acts = ArrayList<Pair<String, () -> Unit>>()
         val open = bgChans.filter { it.pip >= 0 }.sortedBy { it.pip }
@@ -2761,19 +2782,35 @@ class PlayerActivity : Activity() {
             acts += (getString(R.string.pip_window, c.pip + 1, c.name) + " — " + getString(R.string.pip_swap)) to { pipSwap(c) }
             acts += (getString(R.string.pip_window, c.pip + 1, c.name) + " — " + getString(R.string.pip_close)) to { pipClose(c) }
         }
-        if (open.size < 2) {
+        if (open.size < PIP_MAX) {
             for (c in bgChans.filter { it.pip < 0 }) acts += getString(R.string.pip_add_buffered, c.name) to { pipOpen(c) }
-            acts += getString(R.string.pip_add_other) to { pipPickChannel() }
         }
+        val pick = getString(R.string.pip_add_other)
+        if (open.size < PIP_MAX) acts += pick to { pipPickChannel() }
         if (open.isNotEmpty()) acts += getString(R.string.pip_close_all) to { for (c in open) pipClose(c) }
         acts += getString(R.string.pip_send_log) to { Tools.uploadPipLog(this, prefs) { showMessage(it) } }
-        TvDialog.list(this, getString(R.string.pip_title), acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f) { i -> acts[i].second() }
+        TvDialog.list(this, getString(R.string.pip_title), acts.map { TvDialog.Item(it.first) }, sel.coerceIn(0, acts.size - 1), widthFrac = 0.5f) { i ->
+            val (label, run) = acts[i]
+            run()
+            // po każdej zmianie menu wraca (wybór z listy kanałów — po dodaniu okna); wyjście tylko WSTECZ
+            if (label != pick) pipMenuAgain(i)
+        }
+    }
+
+    /** Menu PiP ponownie po zmianie (po zamianie z głównym — gdy nowy kanał już gra przez bufor). */
+    private fun pipMenuAgain(sel: Int = 0, tries: Int = 10) {
+        ui.postDelayed({
+            when {
+                isFinishing || recMode || panel.visibility == View.VISIBLE -> {}
+                bufLive && bgAllowed() -> showPipMenu(sel)
+                tries > 0 -> pipMenuAgain(sel, tries - 1)
+            }
+        }, 400)
     }
 
     private fun pipOpen(c: BgChan) {
-        val free = (0 until 2).firstOrNull { i -> bgChans.none { it.pip == i } } ?: run { showMessage(getString(R.string.pip_full)); return }
-        // bufory poprzednich kanałów (poza wybranym) usuwane — miejsce dla PiP
-        for (o in bgChans.filter { it.pip < 0 && it !== c && it.lrec == null }) bgDrop(o, "otwarte PiP")
+        val free = (0 until PIP_MAX).firstOrNull { i -> bgChans.none { it.pip == i } } ?: run { showMessage(getString(R.string.pip_full)); return }
+        // bufory w tle zostają — kanał z bufora przechodzi do okna
         c.pip = free
         c.buf.maxMin = pipBufLen()
         pipRefresh()
@@ -2794,6 +2831,13 @@ class PlayerActivity : Activity() {
         playIn(c.bIdx, c.list, i)
     }
 
+    /** Akcja klawisza „PiP okno N”: zamiana okna [n] (0..2) z głównym obrazem. */
+    private fun pipKey(n: Int) {
+        val c = bgChans.firstOrNull { it.pip == n }
+        if (c == null) { showMessage(getString(R.string.pip_no_window, n + 1)); return }
+        pipSwap(c)
+    }
+
     /** Wybór kanału do PiP na zwykłej liście kanałów (◀ ▶ bukiety, OK dodaje okno bez przełączania, WSTECZ anuluje). */
     private fun pipPickChannel() {
         showPanel()
@@ -2808,10 +2852,13 @@ class PlayerActivity : Activity() {
         val cur = playList.getOrNull(playIndex)
         if (url == tsLiveUrl || (cur != null && OpenWebif.key(cur.ref) == OpenWebif.key(ch.ref))) { showMessage(getString(R.string.pip_is_main)); return }
         bgOf(ch)?.let { if (it.pip >= 0) showMessage(getString(R.string.pip_already)) else pipOpen(it); return }
-        if (bgChans.count { it.pip >= 0 } >= 2) { showMessage(getString(R.string.pip_full)); return }
-        // wolne miejsce: wypadają bufory poprzednich kanałów (poza nagrywanymi)
-        for (o in bgChans.filter { it.pip < 0 && it.lrec == null }) bgDrop(o, "otwarte PiP")
-        if (bgChans.size >= 3) { showMessage(getString(R.string.pip_full)); return }
+        if (bgChans.count { it.pip >= 0 } >= PIP_MAX) { showMessage(getString(R.string.pip_full)); return }
+        // brak miejsca: wypada najdawniej opuszczony bufor w tle (bez nagrywania); same nagrywane — komunikat
+        if (bgChans.size >= BG_SLOTS) {
+            val v = bgChans.filter { it.pip < 0 && it.lrec == null }.minByOrNull { it.leftAt }
+                ?: run { showMessage(getString(R.string.pip_recording_busy)); return }
+            bgDrop(v, "miejsce dla okna PiP")
+        }
         val c = bgNew(ch, bIdx, l) ?: run { showMessage(getString(R.string.pip_no_slot)); return }
         pipOpen(c)
     }
@@ -4748,6 +4795,9 @@ class PlayerActivity : Activity() {
                 }
             }
             Act.AV_SHIFT -> chooseAvShift()
+            Act.PIP_1 -> pipKey(0)
+            Act.PIP_2 -> pipKey(1)
+            Act.PIP_3 -> pipKey(2)
             Act.SEND_LOG -> {
                 showMessage(getString(R.string.action_sending_log))
                 Tools.uploadLog(this, prefs, true) { showMessage(it) }
@@ -4904,6 +4954,7 @@ class PlayerActivity : Activity() {
             return
         }
         AppLog.i("ZAWIESZENIE ($reason) | ${a.summary()} | ${decoderInfo()}")
+        pipHoldUntil = SystemClock.elapsedRealtime() + 8000
         if (!prefs.saveTs) return
         val now = SystemClock.elapsedRealtime()
         if (now - lastDumpAt < 60_000) {
