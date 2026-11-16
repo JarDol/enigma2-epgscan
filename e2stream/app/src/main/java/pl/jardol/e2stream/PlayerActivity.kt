@@ -2707,21 +2707,26 @@ class PlayerActivity : Activity() {
         val b = c.buf
         val kfs = b.recentKeyframes(4)
         if (kfs.isEmpty()) return Grab(-1, "brak klatki kluczowej w pamięci (bufor ${b.total / 1000} kB)")
-        var au = 0
+        var ends = IntArray(0)
         for (kf in kfs) {
             val len = minOf(b.total - kf, PIP_READ_MAX).toInt()
             if (len < 188 * 4) continue
             if (pipData.size < len) pipData = ByteArray(len)
+            if (pipAu.size < len) pipAu = ByteArray(len)
             val got = b.readRam(kf, pipData, 0, len)
             if (got < 188 * 4) continue
-            au = pipDemux(pipData, got, vpid)
-            if (au > 0) break
+            // klatka kluczowa i 2 następne jednostki (przeplot: drugi półobraz; duże klatki w kilku PES-ach)
+            ends = TsFrames.units(pipData, got, vpid, 0, pipAu)
+            if (ends.isNotEmpty()) break
         }
-        if (au <= 0) return Grab(-1, "klatka kluczowa jeszcze niekompletna (PID $vpid $type)")
+        if (ends.isEmpty()) return Grab(-1, "klatka kluczowa jeszcze niekompletna (PID $vpid $type)")
+        val au = ends.last()
+        var maxUnit = ends[0]
+        for (i in 1 until ends.size) maxUnit = maxOf(maxUnit, ends[i] - ends[i - 1])
         var pc = w.codec
-        if (pc != null && (pc.mime != mime || pc.surface !== surf || pc.maxIn < au)) { pipRelease(w); pc = null }
+        if (pc != null && (pc.mime != mime || pc.surface !== surf || pc.maxIn < maxUnit)) { pipRelease(w); pc = null }
         if (pc == null) {
-            val maxIn = maxOf(au + 65536, 1 shl 20)
+            val maxIn = maxOf(maxUnit + 65536, 1 shl 20)
             val fmt = android.media.MediaFormat.createVideoFormat(mime, 1920, 1088)
             fmt.setInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE, maxIn)
             // tryb „najlepiej jak się da” — nie konkuruje z obrazem głównym
@@ -2733,79 +2738,17 @@ class PlayerActivity : Activity() {
             PipLog.i("okno ${w.idx + 1}: ${c.name} — dekoder ${codec.name} ($type)")
         }
         val codec = pc.codec
-        val info = android.media.MediaCodec.BufferInfo()
-        var queued = false
-        var eos = false
         var shown = false
         var ok = false
         try {
-            while (SystemClock.elapsedRealtime() - t0 < 3000) {
-                if (!eos) {
-                    val ii = codec.dequeueInputBuffer(10_000)
-                    if (ii >= 0) {
-                        if (!queued) {
-                            val ib = codec.getInputBuffer(ii)!!
-                            ib.clear(); ib.put(pipAu, 0, au)
-                            codec.queueInputBuffer(ii, 0, au, 0, android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME)
-                            queued = true
-                        } else {
-                            codec.queueInputBuffer(ii, 0, 0, 0, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            eos = true
-                        }
-                    }
-                }
-                val oi = codec.dequeueOutputBuffer(info, 10_000)
-                if (oi >= 0) {
-                    val end = (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                    val frame = !end || info.size > 0
-                    codec.releaseOutputBuffer(oi, frame)
-                    if (frame) shown = true
-                    if (shown || end) break
-                }
-            }
+            shown = TsFrames.decodeFirst(codec, pipAu, ends, 3000) { true }
             ok = true
         } finally {
             // gotowy na następną klatkę; dekoder, który nie odpowiada albo zgłosił błąd — zwalniany
             if (!ok || !shown) pipRelease(w) else try { codec.flush() } catch (_: Exception) { pipRelease(w) }
         }
-        return if (shown) Grab(SystemClock.elapsedRealtime() - t0, "$type ${au / 1000} kB, ${codec.name}")
-        else Grab(-1, "$type ${au / 1000} kB, ${codec.name}: brak obrazu w 3 s")
-    }
-
-    /**
-     * Pierwszy PES obrazu [vpid] od początku [d] (pakiet z PUSI klatki kluczowej) do początku następnego PES
-     * → pipAu (strumień elementarny). 0 — PES jeszcze się nie skończył w danych.
-     */
-    private fun pipDemux(d: ByteArray, len: Int, vpid: Int): Int {
-        if (pipAu.size < len) pipAu = ByteArray(len)
-        var o = 0
-        var n = 0
-        var started = false
-        while (o + 188 <= len) {
-            if (d[o] != 0x47.toByte()) { o++; continue }
-            val pid = ((d[o + 1].toInt() and 0x1F) shl 8) or (d[o + 2].toInt() and 0xFF)
-            if (pid == vpid) {
-                val pusi = (d[o + 1].toInt() and 0x40) != 0
-                val afc = (d[o + 3].toInt() shr 4) and 3
-                var p = o + 4
-                if (afc and 2 != 0) p += 1 + (d[o + 4].toInt() and 0xFF)
-                if (afc and 1 != 0 && p < o + 188) {
-                    if (pusi) {
-                        if (started) return n
-                        // uszkodzony nagłówek PES klatki kluczowej — nie bierzemy następnej (nie-kluczowej) klatki
-                        if (p + 9 > o + 188 || d[p] != 0.toByte() || d[p + 1] != 0.toByte() || d[p + 2] != 1.toByte()) return 0
-                        p += 9 + (d[p + 8].toInt() and 0xFF)
-                        started = true
-                    }
-                    if (started && p < o + 188) {
-                        System.arraycopy(d, p, pipAu, n, o + 188 - p)
-                        n += o + 188 - p
-                    }
-                }
-            }
-            o += 188
-        }
-        return 0
+        return if (shown) Grab(SystemClock.elapsedRealtime() - t0, "$type ${ends.size} jedn. ${au / 1000} kB, ${codec.name}")
+        else Grab(-1, "$type ${au / 1000} kB, ${codec.name}: dekoder nie oddał obrazu")
     }
 
     /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału z bufora w tle albo innego. */

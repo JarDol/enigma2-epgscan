@@ -228,6 +228,105 @@ object TsFrames {
         return 0
     }
 
+    /** Czy jednostka w [o] zaczyna się od ogranicznika jednostki dostępu (H.264 typ 9, HEVC typ 35). */
+    private fun isAud(b: ByteArray, o: Int, end: Int): Boolean {
+        var i = o
+        while (i < end && i < o + 4 && b[i] == 0.toByte()) i++
+        if (i - o < 2 || i + 1 >= end || b[i] != 1.toByte()) return false
+        val x = u(b, i + 1)
+        return (x and 0x9F) == 0x09 || x == 0x46
+    }
+
+    /**
+     * Klatka kluczowa i następne jednostki dostępu od pakietu [from] → [out]; zwraca końce kolejnych pełnych
+     * jednostek (najwyżej [want]) albo pustą tablicę. Jednostka = PES-y od ogranicznika (AUD) do następnego —
+     * nadawcy dzielą duże klatki na kilka PES-ów albo nadają półobrazy osobno (obraz z przeplotem); bez AUD — PES.
+     * Kilka jednostek, żeby dekoder złożył pełną klatkę z obu półobrazów.
+     */
+    fun units(d: ByteArray, len: Int, vpid: Int, from: Int, out: ByteArray, want: Int = 3): IntArray {
+        val pesStart = ArrayList<Int>()      // początek każdego PES-u w [out]
+        val pesAud = ArrayList<Boolean>()    // czy PES zaczyna się od ogranicznika (AUD)
+        var n = 0
+        var o = from
+        // granice jednostek: PES z AUD (gdy strumień ma AUD), inaczej każdy PES; [open] — PES-y od indeksu open nie są pełne
+        fun ends(open: Int): List<Int> {
+            val aud = pesAud[0]
+            return (1..minOf(open, pesStart.size - 1)).filter { !aud || pesAud[it] }.map { pesStart[it] }
+        }
+        while (o + 188 <= len) {
+            if (d[o] != 0x47.toByte()) { o++; continue }
+            val pid = ((u(d, o + 1) and 0x1F) shl 8) or u(d, o + 2)
+            if (pid == vpid) {
+                val pusi = (u(d, o + 1) and 0x40) != 0
+                val afc = (u(d, o + 3) shr 4) and 3
+                var p = o + 4
+                if (afc and 2 != 0) p += 1 + u(d, o + 4)
+                if (afc and 1 != 0 && p < o + 188) {
+                    if (pusi) {
+                        if (p + 9 > o + 188 || d[p] != 0.toByte() || d[p + 1] != 0.toByte() || d[p + 2] != 1.toByte()) {
+                            if (pesStart.isEmpty()) return IntArray(0)
+                            break
+                        }
+                        p += 9 + u(d, p + 8)
+                        pesStart += n
+                        pesAud += isAud(d, p, o + 188)
+                        // wszystkie PES-y przed bieżącym są pełne
+                        val e = ends(pesStart.size - 1)
+                        if (e.size >= want) return e.take(want).toIntArray()
+                    }
+                    if (pesStart.isNotEmpty() && p < o + 188) {
+                        val c = o + 188 - p
+                        if (n + c > out.size) break
+                        System.arraycopy(d, p, out, n, c); n += c
+                    }
+                }
+            }
+            o += 188
+        }
+        // koniec danych: tyle pełnych jednostek, ile jest (co najmniej 2 — przy przeplocie oba półobrazy)
+        if (pesStart.size >= 2) {
+            val e = ends(pesStart.size - 1)
+            if (e.size >= minOf(2, want)) return e.take(want).toIntArray()
+        }
+        return IntArray(0)
+    }
+
+    /**
+     * Jednostki [ends] z [buf] do dekodera (pierwsza jako klatka kluczowa), potem koniec strumienia; pokazana
+     * zostaje tylko pierwsza oddana klatka (gdy [render] pozwala). Wynik: true — dekoder oddał obraz.
+     * Dekoder po tym gotowy do flush() (wywołuje strona wołająca).
+     */
+    fun decodeFirst(c: MediaCodec, buf: ByteArray, ends: IntArray, timeoutMs: Long, render: () -> Boolean): Boolean {
+        val t0 = SystemClock.elapsedRealtime()
+        val info = MediaCodec.BufferInfo()
+        var next = 0
+        var eos = false
+        while (SystemClock.elapsedRealtime() - t0 < timeoutMs) {
+            if (!eos) {
+                val ii = c.dequeueInputBuffer(10_000)
+                if (ii >= 0) {
+                    if (next < ends.size) {
+                        val st = if (next == 0) 0 else ends[next - 1]
+                        val sz = ends[next] - st
+                        val ib = c.getInputBuffer(ii)!!
+                        ib.clear(); ib.put(buf, st, sz)
+                        c.queueInputBuffer(ii, 0, sz, next * 40_000L, if (next == 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+                        next++
+                    } else { c.queueInputBuffer(ii, 0, 0, next * 40_000L, MediaCodec.BUFFER_FLAG_END_OF_STREAM); eos = true }
+                }
+            }
+            val oi = c.dequeueOutputBuffer(info, 10_000)
+            if (oi >= 0) {
+                val end = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                val img = !end || info.size > 0
+                c.releaseOutputBuffer(oi, img && render())
+                if (img) return true
+                if (end) return false
+            }
+        }
+        throw java.io.IOException("dekoder nie oddał obrazu w $timeoutMs ms")
+    }
+
     fun mime(type: String) = when (type) { "H264" -> "video/avc"; "HEVC" -> "video/hevc"; "MPEG2-V" -> "video/mpeg2"; else -> null }
 
     private val sw = HashMap<String, String?>()
@@ -399,8 +498,8 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
         val name = TsFrames.swDecoder(mime) ?: run { AppLog.i("podgląd przewijania: brak programowego dekodera ${video.second}"); return }
         val k = TsFrames.keyframe(data, len, video.first, from)
         if (k < 0) return
-        val n = TsFrames.frame(data, len, video.first, k, au)
-        if (n <= 0) return
+        val ends = TsFrames.units(data, len, video.first, k, au)
+        if (ends.isEmpty()) return
         var surf = surface
         var wait = 0
         while (surf == null && wait++ < 20) { Thread.sleep(25); surf = surface }
@@ -414,34 +513,11 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
             try { c.configure(fmt, surf, null, 0); c.start() } catch (e: Exception) { c.release(); throw e }
             codec = c; codecMime = mime; codecSurface = surf
         }
-        val t0 = SystemClock.elapsedRealtime()
-        val info = MediaCodec.BufferInfo()
-        var queued = false
-        var eos = false
         var ok = false
         try {
-            while (SystemClock.elapsedRealtime() - t0 < 2000) {
-                if (!eos) {
-                    val ii = c.dequeueInputBuffer(10_000)
-                    if (ii >= 0) {
-                        if (!queued) {
-                            val ib = c.getInputBuffer(ii)!!
-                            ib.clear(); ib.put(au, 0, n)
-                            c.queueInputBuffer(ii, 0, n, 0, MediaCodec.BUFFER_FLAG_KEY_FRAME); queued = true
-                        } else { c.queueInputBuffer(ii, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM); eos = true }
-                    }
-                }
-                val oi = c.dequeueOutputBuffer(info, 10_000)
-                if (oi >= 0) {
-                    val end = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                    val img = !end || info.size > 0
-                    // nowsze żądanie albo nakładka już schowana — bez pokazywania
-                    val show = img && s == seq.get()
-                    c.releaseOutputBuffer(oi, show)
-                    if (show) ui.post { if (s == seq.get()) tv?.alpha = 1f }
-                    if (img || end) { ok = true; break }
-                }
-            }
+            val shown = TsFrames.decodeFirst(c, au, ends, 2000) { s == seq.get() }
+            if (shown) ui.post { if (s == seq.get()) tv?.alpha = 1f }
+            ok = true
         } finally {
             if (!ok) release() else try { c.flush() } catch (_: Exception) { release() }
         }
