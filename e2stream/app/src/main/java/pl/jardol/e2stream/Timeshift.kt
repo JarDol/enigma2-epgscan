@@ -59,7 +59,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
 
     init { dir.mkdirs(); cleanupAsync(dir, session) }
 
-    private fun newSession() = "ts-" + java.lang.Long.toString(System.currentTimeMillis(), 36) + "-"
+    // licznik — dwa bufory założone w tej samej milisekundzie nie dostaną tego samego prefiksu plików
+    private fun newSession() = "ts-" + java.lang.Long.toString(System.currentTimeMillis(), 36) + "x" + SEQ.incrementAndGet() + "-"
 
     // --- diagnostyka źródeł zapisu: do bufora powinien pisać jeden wątek (odtwarzacz / pośrednik VLC / zapis w tle)
     private var writerId = -1L
@@ -399,16 +400,22 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
          */
         fun cleanupAsync(dir: File?, keep: String? = null) {
             if (dir == null) return
+            // lista plików od razu (w chwili wywołania): pliki nowego bufora, który powstanie za chwilę w tym samym
+            // katalogu, nie trafią do kasowania (wcześniej wątek sprzątający potrafił skasować świeży bufor kanału)
+            val old = try {
+                dir.listFiles { f -> f.name.startsWith("ts-") && f.name.endsWith(".ts") && (keep == null || !f.name.startsWith(keep)) }
+            } catch (_: Exception) { null }
+            if (old.isNullOrEmpty()) return
             Thread({
                 try {
                     var n = 0
-                    dir.listFiles { f -> f.name.startsWith("ts-") && f.name.endsWith(".ts") && (keep == null || !f.name.startsWith(keep)) }
-                        ?.forEach { if (it.delete()) n++ }
+                    old.forEach { if (it.delete()) n++ }
                     if (n > 0) AppLog.i("timeshift: usunięto $n starych plików bufora")
                 } catch (_: Exception) {}
             }, "timeshift-sprzatanie").start()
         }
 
+        private val SEQ = java.util.concurrent.atomic.AtomicInteger()
         private const val SYNC = 0x47.toByte()
         /** Najwięcej pomijanych danych przed pierwszym PCR (potem zapis bez czekania). */
         private const val SKIP_MAX = 8L * 1_000_000
