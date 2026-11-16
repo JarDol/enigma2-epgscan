@@ -17,6 +17,10 @@ import android.widget.EditText
  */
 object PinLock {
     private var unlockedUntil = 0L
+    /** Czas odblokowania z ostatniego PIN-u (min; ≤ 0 — do zamknięcia aplikacji). */
+    private var unlockMin = 0
+    /** Otwarte ekrany ustawień: w nich czas odblokowania nie biegnie — liczy się od wyjścia z ustawień. */
+    private var inSettings = 0
 
     fun isUnlocked(prefs: Prefs) = prefs.pin.isEmpty() || SystemClock.elapsedRealtime() < unlockedUntil
 
@@ -25,7 +29,8 @@ object PinLock {
     /** Odblokowuje na czas z ustawień, licząc od teraz. */
     fun unlock(prefs: Prefs) {
         val min = prefs.pinMin
-        unlockedUntil = if (min <= 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + min * 60_000L
+        unlockMin = min
+        unlockedUntil = if (min <= 0 || inSettings > 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + min * 60_000L
     }
 
     /**
@@ -40,10 +45,21 @@ object PinLock {
             fun name(a: Activity) = a.javaClass.simpleName.removeSuffix("Activity").lowercase()
             override fun onActivityStarted(a: Activity) {
                 started++
+                if (a is SettingsActivity) {
+                    inSettings++
+                    // odblokowane — w ustawieniach czas stoi
+                    if (SystemClock.elapsedRealtime() < unlockedUntil) unlockedUntil = Long.MAX_VALUE
+                }
                 AppLog.i("ekran: ${name(a)} widoczny")
             }
             override fun onActivityStopped(a: Activity) {
                 started = (started - 1).coerceAtLeast(0)
+                if (a is SettingsActivity) {
+                    inSettings = (inSettings - 1).coerceAtLeast(0)
+                    // wyjście z ustawień: pełny czas odblokowania od teraz
+                    if (inSettings == 0 && unlockedUntil == Long.MAX_VALUE && unlockMin > 0)
+                        unlockedUntil = SystemClock.elapsedRealtime() + unlockMin * 60_000L
+                }
                 AppLog.i("ekran: ${name(a)} ukryty")
                 if (started == 0 && !a.isChangingConfigurations) {
                     lock()

@@ -64,6 +64,13 @@
     <string name="pip_send_log">Send PiP log</string>
     <string name="net_slow">Connection too slow (%1$s) — no further stream from the receiver</string>
     <string name="net_closed">Slow connection (%2$s) — background buffer closed: %1$s</string>
+    <string name="net_main_gaps">Reception gaps on the watched channel — check the connection (%1$s)</string>
+    <string name="net_ask_title">Reception gaps</string>
+    <string name="net_ask_bg">Reception gaps with %1$d streams at once (%2$s).\n\nReduce previous-channel buffers from %3$d to %4$d?</string>
+    <string name="net_ask_pip">Reception gaps with %1$d streams at once (%2$s).\n\nClose PiP window: %3$s?</string>
+    <string name="net_ask_reduce">Reduce</string>
+    <string name="net_ask_keep">Keep</string>
+    <string name="net_ask_never">Don\'t ask</string>
     <string name="pip_menu">Picture in picture (PiP)…</string>
     <string name="pip_title">Picture in picture (PiP)</string>
     <string name="pip_add_buffered">Add window: %1$s (buffered)</string>

@@ -468,7 +468,10 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
         v.setBackgroundColor(0xFF000000.toInt())
         v.visibility = View.GONE
         val parent = anchor.parent as ViewGroup
-        parent.addView(v, parent.indexOfChild(anchor) + 1, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // nad obrazem i oknami PiP, pod paskiem i komunikatami
+        var idx = parent.indexOfChild(anchor) + 1
+        while (idx < parent.childCount && parent.getChildAt(idx).tag == "pip") idx++
+        parent.addView(v, idx, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         iv = v
     }
 

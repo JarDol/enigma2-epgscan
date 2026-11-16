@@ -2394,7 +2394,8 @@ class PlayerActivity : Activity() {
      * buforowany w tle — jego bufor, połączenie i dziennik stają się bieżącymi (tsNewChannel ich nie resetuje).
      * Kanał z okna PiP zamienia się miejscem z bieżącym (bieżący trafia do tego okna).
      */
-    // --- łącze: limit strumieni (bufory w tle, okna PiP) wg prędkości WiFi / Ethernetu i luk w strumieniach
+    // --- łącze: luki w odbiorze (skoki zegara PCR = utracone sekundy strumienia) przy równoległych strumieniach;
+    // bez blokowania z prędkości (Android 9 podaje tylko prędkość wysyłania WiFi) — statystyki, log i pytanie
     private val rateSamples = java.util.WeakHashMap<TimeshiftBuffer, LongArray>()
 
     /** Przepływność zapisu bufora (Mb/s, pomiar co ≥ 10 s); nieznana — 8. */
@@ -2417,26 +2418,29 @@ class PlayerActivity : Activity() {
         return n to sum
     }
 
-    private var netCooldownUntil = 0L
     private var netLink: NetInfo.Link? = null
+    private val gapSeen = java.util.WeakHashMap<TsAnalyzer, Long>()
+    /** Luki z ostatnich 10 min: (chwila, ile strumieni było otwartych). */
+    private val gapLog = ArrayDeque<Pair<Long, Int>>()
+    private var netLogN = 0
+    private var netAskSnoozeUntil = 0L
+    private var netAskOff = false
+    private var netMainMsgAt = -1_000_000L
 
-    /** Czy limit łącza mieści dodatkowy strumień [extra] Mb/s (bez limitu — gdy łącze nieznane). */
-    private fun netBudgetOk(extra: Double = 8.0): Boolean {
-        val l = NetInfo.read(this) ?: return true
-        netLink = l
-        val budget = l.budgetMbps ?: return true
-        return streamsMbps().second + extra <= budget
+    private fun gaps10min(): Int {
+        val lim = SystemClock.elapsedRealtime() - 600_000
+        while (gapLog.isNotEmpty() && gapLog.first().first < lim) gapLog.removeFirst()
+        return gapLog.size
     }
 
-    /** Nowy strumień dozwolony: limit łącza i brak niedawnych luk (po samozamknięciu — 3 min przerwy). */
-    private fun netAllows(extra: Double = 8.0) = SystemClock.elapsedRealtime() >= netCooldownUntil && netBudgetOk(extra)
+    /** Linia statystyk: łącze, liczba strumieni, luki z 10 min. */
+    private fun netStatsLine(): String = getString(R.string.diag_net, netLink?.toString() ?: "?", streamsMbps().first, gaps10min())
 
-    private fun netSlowText(): String = getString(R.string.net_slow, netLink?.toString() ?: "?")
-
-    private val gapSeen = java.util.WeakHashMap<TsAnalyzer, Long>()
-    private var netLogN = 0
-
-    /** Co 30 s: luki (skoki PCR) w ≥ 2 strumieniach — zamknięcie ostatnio otwartego bufora w tle / okna PiP; co minutę log łącza. */
+    /**
+     * Co 30 s: luki w strumieniach. Przy otwartych równoległych strumieniach (bufory w tle / PiP) i lukach w ≥ 2
+     * z nich — pytanie o zmniejszenie liczby buforów (albo zamknięcie okna PiP); przy samym oglądanym kanale —
+     * komunikat o łączu (raz na 30 min). Co minutę podsumowanie w logu.
+     */
     private val netTick = object : Runnable {
         override fun run() {
             ui.removeCallbacks(this)
@@ -2446,24 +2450,53 @@ class PlayerActivity : Activity() {
             val (n, sum) = streamsMbps()
             val l = NetInfo.read(this@PlayerActivity)
             netLink = l
-            if (++netLogN % 2 == 0) AppLog.i("łącze: ${l ?: "?"}, limit ${l?.budgetMbps?.let { "%.0f Mb/s".format(it) } ?: "brak"}; strumienie $n × razem ${"%.1f".format(sum)} Mb/s")
             var gaps = 0
+            var mainGap = false
             for (a in listOfNotNull(analyzer) + bgChans.map { it.an }) {
                 val prev = gapSeen[a]
-                if (prev != null && a.pcrJumps > prev) gaps++
+                if (prev != null && a.pcrJumps > prev) { gaps++; if (a === analyzer) mainGap = true }
                 gapSeen[a] = a.pcrJumps
             }
-            if (gaps >= 2) {
-                netCooldownUntil = SystemClock.elapsedRealtime() + 180_000
-                val v = bgChans.filter { it.lrec == null }.maxByOrNull { it.addedAt }
-                AppLog.i("łącze: luki w $gaps strumieniach (${l ?: "?"}) — " + (v?.let { "zamykam ${it.name}" } ?: "nie ma czego zamknąć"))
-                if (v != null) {
-                    bgDrop(v, "słabe łącze")
-                    refreshPanelRows()
-                    showMessage(getString(R.string.net_closed, v.name, l?.toString() ?: "?"))
+            val now = SystemClock.elapsedRealtime()
+            repeat(gaps) { gapLog.addLast(now to n) }
+            if (++netLogN % 2 == 0 || gaps > 0)
+                AppLog.i("łącze: ${l ?: "?"}; strumienie $n × razem ${"%.1f".format(sum)} Mb/s; luki teraz $gaps, w 10 min ${gaps10min()}")
+            when {
+                bgChans.isNotEmpty() && gaps >= 2 -> netAsk(n, l)
+                bgChans.isEmpty() && mainGap && now - netMainMsgAt > 1_800_000 -> {
+                    netMainMsgAt = now
+                    showMessage(getString(R.string.net_main_gaps, l?.toString() ?: "?"))
                 }
             }
         }
+    }
+
+    /** Pytanie przy lukach w równoległych strumieniach: mniej buforów poprzednich kanałów albo zamknięcie okna PiP. */
+    private fun netAsk(streams: Int, l: NetInfo.Link?) {
+        if (netAskOff || SystemClock.elapsedRealtime() < netAskSnoozeUntil || TvDialog.top() != null) return
+        netAskSnoozeUntil = SystemClock.elapsedRealtime() + 120_000      // bez ponawiania w trakcie decyzji
+        val prev = bgChans.filter { it.pip < 0 && it.lrec == null }
+        val pip = bgChans.filter { it.pip >= 0 && it.lrec == null }.maxByOrNull { it.addedAt }
+        val link = l?.toString() ?: "?"
+        val (question, act) = when {
+            prefs.bgCount > 0 && prev.isNotEmpty() -> getString(R.string.net_ask_bg, streams, link, prefs.bgCount, prefs.bgCount - 1) to {
+                prefs.bgCount = prefs.bgCount - 1
+                AppLog.i("łącze: bufor poprzednich kanałów zmniejszony do ${prefs.bgCount} (luki przy $streams strumieniach, $link)")
+                while (bgChans.count { it.pip < 0 } > prefs.bgCount) {
+                    val v = bgChans.filter { it.pip < 0 && !bgProtected(it) && it.lrec == null }.minByOrNull { it.leftAt } ?: break
+                    bgDrop(v, "mniej buforów (luki w odbiorze)")
+                }
+                refreshPanelRows()
+            }
+            pip != null -> getString(R.string.net_ask_pip, streams, link, pip.name) to { pipClose(pip) }
+            else -> return
+        }
+        AppLog.i("łącze: luki przy $streams strumieniach ($link) — pytanie: $question")
+        TvDialog.confirm(this, getString(R.string.net_ask_title), question, listOf(
+            TvDialog.Btn(getString(R.string.net_ask_reduce)) { netAskSnoozeUntil = 0; act() },
+            TvDialog.Btn(getString(R.string.net_ask_keep)) { netAskSnoozeUntil = SystemClock.elapsedRealtime() + 1_800_000 },
+            TvDialog.Btn(getString(R.string.net_ask_never)) { netAskOff = true },
+        ))
     }
 
     private fun bgSwitch(url: String, name: String) {
@@ -2476,17 +2509,7 @@ class PlayerActivity : Activity() {
         val curRec = tsRec
         val curAn = tsRecAn
         val canDemote = bufLive && curBuf != null && curRec != null && curAn != null && curAn === analyzer && curBuf.failed == null
-        // słabe łącze: bufor poprzedniego kanału nie powstaje, najstarsze wypadają, póki nowy kanał się nie mieści
-        val netBlock = canDemote && target == null && prefs.bgCount > 0 && !netAllows()
-        if (netBlock) {
-            AppLog.i("łącze: ${netLink ?: "?"} — za słabe na kolejny strumień, ${playList.getOrNull(playIndex)?.name} bez bufora w tle")
-            while (!netBudgetOk()) {
-                val v = bgChans.filter { it.pip < 0 && it.lrec == null }.minByOrNull { it.leftAt } ?: break
-                bgDrop(v, "słabe łącze")
-            }
-            if (prefs.bgFullMsg) showMessage(netSlowText())
-        }
-        if (canDemote && !netBlock && (pipSlot >= 0 || prefs.bgCount > 0)) {
+        if (canDemote && (pipSlot >= 0 || prefs.bgCount > 0)) {
             // miejsce: najdawniej opuszczony poprzedni kanał wypada (okna PiP i nagrania audycji zostają)
             while (bgChans.count { it !== target } >= BG_MAX) {
                 val v = bgChans.filter { it !== target && it.pip < 0 && !bgProtected(it) }.minByOrNull { it.leftAt } ?: break
@@ -2633,7 +2656,10 @@ class PlayerActivity : Activity() {
         w.frame.addView(w.label, android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM or android.view.Gravity.START))
         w.frame.isFocusable = false
-        (findViewById<ViewGroup>(android.R.id.content)).addView(w.frame, pipLayout(i))
+        w.frame.tag = "pip"
+        // tuż nad obrazem — pasek kanału, listy, komunikaty i podgląd przewijania zostają nad oknami PiP
+        val parent = zapFrame.parent as ViewGroup
+        parent.addView(w.frame, parent.indexOfChild(zapFrame) + 1, pipLayout(i))
         w.frame.visibility = View.GONE
         pipWins[i] = w
     }
@@ -2954,10 +2980,6 @@ class PlayerActivity : Activity() {
             val v = bgChans.filter { it.pip < 0 && it.lrec == null }.minByOrNull { it.leftAt }
                 ?: run { showMessage(getString(R.string.pip_recording_busy)); return }
             bgDrop(v, "miejsce dla okna PiP")
-        } else if (!netAllows()) {
-            // nowy strumień ponad możliwości łącza
-            AppLog.i("łącze: ${netLink ?: "?"} — za słabe na okno PiP ${ch.name}")
-            showMessage(netSlowText()); return
         }
         val c = bgNew(ch, bIdx, l) ?: run { showMessage(getString(R.string.pip_no_slot)); return }
         pipOpen(c)
@@ -3297,7 +3319,7 @@ class PlayerActivity : Activity() {
 
     // --- podgląd klatek przy przewijaniu (timeshift, nagrania): obraz główny zatrzymany, klatka kluczowa z miejsca
     // na pasku na całym ekranie (dekoder programowy); po puszczeniu klawiszy odtwarzanie od tego miejsca
-    private val seekPreview by lazy { SeekPreview(this, playerView) }
+    private val seekPreview by lazy { SeekPreview(this, zapFrame) }
     private var pvActive = false
     private var pvWasPlaying = true
 
@@ -4627,6 +4649,7 @@ class PlayerActivity : Activity() {
                 else if (cushionDisabled || prefs.tunneling || !prefs.cushionSlow) getString(R.string.diag_no_slowdown) else ""
             appendLine(getString(R.string.diag_buffer, p.totalBufferedDuration, cushionTarget, bufferState,
                 if (lastStartMs >= 0) "$lastStartMs ms" else "-"))
+            appendLine(netStatsLine())
             analyzer?.let { a ->
                 appendLine(getString(R.string.diag_ts_rate, a.bitrateKbps / 1000.0, a.maxGapMs))
                 appendLine(getString(R.string.diag_ts_bursts, a.burstAvgMs, a.cleaned, a.tsFixed))

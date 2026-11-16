@@ -3,22 +3,26 @@ package pl.jardol.e2stream
 object QuickMenu {
     data class Entry(val id: String, val labelRes: Int)
 
+    /** Kolejność domyślna (nowa instalacja, przywrócenie domyślnych). */
     val configurable = listOf(
         Entry("record", R.string.player_localrec_menu),
         Entry("record_stop", R.string.player_localrec_stop),
+        Entry("pip", R.string.pip_title),
+        Entry("buffered", R.string.player_bg_menu),
+        Entry("audio", R.string.menu_audio_track),
+        Entry("av_shift", R.string.setting_av_shift),
         Entry("event", R.string.menu_event_epg),
         Entry("channel_epg", R.string.menu_channel_epg),
         Entry("multi_epg", R.string.menu_multi_epg),
         Entry("search", R.string.menu_epg_search),
-        Entry("audio", R.string.menu_audio_track),
         Entry("zap_timers", R.string.menu_scheduled_switches),
         Entry("decoder_timers", R.string.menu_receiver_timers),
-        Entry("buffered", R.string.player_bg_menu),
         Entry("stats", R.string.setting_on_screen_statistics),
         Entry("send_log", R.string.action_send_log),
-        Entry("av_shift", R.string.setting_av_shift),
-        Entry("pip", R.string.pip_title),
     )
+
+    /** Domyślnie ukryte (EPG jest pod klawiszami i na liście kanałów). */
+    val HIDDEN_BY_DEFAULT = setOf("event", "channel_epg", "multi_epg", "search")
 
     /** Pozycje dodane później — widoczne domyślnie także przy starszym zapisie widoczności. */
     val ADDED_LATER = setOf("buffered", "stats", "send_log", "av_shift", "pip")
