@@ -125,6 +125,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         segs.clear()
         total = 0
         kfCount = 0; kfHead = 0
+        ringLen = 0
         failed = null
         shrunk = false
         trimmed = false
@@ -231,6 +232,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         if (cur == null || out == null || now - cur.wall >= 60_000) rotate(now)
         markKeyframes(b, off, len, now)
         out!!.write(b, off, len)
+        ringPut(b, off, len)
         segs.last().len += len
         total += len
     }
@@ -244,6 +246,55 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         // okno: najwyżej maxMin pełnych minut (+ bieżąca); mało miejsca — wypadają najstarsze
         while (segs.size > maxOf(2, maxMin + 1)) dropOldest()
         while (segs.size > 2 && dir.usableSpace < RESERVE) { dropOldest(); shrunk = true }
+    }
+
+    // --- ostatnie RING bajtów w pamięci: odtwarzanie na żywo i tuż za żywym czyta z RAM, nie z dysku
+    // (otwieranie pliku na USB przy każdym odczycie było wolniejsze niż napływ strumienia — pauzy co ~30 s)
+    private var ring: ByteArray? = null
+    private var ringLen = 0
+
+    /** Wywoływane przed zwiększeniem [total] o [len]. */
+    private fun ringPut(b: ByteArray, off: Int, len: Int) {
+        val r = ring ?: ByteArray(RING).also { ring = it }
+        val l = minOf(len, RING)
+        var o = off + (len - l)
+        var at = ((total + (len - l)) % RING).toInt()
+        var left = l
+        while (left > 0) {
+            val n = minOf(left, RING - at)
+            System.arraycopy(b, o, r, at, n)
+            o += n; left -= n; at = (at + n) % RING
+        }
+        ringLen = minOf(RING.toLong(), ringLen.toLong() + len).toInt()
+    }
+
+    /** Odczyt z pamięci; -1 — [pos] poza oknem w pamięci (czytaj z dysku), 0 — brak nowych danych. */
+    fun readRam(pos: Long, dst: ByteArray, off: Int, len: Int): Int = synchronized(lock) {
+        val r = ring ?: return -1
+        if (pos >= total) return 0
+        if (pos < total - ringLen) return -1
+        val all = minOf(len.toLong(), total - pos).toInt()
+        var n = all
+        var at = (pos % RING).toInt()
+        var o = off
+        while (n > 0) {
+            val c = minOf(n, RING - at)
+            System.arraycopy(r, at, dst, o, c)
+            o += c; n -= c; at = (at + c) % RING
+        }
+        all
+    }
+
+    /** Plik, przesunięcie w nim dla [pos] i liczba bajtów dostępnych w tym pliku od tego miejsca. */
+    fun locateRun(pos: Long): Triple<File, Long, Long>? = synchronized(lock) {
+        for (i in segs.indices.reversed()) {
+            val s = segs[i]
+            if (pos >= s.start) {
+                val inSeg = pos - s.start
+                return if (inSeg < s.len) Triple(s.file, inSeg, s.len - inSeg) else null
+            }
+        }
+        null
     }
 
     // --- klatki kluczowe: miejsca (bajt, chwila) początku PES obrazu z SPS / VPS / nagłówkiem sekwencji MPEG-2
@@ -379,6 +430,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         pin = null
         total = 0
         kfCount = 0; kfHead = 0
+        ringLen = 0
         failed = null
         shrunk = false
         trimmed = false
@@ -450,6 +502,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
 
     /** Odczyt od bajtu [pos]; -1 — dane usunięte (okno przesunęło się dalej). */
     fun read(pos: Long, buf: ByteArray, off: Int, len: Int): Int {
+        readRam(pos, buf, off, len).let { if (it >= 0) return it }
         val (f, inSeg) = locate(pos) ?: return -1
         val avail = synchronized(lock) { total - pos }
         if (avail <= 0) return 0
@@ -486,6 +539,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
 
         private val SEQ = java.util.concurrent.atomic.AtomicInteger()
         private const val KF_MAX = 4096
+        /** Ostatnie dane w pamięci: ~8 s przy 8 Mb/s (na bufor, także kanały w tle). */
+        const val RING = 8 * 1024 * 1024
         private const val SYNC = 0x47.toByte()
         /** Najwięcej pomijanych danych przed pierwszym PCR (potem zapis bez czekania). */
         private const val SKIP_MAX = 8L * 1_000_000
@@ -553,6 +608,34 @@ class TimeshiftDataSource(
     private var pos = 0L
     private var uri: Uri? = null
     private var hdrPos = 0
+    // odczyt z dysku (timeshift dalej od żywego): plik otwarty raz, porcje po 512 kB
+    private var raf: java.io.RandomAccessFile? = null
+    private var rafFile: java.io.File? = null
+    private val cache = ByteArray(512 * 1024)
+    private var cacheAt = -1L
+    private var cacheLen = 0
+
+    private fun readDisk(dst: ByteArray, off: Int, len: Int): Int {
+        if (cacheAt >= 0 && pos >= cacheAt && pos < cacheAt + cacheLen) {
+            val n = minOf(len.toLong(), cacheAt + cacheLen - pos).toInt()
+            System.arraycopy(cache, (pos - cacheAt).toInt(), dst, off, n)
+            return n
+        }
+        val (f, inSeg, avail) = buf.locateRun(pos) ?: return -1
+        if (rafFile != f) {
+            try { raf?.close() } catch (_: Exception) {}
+            raf = try { java.io.RandomAccessFile(f, "r") } catch (_: IOException) { null }
+            rafFile = f
+        }
+        val r = raf ?: return -1
+        val want = minOf(cache.size.toLong(), avail).toInt()
+        val n = try { r.seek(inSeg); r.read(cache, 0, want) } catch (_: IOException) { -1 }
+        if (n <= 0) { rafFile = null; return if (n < 0) -1 else 0 }
+        cacheAt = pos; cacheLen = n
+        val c = minOf(len, n)
+        System.arraycopy(cache, 0, dst, off, c)
+        return c
+    }
 
     override fun addTransferListener(transferListener: TransferListener) {}
 
@@ -589,7 +672,8 @@ class TimeshiftDataSource(
                 throw IOException("timeshift: brak nowych danych z dekodera")
             }
             if (!alive()) { while (!closed) Thread.sleep(100); break }
-            val n = buf.read(pos, buffer, offset, length)
+            var n = buf.readRam(pos, buffer, offset, length)
+            if (n < 0) n = readDisk(buffer, offset, length)
             if (n < 0) { onGone(); throw IOException("timeshift: fragment bufora już usunięty") }
             if (n > 0) { pos += n; return n }
         }
@@ -597,7 +681,11 @@ class TimeshiftDataSource(
     }
 
     override fun getUri(): Uri? = uri
-    override fun close() { closed = true }
+    override fun close() {
+        closed = true
+        try { raf?.close() } catch (_: Exception) {}
+        raf = null; rafFile = null; cacheAt = -1; cacheLen = 0
+    }
 }
 
 /**
