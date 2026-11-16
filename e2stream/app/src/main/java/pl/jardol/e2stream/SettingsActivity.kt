@@ -128,6 +128,12 @@ class SettingsActivity : Activity() {
         Item.Action(getString(R.string.setting_vlc_video_format_chroma), { p.vlcChroma }) { chooseChroma() },
     ) else listOf(
         Item.Toggle(getString(R.string.setting_video_tunnelling), { p.tunneling }, { p.tunneling = it }),
+        Item.Action(getString(R.string.setting_av_shift), { avShiftLabel(this, p.avShiftMs) }) {
+            val o = AvShift.values
+            TvDialog.single(this, getString(R.string.setting_av_shift), o.map { avShiftLabel(this, it) }, o.indexOf(p.avShiftMs).coerceAtLeast(0)) { w ->
+                p.avShiftMs = o[w]; AvShift.ms = o[w]; markChanged("przesunięcie dźwięku = ${o[w]} ms"); items = buildItems(); refresh()
+            }
+        },
         Item.Toggle(getString(R.string.setting_restart_on_stuttering_dropped_frames), { p.dropRestart }, { p.dropRestart = it }),
         Item.Toggle(getString(R.string.setting_fast_channel_start), { p.fastStart }, { p.fastStart = it }),
         num(getString(R.string.setting_playback_buffer_ms), { p.rebufferMs }, { p.rebufferMs = it }, 1000..15_000),

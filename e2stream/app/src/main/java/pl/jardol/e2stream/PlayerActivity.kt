@@ -141,6 +141,7 @@ class PlayerActivity : Activity() {
     private var keyMap: MutableMap<Int, Act> = LinkedHashMap(KeyMap.defaults)
     private lateinit var bannerIcon: android.widget.ImageView
     private lateinit var bannerClock: TextView
+    private lateinit var bannerTime: TextView
     private lateinit var bannerStart: TextView
     private lateinit var bannerEnd: TextView
     private lateinit var bannerNext: TextView
@@ -283,6 +284,7 @@ class PlayerActivity : Activity() {
         bannerNow = findViewById(R.id.bannerNow)
         bannerIcon = findViewById(R.id.bannerIcon)
         bannerClock = findViewById(R.id.bannerClock)
+        bannerTime = findViewById(R.id.bannerTime)
         bannerStart = findViewById(R.id.bannerStart)
         bannerEnd = findViewById(R.id.bannerEnd)
         bannerNext = findViewById(R.id.bannerNext)
@@ -450,6 +452,7 @@ class PlayerActivity : Activity() {
         if (epg.eitOnly) AppLog.i("EPG: tryb testowy EIT — EPG tylko ze strumienia, bez pobierania z dekodera")
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
         keyMap = KeyMap.load(prefs)
+        AvShift.ms = prefs.avShiftMs; vlc?.applyAudioDelay()
         UiScale.apply(banner, UiScale.pct(prefs.uiBannerFont), UiScale.pct(prefs.uiBannerIcon))
         UiScale.apply(message, UiScale.pct(prefs.uiBannerFont))
         ui.removeCallbacks(epgTick)
@@ -1100,7 +1103,7 @@ class PlayerActivity : Activity() {
                 if (generation == streamGen) analyzer else null
             }
         }
-        return ProgressiveMediaSource.Factory(analyzing, extractors)
+        return ProgressiveMediaSource.Factory(analyzing, AvShift.wrap(extractors))
             .createMediaSource(MediaItem.fromUri(url))
     }
 
@@ -2772,8 +2775,8 @@ class PlayerActivity : Activity() {
         val myBuf = bufGen
         val src = ProgressiveMediaSource.Factory(
             DataSource.Factory { TimeshiftDataSource(b, start, null, {}, lateHeader = { analyzer?.psiHeader() }, alive = { bufGen == myBuf }) },
-            DefaultExtractorsFactory().setTsExtractorFlags(
-                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS),
+            AvShift.wrap(DefaultExtractorsFactory().setTsExtractorFlags(
+                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS)),
         ).createMediaSource(MediaItem.fromUri("bufor://na-zywo/$gen/$start"))
         vlcLayout.visibility = View.GONE
         playerView.visibility = View.VISIBLE
@@ -2959,8 +2962,8 @@ class PlayerActivity : Activity() {
         val gen = streamGen
         val src = ProgressiveMediaSource.Factory(
             DataSource.Factory { TimeshiftDataSource(b, off, hdr, onGone = { }) },
-            DefaultExtractorsFactory().setTsExtractorFlags(
-                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS),
+            AvShift.wrap(DefaultExtractorsFactory().setTsExtractorFlags(
+                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS)),
         ).createMediaSource(MediaItem.fromUri("timeshift://bufor/$gen/$off"))
         vlcLayout.visibility = View.GONE
         playerView.visibility = View.VISIBLE
@@ -3018,7 +3021,7 @@ class PlayerActivity : Activity() {
         Picons.show(bannerIcon, this, ch?.ref.orEmpty(), prefs.picons, prefs.missingPiconLogo)
         val buffered = tsBuf?.takeIf { it.total > 0 }
         val span = buffered?.let { timeshiftAvailableSpan(it.oldestWall, SystemClock.elapsedRealtime()) } ?: 0L
-        bannerClock.text = recMark(hm.format(Date()))
+        refreshBannerTop()
         bannerNow.text = if (buffered != null) getString(R.string.player_ts_live_buffer, fmtMs(span)) else getString(R.string.player_ts_live_empty)
         bannerStart.text = ""
         bannerEnd.text = getString(R.string.player_live_lower)
@@ -3115,7 +3118,7 @@ class PlayerActivity : Activity() {
         val oldest = b.oldestWall
         val span = timeshiftAvailableSpan(oldest, now)
         val paused = player?.playWhenReady == false
-        bannerClock.text = recMark(hm.format(Date(System.currentTimeMillis() - behind)))
+        refreshBannerTop()
         bannerNow.text = getString(R.string.player_ts_shifted_buffer,
             if (paused) "⏸" else "▶", fmtMs(behind), fmtMs(span))
         bannerStart.text = ""
@@ -3978,7 +3981,7 @@ class PlayerActivity : Activity() {
     private fun showRecBanner(sticky: Boolean = false) {
         val r = recItem ?: return
         bannerName.text = r.title
-        bannerClock.text = hm.format(Date())
+        refreshBannerTop()
         bannerIcon.setImageDrawable(null)
         bannerIcon.visibility = View.GONE
         updateRecBanner()
@@ -4054,6 +4057,57 @@ class PlayerActivity : Activity() {
     // ---------------------------------------------------------------- nakładki
 
     private val hideBanner = Runnable { banner.visibility = View.GONE; tsChBar = false }
+
+    private val hms = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+
+    /**
+     * Górna linia paska: stan buforów (wariant B: „B 12:34 · tło 2/3 (nagr. 1)”, czerwone ● przy nagrywaniu
+     * oglądanego kanału); pod logo bieżąca godzina hh:mm:ss. Odświeżane co sekundę, póki pasek widoczny.
+     */
+    private fun refreshBannerTop() {
+        bannerTime.text = hms.format(Date())
+        // wielkość tytułu audycji, a gdy się nie mieści pod logo — wielkość nazwy kanału
+        val col = 150 * resources.displayMetrics.density
+        bannerTime.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bannerNow.textSize)
+        if (bannerTime.paint.measureText("88:88:88") > col) bannerTime.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bannerName.textSize)
+        bannerClock.text = if (recMode) "" else bufStatus()
+        ui.removeCallbacks(bannerTick)
+        ui.postDelayed(bannerTick, 1000L - System.currentTimeMillis() % 1000L)
+    }
+
+    private val bannerTick = object : Runnable {
+        override fun run() {
+            if (banner.visibility != View.VISIBLE) return
+            bannerTime.text = hms.format(Date())
+            if (!recMode) bannerClock.text = bufStatus()
+            ui.postDelayed(this, 1000L - System.currentTimeMillis() % 1000L)
+        }
+    }
+
+    private fun spanText(ms: Long): String {
+        val t = ms / 1000
+        return if (t >= 3600) String.format(Locale.US, "%d:%02d:%02d", t / 3600, t / 60 % 60, t % 60)
+        else String.format(Locale.US, "%d:%02d", t / 60, t % 60)
+    }
+
+    private fun bufStatus(): CharSequence {
+        val sb = android.text.SpannableStringBuilder()
+        val b = tsBuf?.takeIf { it.total > 0 }
+        if (b != null) {
+            if (localRec != null) {
+                sb.append("● ")
+                sb.setSpan(android.text.style.ForegroundColorSpan(0xFFE53935.toInt()), 0, 1, 0)
+            }
+            sb.append("B ").append(spanText(b.spanMs()))
+        }
+        if (prefs.bufPlay && prefs.bgCount > 0 && (bgChans.isNotEmpty() || b != null)) {
+            if (sb.isNotEmpty()) sb.append(" · ")
+            sb.append(getString(R.string.player_bg_line, bgChans.size, prefs.bgCount))
+            val rec = bgChans.count { it.lrec != null }
+            if (rec > 0) sb.append(" ").append(getString(R.string.player_bg_line_rec, rec))
+        }
+        return sb
+    }
     private val hideMessage = Runnable { message.visibility = View.GONE }
 
     private fun t(sec: Long) = hm.format(Date(sec * 1000))
@@ -4092,7 +4146,7 @@ class PlayerActivity : Activity() {
     private fun showBanner(ch: Channel) {
         tsChBar = true
         bannerName.text = "${ch.num}   ${ch.name}"
-        bannerClock.text = recMark(hm.format(Date()))
+        refreshBannerTop()
         Picons.show(bannerIcon, this, ch.ref, prefs.picons, prefs.missingPiconLogo)
         bannerNow.text = ch.now
         bannerStart.text = ""
@@ -4120,9 +4174,41 @@ class PlayerActivity : Activity() {
             message.visibility = View.GONE
             return
         }
-        message.text = t
+        message.maxWidth = (resources.displayMetrics.widthPixels * 0.7f).toInt()
+        message.text = prettyMessage(t)
         message.visibility = View.VISIBLE
         ui.postDelayed(hideMessage, prefs.messageBarSec * 1000L)
+    }
+
+    /**
+     * Komunikat schludniej: zdarzenie w pierwszej linii (✓ / ✗), szczegóły mniejsze i przygaszone w drugiej —
+     * zamiast pełnej ścieżki tylko nazwa pliku, nawiasy jako „ · ”. Pełne ścieżki zostają w logu.
+     */
+    private fun prettyMessage(t: String): CharSequence {
+        val m = Regex("""(?<![\w.:/])/[A-Za-z][^\s()]*/[^\s()]+""").find(t) ?: return t
+        val before = t.substring(0, m.range.first).trim().trimEnd(':').trim()
+        val after = t.substring(m.range.last + 1)
+        val path = m.value.trimEnd('/')
+        val name = path.substringAfterLast('/')
+        val extras = Regex("""\(([^)]*)\)""").findAll(after).map {
+            it.groupValues[1].replace("przez wtyczkę EPG Scan", "przez EPG Scan").replace("via EPG Scan plugin", "via EPG Scan")
+        }.filter { it.isNotBlank() }.toList()
+        val rest = after.replace(Regex("""\([^)]*\)"""), "").trim().trim(',', '.', ':').trim()
+        val title = when {
+            before.isEmpty() -> name
+            Regex("(?i)nie udało|błąd|error|failed").containsMatchIn(before) -> "✗ $before"
+            Regex("(?i)wysłan|wysłano|zapisan|sent|saved").containsMatchIn(before) -> "✓ $before"
+            else -> before
+        }
+        val detail = (listOf(if (before.isEmpty()) "" else name, rest) + extras).filter { it.isNotBlank() }.joinToString("  ·  ")
+        if (detail.isEmpty()) return title
+        return android.text.SpannableStringBuilder(title).apply {
+            append("\n")
+            val st = length
+            append(detail)
+            setSpan(android.text.style.RelativeSizeSpan(0.72f), st, length, 0)
+            setSpan(android.text.style.ForegroundColorSpan(0xFFB0BEC5.toInt()), st, length, 0)
+        }
     }
 
     private val statsTick = object : Runnable {
@@ -4461,10 +4547,23 @@ class PlayerActivity : Activity() {
                     if (!recMode) currentUrl?.let { startStream(it) }
                 }
             }
+            Act.AV_SHIFT -> chooseAvShift()
             Act.SEND_LOG -> {
                 showMessage(getString(R.string.action_sending_log))
                 Tools.uploadLog(this, prefs, true) { showMessage(it) }
             }
+        }
+    }
+
+    /** Przesunięcie dźwięku: lista −1000…+1000 ms, bieżąca wartość zaznaczona; działa od razu. */
+    private fun chooseAvShift() {
+        val o = AvShift.values
+        TvDialog.single(this, getString(R.string.setting_av_shift), o.map { avShiftLabel(this, it) }, o.indexOf(prefs.avShiftMs).coerceAtLeast(0)) { w ->
+            prefs.avShiftMs = o[w]
+            AvShift.ms = o[w]
+            vlc?.applyAudioDelay()
+            AppLog.i("dźwięk: przesunięcie ${o[w]} ms")
+            showMessage(getString(R.string.setting_av_shift) + ": " + avShiftLabel(this, o[w]))
         }
     }
 
@@ -4550,6 +4649,7 @@ class PlayerActivity : Activity() {
         // pozostałe zmiany bez zatrzymywania strumienia
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
         keyMap = KeyMap.load(prefs)
+        AvShift.ms = prefs.avShiftMs; vlc?.applyAudioDelay()
         UiScale.apply(banner, UiScale.pct(prefs.uiBannerFont), UiScale.pct(prefs.uiBannerIcon))
         UiScale.apply(message, UiScale.pct(prefs.uiBannerFont))
         if (!prefs.messageBar) {
@@ -4671,6 +4771,7 @@ class PlayerActivity : Activity() {
             "zap_timers" to { showZapTimers() },
             "decoder_timers" to { showDecoderTimers() },
             "stats" to { toggleStats() },
+            "av_shift" to { chooseAvShift() },
             "send_log" to { showMessage(getString(R.string.action_sending_log)); Tools.uploadLog(this, prefs, true) { showMessage(it) } },
         )
         val canRecord = !recMode && prefs.tsMin > 0 && currentUrl != null && localRec == null

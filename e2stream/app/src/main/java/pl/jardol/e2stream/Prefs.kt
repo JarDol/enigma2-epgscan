@@ -299,6 +299,11 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("bgBufMin", -1).let { if (it == 0) -1 else it }
         set(v) = putI("bgBufMin", v)
 
+    /** Przesunięcie dźwięku względem obrazu w ms (−1000…+1000, krok 50; ujemne — dźwięk wcześniej). */
+    var avShiftMs: Int
+        get() = sp.getInt("avShiftMs", 0).coerceIn(AvShift.MIN, AvShift.MAX)
+        set(v) = putI("avShiftMs", v.coerceIn(AvShift.MIN, AvShift.MAX))
+
     /** Komunikat przy przełączaniu, gdy bufory poprzednich kanałów są zajęte przez nagrania. */
     var bgFullMsg: Boolean
         get() = sp.getBoolean("bgFullMsg", true)

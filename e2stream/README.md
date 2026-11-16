@@ -180,6 +180,14 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 * preferowany język dźwięku i AC3,
 * log przez FTP: użytkownik (root), hasło, katalog na dekoderze.
 
+**Pasek kanału** – w linii z nazwą kanału stan buforów: „B 12:34 · tło 2/3 (nagr. 1)” (B — ile w buforze oglądanego
+kanału, czerwone ● — nagrywa; tło — kanały w tle / limit, nagr. — ile z nich nagrywa); pod logo kanału bieżąca godzina
+hh:mm:ss.
+
+**Przesunięcie dźwięku** – od −1 do +1 s co 50 ms (ujemne — dźwięk wcześniej, gdy obraz wyprzedza dźwięk), jedno dla
+ExoPlayera (z tunelowaniem i bez) i VLC; w ustawieniach odtwarzania, w menu i pod klawiszem pilota. Nie zmienia bufora
+ani nagrań — działa przy odtwarzaniu.
+
 **Historia** – ostatnio oglądane kanały ze wszystkich bukietów (najnowszy na górze, do 50). Osobne okno pod klawiszem
 ▼ (▲ — zwykła lista kanałów; przypisanie do zmiany w klawiszach, akcja *Lista kanałów — historia*). Dodatkowo bukiet
 „Historia” na końcu listy bukietów (◀ z pierwszego bukietu), do ukrycia w *Widocznych bukietach*.

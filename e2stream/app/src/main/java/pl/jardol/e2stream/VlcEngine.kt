@@ -215,6 +215,12 @@ class VlcEngine(
         m.release()
         playing = false
         p.play()
+        applyAudioDelay()
+    }
+
+    /** Przesunięcie dźwięku ([AvShift.ms]): w VLC dodatnie opóźnienie = dźwięk później. */
+    fun applyAudioDelay() {
+        try { mp?.setAudioDelay(AvShift.ms * 1000L) } catch (_: Throwable) {}
     }
 
     fun stop() {

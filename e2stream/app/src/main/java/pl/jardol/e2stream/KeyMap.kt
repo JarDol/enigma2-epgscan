@@ -38,6 +38,7 @@ enum class Act(val labelRes: Int) {
     BUFFER_PLAY(R.string.action_buffer_play),
     BG_BUFFER(R.string.action_bg_buffer),
     SEND_LOG(R.string.action_send_log),
+    AV_SHIFT(R.string.setting_av_shift),
 }
 
 /** Mapowanie klawiszy w trybie oglądania (bez otwartej listy kanałów). */

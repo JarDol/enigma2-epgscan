@@ -119,4 +119,10 @@
     <string name="player_bg_span_main">watching · %1$s in buffer</string>
     <string name="setting_bg_full_msg">Message about busy buffers when switching</string>
     <string name="setting_bg_status_msg">Show buffer status when switching</string>
+    <string name="setting_av_shift">Audio offset</string>
+    <string name="av_shift_zero">0 ms (no offset)</string>
+    <string name="av_shift_earlier">%1$s ms — audio earlier</string>
+    <string name="av_shift_later">%1$s ms — audio later</string>
+    <string name="player_bg_line">bg %1$d/%2$d</string>
+    <string name="player_bg_line_rec">(rec %1$d)</string>
 </resources>

@@ -120,4 +120,10 @@
     <string name="player_bg_span_main">oglądany · w buforze %1$s</string>
     <string name="setting_bg_full_msg">Komunikat o zajętych buforach przy przełączaniu</string>
     <string name="setting_bg_status_msg">Pokazuj stan buforów przy przełączaniu</string>
+    <string name="setting_av_shift">Przesunięcie dźwięku</string>
+    <string name="av_shift_zero">0 ms (bez przesunięcia)</string>
+    <string name="av_shift_earlier">%1$s ms — dźwięk wcześniej</string>
+    <string name="av_shift_later">%1$s ms — dźwięk później</string>
+    <string name="player_bg_line">tło %1$d/%2$d</string>
+    <string name="player_bg_line_rec">(nagr. %1$d)</string>
 </resources>
