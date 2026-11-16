@@ -231,8 +231,16 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- cykl życia
 
+    /** Ręczna aktualizacja: koniec odtwarzania, buforów (także w tle) i nagrań lokalnych (zapisane jak przy wyjściu). */
+    private val stopForUpdate: () -> Unit = {
+        ui.post {
+            if (!isDestroyed && (player != null || vlc != null || tsRec != null || bgChans.isNotEmpty())) releasePlayer()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Tools.beforeManualUpdate = stopForUpdate
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
         scheduledChannelRef = intent.getStringExtra(EXTRA_SCHEDULE_REF)
@@ -632,6 +640,7 @@ class PlayerActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (Tools.beforeManualUpdate === stopForUpdate) Tools.beforeManualUpdate = null
         io.shutdownNow()
         probeIo.shutdownNow()
     }

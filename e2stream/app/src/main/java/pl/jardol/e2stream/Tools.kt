@@ -219,6 +219,12 @@ object PinLock {
 object Tools {
     private val ui = Handler(Looper.getMainLooper())
 
+    /**
+     * Przed ręczną aktualizacją: odtwarzacz zatrzymuje strumień, bufory i trwające zapisy (zwalnia sieć, dysk
+     * i procesor dla pobierania i instalacji). Ustawia go PlayerActivity; null — odtwarzacz nie działa.
+     */
+    @Volatile var beforeManualUpdate: (() -> Unit)? = null
+
     fun logName(prefs: Prefs) = "e2stream-${prefs.fileTag}.log"
 
     fun uploadLog(ctx: Context, prefs: Prefs, manual: Boolean, msg: (String) -> Unit) {
@@ -328,7 +334,11 @@ object Tools {
         ) { selected -> askUpdate(a, choices[selected], current, msg) }
     }
 
-    private fun downloadAndInstall(a: Activity, info: Updater.Info, msg: (String) -> Unit) {
+    private fun downloadAndInstall(a: Activity, info: Updater.Info, msg: (String) -> Unit, manual: Boolean = false) {
+        if (manual) beforeManualUpdate?.let { stop ->
+            AppLog.i("aktualizacja ręczna: zatrzymuję odtwarzanie i bufory")
+            try { stop() } catch (e: Exception) { AppLog.i("aktualizacja: błąd zatrzymania odtwarzania $e") }
+        }
         AppLog.i("aktualizacja: pobieram ${info.url}")
         Thread {
             try {
@@ -361,6 +371,6 @@ object Tools {
         } else ""
         TvDialog.confirm(a, a.getString(R.string.update_title),
             a.getString(R.string.update_confirm, info.version, current, note),
-            listOf(TvDialog.Btn(a.getString(R.string.update_install)) { downloadAndInstall(a, info, msg) }, TvDialog.Btn(a.getString(R.string.update_not_now))))
+            listOf(TvDialog.Btn(a.getString(R.string.update_install)) { downloadAndInstall(a, info, msg, manual = true) }, TvDialog.Btn(a.getString(R.string.update_not_now))))
     }
 }
