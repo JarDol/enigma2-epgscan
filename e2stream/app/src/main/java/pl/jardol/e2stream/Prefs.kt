@@ -6,6 +6,8 @@ import android.content.SharedPreferences
 internal fun normalizePin(value: String) = value.filter { it in '0'..'9' }.take(6)
 
 /** Funkcje w przygotowaniu (ukryte w wydaniu stabilnym). */
+const val HISTORY_MAX = 50
+
 object Features {
     /** PiP — zawieszało Androida (dekoder obrazu tworzony przy każdej klatce); wraca w becie po poprawkach. */
     const val PIP = false
@@ -287,10 +289,31 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("bufPlay", false)
         set(v) = putB("bufPlay", v)
 
-    /** Bufor poprzednich kanałów: długość bufora kanału w tle w minutach; 0 — wyłączony, -1 — taki sam jak bieżącego. */
+    /** Bufor poprzednich kanałów: ile kanałów buforowanych w tle (0 — wyłączony, 1–3); dawniej włączony = 2. */
+    var bgCount: Int
+        get() = if (sp.contains("bgCount")) sp.getInt("bgCount", 0).coerceIn(0, 3) else if (sp.getInt("bgBufMin", 0) != 0) 2 else 0
+        set(v) = putI("bgCount", v)
+
+    /** Czas bufora poprzednich kanałów w minutach: -1 — taki sam jak timeshift, >0 — ręczny (najwyżej jak timeshift). */
     var bgBufMin: Int
-        get() = sp.getInt("bgBufMin", 0)
+        get() = sp.getInt("bgBufMin", -1).let { if (it == 0) -1 else it }
         set(v) = putI("bgBufMin", v)
+
+    /** Historia oglądanych kanałów (najnowszy pierwszy): ref → nazwa. */
+    var history: List<Pair<String, String>>
+        get() = try {
+            val a = org.json.JSONArray(sp.getString("history", "[]"))
+            (0 until a.length()).map { a.getJSONObject(it).let { o -> o.getString("ref") to o.optString("name") } }
+        } catch (_: Exception) { emptyList() }
+        set(v) = putS("history", org.json.JSONArray().apply {
+            v.forEach { put(org.json.JSONObject().put("ref", it.first).put("name", it.second)) }
+        }.toString())
+
+    fun historyPush(ref: String, name: String) {
+        if (ref.isBlank()) return
+        val k = OpenWebif.key(ref)
+        history = (listOf(ref to name) + history.filter { OpenWebif.key(it.first) != k }).take(HISTORY_MAX)
+    }
 
     /** PiP: klatka co tyle ms (1 / 2 / 3 / 5 s; dawny obraz płynny i 0,5 s → 1 s). */
     var pipFrameMs: Int

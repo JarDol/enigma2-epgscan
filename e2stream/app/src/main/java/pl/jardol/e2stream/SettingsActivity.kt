@@ -563,12 +563,18 @@ class SettingsActivity : Activity() {
             items = buildItems(); refresh()
         },
         gated(getString(R.string.setting_bg_buffer), {
-            if (!p.bufPlay) getString(R.string.setting_bg_buffer_needs) else bgName(p.bgBufMin)
+            if (!p.bufPlay) getString(R.string.setting_bg_buffer_needs) else bgCountName(p.bgCount)
         }) {
             if (!p.bufPlay) { toast(getString(R.string.setting_bg_buffer_needs)); return@gated }
-            chooseBgBuffer()
+            val o = listOf(0, 1, 2, 3)
+            TvDialog.single(this, getString(R.string.setting_bg_buffer), o.map { bgCountName(it) }, p.bgCount.coerceIn(0, 3)) { w ->
+                p.bgCount = o[w]; markChanged("bufor poprzednich kanałów: ${bgCountName(o[w])}"); items = buildItems(); refresh()
+            }
         },
-    ) + (if (!Features.PIP) emptyList() else listOf(
+    ) + (if (!p.bufPlay || p.bgCount <= 0) emptyList<Item>() else listOf(
+        // czas bufora — tylko gdy bufor poprzednich kanałów włączony
+        gated(getString(R.string.setting_bg_buffer_time), { bgName(p.bgBufMin) }) { chooseBgBuffer() },
+    )) + (if (!Features.PIP) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_pip_mode), { pipName(p.pipFrameMs) }) {
             val o = listOf(1000, 2000, 3000, 5000)
             TvDialog.single(this, getString(R.string.setting_pip_mode), o.map { pipName(it) }, o.indexOf(p.pipFrameMs).coerceAtLeast(0)) { w ->
@@ -618,9 +624,14 @@ class SettingsActivity : Activity() {
     /** Długość bufora bieżącego kanału (timeshift albo krótki bufor samego odtwarzania przez bufor). */
     private fun mainBufMin() = if (p.tsMin > 0) p.tsMin else TimeshiftBuffer.BUF_PLAY_MIN
 
+    private fun bgCountName(n: Int): String = when (n) {
+        0 -> getString(R.string.settings_disabled)
+        1 -> getString(R.string.setting_bg_buffer_1)
+        else -> getString(R.string.setting_bg_buffer_n, n)
+    }
+
     private fun bgName(m: Int): String = when {
-        m == 0 -> getString(R.string.settings_disabled)
-        m < 0 -> getString(R.string.setting_bg_buffer_same, mainBufMin())
+        m <= 0 -> getString(R.string.setting_bg_buffer_same, mainBufMin())
         else -> getString(R.string.setting_bg_buffer_manual, minOf(m, mainBufMin()))
     }
 
@@ -630,14 +641,14 @@ class SettingsActivity : Activity() {
     private fun pipPositions() = listOf(R.string.pip_pos_top, R.string.pip_pos_bottom, R.string.pip_pos_right, R.string.pip_pos_left,
         R.string.pip_pos_tl_down, R.string.pip_pos_tr_down, R.string.pip_pos_bl_up, R.string.pip_pos_br_up).map { getString(it) }
 
-    /** Wyłączony / taki sam jak timeshift / ręczny w minutach (najwyżej długość bufora bieżącego kanału). */
+    /** Czas bufora poprzednich kanałów: taki sam jak timeshift / ręczny w minutach (najwyżej jak timeshift). */
     private fun chooseBgBuffer() {
-        val opts = listOf(getString(R.string.settings_disabled), getString(R.string.setting_bg_buffer_same, mainBufMin()),
+        val opts = listOf(getString(R.string.setting_bg_buffer_same, mainBufMin()),
             getString(R.string.setting_bg_buffer_manual_pick) + if (p.bgBufMin > 0) " (${minOf(p.bgBufMin, mainBufMin())} min)" else "")
-        val sel = when { p.bgBufMin == 0 -> 0; p.bgBufMin < 0 -> 1; else -> 2 }
-        TvDialog.single(this, getString(R.string.setting_bg_buffer), opts, sel) { w ->
+        val sel = if (p.bgBufMin > 0) 1 else 0
+        TvDialog.single(this, getString(R.string.setting_bg_buffer_time), opts, sel) { w ->
             when (w) {
-                0, 1 -> { p.bgBufMin = if (w == 0) 0 else -1; markChanged("bufor poprzednich kanałów: ${bgName(p.bgBufMin)}"); items = buildItems(); refresh() }
+                0 -> { p.bgBufMin = -1; markChanged("czas bufora poprzednich kanałów: ${bgName(p.bgBufMin)}"); items = buildItems(); refresh() }
                 else -> {
                     val max = mainBufMin()
                     val et = EditText(this)
@@ -649,12 +660,12 @@ class SettingsActivity : Activity() {
                     et.setSingleLine(true)
                     val hint = getString(R.string.setting_bg_buffer_manual_hint, max)
                     et.hint = hint
-                    TvDialog.input(this, getString(R.string.setting_bg_buffer), hint, et) {
+                    TvDialog.input(this, getString(R.string.setting_bg_buffer_time), hint, et) {
                         val v = et.text.toString().toIntOrNull()
                         if (v == null || v < 1) { toast(hint); return@input }
                         p.bgBufMin = minOf(v, max)
                         if (v > max) toast(getString(R.string.setting_bg_buffer_capped, max))
-                        markChanged("bufor poprzednich kanałów: ${bgName(p.bgBufMin)}"); items = buildItems(); refresh()
+                        markChanged("czas bufora poprzednich kanałów: ${bgName(p.bgBufMin)}"); items = buildItems(); refresh()
                     }
                 }
             }
@@ -942,7 +953,8 @@ class SettingsActivity : Activity() {
         Thread {
             val list = try {
                 OpenWebif(p).bouquets() + Bouquet(getString(R.string.receiver_recordings), REC_BOUQUET) +
-                    Bouquet(getString(R.string.player_local_recordings), REC_LOCAL_BOUQUET)
+                    Bouquet(getString(R.string.player_local_recordings), REC_LOCAL_BOUQUET) +
+                    Bouquet(getString(R.string.player_history), HIST_BOUQUET)
             } catch (e: Exception) { null }
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread

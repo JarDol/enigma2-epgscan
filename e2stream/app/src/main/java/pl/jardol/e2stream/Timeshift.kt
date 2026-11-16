@@ -465,7 +465,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         }
 
         /** Katalogi buforów: bieżący kanał + kanały buforowane w tle (bez wspólnych plików — każdy sprząta tylko swój). */
-        fun slotDirs(root: File): List<File> = listOf(root, File(root, "kanal-2"), File(root, "kanal-3"))
+        fun slotDirs(root: File): List<File> = listOf(root, File(root, "kanal-2"), File(root, "kanal-3"), File(root, "kanal-4"))
 
         fun gb(bytes: Long) = String.format(java.util.Locale("pl"), "%.1f GB", bytes / 1e9)
     }

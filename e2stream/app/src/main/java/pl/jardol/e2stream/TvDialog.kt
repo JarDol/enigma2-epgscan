@@ -106,6 +106,8 @@ object TvDialog {
         onBack: (() -> Unit)? = null, focusChip: Boolean = false, top: Boolean = false, timeoutSec: Int = 0,
         onTimeout: (() -> Unit)? = null,
         hintBelowTitle: Boolean = false,
+        /** Drugi rząd przycisków pod pierwszym (np. zapis bufora kanału w tle). */
+        chips2: List<Btn> = emptyList(),
         content: (ctx: Context, dlg: Dialog) -> View,
     ): Dialog {
         val dlg = if (timeoutSec > 0) TimedDialog(a, timeoutSec) { onTimeout?.invoke() } else Dialog(a, R.style.TvDialog)
@@ -150,6 +152,28 @@ object TvDialog {
                 val btn = Button(ctx, null, 0, R.style.TvDialogButton)
                 btn.text = b.label
                 btn.tag = "chip_$index"
+                btn.isFocusable = true
+                btn.setOnClickListener {
+                    if (b.closeOnClick) dlg.dismiss()
+                    b.onClick()
+                }
+                val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                lp.marginStart = dp(ctx, 10)
+                bar.addView(btn, lp)
+                if (first == null) first = btn
+            }
+            root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        if (chips2.isNotEmpty()) {
+            val bar = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
+                setPadding(0, dp(ctx, 8), 0, 0)
+            }
+            for ((index, b) in chips2.withIndex()) {
+                val btn = Button(ctx, null, 0, R.style.TvDialogButton)
+                btn.text = b.label
+                btn.tag = "chip2_$index"
                 btn.isFocusable = true
                 btn.setOnClickListener {
                     if (b.closeOnClick) dlg.dismiss()

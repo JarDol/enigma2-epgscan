@@ -44,7 +44,7 @@
     <string name="buffer_play_shared">timeshift buffer %1$d min</string>
     <string name="buffer_play_short">%1$d min buffer</string>
     <string name="ts_delay_buffer_play">immediately (playback through buffer)</string>
-    <string name="setting_bg_buffer">Previous channels buffer (background recording, up to 3 channels)</string>
+    <string name="setting_bg_buffer">Previous channels buffer (background recording)</string>
     <string name="setting_bg_buffer_needs">requires playback through buffer</string>
     <string name="setting_bg_buffer_same">same as timeshift (%1$d min)</string>
     <string name="setting_bg_buffer_manual">%1$d min</string>
@@ -74,4 +74,13 @@
     <string name="pip_pos_tr_down">top-right corner, downwards</string>
     <string name="pip_pos_bl_up">bottom-left corner, upwards</string>
     <string name="pip_pos_br_up">bottom-right corner, upwards</string>
+    <string name="setting_bg_buffer_1">1 channel</string>
+    <string name="setting_bg_buffer_n">%1$d channels</string>
+    <string name="setting_bg_buffer_time">Previous channels buffer length</string>
+    <string name="player_history">History</string>
+    <string name="player_bgrec_event">Save current programme</string>
+    <string name="player_bgrec_now">Save buffer until now (%1$s)</string>
+    <string name="player_bgrec_until">Save until switch / buffer removal</string>
+    <string name="player_bgrec_stop">Stop saving from buffer</string>
+    <string name="player_localrec_reason_buffer_closed">channel buffer closed</string>
 </resources>

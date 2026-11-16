@@ -261,8 +261,8 @@ class PlayerActivity : Activity() {
         epg = EpgUi(this, api, io, epgStore, object : EpgUi.Host {
             override fun current(): Channel? = playList.getOrNull(playIndex)
             override fun bouquetChannels(): List<Channel> = playList
-            override fun bouquetList(): List<Bouquet> = this@PlayerActivity.bouquets.filter { !isRecRef(it.ref) }
-            override fun currentBouquet(): Bouquet? = bouquets.getOrNull(playBouquet)?.takeIf { !isRecRef(it.ref) }
+            override fun bouquetList(): List<Bouquet> = this@PlayerActivity.bouquets.filter { !isVirtual(it.ref) }
+            override fun currentBouquet(): Bouquet? = bouquets.getOrNull(playBouquet)?.takeIf { !isVirtual(it.ref) }
             override fun zapTo(ref: String, onResult: ((Boolean, String) -> Unit)?) =
                 this@PlayerActivity.zapTo(ref, onResult = onResult)
             override fun message(t: String) = showMessage(t)
@@ -320,7 +320,9 @@ class PlayerActivity : Activity() {
         list.setOnItemLongClickListener { _, _, pos, _ ->
             panelList.getOrNull(pos)?.let { c ->
                 val r = c.rec
-                if (r == null) epg.showCurrentEvent(c)
+                val bg = if (r == null) bgOf(c) else null
+                if (bg != null) epg.showCurrentEvent(c) { ev -> bgRecButtons(bg, c, ev) }
+                else if (r == null) epg.showCurrentEvent(c)
                 else if (!r.isDir) showRecordingActions(r)
             }
             true
@@ -1148,7 +1150,9 @@ class PlayerActivity : Activity() {
             if (bufLive) bufStop("nośnik niedostępny — odtwarzanie bezpośrednie")
         } else if (bufLive) bufStop(if (recMode) "nagranie" else "opcja wyłączona")
         if (!bgAllowed() || recMode) bgDropAll("opcja wyłączona")
-        else if (prefs.bgBufMin == 0) for (c in bgChans.filter { it.pip < 0 }) bgDrop(c, "opcja wyłączona")
+        else if (prefs.bgCount == 0) for (c in bgChans.filter { it.pip < 0 }) bgDrop(c, "opcja wyłączona")
+        else while (bgChans.count { it.pip < 0 } > prefs.bgCount)
+            bgChans.filter { it.pip < 0 }.minByOrNull { it.leftAt }?.let { bgDrop(it, "limit ${prefs.bgCount} kanałów w tle") } ?: break
         pipRefresh()
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
@@ -1530,10 +1534,12 @@ class PlayerActivity : Activity() {
                 val returnChannel = settingsReturnChannel
                 val wantB = returnChannel?.first ?: if (prefs.resumeLast) prefs.lastBouquet else prefs.startBouquet
                 val wantC = returnChannel?.second ?: if (prefs.resumeLast) prefs.lastChannel else prefs.startChannel
+                val hist = wantB == HIST_BOUQUET && HIST_BOUQUET !in hidden && prefs.history.isNotEmpty()
                 val bi = bq.indexOfFirst { it.ref == wantB }.let { if (it < 0) 0 else it }
-                val ch = if (bq.isEmpty()) emptyList() else api.channels(bq[bi])
+                val ch = if (bq.isEmpty()) emptyList() else if (hist) historyChannels() else api.channels(bq[bi])
                 runOnUiThread {
                     bouquets = withRec(bq)
+                    val bi = if (hist) bouquets.indexOfFirst { it.ref == HIST_BOUQUET }.coerceAtLeast(0) else bi
                     if (bq.isEmpty()) {
                         showMessage(getString(R.string.message_no_bouquets_on_receiver))
                         return@runOnUiThread
@@ -1616,6 +1622,7 @@ class PlayerActivity : Activity() {
         playIndex = i
         val ch = chList[i]
         prefs.lastBouquet = bouquets.getOrNull(bIdx)?.ref ?: ""
+        chList[i].let { prefs.historyPush(it.ref, it.name) }
         prefs.lastChannel = ch.ref
 
         failStreak = 0
@@ -1718,7 +1725,7 @@ class PlayerActivity : Activity() {
         }
         val bq = bouquets.getOrNull(b) ?: return
         io.execute {
-            val ch = try { api.channels(bq) } catch (e: Exception) { return@execute }
+            val ch = try { channelsOf(bq) } catch (e: Exception) { return@execute }
             runOnUiThread {
                 val i = ch.indexOfFirst { it.ref == ref }
                 if (i >= 0) playIn(b, ch, i)
@@ -1837,7 +1844,7 @@ class PlayerActivity : Activity() {
         if (isRecRef(b.ref)) return
         val target = panelList
         io.execute {
-            val map = if (epg.eitOnly) emptyMap() else try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
+            val map = if (epg.eitOnly || b.ref == HIST_BOUQUET) emptyMap() else try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
             // kanały, dla których dekoder nie podał bieżącej audycji (np. EPG tylko z paczki EPG Scan
             // pod inną referencją) — z zapisanego EPG, tak jak opis na dole listy
             val n = System.currentTimeMillis() / 1000
@@ -1891,7 +1898,17 @@ class PlayerActivity : Activity() {
             val name = v.findViewById<TextView>(R.id.name)
             val playing = panelBouquet == playBouquet && position == playIndex
             val selected = position == list.selectedItemPosition && list.hasFocus()
-            name.text = if (playing) "▶  ${c.name}" else c.name
+            val label = if (playing) "▶  ${c.name}" else c.name
+            // „B” — kanał buforowany w tle (● — w trakcie zapisu z tego bufora)
+            val bg = bgOf(c)
+            name.text = if (bg == null) label else android.text.SpannableStringBuilder(label).apply {
+                append("  ")
+                val st = length
+                append(if (bg.lrec != null) " ● B " else " B ")
+                setSpan(android.text.style.BackgroundColorSpan(if (bg.lrec != null) 0xFFC62828.toInt() else 0xFF1565C0.toInt()), st, length, 0)
+                setSpan(android.text.style.ForegroundColorSpan(0xFFFFFFFF.toInt()), st, length, 0)
+                setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), st, length, 0)
+            }
             // na podświetleniu wszystko białe; odtwarzany kanał oznaczony ▶ i kolorem tylko poza podświetleniem
             name.setTextColor(if (selected) 0xFFFFFFFF.toInt() else if (playing) 0xFF4FC3F7.toInt() else 0xFFFFFFFF.toInt())
             val now = v.findViewById<TextView>(R.id.now)
@@ -2135,7 +2152,8 @@ class PlayerActivity : Activity() {
     private var tsPending = 0L                 // przewijanie zbierane z kilku naciśnięć
     private var tsLiveUrl: String? = null
 
-    private val BG_MAX = 2      // kanały w tle (razem z bieżącym najwyżej 3)
+    /** Ile kanałów w tle (ustawienie 1–3; PiP wymaga 2). */
+    private val BG_MAX get() = maxOf(prefs.bgCount, if (Features.PIP && bgChans.any { it.pip >= 0 }) 2 else 0)
     private val PIP_TAIL = 1_500_000L
 
     // --- odtwarzanie przez bufor: jedno połączenie z dekoderem (TimeshiftRecorder) zapisuje do bufora,
@@ -2197,16 +2215,24 @@ class PlayerActivity : Activity() {
     ) {
         var pip = -1                               // numer okna PiP albo -1
         var leftAt = SystemClock.elapsedRealtime()
+        var lrec: LocalRec? = null                 // zapis z tego bufora na dysk (nagranie lokalne)
+    }
+
+    /** Kanał z listy buforowany w tle (dowolny bukiet, także historia). */
+    private fun bgOf(c: Channel): BgChan? {
+        if (bgChans.isEmpty() || c.ref.isBlank()) return null
+        val k = OpenWebif.key(c.ref)
+        return bgChans.firstOrNull { it.ch?.ref?.let { r -> OpenWebif.key(r) == k } == true || it.url == api.streamUrl(c) }
     }
     private val bgChans = ArrayList<BgChan>()
     private var bgPromoted = false
 
     private fun bgAllowed() = prefs.bufPlay && TimeshiftBuffer.dir(this, prefs) != null
-    private fun bgEnabled() = bgAllowed() && prefs.bgBufMin != 0
+    private fun bgEnabled() = bgAllowed() && prefs.bgCount > 0
     private fun mainBufMin() = if (prefs.tsMin > 0) prefs.tsMin else TimeshiftBuffer.BUF_PLAY_MIN
     /** Długość bufora poprzedniego kanału: jak bieżący albo ręczna (najwyżej jak bieżący). */
     private fun bgBufLen() = if (prefs.bgBufMin < 0) mainBufMin() else minOf(maxOf(prefs.bgBufMin, 1), mainBufMin())
-    private fun pipBufLen() = if (prefs.bgBufMin == 0) mainBufMin() else bgBufLen()
+    private fun pipBufLen() = if (prefs.bgCount == 0) mainBufMin() else bgBufLen()
 
     private fun bgEit(j: ProgramJournal): (Long, Int, EitEvent?, EitEvent?) -> Unit = { _, _, now, _ ->
         if (now != null) ui.post {
@@ -2216,6 +2242,7 @@ class PlayerActivity : Activity() {
 
     private fun bgDrop(c: BgChan, reason: String) {
         if (!bgChans.remove(c)) return
+        c.lrec?.let { c.lrec = null; finishRec(it, "bufor zamknięty", restartLive = false, main = false) }
         c.rec.stop()
         c.an.tee = null; c.an.onEit = null
         c.buf.reset()
@@ -2241,18 +2268,18 @@ class PlayerActivity : Activity() {
     private fun bgSwitch(url: String, name: String) {
         if (recMode || url == tsLiveUrl && bufLive) return
         if (!bgAllowed()) { bgDropAll("opcja wyłączona"); return }
-        if (prefs.bgBufMin == 0) for (c in bgChans.filter { it.pip < 0 }) bgDrop(c, "opcja wyłączona")
+        if (prefs.bgCount == 0) for (c in bgChans.filter { it.pip < 0 }) bgDrop(c, "opcja wyłączona")
         val target = bgChans.firstOrNull { it.url == url }
         val pipSlot = target?.pip ?: -1
         val curBuf = tsBuf
         val curRec = tsRec
         val curAn = tsRecAn
         val canDemote = bufLive && curBuf != null && curRec != null && curAn != null && curAn === analyzer && curBuf.failed == null
-        if (canDemote && (pipSlot >= 0 || prefs.bgBufMin != 0)) {
+        if (canDemote && (pipSlot >= 0 || prefs.bgCount > 0)) {
             // miejsce: najdawniej opuszczony poprzedni kanał wypada (okna PiP zostają)
             while (bgChans.count { it !== target } >= BG_MAX) {
                 val v = bgChans.filter { it !== target && it.pip < 0 }.minByOrNull { it.leftAt } ?: break
-                bgDrop(v, "limit ${BG_MAX + 1} kanałów")
+                bgDrop(v, "limit $BG_MAX kanałów w tle")
             }
             if (bgChans.count { it !== target } < BG_MAX) {
                 if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
@@ -2295,6 +2322,13 @@ class PlayerActivity : Activity() {
             tsLiveUrl = url
             bufLive = true
             bgPromoted = true
+            // zapis z tego bufora trwa dalej jako nagranie bieżącego kanału
+            target.lrec?.let { r ->
+                target.lrec = null
+                localRec = r
+                ui.removeCallbacks(localRecTick); ui.postDelayed(localRecTick, 5000)
+                AppLog.i("nagranie lokalne: „${r.meta.optString("title")}” trwa dalej na bieżącym kanale")
+            }
             AppLog.i("bufor w tle: powrót na $name — odtwarzanie od razu z bufora (${target.buf.spanMs() / 1000} s zapisu)")
         }
         pipRefresh()
@@ -2591,7 +2625,7 @@ class PlayerActivity : Activity() {
         c.pip = -1
         c.leftAt = SystemClock.elapsedRealtime()
         // kanał wraca do zasad bufora poprzednich kanałów
-        if (prefs.bgBufMin == 0) bgDrop(c, "zamknięte okno PiP") else c.buf.maxMin = bgBufLen()
+        if (prefs.bgCount == 0) bgDrop(c, "zamknięte okno PiP") else c.buf.maxMin = bgBufLen()
         pipRefresh()
     }
 
@@ -3045,12 +3079,16 @@ class PlayerActivity : Activity() {
     private class LocalRec(
         val pin: TimeshiftBuffer.Pin, val mode: Int, val meta: org.json.JSONObject, val untilWall: Long,
         val ch: Channel, val usedBefore: Long, val capacity: Long,
+        /** bufor i dziennik audycji, z których powstaje nagranie (bieżący kanał albo kanał w tle) */
+        val buf: TimeshiftBuffer, val journal: ProgramJournal,
     )
     private var localRec: LocalRec? = null
 
     private fun localBase(): File? = (tsBuf?.root ?: TimeshiftBuffer.dir(this, prefs))?.let { LocalRecordings.base(it) }
 
     private fun isRecRef(ref: String?) = ref == REC_REF || ref == REC_LOCAL_BOUQUET
+    /** Bukiety aplikacji (nagrania, historia) — nie ma ich na dekoderze. */
+    private fun isVirtual(ref: String?) = isRecRef(ref) || ref == HIST_BOUQUET
 
     /** Długie OK → „Nagraj…”: audycja / bufor do teraz / cały bufor do zmiany kanału; w trakcie — zatrzymanie. */
     private fun showRecordMenu() {
@@ -3106,11 +3144,17 @@ class PlayerActivity : Activity() {
         }
     }
 
-    private fun startLocalRec(mode: Int, ch: Channel, ev: EpgEvent?, usedBefore: Long, capacity: Long) {
-        val b = tsBuf ?: return
-        if (localRec != null || playList.getOrNull(playIndex) !== ch) return
-        ev?.let { journalAdd(it.begin, it.end, it.title, it.shortDesc, it.longDesc) }
-        tsWriteFrom = 0                                   // bufor zapisuje od teraz (także przy starcie ręcznym)
+    private fun startLocalRec(mode: Int, ch: Channel, ev: EpgEvent?, usedBefore: Long, capacity: Long, bg: BgChan? = null) {
+        val b = (if (bg != null) bg.buf else tsBuf) ?: return
+        val jr = bg?.journal ?: journal
+        if (bg != null) {
+            if (bg.lrec != null || bg !in bgChans) return
+            ev?.let { jr.add(JournalEvent(it.begin, it.end, it.title, listOf(it.shortDesc, it.longDesc).filter { d -> d.isNotBlank() }.distinct().joinToString("\n"))) }
+        } else {
+            if (localRec != null || playList.getOrNull(playIndex) !== ch) return
+            ev?.let { journalAdd(it.begin, it.end, it.title, it.shortDesc, it.longDesc) }
+            tsWriteFrom = 0                               // bufor zapisuje od teraz (także przy starcie ręcznym)
+        }
         val nowEpoch = System.currentTimeMillis()
         val nowWall = SystemClock.elapsedRealtime()
         fun wallOf(epochSec: Long) = nowWall - (nowEpoch - epochSec * 1000)
@@ -3127,9 +3171,18 @@ class PlayerActivity : Activity() {
             .put("begin", beginEpoch / 1000).put("lengthSec", 0).put("mode", mode).put("done", false)
         LocalRecordings.writeMeta(dir, meta)
         val until = if (mode == REC_EVENT && ev != null) wallOf(ev.end) + 60_000 else Long.MAX_VALUE
-        val r = LocalRec(pin, mode, meta, until, ch, usedBefore, capacity)
+        val r = LocalRec(pin, mode, meta, until, ch, usedBefore, capacity, b, jr)
+        AppLog.i("nagranie lokalne: start ${listOf("audycja", "bufor do teraz", "do zmiany kanału")[mode]} „$title” od ${fmtMs(nowWall - pin.fromWall)} wstecz" +
+            (if (bg != null) " (kanał w tle ${bg.name})" else "") + ", ${dir.absolutePath}")
+        if (bg != null) {
+            if (mode == REC_NOW) { finishRec(r, "bufor do teraz", restartLive = false, main = false); return }
+            bg.lrec = r
+            showMessage(getString(R.string.player_localrec_started, title))
+            ui.removeCallbacks(bgRecTick); ui.postDelayed(bgRecTick, 5000)
+            if (panel.visibility == View.VISIBLE) adapter.notifyDataSetChanged()
+            return
+        }
         localRec = r
-        AppLog.i("nagranie lokalne: start ${listOf("audycja", "bufor do teraz", "do zmiany kanału")[mode]} „$title” od ${fmtMs(nowWall - pin.fromWall)} wstecz, ${dir.absolutePath}")
         if (mode == REC_NOW) { finishLocalRec("bufor do teraz", restartLive = true); return }
         showMessage(getString(R.string.player_localrec_started, title))
         ui.removeCallbacks(localRecTick)
@@ -3145,16 +3198,21 @@ class PlayerActivity : Activity() {
         val r = localRec ?: return
         localRec = null
         ui.removeCallbacks(localRecTick)
-        val wasShifted = tsMode
+        finishRec(r, reason, restartLive, main = true)
+    }
+
+    /** [main] — nagranie bieżącego kanału (timeshift / powrót na żywo); inaczej z bufora kanału w tle. */
+    private fun finishRec(r: LocalRec, reason: String, restartLive: Boolean, main: Boolean) {
+        val wasShifted = main && tsMode
         val url = tsLiveUrl ?: currentUrl
         if (wasShifted) tsLeave()
         val endWall = SystemClock.elapsedRealtime()
-        val pin = tsBuf?.takeIf { it.pin === r.pin }?.finishPin() ?: r.pin
+        val pin = r.buf.takeIf { it.pin === r.pin }?.finishPin() ?: r.pin
         val lengthSec = ((endWall - pin.fromWall) / 1000).coerceAtLeast(0)
         r.meta.put("lengthSec", lengthSec).put("size", pin.bytes).put("done", true).put("end", reason)
         // spis audycji z dziennika bufora; „do teraz” / „do zmiany kanału” — także tytuł i opis
         val from = r.meta.optLong("begin")
-        val chapters = ProgramJournal.chapters(journal.snapshot(), from, from + lengthSec,
+        val chapters = ProgramJournal.chapters(r.journal.snapshot(), from, from + lengthSec,
             minEdgeSec = if (r.mode == REC_EVENT) 90 else ProgramJournal.MIN_CHAPTER_SEC)
         if (chapters.isNotEmpty()) LocalRecordings.putChapters(r.meta, chapters)
         val desc = { ProgramJournal.describe(chapters, getString(R.string.player_localrec_from_middle), getString(R.string.player_localrec_no_end)) }
@@ -3174,6 +3232,7 @@ class PlayerActivity : Activity() {
             LocalRecordings.delete(pin.dir)
             showMessage(getString(R.string.player_localrec_empty))
         } else showMessage(getString(R.string.player_localrec_saved, title, fmtMs(lengthSec * 1000), reasonText(reason)))
+        if (!main && panel.visibility == View.VISIBLE) adapter.notifyDataSetChanged()
         if (restartLive && wasShifted && url != null && !recMode) {
             failStreak = 0
             startStream(url)
@@ -3187,7 +3246,77 @@ class PlayerActivity : Activity() {
         "limit czasu" -> getString(R.string.player_localrec_reason_time, prefs.recMaxHours)
         "limit miejsca" -> getString(R.string.player_localrec_reason_space, prefs.recMaxPct)
         "brak miejsca" -> getString(R.string.player_localrec_reason_disk_full)
+        "bufor zamknięty" -> getString(R.string.player_localrec_reason_buffer_closed)
         else -> ""
+    }
+
+    /** Pilnowanie zapisów z buforów kanałów w tle (jak localRecTick). */
+    private val bgRecTick = object : Runnable {
+        override fun run() {
+            ui.removeCallbacks(this)
+            val now = SystemClock.elapsedRealtime()
+            for (c in bgChans.toList()) {
+                val r = c.lrec ?: continue
+                val b = c.buf
+                val reason = when {
+                    b.pin !== r.pin -> "bufor zamknięty"
+                    b.failed != null -> "błąd bufora"
+                    now >= r.untilWall -> "koniec audycji"
+                    now - r.pin.fromWall >= prefs.recMaxHours * 3_600_000L -> "limit czasu"
+                    r.capacity > 0 && r.usedBefore + b.pinnedBytes() >= r.capacity * prefs.recMaxPct / 100 -> "limit miejsca"
+                    b.shrunk -> "brak miejsca"
+                    else -> null
+                } ?: continue
+                c.lrec = null
+                finishRec(r, reason, restartLive = false, main = false)
+            }
+            if (bgChans.any { it.lrec != null }) ui.postDelayed(this, 5000)
+        }
+    }
+
+    /** Przyciski zapisu bufora kanału w tle (długie OK na liście): audycja / do teraz / do przełączenia lub usunięcia. */
+    private fun bgRecButtons(bg: BgChan, c: Channel, ev: EpgEvent?): List<TvDialog.Btn> {
+        bg.lrec?.let { r ->
+            return listOf(TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
+                if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false) }
+            })
+        }
+        val ch = bg.ch ?: c
+        val out = ArrayList<TvDialog.Btn>()
+        if (ev != null) out += TvDialog.Btn(getString(R.string.player_bgrec_event)) { bgRecStart(bg, REC_EVENT, ch, ev) }
+        out += TvDialog.Btn(getString(R.string.player_bgrec_now, fmtMs(bg.buf.spanMs()))) { bgRecStart(bg, REC_NOW, ch, ev) }
+        out += TvDialog.Btn(getString(R.string.player_bgrec_until)) { bgRecStart(bg, REC_UNTIL_ZAP, ch, ev) }
+        return out
+    }
+
+    /** Zgoda na pamięć urządzenia, limit miejsca — jak przy nagraniu bieżącego kanału — i start zapisu z bufora w tle. */
+    private fun bgRecStart(bg: BgChan, mode: Int, ch: Channel, ev: EpgEvent?) {
+        val b = bg.buf
+        if (bg !in bgChans) return
+        b.failed?.let { showMessage(getString(R.string.player_ts_error, it)); return }
+        val base = LocalRecordings.base(b.root)
+        val internal = b.root.absolutePath.startsWith(TimeshiftBuffer.internalBase(this).absolutePath)
+        if (internal && !prefs.recInternalOk) {
+            TvDialog.confirm(this, getString(R.string.player_localrec_title), getString(R.string.player_localrec_internal_consent), listOf(
+                TvDialog.Btn(getString(R.string.player_localrec_allow)) { prefs.recInternalOk = true; bgRecStart(bg, mode, ch, ev) },
+                TvDialog.Btn(getString(R.string.dialog_cancel)),
+            ))
+            return
+        }
+        io.execute {
+            val used = LocalRecordings.used(base)
+            val cap = LocalRecordings.capacity(base)
+            runOnUiThread {
+                if (cap > 0 && used >= cap * prefs.recMaxPct / 100) {
+                    TvDialog.confirm(this, getString(R.string.player_localrec_title),
+                        getString(R.string.player_localrec_limit_reached, prefs.recMaxPct, TimeshiftBuffer.gb(used), TimeshiftBuffer.gb(cap)),
+                        listOf(TvDialog.Btn(getString(R.string.player_local_recordings)) { showRecordings(REC_LOCAL_BOUQUET) },
+                            TvDialog.Btn(getString(R.string.message_close))))
+                    return@runOnUiThread
+                }
+                startLocalRec(mode, ch, ev, used, cap, bg)
+            }
+        }
     }
 
     /** Pilnowanie trwającego nagrania: koniec audycji, limit czasu, limit miejsca, błąd bufora. */
@@ -3251,13 +3380,18 @@ class PlayerActivity : Activity() {
     private val dateFmt by lazy { SimpleDateFormat("EEE dd.MM  HH:mm", Locale.forLanguageTag(AppLanguage.selected(this))) }
 
     /** Bukiet „Nagrania” zawsze na końcu listy bukietów. */
-    private fun withRec(bq: List<Bouquet>) = bq.filter { !isRecRef(it.ref) } +
+    private fun withRec(bq: List<Bouquet>) = bq.filter { !isVirtual(it.ref) } +
         (if (REC_REF in prefs.hiddenBouquets) emptyList() else listOf(Bouquet(getString(R.string.player_recordings), REC_REF))) +
         (if (REC_LOCAL_BOUQUET in prefs.hiddenBouquets || prefs.tsMin <= 0) emptyList()
-            else listOf(Bouquet(getString(R.string.player_local_recordings), REC_LOCAL_BOUQUET)))
+            else listOf(Bouquet(getString(R.string.player_local_recordings), REC_LOCAL_BOUQUET))) +
+        // historia na końcu — ◀ z pierwszego bukietu przechodzi od razu na nią
+        (if (HIST_BOUQUET in prefs.hiddenBouquets) emptyList() else listOf(Bouquet(getString(R.string.player_history), HIST_BOUQUET)))
+
+    private fun historyChannels(): List<Channel> = prefs.history.mapIndexed { i, (ref, name) -> Channel(i + 1, name, ref) }
 
     /** Kanały bukietu albo (dla „Nagrania”) zawartość bieżącego katalogu nagrań. Poza wątkiem UI. */
     private fun channelsOf(bq: Bouquet): List<Channel> {
+        if (bq.ref == HIST_BOUQUET) return historyChannels()
         if (bq.ref == REC_LOCAL_BOUQUET) {
             val base = localBase() ?: return emptyList()
             val recording = localRec?.pin?.dir?.absolutePath
@@ -4312,7 +4446,7 @@ class PlayerActivity : Activity() {
         io.execute {
             var lookupError: Exception? = null
             for ((bi, b) in bq.withIndex()) {
-                if (isRecRef(b.ref)) continue
+                if (isVirtual(b.ref)) continue
                 val ch = try {
                     api.channels(b)
                 } catch (e: Exception) {

@@ -45,7 +45,7 @@
     <string name="buffer_play_shared">bufor timeshiftu %1$d min</string>
     <string name="buffer_play_short">bufor %1$d min</string>
     <string name="ts_delay_buffer_play">od razu (odtwarzanie przez bufor)</string>
-    <string name="setting_bg_buffer">Bufor poprzednich kanałów (zapis w tle, razem najwyżej 3 kanały)</string>
+    <string name="setting_bg_buffer">Bufor poprzednich kanałów (zapis w tle)</string>
     <string name="setting_bg_buffer_needs">wymaga odtwarzania przez bufor</string>
     <string name="setting_bg_buffer_same">taki sam jak timeshift (%1$d min)</string>
     <string name="setting_bg_buffer_manual">%1$d min</string>
@@ -75,4 +75,13 @@
     <string name="pip_pos_tr_down">prawy górny róg w dół</string>
     <string name="pip_pos_bl_up">lewy dolny róg w górę</string>
     <string name="pip_pos_br_up">prawy dolny róg w górę</string>
+    <string name="setting_bg_buffer_1">1 kanał</string>
+    <string name="setting_bg_buffer_n">%1$d kanały</string>
+    <string name="setting_bg_buffer_time">Czas bufora poprzednich kanałów</string>
+    <string name="player_history">Historia</string>
+    <string name="player_bgrec_event">Zapisz bieżącą audycję</string>
+    <string name="player_bgrec_now">Zapisz bufor do teraz (%1$s)</string>
+    <string name="player_bgrec_until">Zapisz do przełączenia / usunięcia bufora</string>
+    <string name="player_bgrec_stop">Zakończ zapis z bufora</string>
+    <string name="player_localrec_reason_buffer_closed">zamknięto bufor kanału</string>
 </resources>

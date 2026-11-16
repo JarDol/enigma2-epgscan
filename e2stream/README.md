@@ -173,6 +173,9 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 * preferowany język dźwięku i AC3,
 * log przez FTP: użytkownik (root), hasło, katalog na dekoderze.
 
+**Historia** – bukiet z ostatnio oglądanymi kanałami (najnowszy na górze, do 50), na końcu listy bukietów
+(◀ z pierwszego bukietu); można go ukryć w *Widocznych bukietach*.
+
 **Pamięć masowa** – jedno miejsce na nośnik i wszystko, co z niego korzysta:
 * nośnik: dysk USB / karta, pamięć urządzenia (tylko za zgodą — zużycie pamięci flash) albo „Brak”,
 * odtwarzanie przez bufor (domyślnie wyłączone): jedno połączenie z dekoderem zapisuje strumień do bufora na
@@ -180,10 +183,13 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
   i powrót na żywo nie otwierają nowego połączenia (bez dziury w buforze). Z timeshiftem bufor jest wspólny; bez
   timeshiftu ma stałe 5 min. Bez nośnika (albo po jego awarii) odtwarzanie wraca do bezpośredniego, a po podłączeniu
   dysku znów idzie przez bufor (od następnego startu kanału),
-* bufor poprzednich kanałów (przy odtwarzaniu przez bufor): *Wyłączony / Taki sam jak timeshift / Ręczny w minutach*
-  (najwyżej jak timeshift). Po przełączeniu poprzedni kanał zapisuje się dalej w tle (razem z bieżącym najwyżej 3 kanały;
-  przy kolejnym wypada najdawniej opuszczony). Powrót na taki kanał — obraz od razu z jego bufora, bez czekania na dekoder,
-  z możliwością cofnięcia do tego, co leciało w tym czasie,
+* bufor poprzednich kanałów (przy odtwarzaniu przez bufor): *Wyłączony / 1 / 2 / 3 kanały* zapisywane w tle; przy
+  włączonym osobna pozycja *Czas bufora poprzednich kanałów*: taki sam jak timeshift albo ręczny w minutach (najwyżej jak
+  timeshift). Przy kolejnym przełączeniu wypada najdawniej opuszczony kanał. Powrót na taki kanał — obraz od razu z jego
+  bufora, z możliwością cofnięcia do tego, co leciało w tym czasie. Na listach kanałów takie kanały mają znacznik **B**
+  (● B — trwa zapis); długie OK pokazuje bieżącą audycję i dodatkowy rząd przycisków zapisu bufora na dysk:
+  *Zapisz bieżącą audycję*, *Zapisz bufor do teraz*, *Zapisz do przełączenia / usunięcia bufora* (po przełączeniu na ten
+  kanał zapis trwa dalej jak nagranie bieżącego kanału),
 * PiP (okna z kanałami z bufora w tle) — w przygotowaniu, ukryte w wydaniu stabilnym,
 * timeshift (długość bufora, automatyczny start — przy odtwarzaniu przez bufor zawsze od razu, kroki przewijania, WSTECZ na pustym ekranie),
 * nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,

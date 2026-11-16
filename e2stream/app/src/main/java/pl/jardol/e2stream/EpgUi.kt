@@ -178,7 +178,8 @@ class EpgUi(
 
     // ------------------------------------------------------------ audycja
 
-    fun showEvent(ev: EpgEvent, ch: Channel?, scheduledTimer: ZapTimers.Timer? = null, onReturn: () -> Unit = {}) {
+    fun showEvent(ev: EpgEvent, ch: Channel?, scheduledTimer: ZapTimers.Timer? = null, onReturn: () -> Unit = {},
+                  extraBtns: List<TvDialog.Btn> = emptyList()) {
         // referencja w pełnej postaci z listy kanałów (z paczki EPG przychodzi skrócona: bez końcowego „:”)
         val ref = (ch?.ref?.takeIf { it.isNotBlank() } ?: ev.sref).let { if (it.count { c -> c == ':' } == 9) "$it:" else it }
         val name = ev.sname.ifBlank { ch?.name ?: "" }
@@ -255,7 +256,7 @@ class EpgUi(
         // nagłówek jak wiersz listy kanałów (ikona, kanał, tytuł, czas, postęp), niżej opis, akcje na dole
         TvDialog.panel(a, null, a.getString(R.string.epg_hint_actions), btns, widthFrac = 0.8f,
             onBack = returnToSchedule, focusChip = true, timeoutSec = Prefs(a).actionDialogSec,
-            onTimeout = returnToSchedule) { ctx, _ ->
+            onTimeout = returnToSchedule, chips2 = extraBtns) { ctx, _ ->
             EventCard.content(ctx, ev, ref, name, EventCard.body(ev).ifEmpty { a.getString(R.string.epg_no_description) })
         }
     }
@@ -356,17 +357,24 @@ class EpgUi(
     // ------------------------------------------------------------ EPG wydarzenia
 
     /** Od razu opis bieżącej audycji kanału. */
-    fun showCurrentEvent(ch: Channel? = host.current()) {
+    /** [extra] — dodatkowy rząd przycisków (dostaje bieżącą audycję albo null, gdy EPG brak). */
+    fun showCurrentEvent(ch: Channel? = host.current(), extra: ((EpgEvent?) -> List<TvDialog.Btn>)? = null) {
         if (ch == null) return
         io.execute {
             val ev = try { load(ch.ref) } catch (e: Exception) {
-                a.runOnUiThread { host.message(a.getString(R.string.epg_error, e.message)) }
-                return@execute
+                if (extra != null) emptyList() else {
+                    a.runOnUiThread { host.message(a.getString(R.string.epg_error, e.message)) }
+                    return@execute
+                }
             }
             val n = now()
             val cur = ev.firstOrNull { it.begin <= n && it.end > n } ?: ev.firstOrNull { it.begin > n }
             a.runOnUiThread {
-                if (cur == null) host.message(a.getString(R.string.epg_no_epg, ch.name)) else showEvent(cur, ch)
+                when {
+                    cur != null -> showEvent(cur, ch, extraBtns = extra?.invoke(cur.takeIf { it.begin <= now() && it.end > now() }).orEmpty())
+                    extra != null -> TvDialog.confirm(a, ch.name, a.getString(R.string.epg_no_epg, ch.name), extra(null))
+                    else -> host.message(a.getString(R.string.epg_no_epg, ch.name))
+                }
             }
         }
     }

@@ -38,6 +38,8 @@ data class DecoderTimer(
 const val REC_BOUQUET = "e2stream:nagrania"
 /** Bukiet „Nagrania lokalne” (nagrania z bufora timeshiftu na tym urządzeniu). */
 const val REC_LOCAL_BOUQUET = "e2stream:nagrania-lokalne"
+/** Bukiet „Historia” — ostatnio oglądane kanały (z ustawień aplikacji, nie z dekodera). */
+const val HIST_BOUQUET = "e2stream:historia"
 
 /** Nagranie (albo katalog) na dysku dekodera. */
 class Recording(
