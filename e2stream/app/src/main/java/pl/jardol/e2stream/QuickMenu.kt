@@ -17,12 +17,14 @@ object QuickMenu {
         Entry("search", R.string.menu_epg_search),
         Entry("zap_timers", R.string.menu_scheduled_switches),
         Entry("decoder_timers", R.string.menu_receiver_timers),
+        Entry("engine", R.string.action_engine),
+        Entry("tunneling", R.string.action_tunneling),
         Entry("stats", R.string.setting_on_screen_statistics),
         Entry("send_log", R.string.action_send_log),
     )
 
     /** Domyślnie ukryte (EPG jest pod klawiszami i na liście kanałów). */
-    val HIDDEN_BY_DEFAULT = setOf("event", "channel_epg", "multi_epg", "search")
+    val HIDDEN_BY_DEFAULT = setOf("event", "channel_epg", "multi_epg", "search", "engine", "tunneling")
 
     /** Pozycje dodane później — widoczne domyślnie także przy starszym zapisie widoczności. */
     val ADDED_LATER = setOf("buffered", "stats", "send_log", "av_shift", "pip")

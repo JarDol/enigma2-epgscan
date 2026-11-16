@@ -532,7 +532,7 @@ class Prefs(ctx: Context) {
             val stored = sp.getStringSet("quickMenuVisible", null) ?: return HashSet(all - QuickMenu.HIDDEN_BY_DEFAULT)
             // pozycje nieznane w chwili zapisu (nowsze wersje) — widoczne
             val known = sp.getStringSet("quickMenuKnown", null) ?: (all - QuickMenu.TOP - QuickMenu.ADDED_LATER)
-            return HashSet(stored + (all - known))
+            return HashSet(stored + (all - known - QuickMenu.HIDDEN_BY_DEFAULT))
         }
         set(v) = sp.edit().putStringSet("quickMenuVisible", HashSet(v))
             .putStringSet("quickMenuKnown", HashSet(QuickMenu.configurable.map { it.id })).apply()

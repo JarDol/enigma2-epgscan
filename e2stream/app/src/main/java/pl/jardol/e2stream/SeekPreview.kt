@@ -333,7 +333,7 @@ object TsFrames {
      * z ostatniej oddanej klatki (najpełniejszy przy odświeżaniu pasami) trafia do [take]. Wynik: true — był obraz.
      * Dekoder bez powierzchni (obraz do pamięci); po tym gotowy do flush() (wywołuje strona wołająca).
      */
-    fun decodeImage(c: MediaCodec, buf: ByteArray, ends: IntArray, timeoutMs: Long, take: (android.media.Image) -> Unit): Boolean {
+    fun decodeImage(c: MediaCodec, buf: ByteArray, ends: IntArray, timeoutMs: Long, first: Boolean = false, take: (android.media.Image) -> Unit): Boolean {
         val t0 = SystemClock.elapsedRealtime()
         val info = MediaCodec.BufferInfo()
         var next = 0
@@ -359,7 +359,8 @@ object TsFrames {
                     val end = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
                     if (info.size > 0) { if (held >= 0) c.releaseOutputBuffer(held, false); held = oi }
                     else c.releaseOutputBuffer(oi, false)
-                    if (end) break
+                    // pełna klatka kluczowa: pierwsza oddana (dalsze — klatki różnicowe bez wszystkich odniesień)
+                    if (end || (first && held >= 0)) break
                 }
             }
             if (held < 0) return false
@@ -396,6 +397,46 @@ object TsFrames {
                 val sx = crop.left + x * cw / w
                 val cx = sx shr 1
                 val yy = ((yb.get(yRow + sx * yp).toInt() and 0xFF) - 16) * 298
+                val uu = (ub.get(uRow + cx * up).toInt() and 0xFF) - 128
+                val vv = (vb.get(vRow + cx * vp).toInt() and 0xFF) - 128
+                var r = (yy + 459 * vv + 128) shr 8
+                var g = (yy - 55 * uu - 136 * vv + 128) shr 8
+                var bl = (yy + 541 * uu + 128) shr 8
+                if (r < 0) r = 0 else if (r > 255) r = 255
+                if (g < 0) g = 0 else if (g > 255) g = 255
+                if (bl < 0) bl = 0 else if (bl > 255) bl = 255
+                out[o++] = (0xFF shl 24) or (r shl 16) or (g shl 8) or bl
+            }
+        }
+    }
+
+    /**
+     * Cała klatka w pełnej rozdzielczości [w]×[h] jako ARGB; przeplot usuwany uśrednieniem sąsiednich linii jasności
+     * (bez „grzebienia”, a ostrzej niż jeden półobraz); przy obrazie progresywnym — lekkie, niewidoczne zmiękczenie.
+     */
+    fun blendArgb(img: android.media.Image, w: Int, h: Int, out: IntArray) {
+        val crop = img.cropRect
+        val cw = crop.width()
+        val ch = crop.height()
+        val py = img.planes[0]; val pu = img.planes[1]; val pv = img.planes[2]
+        val yb = py.buffer; val ub = pu.buffer; val vb = pv.buffer
+        val ys = py.rowStride; val yp = py.pixelStride
+        val us = pu.rowStride; val up = pu.pixelStride
+        val vs = pv.rowStride; val vp = pv.pixelStride
+        var o = 0
+        for (y in 0 until h) {
+            val sy = crop.top + y * ch / h
+            val sy2 = minOf(sy + 1, crop.top + ch - 1)
+            val cy = sy shr 1
+            val r1 = sy * ys
+            val r2 = sy2 * ys
+            val uRow = cy * us
+            val vRow = cy * vs
+            for (x in 0 until w) {
+                val sx = crop.left + x * cw / w
+                val cx = sx shr 1
+                val l = ((yb.get(r1 + sx * yp).toInt() and 0xFF) + (yb.get(r2 + sx * yp).toInt() and 0xFF)) shr 1
+                val yy = (l - 16) * 298
                 val uu = (ub.get(uRow + cx * up).toInt() and 0xFF) - 128
                 val vv = (vb.get(vRow + cx * vp).toInt() and 0xFF) - 128
                 var r = (yy + 459 * vv + 128) shr 8
@@ -455,10 +496,14 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
     private var codecMime = ""
     private var data = ByteArray(3_000_000)
     private var au = ByteArray(3_000_000)
-    private val W = 960
-    private val H = 540
+    private val W = 1920
+    private val H = 1080
     private val px = IntArray(W * H)
     private val bmps = arrayOfNulls<Bitmap>(2)
+    private var timingLogged = false
+    /** Czy od ostatniego żądania pojawiła się już klatka (odtwarzanie od miejsca czeka na nią do ~2,5 s). */
+    @Volatile var frameReady = false
+        private set
     private var bmpTurn = 0
 
     private fun ensureView() {
@@ -551,6 +596,7 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
     }
 
     private fun submit(task: (Long) -> Unit) {
+        frameReady = false
         val s = seq.incrementAndGet()
         job = { task(s) }
         synchronized(lock) {
@@ -590,7 +636,9 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
         val name = TsFrames.swDecoder(mime) ?: run { AppLog.i("podgląd przewijania: brak programowego dekodera ${video.second}"); return }
         val k = TsFrames.keyframe(data, len, video.first, from)
         if (k < 0) return
-        val ends = TsFrames.picture(data, len, video.first, video.second, k, au, 25).ends
+        val t0 = SystemClock.elapsedRealtime()
+        val pic = TsFrames.picture(data, len, video.first, video.second, k, au, 25)
+        val ends = pic.ends
         if (ends.isEmpty() || s != seq.get()) return
         var c = codec
         if (c != null && codecMime != mime) { release(); c = null }
@@ -601,11 +649,16 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
         var ok = false
         try {
             val bmp = bmps[bmpTurn] ?: Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888).also { bmps[bmpTurn] = it }
-            val shown = TsFrames.decodeImage(c, au, ends, 3000) { img ->
-                if (s == seq.get()) { TsFrames.fieldArgb(img, W, H, px); bmp.setPixels(px, 0, W, 0, 0, W, H) }
+            val shown = TsFrames.decodeImage(c, au, ends, 3000, first = pic.full) { img ->
+                if (s == seq.get()) { TsFrames.blendArgb(img, W, H, px); bmp.setPixels(px, 0, W, 0, 0, W, H) }
+            }
+            if (shown && !timingLogged) {
+                timingLogged = true
+                AppLog.i("podgląd przewijania: klatka po ${SystemClock.elapsedRealtime() - t0} ms (${video.second} ${ends.size} jedn., ${au.size / 1000} kB bufor)")
             }
             if (shown && s == seq.get()) {
                 bmpTurn = 1 - bmpTurn
+                frameReady = true
                 ui.post { if (s == seq.get()) iv?.let { it.setImageBitmap(bmp); it.visibility = View.VISIBLE } }
             }
             ok = true

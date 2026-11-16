@@ -350,7 +350,18 @@ class PlayerActivity : Activity() {
             }
         }
         val crash = prefs.lastCrash
-        val attempt = prefs.playbackAttempt
+        var attempt = prefs.playbackAttempt
+        // próba przerwana aktualizacją aplikacji (instalacja zamknęła proces w trakcie startu kanału) — to nie awaria
+        val attemptAt = attempt.substringAfterLast(" @", "").toLongOrNull()
+        if (attempt.isNotEmpty() && crash.isEmpty()) {
+            val updated = try { packageManager.getPackageInfo(packageName, 0).lastUpdateTime } catch (_: Exception) { 0L }
+            if (attemptAt != null && updated >= attemptAt - 60_000) {   // instalacja tuż przed próbą albo po niej
+                AppLog.i("start: poprzednia próba odtwarzania przerwana aktualizacją aplikacji — bez trybu bezpiecznego")
+                prefs.playbackAttempt = ""
+                attempt = ""
+            }
+        }
+        attempt = attempt.substringBeforeLast(" @")
         if (crash.isNotEmpty() || attempt.isNotEmpty()) {
             prefs.lastCrash = ""
             val details = buildList {
@@ -1179,7 +1190,7 @@ class PlayerActivity : Activity() {
             vlc?.release(); vlc = null
             return
         }
-        if (!playbackRecovery.hasPlayed) prefs.playbackAttempt = "${appVersion()} / ${prefs.engine.uppercase()}"
+        if (!playbackRecovery.hasPlayed) prefs.playbackAttempt = "${appVersion()} / ${prefs.engine.uppercase()} @${System.currentTimeMillis()}"
         if (!recMode && prefs.bufPlay) {
             if (bufReady()) { startBufLive(url, bufReuse); return }
             if (bufLive) bufStop("nośnik niedostępny — odtwarzanie bezpośrednie")
@@ -2832,33 +2843,27 @@ class PlayerActivity : Activity() {
         val mime = TsFrames.mime(type) ?: return Grab(-2, "nieobsługiwany obraz $type")
         val swName = swDecoderName(mime) ?: return Grab(-2, "brak programowego dekodera $type")
         val b = c.buf
-        val kfs = b.recentKeyframes(4)
-        if (kfs.isEmpty()) return Grab(-1, "brak klatki kluczowej w pamięci (bufor ${b.total / 1000} kB)")
+        // klatki kluczowe z całego bufora (starsze z dysku) — przy odświeżaniu pasami potrzebna jest para kolejnych
+        val kfs = b.recentKeyframes(4, ramOnly = false)
+        if (kfs.isEmpty()) return Grab(-1, "brak klatki kluczowej w buforze (${b.total / 1000} kB)")
         var ends = IntArray(0)
+        var full = false
         var gap = false
-        var fallback: IntArray? = null           // niepełny obraz bez następnej klatki kluczowej — gdy nic lepszego
-        for ((ki, kf) in kfs.withIndex()) {
+        for (kf in kfs) {
             val len = minOf(b.total - kf, PIP_READ_MAX).toInt()
             if (len < 188 * 4) continue
             if (pipData.size < len) pipData = ByteArray(len)
             if (pipAu.size < len) pipAu = ByteArray(len)
-            val got = b.readRam(kf, pipData, 0, len)
+            var got = 0
+            while (got < len) { val n = b.read(kf + got, pipData, got, len - got); if (n <= 0) break; got += n }
             if (got < 188 * 4) continue
             val pic = TsFrames.picture(pipData, got, vpid, type, 0, pipAu)
             if (pic.gap && pic.ends.isEmpty()) gap = true
-            if (pic.ends.isEmpty()) continue
-            // odświeżanie pasami: obraz pełny dopiero przed następną klatką kluczową — starsza klatka, jeśli trzeba
-            if (pic.full || pic.toNextKey || ki == kfs.size - 1) { ends = pic.ends; break }
-            if (fallback == null && !pic.gap) fallback = pic.ends
+            // pełna klatka kluczowa — od razu; odświeżanie pasami — tylko gdy dochodzi do następnej klatki kluczowej
+            // (inaczej obraz niepełny — zostaje poprzedni)
+            if (pic.ends.isNotEmpty() && (pic.full || pic.toNextKey)) { ends = pic.ends; full = pic.full; break }
         }
-        if (ends.isEmpty() && fallback != null) {
-            // ponownie (pipAu nadpisany przez starsze próby) — najnowsza klatka
-            val kf = kfs[0]
-            val len = minOf(b.total - kf, PIP_READ_MAX).toInt()
-            val got = b.readRam(kf, pipData, 0, len)
-            if (got >= 188 * 4) ends = TsFrames.picture(pipData, got, vpid, type, 0, pipAu).ends
-        }
-        if (ends.isEmpty()) return if (gap) Grab(-3, "luka") else Grab(-1, "klatka kluczowa jeszcze niekompletna (PID $vpid $type)")
+        if (ends.isEmpty()) return if (gap) Grab(-3, "luka") else Grab(-1, "brak pełnego obrazu (PID $vpid $type)")
         val au = ends.last()
         var maxUnit = ends[0]
         for (i in 1 until ends.size) maxUnit = maxOf(maxUnit, ends[i] - ends[i - 1])
@@ -2879,7 +2884,7 @@ class PlayerActivity : Activity() {
         var shown = false
         var ok = false
         try {
-            shown = TsFrames.decodeImage(codec, pipAu, ends, 4000) { img ->
+            shown = TsFrames.decodeImage(codec, pipAu, ends, 4000, first = full) { img ->
                 TsFrames.fieldArgb(img, pw, ph, w.px)
                 bmp.setPixels(w.px, 0, pw, 0, 0, pw, ph)
             }
@@ -3291,13 +3296,14 @@ class PlayerActivity : Activity() {
         val base = if (tsPending != 0L) tsPending else tsShownWall()
         tsPending = timeshiftSeekTarget(base, delta, b.oldestWall, SystemClock.elapsedRealtime())
         // podgląd: obraz zatrzymany, na ekranie klatka z miejsca na pasku
-        if (pvStart()) seekPreview.requestBuffer(b, tsPending, (tsRecAn ?: analyzer)?.videoStream)
+        if (pvStart()) { pvLastKey = SystemClock.elapsedRealtime(); seekPreview.requestBuffer(b, tsPending, (tsRecAn ?: analyzer)?.videoStream) }
         tsShowBanner(sticky = !pvPlaying())
         ui.removeCallbacks(tsApply)
         ui.postDelayed(tsApply, 700)
     }
 
     private val tsApply = Runnable {
+        if (pvWaitFrame { ui.postDelayed(tsApply, 150) }) return@Runnable
         val b = tsBuf
         val requested = tsPending
         tsPending = 0
@@ -3321,6 +3327,16 @@ class PlayerActivity : Activity() {
     // na pasku na całym ekranie (dekoder programowy); po puszczeniu klawiszy odtwarzanie od tego miejsca
     private val seekPreview by lazy { SeekPreview(this, zapFrame) }
     private var pvActive = false
+    private var pvLastKey = 0L
+
+    /**
+     * Odtwarzanie od miejsca czeka na klatkę podglądu (dekodowanie / odczyt z dysku bywa dłuższe niż 0,7 s),
+     * najwyżej ~2,5 s od ostatniego klawisza. true — odłożone ([again] ponawia).
+     */
+    private fun pvWaitFrame(again: () -> Unit): Boolean {
+        if (pvActive && !seekPreview.frameReady && SystemClock.elapsedRealtime() - pvLastKey < 2500) { again(); return true }
+        return false
+    }
     private var pvWasPlaying = true
 
     /** Początek przewijania z podglądem (tylko ExoPlayer); false — bez podglądu. */
@@ -4230,6 +4246,7 @@ class PlayerActivity : Activity() {
         // przewijanie zbierane z kilku naciśnięć; podgląd klatki, odtwarzanie od miejsca po 0,7 s bez klawiszy
         val base = if (recPending >= 0) recPending else p.currentPosition
         recPending = (base + deltaMs).coerceIn(0, maxOf(0, known - 1000))
+        pvLastKey = SystemClock.elapsedRealtime()
         seekPreview.requestRecording(src, recPending, known)
         showRecBanner(sticky = !pvWasPlaying)
         ui.removeCallbacks(recApply)
@@ -4238,6 +4255,7 @@ class PlayerActivity : Activity() {
 
     private var recPending = -1L
     private val recApply = Runnable {
+        if (pvWaitFrame { ui.postDelayed(recApply, 150) }) return@Runnable
         val p = player
         val t = recPending
         recPending = -1
@@ -5177,6 +5195,8 @@ class PlayerActivity : Activity() {
             "decoder_timers" to { showDecoderTimers() },
             "stats" to { toggleStats() },
             "av_shift" to { chooseAvShift() },
+            "engine" to { doAct(Act.ENGINE, 0) },
+            "tunneling" to { doAct(Act.TUNNELING, 0) },
             "send_log" to { showMessage(getString(R.string.action_sending_log)); Tools.uploadLog(this, prefs, true) { showMessage(it) } },
         )
         val canRecord = !recMode && prefs.tsMin > 0 && currentUrl != null && localRec == null

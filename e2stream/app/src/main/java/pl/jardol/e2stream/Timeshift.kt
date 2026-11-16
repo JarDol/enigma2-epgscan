@@ -364,8 +364,8 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
     }
 
     /** Pozycje najnowszych klatek kluczowych, które są jeszcze w pamięci (od najnowszej), najwyżej [max]. */
-    fun recentKeyframes(max: Int): LongArray = synchronized(lock) {
-        val lo = total - ringLen
+    fun recentKeyframes(max: Int, ramOnly: Boolean = true): LongArray = synchronized(lock) {
+        val lo = if (ramOnly) total - ringLen else (segs.firstOrNull()?.start ?: 0)
         val out = ArrayList<Long>(max)
         for (k in kfCount - 1 downTo 0) {
             val p = kfPos[(kfHead + k) % KF_MAX]
