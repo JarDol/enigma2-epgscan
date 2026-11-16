@@ -165,8 +165,9 @@ class PlayerActivity : Activity() {
     private var player: ExoPlayer? = null
     private var watchdog: StreamWatchdog? = null
     private val ui = Handler(Looper.getMainLooper())
-    private val io = Executors.newSingleThreadExecutor()
-    private val probeIo = Executors.newSingleThreadExecutor()
+    // zadania zgłoszone po zamknięciu okna (np. opóźnione EIT, odpowiedzi sieci) są pomijane zamiast awarii
+    private val io: java.util.concurrent.ExecutorService = quietSingleThread()
+    private val probeIo: java.util.concurrent.ExecutorService = quietSingleThread()
 
     private var bouquets: List<Bouquet> = emptyList()
     private var playBouquet = 0
@@ -641,6 +642,7 @@ class PlayerActivity : Activity() {
     override fun onDestroy() {
         super.onDestroy()
         if (Tools.beforeManualUpdate === stopForUpdate) Tools.beforeManualUpdate = null
+        ui.removeCallbacksAndMessages(null)
         io.shutdownNow()
         probeIo.shutdownNow()
     }
@@ -5163,3 +5165,7 @@ class PlayerActivity : Activity() {
         }
     }
 }
+
+/** Jeden wątek; po shutdown kolejne zadania są cicho odrzucane (bez RejectedExecutionException). */
+private fun quietSingleThread() = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+    java.util.concurrent.LinkedBlockingQueue(), java.util.concurrent.ThreadPoolExecutor.DiscardPolicy())
