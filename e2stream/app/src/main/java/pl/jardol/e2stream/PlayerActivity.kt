@@ -2445,7 +2445,11 @@ class PlayerActivity : Activity() {
     }
 
     /** Linia statystyk: łącze, liczba strumieni, luki z 10 min. */
-    private fun netStatsLine(): String = getString(R.string.diag_net, netLink?.toString() ?: "?", streamsMbps().first, gaps10min())
+    private fun netStatsLine(): String {
+        val l = NetInfo.read(this) ?: netLink
+        if (l != null) netLink = l
+        return getString(R.string.diag_net, l?.toString() ?: "?", streamsMbps().first, gaps10min())
+    }
 
     /**
      * Co 30 s: luki w strumieniach. Przy otwartych równoległych strumieniach (bufory w tle / PiP) i lukach w ≥ 2
@@ -3302,7 +3306,7 @@ class PlayerActivity : Activity() {
         ui.postDelayed(tsApply, 700)
     }
 
-    private val tsApply = Runnable {
+    private val tsApply: Runnable = Runnable {
         if (pvWaitFrame { ui.postDelayed(tsApply, 150) }) return@Runnable
         val b = tsBuf
         val requested = tsPending
@@ -4254,7 +4258,7 @@ class PlayerActivity : Activity() {
     }
 
     private var recPending = -1L
-    private val recApply = Runnable {
+    private val recApply: Runnable = Runnable {
         if (pvWaitFrame { ui.postDelayed(recApply, 150) }) return@Runnable
         val p = player
         val t = recPending
