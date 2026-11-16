@@ -8,6 +8,7 @@ enum class Act(val labelRes: Int) {
     DEFAULT_OK(R.string.action_default_ok),
     CHANNEL_BANNER(R.string.action_banner),
     CHANNEL_LIST(R.string.action_channel_list),
+    HISTORY_LIST(R.string.action_history_list),
     EPG_EVENT(R.string.action_event_epg),
     EPG_CHANNEL(R.string.action_channel_epg),
     MULTI_EPG(R.string.action_multi_epg),
@@ -70,7 +71,7 @@ object KeyMap {
         KeyEvent.KEYCODE_DPAD_LEFT to Act.EPG_CHANNEL,
         KeyEvent.KEYCODE_DPAD_RIGHT to Act.MULTI_EPG,
         KeyEvent.KEYCODE_DPAD_UP to Act.CHANNEL_LIST,
-        KeyEvent.KEYCODE_DPAD_DOWN to Act.CHANNEL_LIST,
+        KeyEvent.KEYCODE_DPAD_DOWN to Act.HISTORY_LIST,
     )
 
     val navigationBannerDefaults = mapOf(
@@ -78,7 +79,7 @@ object KeyMap {
         KeyEvent.KEYCODE_DPAD_LEFT to Act.EPG_CHANNEL,
         KeyEvent.KEYCODE_DPAD_RIGHT to Act.MULTI_EPG,
         KeyEvent.KEYCODE_DPAD_UP to Act.CHANNEL_LIST,
-        KeyEvent.KEYCODE_DPAD_DOWN to Act.CHANNEL_LIST,
+        KeyEvent.KEYCODE_DPAD_DOWN to Act.HISTORY_LIST,
     )
 
     fun navigationMap(defaults: Map<Int, Act>, overrides: String): MutableMap<Int, Act> {

@@ -173,8 +173,9 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 * preferowany język dźwięku i AC3,
 * log przez FTP: użytkownik (root), hasło, katalog na dekoderze.
 
-**Historia** – bukiet z ostatnio oglądanymi kanałami (najnowszy na górze, do 50), na końcu listy bukietów
-(◀ z pierwszego bukietu); można go ukryć w *Widocznych bukietach*.
+**Historia** – ostatnio oglądane kanały ze wszystkich bukietów (najnowszy na górze, do 50). Osobne okno pod klawiszem
+▼ (▲ — zwykła lista kanałów; przypisanie do zmiany w klawiszach, akcja *Lista kanałów — historia*). Dodatkowo bukiet
+„Historia” na końcu listy bukietów (◀ z pierwszego bukietu), do ukrycia w *Widocznych bukietach*.
 
 **Pamięć masowa** – jedno miejsce na nośnik i wszystko, co z niego korzysta:
 * nośnik: dysk USB / karta, pamięć urządzenia (tylko za zgodą — zużycie pamięci flash) albo „Brak”,
@@ -186,10 +187,11 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 * bufor poprzednich kanałów (przy odtwarzaniu przez bufor): *Wyłączony / 1 / 2 / 3 kanały* zapisywane w tle; przy
   włączonym osobna pozycja *Czas bufora poprzednich kanałów*: taki sam jak timeshift albo ręczny w minutach (najwyżej jak
   timeshift). Przy kolejnym przełączeniu wypada najdawniej opuszczony kanał. Powrót na taki kanał — obraz od razu z jego
-  bufora, z możliwością cofnięcia do tego, co leciało w tym czasie. Na listach kanałów takie kanały mają znacznik **B**
-  (● B — trwa zapis); długie OK pokazuje bieżącą audycję i dodatkowy rząd przycisków zapisu bufora na dysk:
-  *Zapisz bieżącą audycję*, *Zapisz bufor do teraz*, *Zapisz do przełączenia / usunięcia bufora* (po przełączeniu na ten
-  kanał zapis trwa dalej jak nagranie bieżącego kanału),
+  bufora, z możliwością cofnięcia do tego, co leciało w tym czasie. Na listach kanałów (także w historii) takie kanały
+  mają znacznik **B** (● B — trwa zapis). Długie OK na takim kanale: bieżąca audycja i drugi rząd przycisków —
+  *Zakończ bufor* i *Nagraj bufor…* (*Bieżąca audycja* / *Bufor do teraz* / *Do przełączenia / usunięcia bufora*; w trakcie
+  zapisu *Zakończ zapis z bufora*). To samo w menu (długie OK) → *Buforowane kanały*. Po przełączeniu na kanał zapis trwa
+  dalej jak nagranie bieżącego kanału,
 * PiP (okna z kanałami z bufora w tle) — w przygotowaniu, ukryte w wydaniu stabilnym,
 * timeshift (długość bufora, automatyczny start — przy odtwarzaniu przez bufor zawsze od razu, kroki przewijania, WSTECZ na pustym ekranie),
 * nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,

@@ -1747,7 +1747,27 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- panel listy kanałów
 
+    /** Lista „Historia” jako osobne okno (klawisz w dół): ostatnio oglądane kanały ze wszystkich bukietów. */
+    private var panelHist = false
+
+    private fun showHistory() {
+        if (bouquets.isEmpty() || recMode) { showPanel(); return }
+        val h = historyChannels()
+        if (h.isEmpty()) { showPanel(); return }
+        panelHist = true
+        panelBouquet = -1
+        panelList = h
+        val cur = playList.getOrNull(playIndex)?.ref?.let { OpenWebif.key(it) }
+        refreshPanel(h.indexOfFirst { OpenWebif.key(it.ref) == cur }.coerceAtLeast(0))
+        panel.visibility = View.VISIBLE
+        resetPanelTimer()
+        banner.visibility = View.GONE
+        list.requestFocus()
+        loadPanelEpg()
+    }
+
     private fun showPanel() {
+        panelHist = false
         if (bouquets.isEmpty()) return
         // w trakcie nagrania albo po powrocie z niego — lista otwiera się na nagraniach
         if ((recMode || panelOnRec) && bouquets.any { it.ref == recBqRef }) { showRecordings(); return }
@@ -1797,13 +1817,13 @@ class PlayerActivity : Activity() {
     private fun refreshPanel(sel: Int) {
         val bn = bouquets.getOrNull(panelBouquet)
         val sub = if (bn?.ref == REC_REF && recStack.isNotEmpty()) "  ›  " + recDir.trimEnd('/').substringAfterLast('/') else ""
-        panelTitle.text = "◀  ${bn?.name ?: ""}$sub  ▶"
+        panelTitle.text = if (panelHist) getString(R.string.player_history) else "◀  ${bn?.name ?: ""}$sub  ▶"
         adapter.notifyDataSetChanged()
         if (panelList.isNotEmpty()) list.setSelection(sel.coerceIn(0, panelList.size - 1))
     }
 
     private fun panelBouquetStep(d: Int) {
-        if (bouquets.isEmpty()) return
+        if (bouquets.isEmpty() || panelHist) return
         val b = ((panelBouquet + d) % bouquets.size + bouquets.size) % bouquets.size
         panelBouquet = b
         if (b == playBouquet) {
@@ -1840,11 +1860,12 @@ class PlayerActivity : Activity() {
     }
 
     private fun loadPanelEpg() {
-        val b = bouquets.getOrNull(panelBouquet) ?: return
-        if (isRecRef(b.ref)) return
+        val b = bouquets.getOrNull(panelBouquet)
+        if (b == null && !panelHist) return
+        if (b != null && isRecRef(b.ref)) return
         val target = panelList
         io.execute {
-            val map = if (epg.eitOnly || b.ref == HIST_BOUQUET) emptyMap() else try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
+            val map = if (b == null || epg.eitOnly || b.ref == HIST_BOUQUET) emptyMap() else try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
             // kanały, dla których dekoder nie podał bieżącej audycji (np. EPG tylko z paczki EPG Scan
             // pod inną referencją) — z zapisanego EPG, tak jak opis na dole listy
             val n = System.currentTimeMillis() / 1000
@@ -1875,6 +1896,8 @@ class PlayerActivity : Activity() {
         }
         panelOnRec = false          // wybrany kanał TV — lista znów otwiera się na bukiecie kanału
         hidePanel()
+        // okno historii: kanał z jego bukietu (bieżący albo wyszukany w widocznych bukietach)
+        if (panelHist) { zapTo(l[pos].ref); return }
         // ten sam, już odtwarzany kanał — nie uruchamiaj strumienia od nowa
         if (panelBouquet == playBouquet && pos == playIndex && currentUrl != null) {
             playList.getOrNull(playIndex)?.let { showBanner(it) }
@@ -1896,7 +1919,8 @@ class PlayerActivity : Activity() {
             val iv = v.findViewById<android.widget.ImageView>(R.id.icon)
             Picons.show(iv, this@PlayerActivity, c.ref, prefs.picons, prefs.missingPiconLogo)
             val name = v.findViewById<TextView>(R.id.name)
-            val playing = panelBouquet == playBouquet && position == playIndex
+            val playing = if (panelHist) playList.getOrNull(playIndex)?.ref?.let { OpenWebif.key(it) == OpenWebif.key(c.ref) } == true
+                else panelBouquet == playBouquet && position == playIndex
             val selected = position == list.selectedItemPosition && list.hasFocus()
             val label = if (playing) "▶  ${c.name}" else c.name
             // „B” — kanał buforowany w tle (● — w trakcie zapisu z tego bufora)
@@ -3274,19 +3298,74 @@ class PlayerActivity : Activity() {
         }
     }
 
-    /** Przyciski zapisu bufora kanału w tle (długie OK na liście): audycja / do teraz / do przełączenia lub usunięcia. */
-    private fun bgRecButtons(bg: BgChan, c: Channel, ev: EpgEvent?): List<TvDialog.Btn> {
+    /** Długie OK na liście przy kanale z buforem w tle: „Zakończ bufor” i „Nagraj bufor…” (albo „Zakończ zapis”). */
+    private fun bgRecButtons(bg: BgChan, c: Channel, ev: EpgEvent?): List<TvDialog.Btn> = listOf(
+        TvDialog.Btn(getString(R.string.player_bg_close)) { bgDrop(bg, "zakończony ręcznie"); refreshPanelRows() },
         bg.lrec?.let { r ->
-            return listOf(TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
+            TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
                 if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false) }
-            })
+            }
+        } ?: TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bgRecMenu(bg, bg.ch ?: c, ev) },
+    )
+
+    /** Trzy sposoby zapisu bufora kanału w tle. [ev] — bieżąca audycja (null — z EPG / dziennika kanału). */
+    private fun bgRecMenu(bg: BgChan, ch: Channel, ev: EpgEvent?) {
+        if (bg !in bgChans) return
+        val acts = listOf(
+            getString(R.string.player_bgrec_event) to REC_EVENT,
+            getString(R.string.player_bgrec_now, fmtMs(bg.buf.spanMs())) to REC_NOW,
+            getString(R.string.player_bgrec_until) to REC_UNTIL_ZAP,
+        )
+        TvDialog.list(this, getString(R.string.player_bgrec_title, bg.name), acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.45f) { i ->
+            val mode = acts[i].second
+            if (mode != REC_EVENT || ev != null) { bgRecStart(bg, mode, ch, ev); return@list }
+            io.execute {
+                val e = currentEventOf(bg, ch)
+                runOnUiThread {
+                    if (e == null) showMessage(getString(R.string.epg_no_epg, ch.name)) else bgRecStart(bg, REC_EVENT, ch, e)
+                }
+            }
         }
-        val ch = bg.ch ?: c
-        val out = ArrayList<TvDialog.Btn>()
-        if (ev != null) out += TvDialog.Btn(getString(R.string.player_bgrec_event)) { bgRecStart(bg, REC_EVENT, ch, ev) }
-        out += TvDialog.Btn(getString(R.string.player_bgrec_now, fmtMs(bg.buf.spanMs()))) { bgRecStart(bg, REC_NOW, ch, ev) }
-        out += TvDialog.Btn(getString(R.string.player_bgrec_until)) { bgRecStart(bg, REC_UNTIL_ZAP, ch, ev) }
-        return out
+    }
+
+    /** Bieżąca audycja kanału w tle: zapisane EPG, a gdy go brak — dziennik z EIT tego strumienia. */
+    private fun currentEventOf(bg: BgChan, ch: Channel): EpgEvent? {
+        epg.localNow(ch.ref)?.let { return it }
+        val n = System.currentTimeMillis() / 1000
+        return bg.journal.snapshot().lastOrNull { it.begin <= n && it.end > n }?.let {
+            EpgEvent(0, it.begin, it.end - it.begin, it.title, it.desc, "", ch.ref, ch.name)
+        }
+    }
+
+    private fun refreshPanelRows() { if (panel.visibility == View.VISIBLE) adapter.notifyDataSetChanged() }
+
+    /** Menu → Buforowane kanały: lista kanałów w tle, dla każdego zakończenie bufora i zapis na dysk. */
+    private fun showBufferedMenu() {
+        if (bgChans.isEmpty()) return
+        val chans = bgChans.toList()
+        TvDialog.list(this, getString(R.string.player_bg_menu), chans.map { c ->
+            TvDialog.Item((if (c.lrec != null) "● " else "") + c.name, getString(R.string.player_bg_span, fmtMs(c.buf.spanMs())))
+        }, 0, widthFrac = 0.45f) { i ->
+            val bg = chans[i]
+            if (bg !in bgChans) return@list
+            val ch = bg.ch ?: Channel(0, bg.name, "")
+            val acts = ArrayList<Pair<String, () -> Unit>>()
+            acts += getString(R.string.player_bg_close) to { bgDrop(bg, "zakończony ręcznie"); refreshPanelRows() }
+            val r = bg.lrec
+            if (r != null) acts += getString(R.string.player_bgrec_stop) to {
+                if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false) }
+            } else {
+                acts += getString(R.string.player_bgrec_event) to {
+                    io.execute {
+                        val e = currentEventOf(bg, ch)
+                        runOnUiThread { if (e == null) showMessage(getString(R.string.epg_no_epg, ch.name)) else bgRecStart(bg, REC_EVENT, ch, e) }
+                    }
+                }
+                acts += getString(R.string.player_bgrec_now, fmtMs(bg.buf.spanMs())) to { bgRecStart(bg, REC_NOW, ch, null) }
+                acts += getString(R.string.player_bgrec_until) to { bgRecStart(bg, REC_UNTIL_ZAP, ch, null) }
+            }
+            TvDialog.list(this, bg.name, acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.45f) { j -> acts[j].second() }
+        }
     }
 
     /** Zgoda na pamięć urządzenia, limit miejsca — jak przy nagraniu bieżącego kanału — i start zapisu z bufora w tle. */
@@ -3419,6 +3498,7 @@ class PlayerActivity : Activity() {
     /** Lista kanałów otwarta na bukiecie „Nagrania” (albo „Nagrania lokalne”). */
     private fun showRecordings(ref: String = recBqRef) {
         recBqRef = ref
+        panelHist = false
         val i = bouquets.indexOfFirst { it.ref == ref }
         if (i < 0) { panelOnRec = false; showPanel(); return }      // bukiet „Nagrania” ukryty
         panel.visibility = View.VISIBLE
@@ -4194,6 +4274,7 @@ class PlayerActivity : Activity() {
             Act.NONE, Act.DEFAULT_OK -> {}
             Act.CHANNEL_BANNER -> playList.getOrNull(playIndex)?.let { showBanner(it) }
             Act.CHANNEL_LIST -> showPanel()
+            Act.HISTORY_LIST -> showHistory()
             Act.EPG_EVENT -> epg.showCurrentEvent()
             Act.EPG_CHANNEL -> epg.showChannelEpg()
             Act.MULTI_EPG -> epg.showMultiEpg()
@@ -4414,6 +4495,7 @@ class PlayerActivity : Activity() {
                 else -> getString(e.labelRes) to actions.getValue(e.id)
             }
         } + listOfNotNull(
+            if (bgChans.isNotEmpty() && !recMode) getString(R.string.player_bg_menu) to { showBufferedMenu() } else null,
             if (Features.PIP && !recMode && prefs.bufPlay && currentUrl != null) getString(R.string.pip_menu) to { showPipMenu() } else null,
             getString(R.string.message_settings) to { openSettings() })
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->

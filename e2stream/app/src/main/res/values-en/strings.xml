@@ -78,9 +78,15 @@
     <string name="setting_bg_buffer_n">%1$d channels</string>
     <string name="setting_bg_buffer_time">Previous channels buffer length</string>
     <string name="player_history">History</string>
-    <string name="player_bgrec_event">Save current programme</string>
-    <string name="player_bgrec_now">Save buffer until now (%1$s)</string>
-    <string name="player_bgrec_until">Save until switch / buffer removal</string>
+    <string name="player_bgrec_event">Current programme</string>
+    <string name="player_bgrec_now">Buffer until now (%1$s)</string>
+    <string name="player_bgrec_until">Until switch / buffer removal</string>
     <string name="player_bgrec_stop">Stop saving from buffer</string>
     <string name="player_localrec_reason_buffer_closed">channel buffer closed</string>
+    <string name="action_history_list">Channel list — history</string>
+    <string name="player_bg_close">Close buffer</string>
+    <string name="player_bgrec_menu">Record buffer…</string>
+    <string name="player_bgrec_title">Record buffer: %1$s</string>
+    <string name="player_bg_menu">Buffered channels</string>
+    <string name="player_bg_span">%1$s in buffer</string>
 </resources>
