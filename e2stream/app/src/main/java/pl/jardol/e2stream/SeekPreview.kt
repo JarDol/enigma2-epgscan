@@ -196,18 +196,28 @@ object TsFrames {
     }
 
     /** Wynik [picture]: końce kolejnych jednostek dostępu w buforze, czy pierwsza to pełny obraz, czy była luka. */
-    class Pic(val ends: IntArray, val full: Boolean, val toNextKey: Boolean, val gap: Boolean)
+    /**
+     * Wynik [picture]: końce kolejnych jednostek dostępu w buforze, czy pierwsza to pełny obraz, czy doszło do
+     * następnej klatki kluczowej, luka; [spanMs] — ile czasu obrazu obejmują jednostki (z PTS), [needMs] — po ilu ms
+     * obraz jest pełny wg SEI recovery point (-1 — nie podano).
+     */
+    class Pic(val ends: IntArray, val full: Boolean, val toNextKey: Boolean, val gap: Boolean,
+              val spanMs: Long = 0, val needMs: Long = -1)
+
+    private class Col(val n: Int, val toKey: Boolean, val gap: Boolean, val pesOff: IntArray, val pesPts: LongArray)
 
     /**
      * Strumień elementarny obrazu [vpid] od pakietu [from] (klatka kluczowa) do [out] — PES po PES, aż do początku
-     * następnej klatki kluczowej, końca danych albo luki (błąd ciągłości). Wynik: (bajtów, doszło do następnej
-     * klatki kluczowej, luka).
+     * następnej klatki kluczowej, końca danych albo luki (błąd ciągłości); z położeniem i PTS każdego PES-u.
      */
-    private fun collect(d: ByteArray, len: Int, vpid: Int, from: Int, out: ByteArray): Triple<Int, Boolean, Boolean> {
+    private fun collect(d: ByteArray, len: Int, vpid: Int, from: Int, out: ByteArray): Col {
         var n = 0
         var o = from
         var cc = -1
         var started = false
+        val offs = ArrayList<Int>()
+        val ptss = ArrayList<Long>()
+        fun done(toKey: Boolean, gap: Boolean) = Col(n, toKey, gap, offs.toIntArray(), ptss.toLongArray())
         while (o + 188 <= len) {
             if (d[o] != 0x47.toByte()) { o++; continue }
             val pid = ((u(d, o + 1) and 0x1F) shl 8) or u(d, o + 2)
@@ -216,31 +226,72 @@ object TsFrames {
                 val afc = (u(d, o + 3) shr 4) and 3
                 if (afc and 1 != 0) {
                     val c = u(d, o + 3) and 0x0F
-                    if (cc >= 0 && c != cc && c != (cc + 1) and 0x0F) return Triple(n, false, true)
+                    if (cc >= 0 && c != cc && c != (cc + 1) and 0x0F) return done(false, true)
                     cc = c
                 }
                 var p = o + 4
                 if (afc and 2 != 0) p += 1 + u(d, o + 4)
                 if (afc and 1 != 0 && p < o + 188) {
                     if (pusi) {
-                        if (started && isKeyStart(d, o)) return Triple(n, true, false)
+                        if (started && isKeyStart(d, o)) return done(true, false)
                         if (p + 9 > o + 188 || d[p] != 0.toByte() || d[p + 1] != 0.toByte() || d[p + 2] != 1.toByte()) {
-                            if (!started) return Triple(0, false, false)
-                            return Triple(n, false, true)
+                            if (!started) return Col(0, false, false, IntArray(0), LongArray(0))
+                            return done(false, true)
                         }
+                        val t = pts(d, o)
+                        if (t >= 0) { offs += n; ptss += t }
                         p += 9 + u(d, p + 8)
                         started = true
                     }
                     if (started && p < o + 188) {
                         val c = o + 188 - p
-                        if (n + c > out.size) return Triple(n, false, false)
+                        if (n + c > out.size) return done(false, false)
                         System.arraycopy(d, p, out, n, c); n += c
                     }
                 }
             }
             o += 188
         }
-        return Triple(n, false, false)
+        return done(false, false)
+    }
+
+    /** PTS (ms od początku) jednostki zaczynającej się w [off]: z ostatniego PES-u nie później niż [off]. */
+    private fun msAt(c: Col, off: Int): Long {
+        if (c.pesPts.isEmpty()) return 0
+        var i = 0
+        while (i + 1 < c.pesOff.size && c.pesOff[i + 1] <= off) i++
+        return ((c.pesPts[i] - c.pesPts[0] + (1L shl 33)) % (1L shl 33)) / 90
+    }
+
+    /** SEI recovery point (H.264): recovery_frame_cnt z pierwszej jednostki [0, end) albo -1. */
+    private fun recoveryFrames(b: ByteArray, end: Int): Int {
+        var i = 0
+        while (i + 4 < end) {
+            if (b[i] == 0.toByte() && b[i + 1] == 0.toByte() && b[i + 2] == 1.toByte()) {
+                if ((u(b, i + 3) and 0x1F) == 6) {
+                    var q = i + 4
+                    while (q + 2 < end) {
+                        var type = 0; while (q < end && u(b, q) == 0xFF) { type += 255; q++ }; type += u(b, q++)
+                        var size = 0; while (q < end && u(b, q) == 0xFF) { size += 255; q++ }; if (q >= end) break; size += u(b, q++)
+                        if (type == 6) {
+                            // ue(v): liczba zer wiodących, potem tyle bitów
+                            var bit = q * 8
+                            var zeros = 0
+                            fun bitAt(k: Int) = (u(b, k shr 3) shr (7 - (k and 7))) and 1
+                            while (bit < end * 8 && bitAt(bit) == 0 && zeros < 20) { zeros++; bit++ }
+                            bit++
+                            var v = 0
+                            repeat(zeros) { v = (v shl 1) or bitAt(bit); bit++ }
+                            return (1 shl zeros) - 1 + v
+                        }
+                        q += size
+                        if (q < end && u(b, q) == 0x80) break     // rbsp_trailing
+                    }
+                }
+                i += 3
+            } else i++
+        }
+        return -1
     }
 
     /**
@@ -313,19 +364,34 @@ object TsFrames {
 
     /**
      * Klatka gotowa do dekodera: od klatki kluczowej w [d] (pakiet [from]) jednostki dostępu do [out].
-     * Pełny obraz (IDR / IRAP / MPEG-2) — 3 jednostki (oba półobrazy); inaczej (odświeżanie pasami) — wszystkie do
-     * następnej klatki kluczowej (najwyżej [maxUnits]). Pusta tablica — dane niekompletne.
+     * Pełny obraz (IDR / IRAP / MPEG-2) — 3 jednostki (oba półobrazy). Odświeżanie pasami — jednostki z [limitMs]
+     * czasu obrazu (wg PTS, niezależnie od kodowania półobrazów / klatek); gdy SEI podaje czas pełnego obrazu do
+     * [fullMaxMs] — tyle, ile potrzeba. Pusta tablica — dane niekompletne.
      */
-    fun picture(d: ByteArray, len: Int, vpid: Int, type: String, from: Int, out: ByteArray, maxUnits: Int = 40): Pic {
-        val (n, toKey, gap) = collect(d, len, vpid, from, out)
-        if (n == 0) return Pic(IntArray(0), false, false, gap)
+    fun picture(d: ByteArray, len: Int, vpid: Int, type: String, from: Int, out: ByteArray,
+                limitMs: Long = 1000, fullMaxMs: Long = 2000): Pic {
+        val c = collect(d, len, vpid, from, out)
+        val n = c.n
+        if (n == 0) return Pic(IntArray(0), false, false, c.gap)
         val ends = ArrayList(auStarts(out, n, type))
-        if (toKey) ends += n                     // ostatnia jednostka kończy się przed następną klatką kluczową
-        if (ends.isEmpty()) return Pic(IntArray(0), false, toKey, gap)
+        if (c.toKey) ends += n                   // ostatnia jednostka kończy się przed następną klatką kluczową
+        if (ends.isEmpty()) return Pic(IntArray(0), false, c.toKey, c.gap)
         val full = fullPicture(out, ends[0], type)
-        val take = if (full) ends.take(3) else ends.take(maxUnits)
-        if (!full && take.size < 2) return Pic(IntArray(0), false, toKey, gap)
-        return Pic(take.toIntArray(), full, toKey, gap)
+        if (full) return Pic(ends.take(3).toIntArray(), true, c.toKey, c.gap, msAt(c, ends[minOf(2, ends.size - 1)]))
+        // czas pełnego obrazu wg SEI (klatki po 40 ms), z zapasem 2 klatek
+        val rec = if (type == "H264") recoveryFrames(out, ends[0]) else -1
+        val needMs = if (rec >= 0) (rec + 2) * 40L else -1L
+        val target = if (needMs in 0..fullMaxMs) needMs else limitMs
+        // jednostki do [target] ms obrazu
+        val take = ArrayList<Int>()
+        for (e in ends) {
+            val start = if (take.isEmpty()) 0 else take.last()
+            if (take.isNotEmpty() && msAt(c, start) > target) break
+            take += e
+        }
+        if (take.size < 2) return Pic(IntArray(0), false, c.toKey, c.gap)
+        val span = msAt(c, take[take.size - 2])
+        return Pic(take.toIntArray(), false, c.toKey || span >= target, c.gap, span, needMs)
     }
 
     /**
@@ -637,7 +703,7 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
         val k = TsFrames.keyframe(data, len, video.first, from)
         if (k < 0) return
         val t0 = SystemClock.elapsedRealtime()
-        val pic = TsFrames.picture(data, len, video.first, video.second, k, au, 25)
+        val pic = TsFrames.picture(data, len, video.first, video.second, k, au)
         val ends = pic.ends
         if (ends.isEmpty() || s != seq.get()) return
         var c = codec

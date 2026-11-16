@@ -2306,7 +2306,8 @@ class PlayerActivity : Activity() {
         val ch: Channel?, val bIdx: Int, val list: List<Channel>,
     ) {
         var pip = -1                               // numer okna PiP albo -1
-        val addedAt = SystemClock.elapsedRealtime() // kolejność otwarcia (samozamykanie przy słabym łączu)
+        val addedAt = SystemClock.elapsedRealtime() // kolejność otwarcia (pytanie przy lukach w odbiorze)
+        var parked = false                         // bufor ostatniego kanału na czas odtwarzania nagrań
         var leftAt = SystemClock.elapsedRealtime()
         var lrec: LocalRec? = null                 // zapis z tego bufora na dysk (nagranie lokalne)
     }
@@ -2370,7 +2371,8 @@ class PlayerActivity : Activity() {
      */
     private fun bgPark() {
         if (!bgAllowed()) return
-        for (c in bgChans.filter { it.lrec == null && it.pip < 0 }) bgDrop(c, "odtwarzanie nagrania")
+        // bufor ostatniego kanału odłożony przy poprzednim nagraniu zostaje (przechodzenie między nagraniami)
+        for (c in bgChans.filter { it.lrec == null && it.pip < 0 && !it.parked }) bgDrop(c, "odtwarzanie nagrania")
         val curBuf = tsBuf ?: return
         val curRec = tsRec ?: return
         val curAn = tsRecAn ?: return
@@ -2385,6 +2387,9 @@ class PlayerActivity : Activity() {
         curAn.onEit = bgEit(journal)
         curBuf.pcrPid = { curAn.pcrPid }
         val c = BgChan(tsLiveUrl ?: "", cur?.name ?: "?", curBuf, curAn, curRec, journal, cur, playBouquet, playList)
+        // odłożony jest tylko ostatni kanał — wcześniej odłożony (inny) przestaje być chroniony
+        for (o in bgChans) o.parked = false
+        c.parked = true
         bgChans += c
         if (keep != null) {
             c.lrec = keep
@@ -2516,6 +2521,8 @@ class PlayerActivity : Activity() {
 
     private fun bgSwitch(url: String, name: String) {
         if (recMode || url == tsLiveUrl && bufLive) return
+        // powrót na żywo: koniec ochrony bufora odłożonego na czas nagrań
+        for (c in bgChans) c.parked = false
         if (!bgAllowed()) { bgDropAll("opcja wyłączona"); return }
         if (prefs.bgCount == 0) for (c in bgChans.filter { it.pip < 0 && it.lrec == null && it.url != url }) bgDrop(c, "opcja wyłączona")
         val target = bgChans.firstOrNull { it.url == url }
@@ -2645,6 +2652,10 @@ class PlayerActivity : Activity() {
         var firstLogged = false
         var misses = 0
         var gaps = 0
+        var statN = 0
+        var statMs = 0L
+        var statAt = 0L
+        var statInfo = ""
         var px = IntArray(0)
         val bmps = arrayOfNulls<android.graphics.Bitmap>(2)
         var bmpTurn = 0
@@ -2765,6 +2776,7 @@ class PlayerActivity : Activity() {
                 val w = open[turn++ % open.size]
                 if (w.codecGen != w.gen) {
                     w.codecGen = w.gen; w.noDecoder = null; w.failLogged = false; w.firstLogged = false; w.misses = 0; w.gaps = 0
+                    w.statN = 0; w.statMs = 0; w.statAt = 0
                 }
                 val t0 = SystemClock.elapsedRealtime()
                 val c = w.chan
@@ -2772,7 +2784,17 @@ class PlayerActivity : Activity() {
                     try {
                         val r = pipGrab(w, c)
                         when {
-                            r.ms >= 0 -> if (!w.firstLogged) { w.firstLogged = true; PipLog.i("okno ${w.idx + 1}: ${c.name} — pierwsza klatka po ${r.ms} ms (${r.info})") }
+                            r.ms >= 0 -> {
+                                if (!w.firstLogged) { w.firstLogged = true; PipLog.i("okno ${w.idx + 1}: ${c.name} — pierwsza klatka po ${r.ms} ms (${r.info})") }
+                                // co minutę: ile odświeżeń, średni czas przygotowania klatki
+                                val now = SystemClock.elapsedRealtime()
+                                if (w.statAt == 0L) w.statAt = now
+                                w.statN++; w.statMs += r.ms; w.statInfo = r.info
+                                if (now - w.statAt >= 60_000) {
+                                    PipLog.i("okno ${w.idx + 1}: ${c.name} — ${w.statN} klatek w ${(now - w.statAt) / 1000} s, śr. ${w.statMs / w.statN} ms (${w.statInfo})")
+                                    w.statN = 0; w.statMs = 0; w.statAt = now
+                                }
+                            }
                             r.ms == -2L -> {
                                 w.noDecoder = r.info
                                 PipLog.i("okno ${w.idx + 1}: ${c.name} — ${r.info}")
@@ -2847,27 +2869,39 @@ class PlayerActivity : Activity() {
         val mime = TsFrames.mime(type) ?: return Grab(-2, "nieobsługiwany obraz $type")
         val swName = swDecoderName(mime) ?: return Grab(-2, "brak programowego dekodera $type")
         val b = c.buf
-        // klatki kluczowe z całego bufora (starsze z dysku) — przy odświeżaniu pasami potrzebna jest para kolejnych
+        // klatki kluczowe od najnowszej (starsze z dysku, gdy po najnowszej jest jeszcze za mało obrazu)
         val kfs = b.recentKeyframes(4, ramOnly = false)
         if (kfs.isEmpty()) return Grab(-1, "brak klatki kluczowej w buforze (${b.total / 1000} kB)")
         var ends = IntArray(0)
         var full = false
         var gap = false
-        for (kf in kfs) {
+        var desc = ""
+        var fallbackKf = -1L
+        fun load(kf: Long): TsFrames.Pic? {
             val len = minOf(b.total - kf, PIP_READ_MAX).toInt()
-            if (len < 188 * 4) continue
+            if (len < 188 * 4) return null
             if (pipData.size < len) pipData = ByteArray(len)
             if (pipAu.size < len) pipAu = ByteArray(len)
             var got = 0
             while (got < len) { val n = b.read(kf + got, pipData, got, len - got); if (n <= 0) break; got += n }
-            if (got < 188 * 4) continue
-            val pic = TsFrames.picture(pipData, got, vpid, type, 0, pipAu)
-            if (pic.gap && pic.ends.isEmpty()) gap = true
-            // pełna klatka kluczowa — od razu; odświeżanie pasami — tylko gdy dochodzi do następnej klatki kluczowej
-            // (inaczej obraz niepełny — zostaje poprzedni)
-            if (pic.ends.isNotEmpty() && (pic.full || pic.toNextKey)) { ends = pic.ends; full = pic.full; break }
+            if (got < 188 * 4) return null
+            return TsFrames.picture(pipData, got, vpid, type, 0, pipAu)
         }
-        if (ends.isEmpty()) return if (gap) Grab(-3, "luka") else Grab(-1, "brak pełnego obrazu (PID $vpid $type)")
+        fun use(pic: TsFrames.Pic) {
+            ends = pic.ends; full = pic.full
+            desc = if (pic.full) "pełna klatka" else "pasami ${pic.spanMs} ms" + (if (pic.needMs >= 0) ", pełny po ${pic.needMs} ms" else "")
+        }
+        for (kf in kfs) {
+            val pic = load(kf) ?: continue
+            if (pic.gap && pic.ends.isEmpty()) gap = true
+            if (pic.ends.isEmpty()) continue
+            // pełna klatka kluczowa albo odświeżanie pasami z wystarczającym zapasem obrazu — od razu
+            if (pic.full || pic.toNextKey) { use(pic); break }
+            if (fallbackKf < 0) fallbackKf = kf
+        }
+        // tryb szybki: krótszy odcinek z najnowszej klatki (obraz może być niepełny, ale widać, co leci)
+        if (ends.isEmpty() && fallbackKf >= 0) load(fallbackKf)?.takeIf { it.ends.isNotEmpty() }?.let { use(it) }
+        if (ends.isEmpty()) return if (gap) Grab(-3, "luka") else Grab(-1, "brak obrazu (PID $vpid $type)")
         val au = ends.last()
         var maxUnit = ends[0]
         for (i in 1 until ends.size) maxUnit = maxOf(maxUnit, ends[i] - ends[i - 1])
@@ -2901,7 +2935,7 @@ class PlayerActivity : Activity() {
         w.bmpTurn = 1 - w.bmpTurn
         val g = w.gen
         ui.post { if (w.gen == g) w.iv.setImageBitmap(bmp) }
-        return Grab(SystemClock.elapsedRealtime() - t0, "$type ${ends.size} jedn. ${au / 1000} kB, ${codec.name}")
+        return Grab(SystemClock.elapsedRealtime() - t0, "$type ${ends.size} jedn. ${au / 1000} kB, $desc, ${codec.name}")
     }
 
     /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału; menu zostaje otwarte do WSTECZ. */
