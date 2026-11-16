@@ -516,6 +516,63 @@ object TsFrames {
         }
     }
 
+    private var xs = IntArray(0); private var xc = IntArray(0); private var xKey = ""
+    private var r1 = ByteArray(0); private var r2 = ByteArray(0); private var ru = ByteArray(0); private var rv = ByteArray(0)
+
+    private fun row(b: java.nio.ByteBuffer, start: Int, len: Int, dst: ByteArray): ByteArray {
+        val d = if (dst.size < len) ByteArray(len) else dst
+        val n = minOf(len, b.limit() - start)
+        if (n > 0) { val bb = b.duplicate(); bb.position(start); bb.get(d, 0, n) }
+        return d
+    }
+
+    /**
+     * Szybka wersja [blendArgb]: linie płaszczyzn kopiowane hurtowo do tablic (bez odczytu każdego piksela
+     * z bufora), skalowanie do [w]×[h], przeplot usuwany uśrednieniem sąsiednich linii jasności. Jeden wątek.
+     */
+    fun blendFast(img: android.media.Image, w: Int, h: Int, out: IntArray) {
+        val crop = img.cropRect
+        val cw = crop.width(); val ch = crop.height()
+        val py = img.planes[0]; val pu = img.planes[1]; val pv = img.planes[2]
+        val ys = py.rowStride; val yp = py.pixelStride
+        val us = pu.rowStride; val up = pu.pixelStride
+        val vs = pv.rowStride; val vp = pv.pixelStride
+        val key = "$cw/$w/${crop.left}/$yp/$up/$vp"
+        if (key != xKey) {
+            xKey = key
+            xs = IntArray(w) { (crop.left + it * cw / w) * yp }
+            xc = IntArray(w) { (crop.left + it * cw / w) shr 1 }
+        }
+        val yLen = (crop.left + cw - 1) * yp + 1
+        val cLenU = ((crop.left + cw - 1) shr 1) * up + 1
+        val cLenV = ((crop.left + cw - 1) shr 1) * vp + 1
+        var o = 0
+        for (y in 0 until h) {
+            val sy = crop.top + y * ch / h
+            val sy2 = minOf(sy + 1, crop.top + ch - 1)
+            val cy = sy shr 1
+            r1 = row(py.buffer, sy * ys, yLen, r1)
+            r2 = row(py.buffer, sy2 * ys, yLen, r2)
+            ru = row(pu.buffer, cy * us, cLenU, ru)
+            rv = row(pv.buffer, cy * vs, cLenV, rv)
+            val a = r1; val b = r2; val uu0 = ru; val vv0 = rv
+            for (x in 0 until w) {
+                val sx = xs[x]; val cx = xc[x]
+                val l = ((a[sx].toInt() and 0xFF) + (b[sx].toInt() and 0xFF)) shr 1
+                val yy = (l - 16) * 298
+                val uu = (uu0[cx * up].toInt() and 0xFF) - 128
+                val vv = (vv0[cx * vp].toInt() and 0xFF) - 128
+                var r = (yy + 459 * vv + 128) shr 8
+                var g = (yy - 55 * uu - 136 * vv + 128) shr 8
+                var bl = (yy + 541 * uu + 128) shr 8
+                if (r < 0) r = 0 else if (r > 255) r = 255
+                if (g < 0) g = 0 else if (g > 255) g = 255
+                if (bl < 0) bl = 0 else if (bl > 255) bl = 255
+                out[o++] = (0xFF shl 24) or (r shl 16) or (g shl 8) or bl
+            }
+        }
+    }
+
     /** Dekoder programowy do pamięci (bez powierzchni), YUV w formacie elastycznym (Image). */
     fun openDecoder(name: String, mime: String, maxIn: Int): MediaCodec {
         val fmt = MediaFormat.createVideoFormat(mime, 1920, 1088)
@@ -562,11 +619,14 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
     private var codecMime = ""
     private var data = ByteArray(3_000_000)
     private var au = ByteArray(3_000_000)
-    private val W = 1920
-    private val H = 1080
+    private val tmp = ByteArray(512 * 1024)
+    private val W = 1280
+    private val H = 720
     private val px = IntArray(W * H)
     private val bmps = arrayOfNulls<Bitmap>(2)
-    private var timingLogged = false
+    /** Zmienia się tylko przy ukryciu — klatka zastąpiona nowszym żądaniem i tak jest pokazywana. */
+    private val hideGen = AtomicLong()
+    private class Req(val s: Long, val hg: Long, val t0: Long)
     /** Czy od ostatniego żądania pojawiła się już klatka (odtwarzanie od miejsca czeka na nią do ~2,5 s). */
     @Volatile var frameReady = false
         private set
@@ -599,21 +659,31 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
     /** Ukrycie po [delayMs] (obraz główny zdąży już pokazać miejsce po przewinięciu). */
     fun hide(delayMs: Long = 0) {
         seq.incrementAndGet()
+        hideGen.incrementAndGet()
         job = null
         ui.removeCallbacks(hideRun)
         if (delayMs <= 0) hideRun.run() else ui.postDelayed(hideRun, delayMs)
     }
 
+    /** Kolejne rozmiary odczytu: najpierw mało (typowa klatka 100–300 kB), więcej tylko gdy obraz się nie mieści. */
+    private val STEPS = intArrayOf(512 * 1024, 1_536 * 1024, 3_000_000)
+    private fun nextStep(cur: Int) = STEPS.firstOrNull { it > cur } ?: cur
+
     /** Klatka z bufora timeshiftu: klatka kluczowa nie później niż [wall]. */
     fun requestBuffer(buf: TimeshiftBuffer, wall: Long, video: Pair<Int, String>?) {
         if (video == null) return
-        submit { s ->
+        submit { r ->
             val (pos, _) = buf.keyframeAt(wall) ?: return@submit
-            val len = minOf(buf.total - pos, data.size.toLong()).toInt()
-            var got = 0
-            while (got < len) { val n = buf.read(pos + got, data, got, len - got); if (n <= 0) break; got += n }
-            if (s != seq.get()) return@submit
-            decode(s, got, 0, video)
+            val avail = minOf(buf.total - pos, data.size.toLong()).toInt()
+            val more = { cur: Int ->
+                val target = minOf(nextStep(cur), avail)
+                var got = cur
+                while (got < target) { val n = buf.read(pos + got, data, got, target - got); if (n <= 0) break; got += n }
+                got
+            }
+            val got = more(0)
+            if (r.hg != hideGen.get()) return@submit
+            decode(r, got, 0, video, more)
         }
     }
 
@@ -625,7 +695,7 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
     /** Klatka z nagrania na pozycji [posMs] z [durMs] (bajt szacowany z proporcji, poprawiany wg PTS). */
     fun requestRecording(src: ByteSrc, posMs: Long, durMs: Long) {
         if (durMs <= 0) return
-        submit { s ->
+        submit { r ->
             if (recSrc !== src) {
                 recSrc?.close()
                 recSrc = src; recVideo = null; recPts0 = -1
@@ -641,10 +711,27 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
             var tries = 0
             while (true) {
                 off -= off % 188
-                val got = src.read(off, data, data.size)
-                if (s != seq.get()) return@submit
-                val k = TsFrames.keyframe(data, got, v.first)
-                if (k < 0) return@submit
+                val base = off
+                val more = { cur: Int ->
+                    val target = minOf(nextStep(cur).toLong(), size - base).toInt()
+                    var got = cur
+                    if (cur == 0) got = maxOf(0, src.read(base, data, target))
+                    else while (got < target) {
+                        val n = src.read(base + got, tmp, minOf(tmp.size, target - got))
+                        if (n <= 0) break
+                        System.arraycopy(tmp, 0, data, got, n); got += n
+                    }
+                    got
+                }
+                var got = more(0)
+                if (r.hg != hideGen.get()) return@submit
+                var k = TsFrames.keyframe(data, got, v.first)
+                while (k < 0) {
+                    val g2 = more(got)
+                    if (g2 <= got) return@submit
+                    got = g2
+                    k = TsFrames.keyframe(data, got, v.first)
+                }
                 // poprawka miejsca wg PTS klatki (zmienna przepływność) — raz
                 val pts = TsFrames.pts(data, k)
                 if (tries == 0 && pts >= 0 && recPts0 >= 0) {
@@ -655,16 +742,17 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
                         continue
                     }
                 }
-                decode(s, got, k, v)
+                decode(r, got, k, v, more)
                 return@submit
             }
         }
     }
 
-    private fun submit(task: (Long) -> Unit) {
+    private fun submit(task: (Req) -> Unit) {
         frameReady = false
         val s = seq.incrementAndGet()
-        job = { task(s) }
+        val r = Req(s, hideGen.get(), SystemClock.elapsedRealtime())
+        job = { task(r) }
         synchronized(lock) {
             if (worker == null) {
                 worker = Thread({ loop() }, "podglad-przewijania").also {
@@ -697,15 +785,30 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
         } finally { release() }
     }
 
-    private fun decode(s: Long, len: Int, from: Int, video: Pair<Int, String>) {
+    /** Obraz kompletny w danych (pełny: 3 jednostki; pasami: do następnej klatki kluczowej / limitu czasu; luka). */
+    private fun complete(p: TsFrames.Pic) =
+        p.gap || (p.ends.isNotEmpty() && (if (p.full) p.ends.size >= 3 || p.toNextKey else p.toNextKey))
+
+    private fun decode(r: Req, len0: Int, from: Int, video: Pair<Int, String>, more: (Int) -> Int) {
         val mime = TsFrames.mime(video.second) ?: return
         val name = TsFrames.swDecoder(mime) ?: run { AppLog.i("podgląd przewijania: brak programowego dekodera ${video.second}"); return }
-        val k = TsFrames.keyframe(data, len, video.first, from)
-        if (k < 0) return
-        val t0 = SystemClock.elapsedRealtime()
-        val pic = TsFrames.picture(data, len, video.first, video.second, k, au)
-        val ends = pic.ends
-        if (ends.isEmpty() || s != seq.get()) return
+        var len = len0
+        var k = TsFrames.keyframe(data, len, video.first, from)
+        var pic: TsFrames.Pic? = null
+        while (true) {
+            if (k >= 0) {
+                pic = TsFrames.picture(data, len, video.first, video.second, k, au)
+                if (complete(pic)) break
+            }
+            val l2 = more(len)
+            if (l2 <= len || r.hg != hideGen.get()) break
+            len = l2
+            if (k < 0) k = TsFrames.keyframe(data, len, video.first, from)
+        }
+        val p = pic ?: return
+        val ends = p.ends
+        if (ends.isEmpty() || r.hg != hideGen.get()) return
+        val tRead = SystemClock.elapsedRealtime() - r.t0
         var c = codec
         if (c != null && codecMime != mime) { release(); c = null }
         if (c == null) {
@@ -715,17 +818,24 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
         var ok = false
         try {
             val bmp = bmps[bmpTurn] ?: Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888).also { bmps[bmpTurn] = it }
-            val shown = TsFrames.decodeImage(c, au, ends, 3000, first = pic.full) { img ->
-                if (s == seq.get()) { TsFrames.blendArgb(img, W, H, px); bmp.setPixels(px, 0, W, 0, 0, W, H) }
+            var tConv = 0L
+            val t1 = SystemClock.elapsedRealtime()
+            val shown = TsFrames.decodeImage(c, au, ends, 3000, first = p.full) { img ->
+                if (r.hg == hideGen.get()) {
+                    val tc = SystemClock.elapsedRealtime()
+                    TsFrames.blendFast(img, W, H, px); bmp.setPixels(px, 0, W, 0, 0, W, H)
+                    tConv = SystemClock.elapsedRealtime() - tc
+                }
             }
-            if (shown && !timingLogged) {
-                timingLogged = true
-                AppLog.i("podgląd przewijania: klatka po ${SystemClock.elapsedRealtime() - t0} ms (${video.second} ${ends.size} jedn., ${au.size / 1000} kB bufor)")
-            }
-            if (shown && s == seq.get()) {
+            val tDec = SystemClock.elapsedRealtime() - t1 - tConv
+            val latest = r.s == seq.get()
+            AppLog.i("podgląd przewijania: ${if (shown) "klatka" else "brak klatki"} po ${SystemClock.elapsedRealtime() - r.t0} ms " +
+                "(odczyt ${len / 1000} kB $tRead ms, dekod. $tDec ms, konw. $tConv ms; ${video.second} ${ends.size} jedn.${if (latest) "" else ", nowsze żądanie"})")
+            if (shown && r.hg == hideGen.get()) {
                 bmpTurn = 1 - bmpTurn
-                frameReady = true
-                ui.post { if (s == seq.get()) iv?.let { it.setImageBitmap(bmp); it.visibility = View.VISIBLE } }
+                if (latest) frameReady = true
+                val hg = r.hg
+                ui.post { if (hg == hideGen.get()) iv?.let { it.setImageBitmap(bmp); it.visibility = View.VISIBLE } }
             }
             ok = true
         } finally {

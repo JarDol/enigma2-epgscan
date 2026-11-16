@@ -32,10 +32,15 @@ object QuickMenu {
     private val byId = configurable.associateBy { it.id }
 
     fun allInOrder(order: List<String>): List<Entry> {
-        val stored = order.filter { it in byId }.distinct()
-        val missing = configurable.map { it.id }.filterNot { it in stored }
-        // nowe pozycje nagrywania na górę, pozostałe nowe na koniec
-        val ids = missing.filter { it in TOP } + stored + missing.filterNot { it in TOP }
+        val ids = order.filter { it in byId }.distinct().toMutableList()
+        val defaults = configurable.map { it.id }
+        // brakujące (nowe) pozycje wstawiane w miejscu domyślnym: przed najbliższą
+        // następną pozycją domyślną obecną w zapisanej kolejności, a gdy jej brak — na koniec
+        for ((i, id) in defaults.withIndex()) {
+            if (id in ids) continue
+            val next = defaults.drop(i + 1).firstOrNull { it in ids }
+            if (next == null) ids.add(id) else ids.add(ids.indexOf(next), id)
+        }
         return ids.mapNotNull(byId::get)
     }
 

@@ -523,7 +523,18 @@ class Prefs(ctx: Context) {
 
     /** Pozycje i kolejność głównego menu podręcznego. */
     var quickMenuOrder: List<String>
-        get() = s("quickMenuOrder").split(',').filter { it.isNotBlank() }
+        get() {
+            val v = s("quickMenuOrder").split(',').filter { it.isNotBlank() }
+            // 0.18.54-beta.21: silnik/tunelowanie dopisane wcześniej na koniec (za statystykami)
+            // — usuń je z zapisu, żeby wróciły na miejsce domyślne przed statystykami
+            if (!sp.getBoolean("qmOrderFix21", false)) {
+                sp.edit().putBoolean("qmOrderFix21", true).apply()
+                val st = v.indexOf("stats")
+                val bad = listOf("engine", "tunneling").filter { st >= 0 && v.indexOf(it) > st }
+                if (bad.isNotEmpty()) { val f = v - bad.toSet(); putS("quickMenuOrder", f.joinToString(",")); return f }
+            }
+            return v
+        }
         set(v) = putS("quickMenuOrder", v.joinToString(","))
 
     var quickMenuVisible: Set<String>
