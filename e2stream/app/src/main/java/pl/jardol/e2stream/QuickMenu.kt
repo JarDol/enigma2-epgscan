@@ -14,10 +14,12 @@ object QuickMenu {
         Entry("zap_timers", R.string.menu_scheduled_switches),
         Entry("decoder_timers", R.string.menu_receiver_timers),
         Entry("buffered", R.string.player_bg_menu),
+        Entry("stats", R.string.setting_on_screen_statistics),
+        Entry("send_log", R.string.action_send_log),
     )
 
     /** Pozycje dodane później — widoczne domyślnie także przy starszym zapisie widoczności. */
-    val ADDED_LATER = setOf("buffered")
+    val ADDED_LATER = setOf("buffered", "stats", "send_log")
 
     private val byId = configurable.associateBy { it.id }
 

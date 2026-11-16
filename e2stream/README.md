@@ -203,6 +203,9 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
   (bufor oglądanego kanału zawsze zostaje); ponad limit — komunikat. Nagranie audycji chroni swój bufor do jej końca
   (przy przełączaniu wypada inny), zapis „do usunięcia bufora” trwa także w tle i kończy się, gdy bufor wypada.
   Opcje: komunikat o zajętych buforach przy przełączaniu, stan buforów przy przełączaniu („Bufory: 2/3, nagrywa 1”),
+  Odtwarzanie nagrania (z dekodera albo lokalnego) nie kasuje buforów: bufor ostatnio oglądanego kanału zapisuje się dalej
+  w tle (także przy wyłączonym buforze poprzednich kanałów), zostają też kanały w tle z trwającym zapisem; pozostałe
+  bufory są usuwane. Po wyjściu z nagrania powrót na ostatni kanał — od razu z jego bufora,
 * PiP (okna z kanałami z bufora w tle) — w przygotowaniu, ukryte w wydaniu stabilnym,
 * timeshift (długość bufora, automatyczny start — przy odtwarzaniu przez bufor zawsze od razu, kroki przewijania, WSTECZ na pustym ekranie),
 * nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,

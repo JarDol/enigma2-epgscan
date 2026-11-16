@@ -1149,8 +1149,9 @@ class PlayerActivity : Activity() {
             if (bufReady()) { startBufLive(url, bufReuse); return }
             if (bufLive) bufStop("nośnik niedostępny — odtwarzanie bezpośrednie")
         } else if (bufLive) bufStop(if (recMode) "nagranie" else "opcja wyłączona")
-        if (!bgAllowed() || recMode) bgDropAll("opcja wyłączona")
-        else if (prefs.bgCount == 0) for (c in bgChans.filter { it.pip < 0 }) bgDrop(c, "opcja wyłączona")
+        if (!bgAllowed()) bgDropAll("opcja wyłączona")
+        else if (recMode) { }                 // odtwarzanie nagrania — kanały w tle (zapis, ostatni kanał) zostają
+        else if (prefs.bgCount == 0) for (c in bgChans.filter { it.pip < 0 && it.lrec == null }) bgDrop(c, "opcja wyłączona")
         else while (bgChans.count { it.pip < 0 } > prefs.bgCount)
             bgChans.filter { it.pip < 0 && !bgProtected(it) }.minByOrNull { it.leftAt }?.let { bgDrop(it, "limit ${prefs.bgCount} kanałów w tle") } ?: break
         pipRefresh()
@@ -2300,6 +2301,43 @@ class PlayerActivity : Activity() {
     }
 
     /**
+     * Odtwarzanie nagrania (z dekodera albo lokalnego): bufor oglądanego kanału przechodzi do tła (także przy wyłączonym
+     * buforze poprzednich kanałów), zostają też kanały w tle z trwającym zapisem; pozostałe bufory są usuwane.
+     * Po wyjściu z nagrania powrót na ostatni kanał — od razu z jego bufora.
+     */
+    private fun bgPark() {
+        if (!bgAllowed()) return
+        for (c in bgChans.filter { it.lrec == null && it.pip < 0 }) bgDrop(c, "odtwarzanie nagrania")
+        val curBuf = tsBuf ?: return
+        val curRec = tsRec ?: return
+        val curAn = tsRecAn ?: return
+        if (!bufLive || curAn !== analyzer || curBuf.failed != null) return
+        // nagranie audycji / „do usunięcia bufora” trwa dalej w tle; „do zmiany kanału” kończy się
+        val keep = localRec?.takeIf { it.mode == REC_EVENT || it.mode == REC_UNTIL_DROP }
+        if (keep != null) { localRec = null; ui.removeCallbacks(localRecTick) }
+        else if (localRec != null) finishLocalRec("odtwarzanie nagrania", restartLive = false)
+        if (tsMode) tsLeave()
+        val cur = playList.getOrNull(playIndex)
+        curAn.tee = { b, o, l -> curBuf.write(b, o, l) }
+        curAn.onEit = bgEit(journal)
+        curBuf.pcrPid = { curAn.pcrPid }
+        val c = BgChan(tsLiveUrl ?: "", cur?.name ?: "?", curBuf, curAn, curRec, journal, cur, playBouquet, playList)
+        bgChans += c
+        if (keep != null) {
+            c.lrec = keep
+            ui.removeCallbacks(bgRecTick); ui.postDelayed(bgRecTick, 5000)
+        }
+        AppLog.i("bufor w tle: ${c.name} — zapis w tle na czas odtwarzania nagrania (bufor ${curBuf.maxMin} min)" +
+            (if (keep != null) ", nagranie „${keep.meta.optString("title")}” trwa" else ""))
+        tsRec = null; tsRecAn = null; tsBuf = null
+        bufLive = false
+        journal = ProgramJournal()
+        analyzer = null
+        ensureAnalyzer()
+        ui.removeCallbacks(bgTick); ui.postDelayed(bgTick, 30_000)
+    }
+
+    /**
      * Przełączenie na [url]: bieżący kanał (odtwarzany przez bufor) przechodzi do zapisu w tle, a gdy [url] jest już
      * buforowany w tle — jego bufor, połączenie i dziennik stają się bieżącymi (tsNewChannel ich nie resetuje).
      * Kanał z okna PiP zamienia się miejscem z bieżącym (bieżący trafia do tego okna).
@@ -2307,7 +2345,7 @@ class PlayerActivity : Activity() {
     private fun bgSwitch(url: String, name: String) {
         if (recMode || url == tsLiveUrl && bufLive) return
         if (!bgAllowed()) { bgDropAll("opcja wyłączona"); return }
-        if (prefs.bgCount == 0) for (c in bgChans.filter { it.pip < 0 }) bgDrop(c, "opcja wyłączona")
+        if (prefs.bgCount == 0) for (c in bgChans.filter { it.pip < 0 && it.lrec == null && it.url != url }) bgDrop(c, "opcja wyłączona")
         val target = bgChans.firstOrNull { it.url == url }
         val pipSlot = target?.pip ?: -1
         val curBuf = tsBuf
@@ -2810,11 +2848,12 @@ class PlayerActivity : Activity() {
     }
 
     /** Wyjście z aplikacji / nagranie: koniec timeshiftu, bufor skasowany (w tle). */
-    private fun tsStopAll() {
+    /** [keepBg] — kanały w tle zostają (odtwarzanie nagrania: zapis w tle i bufor ostatniego kanału). */
+    private fun tsStopAll(keepBg: Boolean = false) {
         if (localRec != null) finishLocalRec("koniec odtwarzania", restartLive = false)
         if (tsMode) tsLeave()
         bufStop("koniec odtwarzania na żywo")
-        bgDropAll("koniec odtwarzania na żywo")
+        if (!keepBg) bgDropAll("koniec odtwarzania na żywo")
         tsCtl = false; tsChBar = false
         tsBuf?.reset()
         // po powrocie wszystko od nowa: nowy bufor w katalogu głównym, bez przejętych połączeń i analizatorów kanałów w tle
@@ -3767,7 +3806,7 @@ class PlayerActivity : Activity() {
 
     private fun playRecording(r: Recording, startMs: Long) {
         if (recMode) saveRecPos()
-        tsStopAll()
+        else { bgPark(); tsStopAll(keepBg = true) }
         hidePanel()
         recMode = true
         recItem = r
@@ -4631,6 +4670,8 @@ class PlayerActivity : Activity() {
             "audio" to { showAudioDialog() },
             "zap_timers" to { showZapTimers() },
             "decoder_timers" to { showDecoderTimers() },
+            "stats" to { toggleStats() },
+            "send_log" to { showMessage(getString(R.string.action_sending_log)); Tools.uploadLog(this, prefs, true) { showMessage(it) } },
         )
         val canRecord = !recMode && prefs.tsMin > 0 && currentUrl != null && localRec == null
         val items = QuickMenu.ordered(prefs).mapNotNull { e ->
