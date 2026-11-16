@@ -18,6 +18,7 @@ import java.io.RandomAccessFile
 const val REC_EVENT = 0          // bieżąca audycja (od jej początku w buforze do końca wg EPG)
 const val REC_NOW = 1            // bufor do teraz
 const val REC_UNTIL_ZAP = 2      // cały bufor i dalej, do zmiany kanału
+const val REC_UNTIL_DROP = 3     // cały bufor i dalej, do usunięcia bufora (także w tle)
 
 object LocalRecordings {
     const val DIR = "nagrania"

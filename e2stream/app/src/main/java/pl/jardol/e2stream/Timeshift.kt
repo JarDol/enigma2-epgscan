@@ -124,6 +124,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         out = null
         segs.clear()
         total = 0
+        kfCount = 0; kfHead = 0
         failed = null
         shrunk = false
         trimmed = false
@@ -228,6 +229,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         val now = SystemClock.elapsedRealtime()
         val cur = segs.lastOrNull()
         if (cur == null || out == null || now - cur.wall >= 60_000) rotate(now)
+        markKeyframes(b, off, len, now)
         out!!.write(b, off, len)
         segs.last().len += len
         total += len
@@ -242,6 +244,72 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         // okno: najwyżej maxMin pełnych minut (+ bieżąca); mało miejsca — wypadają najstarsze
         while (segs.size > maxOf(2, maxMin + 1)) dropOldest()
         while (segs.size > 2 && dir.usableSpace < RESERVE) { dropOldest(); shrunk = true }
+    }
+
+    // --- klatki kluczowe: miejsca (bajt, chwila) początku PES obrazu z SPS / VPS / nagłówkiem sekwencji MPEG-2
+    // albo z flagą random_access — start odtwarzania z bufora od pewnej klatki, z zapasem
+    private val kfPos = LongArray(KF_MAX)
+    private val kfWall = LongArray(KF_MAX)
+    private var kfHead = 0
+    private var kfCount = 0
+
+    private fun markKeyframes(b: ByteArray, off: Int, len: Int, now: Long) {
+        var p = off
+        val end = off + len
+        while (p + 188 <= end) {
+            if (b[p] == SYNC && (b[p + 1].toInt() and 0x40) != 0 && isKeyframeStart(b, p)) {
+                val pos = total + (p - off)
+                if (kfCount == 0 || kfPos[(kfHead + kfCount - 1) % KF_MAX] < pos) {
+                    val i = (kfHead + kfCount) % KF_MAX
+                    kfPos[i] = pos; kfWall[i] = now
+                    if (kfCount < KF_MAX) kfCount++ else kfHead = (kfHead + 1) % KF_MAX
+                }
+            }
+            p += 188
+        }
+    }
+
+    private fun isKeyframeStart(b: ByteArray, p: Int): Boolean {
+        val afc = (b[p + 3].toInt() shr 4) and 3
+        var q = p + 4
+        if (afc and 2 != 0) {
+            val al = b[p + 4].toInt() and 0xFF
+            if (al > 0 && (b[p + 5].toInt() and 0x40) != 0) {
+                // flaga random_access — tylko dla PES obrazu (strumień E0–EF)
+                val ps = p + 5 + al
+                if (ps + 4 <= p + 188 && b[ps] == 0.toByte() && b[ps + 1] == 0.toByte() && b[ps + 2] == 1.toByte() &&
+                    (b[ps + 3].toInt() and 0xF0) == 0xE0) return true
+            }
+            q = p + 5 + al
+        }
+        if (afc and 1 == 0 || q + 9 > p + 188) return false
+        if (b[q] != 0.toByte() || b[q + 1] != 0.toByte() || b[q + 2] != 1.toByte() || (b[q + 3].toInt() and 0xF0) != 0xE0) return false
+        var i = q + 9 + (b[q + 8].toInt() and 0xFF)
+        val e = p + 188 - 4
+        while (i <= e) {
+            if (b[i] == 0.toByte() && b[i + 1] == 0.toByte() && b[i + 2] == 1.toByte()) {
+                val x = b[i + 3].toInt() and 0xFF
+                // H.264 SPS (typ 7) / IDR (typ 5), HEVC VPS / SPS, MPEG-2 nagłówek sekwencji
+                if ((x and 0x80) == 0 && ((x and 0x1F) == 7 || (x and 0x1F) == 5)) return true
+                if (x == 0x40 || x == 0x42 || x == 0xB3) return true
+                i += 3
+            } else i++
+        }
+        return false
+    }
+
+    /**
+     * Najpóźniejsza klatka kluczowa zapisana nie później niż [wall] i nie wcześniej niż początek okna;
+     * zwraca (bajt, chwila) albo null, gdy brak.
+     */
+    fun keyframeAt(wall: Long): Pair<Long, Long>? = synchronized(lock) {
+        val oldest = segs.firstOrNull()?.start ?: return null
+        for (k in kfCount - 1 downTo 0) {
+            val i = (kfHead + k) % KF_MAX
+            if (kfPos[i] < oldest) break
+            if (kfWall[i] <= wall && kfPos[i] < total) return kfPos[i] to kfWall[i]
+        }
+        null
     }
 
     private fun dropOldest() {
@@ -310,6 +378,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         segs.clear()
         pin = null
         total = 0
+        kfCount = 0; kfHead = 0
         failed = null
         shrunk = false
         trimmed = false
@@ -416,6 +485,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         }
 
         private val SEQ = java.util.concurrent.atomic.AtomicInteger()
+        private const val KF_MAX = 4096
         private const val SYNC = 0x47.toByte()
         /** Najwięcej pomijanych danych przed pierwszym PCR (potem zapis bez czekania). */
         private const val SKIP_MAX = 8L * 1_000_000

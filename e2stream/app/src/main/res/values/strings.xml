@@ -79,9 +79,9 @@
     <string name="setting_bg_buffer_n">%1$d kanały</string>
     <string name="setting_bg_buffer_time">Czas bufora poprzednich kanałów</string>
     <string name="player_history">Historia</string>
-    <string name="player_bgrec_event">Bieżąca audycja</string>
+    <string name="player_bgrec_event">Audycja: %1$s</string>
     <string name="player_bgrec_now">Bufor do teraz (%1$s)</string>
-    <string name="player_bgrec_until">Do przełączenia / usunięcia bufora</string>
+    <string name="player_bgrec_until">Do usunięcia bufora</string>
     <string name="player_bgrec_stop">Zakończ zapis z bufora</string>
     <string name="player_localrec_reason_buffer_closed">zamknięto bufor kanału</string>
     <string name="action_history_list">Lista kanałów — historia</string>
@@ -113,4 +113,11 @@
     <string name="action_buffer_play_on">Odtwarzanie przez bufor: włączone</string>
     <string name="action_buffer_play_off">Odtwarzanie przez bufor: wyłączone</string>
     <string name="action_sending_log">Wysyłam log na dekoder…</string>
+    <string name="player_bg_full">Bufory poprzednich kanałów zajęte przez nagrania — ten kanał bez bufora</string>
+    <string name="player_bg_status">Bufory: %1$d/%2$d, nagrywa %3$d</string>
+    <string name="player_rec_limit">Osiągnięto limit buforów poprzednich kanałów — nie można nagrać kolejnego</string>
+    <string name="player_bg_close_rec">Trwa nagrywanie audycji „%1$s”. Zakończyć bufor i nagranie (nagranie zostanie zapisane)?</string>
+    <string name="player_bg_span_main">oglądany · w buforze %1$s</string>
+    <string name="setting_bg_full_msg">Komunikat o zajętych buforach przy przełączaniu</string>
+    <string name="setting_bg_status_msg">Pokazuj stan buforów przy przełączaniu</string>
 </resources>

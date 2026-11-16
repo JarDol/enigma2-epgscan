@@ -78,9 +78,9 @@
     <string name="setting_bg_buffer_n">%1$d channels</string>
     <string name="setting_bg_buffer_time">Previous channels buffer length</string>
     <string name="player_history">History</string>
-    <string name="player_bgrec_event">Current programme</string>
+    <string name="player_bgrec_event">Programme: %1$s</string>
     <string name="player_bgrec_now">Buffer until now (%1$s)</string>
-    <string name="player_bgrec_until">Until switch / buffer removal</string>
+    <string name="player_bgrec_until">Until buffer removal</string>
     <string name="player_bgrec_stop">Stop saving from buffer</string>
     <string name="player_localrec_reason_buffer_closed">channel buffer closed</string>
     <string name="action_history_list">Channel list — history</string>
@@ -112,4 +112,11 @@
     <string name="action_buffer_play_on">Playback through buffer: on</string>
     <string name="action_buffer_play_off">Playback through buffer: off</string>
     <string name="action_sending_log">Sending log to receiver…</string>
+    <string name="player_bg_full">Previous channels buffers taken by recordings — this channel not buffered</string>
+    <string name="player_bg_status">Buffers: %1$d/%2$d, recording %3$d</string>
+    <string name="player_rec_limit">Previous channels buffer limit reached — cannot record another</string>
+    <string name="player_bg_close_rec">Recording programme “%1$s”. Close the buffer and the recording (the recording will be saved)?</string>
+    <string name="player_bg_span_main">watching · %1$s in buffer</string>
+    <string name="setting_bg_full_msg">Message about busy buffers when switching</string>
+    <string name="setting_bg_status_msg">Show buffer status when switching</string>
 </resources>

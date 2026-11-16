@@ -574,6 +574,8 @@ class SettingsActivity : Activity() {
     ) + (if (!p.bufPlay || p.bgCount <= 0) emptyList<Item>() else listOf(
         // czas bufora — tylko gdy bufor poprzednich kanałów włączony
         gated(getString(R.string.setting_bg_buffer_time), { bgName(p.bgBufMin) }) { chooseBgBuffer() },
+        Item.Toggle(getString(R.string.setting_bg_full_msg), { p.bgFullMsg }, { p.bgFullMsg = it }),
+        Item.Toggle(getString(R.string.setting_bg_status_msg), { p.bgStatusMsg }, { p.bgStatusMsg = it }),
     )) + (if (!Features.PIP) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_pip_mode), { pipName(p.pipFrameMs) }) {
             val o = listOf(1000, 2000, 3000, 5000)

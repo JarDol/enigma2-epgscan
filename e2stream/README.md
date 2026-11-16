@@ -194,11 +194,15 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 * bufor poprzednich kanałów (przy odtwarzaniu przez bufor): *Wyłączony / 1 / 2 / 3 kanały* zapisywane w tle; przy
   włączonym osobna pozycja *Czas bufora poprzednich kanałów*: taki sam jak timeshift albo ręczny w minutach (najwyżej jak
   timeshift). Przy kolejnym przełączeniu wypada najdawniej opuszczony kanał. Powrót na taki kanał — obraz od razu z jego
-  bufora, z możliwością cofnięcia do tego, co leciało w tym czasie. Na listach kanałów (także w historii) takie kanały
-  mają znacznik **B** (● B — trwa zapis). Długie OK na takim kanale: bieżąca audycja i drugi rząd przycisków —
-  *Zakończ bufor* i *Nagraj bufor…* (*Bieżąca audycja* / *Bufor do teraz* / *Do przełączenia / usunięcia bufora*; w trakcie
-  zapisu *Zakończ zapis z bufora*). To samo w menu (długie OK) → *Buforowane kanały*. Po przełączeniu na kanał zapis trwa
-  dalej jak nagranie bieżącego kanału,
+  bufora (od klatki kluczowej z zapasem ≥ bufor startowy + 1 s), z możliwością cofnięcia do tego, co leciało w tym
+  czasie. Na listach kanałów (także w historii) kanały z buforem — w tle i oglądany, gdy gra przez bufor — mają znacznik
+  **B** (● B — trwa zapis). Długie OK na kanale w tle: bieżąca audycja i drugi rząd przycisków *Zakończ bufor* i
+  *Nagraj bufor…* (*Audycja: tytuł* / *Bufor do teraz* / *Do usunięcia bufora*; w trakcie zapisu *Zakończ zapis z
+  bufora*). To samo w menu → *Buforowane kanały* (pozycja do ustawienia w kolejności i widoczności menu; widoczna, gdy
+  jest jakiś bufor — także samego oglądanego kanału). Nagrań z buforów naraz najwyżej tyle, ile kanałów w tle
+  (bufor oglądanego kanału zawsze zostaje); ponad limit — komunikat. Nagranie audycji chroni swój bufor do jej końca
+  (przy przełączaniu wypada inny), zapis „do usunięcia bufora” trwa także w tle i kończy się, gdy bufor wypada.
+  Opcje: komunikat o zajętych buforach przy przełączaniu, stan buforów przy przełączaniu („Bufory: 2/3, nagrywa 1”),
 * PiP (okna z kanałami z bufora w tle) — w przygotowaniu, ukryte w wydaniu stabilnym,
 * timeshift (długość bufora, automatyczny start — przy odtwarzaniu przez bufor zawsze od razu, kroki przewijania, WSTECZ na pustym ekranie),
 * nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,

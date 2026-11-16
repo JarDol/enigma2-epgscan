@@ -1152,7 +1152,7 @@ class PlayerActivity : Activity() {
         if (!bgAllowed() || recMode) bgDropAll("opcja wyłączona")
         else if (prefs.bgCount == 0) for (c in bgChans.filter { it.pip < 0 }) bgDrop(c, "opcja wyłączona")
         else while (bgChans.count { it.pip < 0 } > prefs.bgCount)
-            bgChans.filter { it.pip < 0 }.minByOrNull { it.leftAt }?.let { bgDrop(it, "limit ${prefs.bgCount} kanałów w tle") } ?: break
+            bgChans.filter { it.pip < 0 && !bgProtected(it) }.minByOrNull { it.leftAt }?.let { bgDrop(it, "limit ${prefs.bgCount} kanałów w tle") } ?: break
         pipRefresh()
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
@@ -1612,6 +1612,8 @@ class PlayerActivity : Activity() {
         val i = ((index % chList.size) + chList.size) % chList.size
         chList[i].let { bgSwitch(api.streamUrl(it), it.name) }
         tsNewChannel()
+        if (prefs.bgStatusMsg && prefs.bufPlay && prefs.bgCount > 0)
+            showMessage(getString(R.string.player_bg_status, bgChans.size, prefs.bgCount, activeRecs()))
         val cur = playList.getOrNull(playIndex)
         if (cur != null && !(bIdx == playBouquet && i == playIndex)) {
             prevBouquet = playBouquet
@@ -1925,11 +1927,15 @@ class PlayerActivity : Activity() {
             val label = if (playing) "▶  ${c.name}" else c.name
             // „B” — kanał buforowany w tle (● — w trakcie zapisu z tego bufora)
             val bg = bgOf(c)
-            name.text = if (bg == null) label else android.text.SpannableStringBuilder(label).apply {
+            // oglądany kanał też, gdy gra przez bufor
+            val mainBuf = bg == null && bufLive && tsBuf != null &&
+                playList.getOrNull(playIndex)?.ref?.let { OpenWebif.key(it) == OpenWebif.key(c.ref) } == true
+            val rec = if (bg != null) bg.lrec != null else mainBuf && localRec != null
+            name.text = if (bg == null && !mainBuf) label else android.text.SpannableStringBuilder(label).apply {
                 append("  ")
                 val st = length
-                append(if (bg.lrec != null) " ● B " else " B ")
-                setSpan(android.text.style.BackgroundColorSpan(if (bg.lrec != null) 0xFFC62828.toInt() else 0xFF1565C0.toInt()), st, length, 0)
+                append(if (rec) " ● B " else " B ")
+                setSpan(android.text.style.BackgroundColorSpan(if (rec) 0xFFC62828.toInt() else 0xFF1565C0.toInt()), st, length, 0)
                 setSpan(android.text.style.ForegroundColorSpan(0xFFFFFFFF.toInt()), st, length, 0)
                 setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), st, length, 0)
             }
@@ -2242,6 +2248,15 @@ class PlayerActivity : Activity() {
         var lrec: LocalRec? = null                 // zapis z tego bufora na dysk (nagranie lokalne)
     }
 
+    /** Bufor z nagraniem audycji — chroniony do jej końca (nie wypada przy przełączaniu). */
+    private fun bgProtected(c: BgChan) = c.lrec?.mode == REC_EVENT
+
+    /** Trwające nagrania z buforów (bieżący kanał + kanały w tle). */
+    private fun activeRecs() = (if (localRec != null) 1 else 0) + bgChans.count { it.lrec != null }
+
+    /** Ile nagrań z buforów naraz: tyle, ile kanałów w tle (bufor bieżącego kanału zawsze zostaje), co najmniej 1. */
+    private fun recLimit() = maxOf(1, if (bgAllowed()) prefs.bgCount else 0)
+
     /** Kanał z listy buforowany w tle (dowolny bukiet, także historia). */
     private fun bgOf(c: Channel): BgChan? {
         if (bgChans.isEmpty() || c.ref.isBlank()) return null
@@ -2300,13 +2315,20 @@ class PlayerActivity : Activity() {
         val curAn = tsRecAn
         val canDemote = bufLive && curBuf != null && curRec != null && curAn != null && curAn === analyzer && curBuf.failed == null
         if (canDemote && (pipSlot >= 0 || prefs.bgCount > 0)) {
-            // miejsce: najdawniej opuszczony poprzedni kanał wypada (okna PiP zostają)
+            // miejsce: najdawniej opuszczony poprzedni kanał wypada (okna PiP i nagrania audycji zostają)
             while (bgChans.count { it !== target } >= BG_MAX) {
-                val v = bgChans.filter { it !== target && it.pip < 0 }.minByOrNull { it.leftAt } ?: break
+                val v = bgChans.filter { it !== target && it.pip < 0 && !bgProtected(it) }.minByOrNull { it.leftAt } ?: break
                 bgDrop(v, "limit $BG_MAX kanałów w tle")
             }
+            if (bgChans.count { it !== target } >= BG_MAX) {
+                AppLog.i("bufor w tle: ${playList.getOrNull(playIndex)?.name} bez bufora — miejsca zajęte przez nagrania audycji")
+                if (prefs.bgFullMsg) showMessage(getString(R.string.player_bg_full))
+            }
             if (bgChans.count { it !== target } < BG_MAX) {
-                if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
+                // nagranie audycji / „do usunięcia bufora” trwa dalej w tle; „do zmiany kanału” — kończy się
+                val keep = localRec?.takeIf { it.mode == REC_EVENT || it.mode == REC_UNTIL_DROP }
+                if (keep != null) { localRec = null; ui.removeCallbacks(localRecTick) }
+                else if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
                 if (tsMode) tsLeave()
                 val cur = playList.getOrNull(playIndex)
                 // bieżący → w tle: analizator, bufor i dziennik należą odtąd do niego
@@ -2317,6 +2339,11 @@ class PlayerActivity : Activity() {
                 val c = BgChan(tsLiveUrl ?: "", cur?.name ?: "?", curBuf, curAn, curRec!!, journal, cur, playBouquet, playList)
                 c.pip = pipSlot
                 bgChans += c
+                if (keep != null) {
+                    c.lrec = keep
+                    ui.removeCallbacks(bgRecTick); ui.postDelayed(bgRecTick, 5000)
+                    AppLog.i("nagranie lokalne: „${keep.meta.optString("title")}” trwa dalej w tle")
+                }
                 AppLog.i("bufor w tle: ${c.name} — zapis w tle, bufor ${curBuf.maxMin} min" + if (pipSlot >= 0) " (okno PiP ${pipSlot + 1})" else "")
                 tsRec = null; tsRecAn = null; tsBuf = null
                 bufLive = false
@@ -2679,8 +2706,12 @@ class PlayerActivity : Activity() {
         val p = player ?: return
         bufFallbackWarned = false
         val now = SystemClock.elapsedRealtime()
+        var leadMs = -1L
         val start = if (reuse) {
-            if (b.total > 0) b.offsetAt(now - 2000) else 0L         // tuż za końcem: odtwarzacz od razu ma zapas
+            // od klatki kluczowej z zapasem ≥ bufor startowy + 1 s: obraz od razu, bez przycięcia na starcie
+            val k = b.keyframeAt(now - (prefs.bufferMs + 1000))
+            if (k != null) { leadMs = now - k.second; k.first }
+            else if (b.total > 0) { leadMs = -2; b.offsetAt(now - (prefs.bufferMs + 1500)) } else 0L
         } else {
             tsLiveUrl = url
             bufLive = true
@@ -2690,6 +2721,7 @@ class PlayerActivity : Activity() {
             from
         }
         AppLog.i("bufor: ${if (reuse) "wznowienie" else "start"} odtwarzania przez bufor (${prefs.engine.uppercase()}, od bajtu $start" +
+            (if (leadMs >= 0) ", klatka kluczowa ${leadMs} ms przed końcem" else if (leadMs == -2L) ", bez znanej klatki kluczowej" else "") +
             (if (prefs.tsMin <= 0) ", bufor ${TimeshiftBuffer.BUF_PLAY_MIN} min" else "") + ")")
         if (prefs.engine == "vlc") {
             startVlc(url, b, start)
@@ -2711,7 +2743,8 @@ class PlayerActivity : Activity() {
         p.setMediaSource(src)
         p.prepare()
         p.playWhenReady = true
-        watchdog?.newStream(prefs.fastStart)
+        // dane już na nośniku — bez fazy szybkiego startu strażnika (zbędny restart w pierwszych sekundach)
+        watchdog?.newStream(prefs.fastStart && !reuse)
     }
 
     /** Nowy kanał (albo zmiana ustawień): bufor od zera, odtwarzanie na żywo. */
@@ -3170,6 +3203,11 @@ class PlayerActivity : Activity() {
 
     private fun startLocalRec(mode: Int, ch: Channel, ev: EpgEvent?, usedBefore: Long, capacity: Long, bg: BgChan? = null) {
         val b = (if (bg != null) bg.buf else tsBuf) ?: return
+        if (mode != REC_NOW && activeRecs() >= recLimit()) {
+            AppLog.i("nagranie lokalne: limit ${recLimit()} nagrań z buforów osiągnięty")
+            showMessage(getString(R.string.player_rec_limit))
+            return
+        }
         val jr = bg?.journal ?: journal
         if (bg != null) {
             if (bg.lrec != null || bg !in bgChans) return
@@ -3196,7 +3234,7 @@ class PlayerActivity : Activity() {
         LocalRecordings.writeMeta(dir, meta)
         val until = if (mode == REC_EVENT && ev != null) wallOf(ev.end) + 60_000 else Long.MAX_VALUE
         val r = LocalRec(pin, mode, meta, until, ch, usedBefore, capacity, b, jr)
-        AppLog.i("nagranie lokalne: start ${listOf("audycja", "bufor do teraz", "do zmiany kanału")[mode]} „$title” od ${fmtMs(nowWall - pin.fromWall)} wstecz" +
+        AppLog.i("nagranie lokalne: start ${listOf("audycja", "bufor do teraz", "do zmiany kanału", "do usunięcia bufora")[mode]} „$title” od ${fmtMs(nowWall - pin.fromWall)} wstecz" +
             (if (bg != null) " (kanał w tle ${bg.name})" else "") + ", ${dir.absolutePath}")
         if (bg != null) {
             if (mode == REC_NOW) { finishRec(r, "bufor do teraz", restartLive = false, main = false); return }
@@ -3300,78 +3338,101 @@ class PlayerActivity : Activity() {
 
     /** Długie OK na liście przy kanale z buforem w tle: „Zakończ bufor” i „Nagraj bufor…” (albo „Zakończ zapis”). */
     private fun bgRecButtons(bg: BgChan, c: Channel, ev: EpgEvent?): List<TvDialog.Btn> = listOf(
-        TvDialog.Btn(getString(R.string.player_bg_close)) { bgDrop(bg, "zakończony ręcznie"); refreshPanelRows() },
+        TvDialog.Btn(getString(R.string.player_bg_close)) { bgCloseAsk(bg) },
         bg.lrec?.let { r ->
             TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
-                if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false) }
+                if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false); refreshPanelRows() }
             }
-        } ?: TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bgRecMenu(bg, bg.ch ?: c, ev) },
+        } ?: TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bufRecMenu(bg, bg.ch ?: c, ev) },
     )
 
-    /** Trzy sposoby zapisu bufora kanału w tle. [ev] — bieżąca audycja (null — z EPG / dziennika kanału). */
-    private fun bgRecMenu(bg: BgChan, ch: Channel, ev: EpgEvent?) {
-        if (bg !in bgChans) return
-        val acts = listOf(
-            getString(R.string.player_bgrec_event) to REC_EVENT,
-            getString(R.string.player_bgrec_now, fmtMs(bg.buf.spanMs())) to REC_NOW,
-            getString(R.string.player_bgrec_until) to REC_UNTIL_ZAP,
-        )
-        TvDialog.list(this, getString(R.string.player_bgrec_title, bg.name), acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.45f) { i ->
-            val mode = acts[i].second
-            if (mode != REC_EVENT || ev != null) { bgRecStart(bg, mode, ch, ev); return@list }
+    /** Zakończenie bufora w tle; przy nagraniu audycji — pytanie (bufor chroniony do końca audycji). */
+    private fun bgCloseAsk(bg: BgChan) {
+        val r = bg.lrec
+        if (r != null && bgProtected(bg)) {
+            TvDialog.confirm(this, bg.name, getString(R.string.player_bg_close_rec, r.meta.optString("title")), listOf(
+                TvDialog.Btn(getString(R.string.player_bg_close)) { bgDrop(bg, "zakończony ręcznie (z nagraniem)"); refreshPanelRows() },
+                TvDialog.Btn(getString(R.string.dialog_cancel))))
+            return
+        }
+        bgDrop(bg, "zakończony ręcznie"); refreshPanelRows()
+    }
+
+    /**
+     * Zapis bufora na dysk: „Audycja: tytuł” / „Bufor do teraz” / „Do usunięcia bufora”.
+     * [bg] null — bufor oglądanego kanału. [ev] — bieżąca audycja (null — z EPG / dziennika kanału).
+     */
+    private fun bufRecMenu(bg: BgChan?, ch: Channel, ev: EpgEvent?, fetched: Boolean = false) {
+        if (bg != null && bg !in bgChans) return
+        if (ev == null && !fetched) {
             io.execute {
                 val e = currentEventOf(bg, ch)
-                runOnUiThread {
-                    if (e == null) showMessage(getString(R.string.epg_no_epg, ch.name)) else bgRecStart(bg, REC_EVENT, ch, e)
-                }
+                runOnUiThread { bufRecMenu(bg, ch, e, fetched = true) }
             }
+            return
+        }
+        val span = (bg?.buf ?: tsBuf)?.spanMs() ?: 0
+        val acts = ArrayList<Pair<String, Int>>()
+        if (ev != null) acts += getString(R.string.player_bgrec_event, ev.title) to REC_EVENT
+        acts += getString(R.string.player_bgrec_now, fmtMs(span)) to REC_NOW
+        acts += getString(R.string.player_bgrec_until) to REC_UNTIL_DROP
+        TvDialog.list(this, getString(R.string.player_bgrec_title, bg?.name ?: ch.name), acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f) { i ->
+            bgRecStart(bg, acts[i].second, ch, ev)
         }
     }
 
-    /** Bieżąca audycja kanału w tle: zapisane EPG, a gdy go brak — dziennik z EIT tego strumienia. */
-    private fun currentEventOf(bg: BgChan, ch: Channel): EpgEvent? {
+    /** Bieżąca audycja: zapisane EPG, a gdy go brak — dziennik z EIT strumienia (kanału w tle albo oglądanego). */
+    private fun currentEventOf(bg: BgChan?, ch: Channel): EpgEvent? {
         epg.localNow(ch.ref)?.let { return it }
         val n = System.currentTimeMillis() / 1000
-        return bg.journal.snapshot().lastOrNull { it.begin <= n && it.end > n }?.let {
+        return (bg?.journal ?: journal).snapshot().lastOrNull { it.begin <= n && it.end > n }?.let {
             EpgEvent(0, it.begin, it.end - it.begin, it.title, it.desc, "", ch.ref, ch.name)
         }
     }
 
     private fun refreshPanelRows() { if (panel.visibility == View.VISIBLE) adapter.notifyDataSetChanged() }
 
-    /** Menu → Buforowane kanały: lista kanałów w tle, dla każdego zakończenie bufora i zapis na dysk. */
+    /** Menu → Buforowane kanały: oglądany kanał (gdy gra przez bufor) i kanały w tle; zakończenie bufora i zapis na dysk. */
     private fun showBufferedMenu() {
-        if (bgChans.isEmpty()) return
-        val chans = bgChans.toList()
+        val cur = playList.getOrNull(playIndex)
+        val main = if (bufLive && tsBuf != null && cur != null && !recMode) cur else null
+        if (main == null && bgChans.isEmpty()) { showMessage(getString(R.string.action_no_buffered)); return }
+        val chans: List<BgChan?> = (if (main != null) listOf<BgChan?>(null) else emptyList()) + bgChans.toList()
         TvDialog.list(this, getString(R.string.player_bg_menu), chans.map { c ->
-            TvDialog.Item((if (c.lrec != null) "● " else "") + c.name, getString(R.string.player_bg_span, fmtMs(c.buf.spanMs())))
+            if (c == null) TvDialog.Item((if (localRec != null) "● " else "") + "▶  " + main!!.name,
+                getString(R.string.player_bg_span_main, fmtMs(tsBuf?.spanMs() ?: 0)))
+            else TvDialog.Item((if (c.lrec != null) "● " else "") + c.name, getString(R.string.player_bg_span, fmtMs(c.buf.spanMs())))
         }, 0, widthFrac = 0.45f) { i ->
             val bg = chans[i]
-            if (bg !in bgChans) return@list
-            val ch = bg.ch ?: Channel(0, bg.name, "")
-            val acts = ArrayList<Pair<String, () -> Unit>>()
-            acts += getString(R.string.player_bg_close) to { bgDrop(bg, "zakończony ręcznie"); refreshPanelRows() }
-            val r = bg.lrec
-            if (r != null) acts += getString(R.string.player_bgrec_stop) to {
-                if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false) }
-            } else {
-                acts += getString(R.string.player_bgrec_event) to {
-                    io.execute {
-                        val e = currentEventOf(bg, ch)
-                        runOnUiThread { if (e == null) showMessage(getString(R.string.epg_no_epg, ch.name)) else bgRecStart(bg, REC_EVENT, ch, e) }
-                    }
-                }
-                acts += getString(R.string.player_bgrec_now, fmtMs(bg.buf.spanMs())) to { bgRecStart(bg, REC_NOW, ch, null) }
-                acts += getString(R.string.player_bgrec_until) to { bgRecStart(bg, REC_UNTIL_ZAP, ch, null) }
+            if (bg != null && bg !in bgChans) return@list
+            val ch = if (bg == null) main!! else bg.ch ?: Channel(0, bg.name, "")
+            io.execute {
+                val ev = currentEventOf(bg, ch)
+                runOnUiThread { bufferedActions(bg, ch, ev) }
             }
-            TvDialog.list(this, bg.name, acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.45f) { j -> acts[j].second() }
         }
     }
 
+    private fun bufferedActions(bg: BgChan?, ch: Channel, ev: EpgEvent?) {
+        if (bg != null && bg !in bgChans) return
+        val acts = ArrayList<Pair<String, () -> Unit>>()
+        if (bg != null) acts += getString(R.string.player_bg_close) to { bgCloseAsk(bg) }
+        val r = if (bg == null) localRec else bg.lrec
+        if (r != null) acts += getString(R.string.player_bgrec_stop) to {
+            if (bg == null) { if (localRec === r) finishLocalRec("zatrzymane", restartLive = true) }
+            else if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false); refreshPanelRows() }
+        } else {
+            if (ev != null) acts += getString(R.string.player_bgrec_event, ev.title) to { bgRecStart(bg, REC_EVENT, ch, ev) }
+            acts += getString(R.string.player_bgrec_now, fmtMs((bg?.buf ?: tsBuf)?.spanMs() ?: 0)) to { bgRecStart(bg, REC_NOW, ch, ev) }
+            acts += getString(R.string.player_bgrec_until) to { bgRecStart(bg, REC_UNTIL_DROP, ch, ev) }
+        }
+        TvDialog.list(this, bg?.name ?: ch.name, acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f) { j -> acts[j].second() }
+    }
+
     /** Zgoda na pamięć urządzenia, limit miejsca — jak przy nagraniu bieżącego kanału — i start zapisu z bufora w tle. */
-    private fun bgRecStart(bg: BgChan, mode: Int, ch: Channel, ev: EpgEvent?) {
-        val b = bg.buf
-        if (bg !in bgChans) return
+    private fun bgRecStart(bg: BgChan?, mode: Int, ch: Channel, ev: EpgEvent?) {
+        if (bg != null && bg !in bgChans) return
+        val b = bg?.buf ?: tsBuf ?: return
         b.failed?.let { showMessage(getString(R.string.player_ts_error, it)); return }
         val base = LocalRecordings.base(b.root)
         val internal = b.root.absolutePath.startsWith(TimeshiftBuffer.internalBase(this).absolutePath)
@@ -3393,7 +3454,9 @@ class PlayerActivity : Activity() {
                             TvDialog.Btn(getString(R.string.message_close))))
                     return@runOnUiThread
                 }
-                startLocalRec(mode, ch, ev, used, cap, bg)
+                // bufor oglądanego kanału: nagranie bieżącego kanału (kanał musi być tym z listy odtwarzania)
+                if (bg == null) playList.getOrNull(playIndex)?.let { startLocalRec(mode, it, ev, used, cap) }
+                else startLocalRec(mode, ch, ev, used, cap, bg)
             }
         }
     }
@@ -4315,7 +4378,7 @@ class PlayerActivity : Activity() {
             }
             Act.RECORDINGS -> if (bouquets.any { it.ref == REC_REF }) showRecordings(REC_REF) else showMessage(getString(R.string.action_hidden_bouquet))
             Act.LOCAL_RECORDINGS -> if (bouquets.any { it.ref == REC_LOCAL_BOUQUET }) showRecordings(REC_LOCAL_BOUQUET) else showMessage(getString(R.string.action_hidden_bouquet))
-            Act.BUFFERED -> if (bgChans.isEmpty()) showMessage(getString(R.string.action_no_buffered)) else showBufferedMenu()
+            Act.BUFFERED -> showBufferedMenu()
             Act.ZAP_TIMERS -> showZapTimers()
             Act.DECODER_TIMERS -> showDecoderTimers()
             Act.RESTART_CHANNEL -> if (!recMode) currentUrl?.let { url ->
@@ -4576,10 +4639,11 @@ class PlayerActivity : Activity() {
                 "record_stop" -> localRec?.let { r ->
                     getString(R.string.player_localrec_stop_menu, r.meta.optString("title")) to { finishLocalRec("zatrzymane", restartLive = true) }
                 }
+                "buffered" -> if (!recMode && (bgChans.isNotEmpty() || (bufLive && tsBuf != null)))
+                    getString(R.string.player_bg_menu) to { showBufferedMenu() } else null
                 else -> getString(e.labelRes) to actions.getValue(e.id)
             }
         } + listOfNotNull(
-            if (bgChans.isNotEmpty() && !recMode) getString(R.string.player_bg_menu) to { showBufferedMenu() } else null,
             if (Features.PIP && !recMode && prefs.bufPlay && currentUrl != null) getString(R.string.pip_menu) to { showPipMenu() } else null,
             getString(R.string.message_settings) to { openSettings() })
         TvDialog.list(this, "E2Stream ${appVersion()}", items.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.4f) { which ->

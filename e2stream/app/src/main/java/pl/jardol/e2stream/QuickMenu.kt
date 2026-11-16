@@ -13,7 +13,11 @@ object QuickMenu {
         Entry("audio", R.string.menu_audio_track),
         Entry("zap_timers", R.string.menu_scheduled_switches),
         Entry("decoder_timers", R.string.menu_receiver_timers),
+        Entry("buffered", R.string.player_bg_menu),
     )
+
+    /** Pozycje dodane później — widoczne domyślnie także przy starszym zapisie widoczności. */
+    val ADDED_LATER = setOf("buffered")
 
     private val byId = configurable.associateBy { it.id }
 

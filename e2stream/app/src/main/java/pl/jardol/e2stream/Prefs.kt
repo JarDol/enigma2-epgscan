@@ -299,6 +299,16 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("bgBufMin", -1).let { if (it == 0) -1 else it }
         set(v) = putI("bgBufMin", v)
 
+    /** Komunikat przy przełączaniu, gdy bufory poprzednich kanałów są zajęte przez nagrania. */
+    var bgFullMsg: Boolean
+        get() = sp.getBoolean("bgFullMsg", true)
+        set(v) = putB("bgFullMsg", v)
+
+    /** Krótki stan buforów po każdym przełączeniu kanału („Bufory: 2/3, nagrywa 1”). */
+    var bgStatusMsg: Boolean
+        get() = sp.getBoolean("bgStatusMsg", false)
+        set(v) = putB("bgStatusMsg", v)
+
     /** Historia oglądanych kanałów (najnowszy pierwszy): ref → nazwa. */
     var history: List<Pair<String, String>>
         get() = try {
@@ -506,7 +516,7 @@ class Prefs(ctx: Context) {
             val all = QuickMenu.configurable.map { it.id }.toSet()
             val stored = sp.getStringSet("quickMenuVisible", null) ?: return HashSet(all)
             // pozycje nieznane w chwili zapisu (nowsze wersje) — widoczne
-            val known = sp.getStringSet("quickMenuKnown", null) ?: (all - QuickMenu.TOP)
+            val known = sp.getStringSet("quickMenuKnown", null) ?: (all - QuickMenu.TOP - QuickMenu.ADDED_LATER)
             return HashSet(stored + (all - known))
         }
         set(v) = sp.edit().putStringSet("quickMenuVisible", HashSet(v))
