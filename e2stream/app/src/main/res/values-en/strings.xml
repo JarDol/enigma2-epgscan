@@ -76,6 +76,8 @@
     <string name="pip_add_buffered">Add window: %1$s (buffered)</string>
     <string name="pip_add_other">Add window: from the channel list…</string>
     <string name="pip_window">Window %1$d: %2$s</string>
+    <string name="pip_change">Change channel</string>
+    <string name="pip_rec_no_swap">Swapping a window with the main picture is not available while playing a recording</string>
     <string name="pip_swap">Swap with main</string>
     <string name="pip_close">Close window</string>
     <string name="pip_close_all">Close PiP</string>

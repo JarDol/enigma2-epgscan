@@ -122,18 +122,19 @@ class SettingsActivity : Activity() {
             )
             "Odtwarzanie i obraz" -> listOf(
         Item.Action(getString(R.string.setting_playback_engine), { if (p.engine == "vlc") "VLC" else "ExoPlayer" }) { chooseEngine() },
-    ) + (if (p.engine == "vlc") listOf(
-        Item.Action(getString(R.string.setting_vlc_deinterlacing), { deintName(p.vlcDeint) }) { chooseDeint() },
-        Item.Action(getString(R.string.setting_vlc_hardware_acceleration), { hwName(p.vlcHwMode) }) { chooseHw() },
-        Item.Action(getString(R.string.setting_vlc_video_format_chroma), { p.vlcChroma }) { chooseChroma() },
-    ) else listOf(
-        Item.Toggle(getString(R.string.setting_video_tunnelling), { p.tunneling }, { p.tunneling = it }),
+        // wspólne dla VLC i ExoPlayera (z tunelowaniem i bez)
         Item.Action(getString(R.string.setting_av_shift), { avShiftLabel(this, p.avShiftMs) }) {
             val o = AvShift.values
             TvDialog.single(this, getString(R.string.setting_av_shift), o.map { avShiftLabel(this, it) }, o.indexOf(p.avShiftMs).coerceAtLeast(0)) { w ->
                 p.avShiftMs = o[w]; AvShift.ms = o[w]; markChanged("przesunięcie dźwięku = ${o[w]} ms"); items = buildItems(); refresh()
             }
         },
+    ) + (if (p.engine == "vlc") listOf(
+        Item.Action(getString(R.string.setting_vlc_deinterlacing), { deintName(p.vlcDeint) }) { chooseDeint() },
+        Item.Action(getString(R.string.setting_vlc_hardware_acceleration), { hwName(p.vlcHwMode) }) { chooseHw() },
+        Item.Action(getString(R.string.setting_vlc_video_format_chroma), { p.vlcChroma }) { chooseChroma() },
+    ) else listOf(
+        Item.Toggle(getString(R.string.setting_video_tunnelling), { p.tunneling }, { p.tunneling = it }),
         Item.Toggle(getString(R.string.setting_restart_on_stuttering_dropped_frames), { p.dropRestart }, { p.dropRestart = it }),
         Item.Toggle(getString(R.string.setting_fast_channel_start), { p.fastStart }, { p.fastStart = it }),
         num(getString(R.string.setting_playback_buffer_ms), { p.rebufferMs }, { p.rebufferMs = it }, 1000..15_000),
@@ -588,7 +589,7 @@ class SettingsActivity : Activity() {
         },
     )) + (if (!Features.PIP || !p.bufPlay || !p.pipEnabled) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_pip_mode), { pipName(p.pipFrameMs) }) {
-            val o = listOf(250, 500, 1000, 2000, 3000, 5000)
+            val o = listOf(1000, 2000, 3000, 5000)
             TvDialog.single(this, getString(R.string.setting_pip_mode), o.map { pipName(it) }, o.indexOf(p.pipFrameMs).coerceAtLeast(0)) { w ->
                 p.pipFrameMs = o[w]; markChanged("PiP: ${pipName(o[w])}"); items = buildItems(); refresh()
             }

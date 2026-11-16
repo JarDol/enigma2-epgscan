@@ -342,7 +342,7 @@ class Prefs(ctx: Context) {
 
     /** PiP: klatka co tyle ms (0,25 / 0,5 / 1 / 2 / 3 / 5 s; dawny obraz płynny → 1 s). */
     var pipFrameMs: Int
-        get() = sp.getInt("pipFrameMs", 1000).let { if (it < 250) 1000 else minOf(it, 5000) }
+        get() = sp.getInt("pipFrameMs", 1000).let { if (it < 1000) 1000 else minOf(it, 5000) }   // 0,25 / 0,5 s usunięte
         set(v) = putI("pipFrameMs", v)
 
     /** PiP: położenie okien (SettingsActivity.pipPositions), domyślnie prawy górny róg w dół. */

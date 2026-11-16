@@ -1879,7 +1879,12 @@ class PlayerActivity : Activity() {
 
     private fun panelBouquetStep(d: Int) {
         if (bouquets.isEmpty() || panelHist) return
-        val b = ((panelBouquet + d) % bouquets.size + bouquets.size) % bouquets.size
+        var b = ((panelBouquet + d) % bouquets.size + bouquets.size) % bouquets.size
+        // wybór kanału do PiP — bukiety nagrań pomijane
+        if (panelPip) {
+            var n = 0
+            while (isRecRef(bouquets[b].ref) && n++ < bouquets.size) b = ((b + d) % bouquets.size + bouquets.size) % bouquets.size
+        }
         panelBouquet = b
         if (b == playBouquet) {
             panelList = playList
@@ -2940,41 +2945,51 @@ class PlayerActivity : Activity() {
 
     /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału; menu zostaje otwarte do WSTECZ. */
     private fun showPipMenu(sel: Int = 0) {
-        if (recMode || !bgAllowed() || !bufLive) { showMessage(getString(R.string.pip_needs)); return }
+        if (!pipPossible()) { showMessage(getString(R.string.pip_needs)); return }
         val acts = ArrayList<Pair<String, () -> Unit>>()
         val open = bgChans.filter { it.pip >= 0 }.sortedBy { it.pip }
+        val pick = getString(R.string.pip_add_other)
+        val change = getString(R.string.pip_change)
         for (c in open) {
-            acts += (getString(R.string.pip_window, c.pip + 1, c.name) + " — " + getString(R.string.pip_swap)) to { pipSwap(c) }
+            // przy nagraniu obraz główny to nagranie — zamiana z głównym niedostępna
+            if (!recMode) acts += (getString(R.string.pip_window, c.pip + 1, c.name) + " — " + getString(R.string.pip_swap)) to { pipSwap(c) }
+            acts += (getString(R.string.pip_window, c.pip + 1, c.name) + " — " + change) to { pipReplace = c; pipPickChannel() }
             acts += (getString(R.string.pip_window, c.pip + 1, c.name) + " — " + getString(R.string.pip_close)) to { pipClose(c) }
         }
         if (open.size < PIP_MAX) {
             for (c in bgChans.filter { it.pip < 0 }) acts += getString(R.string.pip_add_buffered, c.name) to { pipOpen(c) }
         }
-        val pick = getString(R.string.pip_add_other)
-        if (open.size < PIP_MAX) acts += pick to { pipPickChannel() }
+        if (open.size < PIP_MAX) acts += pick to { pipReplace = null; pipPickChannel() }
         if (open.isNotEmpty()) acts += getString(R.string.pip_close_all) to { for (c in open) pipClose(c) }
         acts += getString(R.string.pip_send_log) to { Tools.uploadPipLog(this, prefs) { showMessage(it) } }
         TvDialog.list(this, getString(R.string.pip_title), acts.map { TvDialog.Item(it.first) }, sel.coerceIn(0, acts.size - 1), widthFrac = 0.5f) { i ->
             val (label, run) = acts[i]
             run()
             // po każdej zmianie menu wraca (wybór z listy kanałów — po dodaniu okna); wyjście tylko WSTECZ
-            if (label != pick) pipMenuAgain(i)
+            if (label != pick && !label.endsWith(change)) pipMenuAgain(i)
         }
     }
+
+    /** PiP możliwe: na żywo przez bufor albo przy odtwarzaniu nagrania (z dekodera / lokalnego). */
+    private fun pipPossible() = bgAllowed() && (recMode || bufLive)
+
+    /** Okno, któremu „Zmień kanał” podmienia kanał (wybór z listy). */
+    private var pipReplace: BgChan? = null
 
     /** Menu PiP ponownie po zmianie (po zamianie z głównym — gdy nowy kanał już gra przez bufor). */
     private fun pipMenuAgain(sel: Int = 0, tries: Int = 10) {
         ui.postDelayed({
             when {
-                isFinishing || recMode || panel.visibility == View.VISIBLE -> {}
-                bufLive && bgAllowed() -> showPipMenu(sel)
+                isFinishing || panel.visibility == View.VISIBLE -> {}
+                pipPossible() -> showPipMenu(sel)
                 tries > 0 -> pipMenuAgain(sel, tries - 1)
             }
         }, 400)
     }
 
-    private fun pipOpen(c: BgChan) {
-        val free = (0 until PIP_MAX).firstOrNull { i -> bgChans.none { it.pip == i } } ?: run { showMessage(getString(R.string.pip_full)); return }
+    private fun pipOpen(c: BgChan, want: Int = -1) {
+        val free = (if (want in 0 until PIP_MAX && bgChans.none { it.pip == want }) want else null)
+            ?: (0 until PIP_MAX).firstOrNull { i -> bgChans.none { it.pip == i } } ?: run { showMessage(getString(R.string.pip_full)); return }
         // bufory w tle zostają — kanał z bufora przechodzi do okna
         c.pip = free
         c.buf.maxMin = pipBufLen()
@@ -2985,7 +3000,8 @@ class PlayerActivity : Activity() {
         c.pip = -1
         c.leftAt = SystemClock.elapsedRealtime()
         // kanał wraca do zasad bufora poprzednich kanałów
-        if (prefs.bgCount == 0) bgDrop(c, "zamknięte okno PiP") else c.buf.maxMin = bgBufLen()
+        // bufor ostatnio oglądanego kanału (odłożony na czas nagrań) zostaje
+        if (prefs.bgCount == 0 && !c.parked) bgDrop(c, "zamknięte okno PiP") else c.buf.maxMin = bgBufLen()
         pipRefresh()
     }
 
@@ -3000,23 +3016,42 @@ class PlayerActivity : Activity() {
     private fun pipKey(n: Int) {
         val c = bgChans.firstOrNull { it.pip == n }
         if (c == null) { showMessage(getString(R.string.pip_no_window, n + 1)); return }
+        if (recMode) { showMessage(getString(R.string.pip_rec_no_swap)); return }
         pipSwap(c)
     }
 
     /** Wybór kanału do PiP na zwykłej liście kanałów (◀ ▶ bukiety, OK dodaje okno bez przełączania, WSTECZ anuluje). */
     private fun pipPickChannel() {
-        showPanel()
-        if (panel.visibility != View.VISIBLE || recMode) return
+        if (recMode) {
+            // przy nagraniu lista otwiera się na bukiecie ostatnio oglądanego kanału (nie na nagraniach)
+            if (bouquets.isEmpty()) return
+            panelHist = false
+            panelBouquet = playBouquet
+            panelList = playList
+            panel.visibility = View.VISIBLE
+            resetPanelTimer()
+            banner.visibility = View.GONE
+            list.requestFocus()
+            loadPanelEpg()
+        } else showPanel()
+        if (panel.visibility != View.VISIBLE) return
         panelPip = true
-        refreshPanel(list.selectedItemPosition.coerceAtLeast(0))
+        refreshPanel(if (recMode) playIndex.coerceAtLeast(0) else list.selectedItemPosition.coerceAtLeast(0))
     }
 
     private fun pipAdd(ch: Channel, bIdx: Int, l: List<Channel>) {
-        if (recMode || !bgAllowed() || !bufLive) { showMessage(getString(R.string.pip_needs)); return }
+        val rep = pipReplace
+        pipReplace = null
+        if (!pipPossible()) { showMessage(getString(R.string.pip_needs)); return }
         val url = api.streamUrl(ch)
         val cur = playList.getOrNull(playIndex)
-        if (url == tsLiveUrl || (cur != null && OpenWebif.key(cur.ref) == OpenWebif.key(ch.ref))) { showMessage(getString(R.string.pip_is_main)); return }
-        bgOf(ch)?.let { if (it.pip >= 0) showMessage(getString(R.string.pip_already)) else pipOpen(it); return }
+        // przy nagraniu ostatnio oglądany kanał nie jest obrazem głównym — może trafić do okna
+        if (!recMode && (url == tsLiveUrl || (cur != null && OpenWebif.key(cur.ref) == OpenWebif.key(ch.ref)))) { showMessage(getString(R.string.pip_is_main)); return }
+        val have = bgOf(ch)
+        if (have != null && have.pip >= 0) { showMessage(getString(R.string.pip_already)); return }
+        // „Zmień kanał”: okno zamykane, nowy kanał wchodzi na jego miejsce
+        val want = rep?.takeIf { it.pip >= 0 && it in bgChans }?.let { val w = it.pip; pipClose(it); w } ?: -1
+        if (have != null) { pipOpen(have, want); return }
         if (bgChans.count { it.pip >= 0 } >= PIP_MAX) { showMessage(getString(R.string.pip_full)); return }
         // brak miejsca: wypada najdawniej opuszczony bufor w tle (bez nagrywania); same nagrywane — komunikat
         if (bgChans.size >= BG_SLOTS) {
@@ -3025,7 +3060,7 @@ class PlayerActivity : Activity() {
             bgDrop(v, "miejsce dla okna PiP")
         }
         val c = bgNew(ch, bIdx, l) ?: run { showMessage(getString(R.string.pip_no_slot)); return }
-        pipOpen(c)
+        pipOpen(c, want)
     }
 
     /** Start (albo wznowienie) odtwarzania z bufora; [reuse] — połączenie zapisu z dekoderem już działa. */
@@ -5245,7 +5280,7 @@ class PlayerActivity : Activity() {
                 "buffered" -> if (!recMode && (bgChans.isNotEmpty() || (bufLive && tsBuf != null)))
                     getString(R.string.player_bg_menu) to { showBufferedMenu() } else null
                 // PiP — tylko przy włączonym ustawieniu „PiP (eksperymentalne)”
-                "pip" -> if (Features.PIP && prefs.pipEnabled && !recMode && prefs.bufPlay && currentUrl != null)
+                "pip" -> if (Features.PIP && prefs.pipEnabled && bgAllowed() && (recMode || currentUrl != null))
                     getString(R.string.pip_menu) to { showPipMenu() } else null
                 else -> getString(e.labelRes) to actions.getValue(e.id)
             }

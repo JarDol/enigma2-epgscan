@@ -77,6 +77,8 @@
     <string name="pip_add_buffered">Dodaj okno: %1$s (w buforze)</string>
     <string name="pip_add_other">Dodaj okno: z listy kanałów…</string>
     <string name="pip_window">Okno %1$d: %2$s</string>
+    <string name="pip_change">Zmień kanał</string>
+    <string name="pip_rec_no_swap">Podczas odtwarzania nagrania zamiana okna z obrazem głównym jest niedostępna</string>
     <string name="pip_swap">Zamień z głównym</string>
     <string name="pip_close">Zamknij okno</string>
     <string name="pip_close_all">Zamknij PiP</string>
