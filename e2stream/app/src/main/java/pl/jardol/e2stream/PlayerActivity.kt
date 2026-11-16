@@ -324,6 +324,7 @@ class PlayerActivity : Activity() {
                 val r = c.rec
                 val bg = if (r == null) bgOf(c) else null
                 if (bg != null) epg.showCurrentEvent(c) { ev -> bgRecButtons(bg, c, ev) }
+                else if (r == null && isMainBuf(c)) epg.showCurrentEvent(c) { ev -> mainRecButtons(c, ev) }
                 else if (r == null) epg.showCurrentEvent(c)
                 else if (!r.isDir) showRecordingActions(r)
             }
@@ -1932,8 +1933,7 @@ class PlayerActivity : Activity() {
             // „B” — kanał buforowany w tle (● — w trakcie zapisu z tego bufora)
             val bg = bgOf(c)
             // oglądany kanał też, gdy gra przez bufor
-            val mainBuf = bg == null && bufLive && tsBuf != null &&
-                playList.getOrNull(playIndex)?.ref?.let { OpenWebif.key(it) == OpenWebif.key(c.ref) } == true
+            val mainBuf = bg == null && isMainBuf(c)
             val rec = if (bg != null) bg.lrec != null else mainBuf && localRec != null
             name.text = if (bg == null && !mainBuf) label else android.text.SpannableStringBuilder(label).apply {
                 append("  ")
@@ -3386,6 +3386,19 @@ class PlayerActivity : Activity() {
                 if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false); refreshPanelRows() }
             }
         } ?: TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bufRecMenu(bg, bg.ch ?: c, ev) },
+    )
+
+    /** Oglądany kanał odtwarzany przez bufor (znacznik „B” na liście). */
+    private fun isMainBuf(c: Channel): Boolean = bufLive && tsBuf != null &&
+        playList.getOrNull(playIndex)?.ref?.let { OpenWebif.key(it) == OpenWebif.key(c.ref) } == true
+
+    /** Przyciski w opisie audycji oglądanego kanału: zapis bufora albo zatrzymanie trwającego zapisu. */
+    private fun mainRecButtons(c: Channel, ev: EpgEvent?): List<TvDialog.Btn> = listOf(
+        localRec?.let { r ->
+            TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
+                if (localRec === r) { finishLocalRec("zatrzymane", restartLive = true); refreshPanelRows() }
+            }
+        } ?: TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bufRecMenu(null, c, ev) },
     )
 
     /** Zakończenie bufora w tle; przy nagraniu audycji — pytanie (bufor chroniony do końca audycji). */

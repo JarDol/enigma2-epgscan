@@ -618,9 +618,9 @@ class SettingsActivity : Activity() {
                 p.recMaxHours = o[w]; markChanged("nagrania lokalne: limit nagrania = ${o[w]} h"); items = buildItems(); refresh()
             }
         },
-        gated(getString(R.string.setting_rec_max_pct), { "${p.recMaxPct}%" }, needTimeshift = true) {
+        gated(getString(R.string.setting_rec_max_pct), { getString(R.string.setting_rec_pct_value, p.recMaxPct) }, needTimeshift = true) {
             val o = listOf(30, 50, 60, 70, 80, 90)
-            TvDialog.single(this, getString(R.string.setting_rec_max_pct), o.map { "$it%" }, o.indexOf(p.recMaxPct).coerceAtLeast(0)) { w ->
+            TvDialog.single(this, getString(R.string.setting_rec_max_pct), o.map { getString(R.string.setting_rec_pct_value, it) }, o.indexOf(p.recMaxPct).coerceAtLeast(0)) { w ->
                 p.recMaxPct = o[w]; markChanged("nagrania lokalne: limit miejsca = ${o[w]}%"); items = buildItems(); refresh()
             }
         },

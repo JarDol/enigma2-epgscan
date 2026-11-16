@@ -32,7 +32,7 @@
     <string name="section_storage_desc">nośnik (dysk USB / pamięć urządzenia), timeshift, nagrania lokalne, logi</string>
     <string name="storage_header_medium">Nośnik</string>
     <string name="storage_medium">Nośnik dla timeshiftu, nagrań i logów</string>
-    <string name="storage_header_recordings">Nagrania lokalne</string>
+    <string name="storage_header_recordings">Nagrania lokalne (z timeshiftu i buforów)</string>
     <string name="storage_header_logs">Logi i pamięć aplikacji</string>
     <string name="storage_none">Brak</string>
     <string name="storage_none_desc">bez timeshiftu i nagrań lokalnych; logi w pamięci aplikacji</string>
