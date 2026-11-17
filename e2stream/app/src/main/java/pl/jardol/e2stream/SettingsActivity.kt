@@ -589,6 +589,7 @@ class SettingsActivity : Activity() {
             markChanged("odtwarzanie przez bufor: ${if (p.bufPlay) "włączone" else "wyłączone"}")
             items = buildItems(); refresh()
         },
+    ) + (if (!p.bufPlay) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_bg_buffer), {
             if (!p.bufPlay) getString(R.string.setting_bg_buffer_needs) else bgCountName(p.bgCount)
         }) {
@@ -598,7 +599,7 @@ class SettingsActivity : Activity() {
                 p.bgCount = o[w]; markChanged("bufor poprzednich kanałów: ${bgCountName(o[w])}"); items = buildItems(); refresh()
             }
         },
-    ) + (if (!p.bufPlay || p.bgCount <= 0) emptyList<Item>() else listOf(
+    )) + (if (!p.bufPlay || p.bgCount <= 0) emptyList<Item>() else listOf(
         // czas bufora — tylko gdy bufor poprzednich kanałów włączony
         gated(getString(R.string.setting_bg_buffer_time), { bgName(p.bgBufMin) }) { chooseBgBuffer() },
         Item.Toggle(getString(R.string.setting_bg_full_msg), { p.bgFullMsg }, { p.bgFullMsg = it }),
@@ -623,6 +624,7 @@ class SettingsActivity : Activity() {
     )) + listOf(
         Item.Header(getString(R.string.setting_timeshift_pause_and_rewind_live_tv)),
         gated(getString(R.string.setting_timeshift), { tsValue() }) { chooseTs() },
+    ) + (if (p.tsMin <= 0) emptyList<Item>() else listOf(
         // przy odtwarzaniu przez bufor zapis rusza od razu (odtwarzacz czyta z bufora) — opóźnienie nieaktywne, ustawienie zostaje
         gated(getString(R.string.setting_automatic_timeshift), {
             if (p.bufPlay) getString(R.string.ts_delay_buffer_play) else tsDelayName(p.tsDelay)
@@ -657,6 +659,7 @@ class SettingsActivity : Activity() {
                 p.recMaxPct = o[w]; markChanged("nagrania lokalne: limit miejsca = ${o[w]}%"); items = buildItems(); refresh()
             }
         },
+    )) + listOf(
         Item.Header(getString(R.string.storage_header_logs)),
         Item.Action(getString(R.string.setting_log_and_dump_storage_location), { Storage.dir(this, p).absolutePath }) { chooseStorage() },
         Item.Action(getString(R.string.setting_app_storage), { getString(R.string.setting_app_storage_value) }) { showAppStorage() },
@@ -747,6 +750,7 @@ class SettingsActivity : Activity() {
     private fun tsValue(): String {
         val d = TimeshiftBuffer.dir(this, p)
             ?: return getString(if (p.tsDir.isNotBlank()) R.string.ts_usb_unavailable else R.string.ts_choose_location)
+        if (p.tsMin <= 0) return getString(R.string.settings_disabled)
         val fit = TimeshiftBuffer.fitMinutes(d)
         val rec = TimeshiftBuffer.recommended(fit, tsUsb())
         val cur = if (p.tsMin <= 0) getString(R.string.ts_off) else "${p.tsMin} min"
@@ -1279,8 +1283,8 @@ class SettingsActivity : Activity() {
                 when {
                     it is Item.Toggle && it.get() -> 0xFF81C784.toInt()
                     it is Item.Toggle -> 0xFFE57373.toInt()
-                    it is Item.Action && value.text == getString(R.string.settings_enabled) -> 0xFF81C784.toInt()
-                    it is Item.Action && value.text == getString(R.string.settings_disabled) -> 0xFFE57373.toInt()
+                    it is Item.Action && value.text.toString().startsWith(getString(R.string.settings_enabled)) -> 0xFF81C784.toInt()
+                    it is Item.Action && value.text.toString().startsWith(getString(R.string.settings_disabled)) -> 0xFFE57373.toInt()
                     else -> 0xFFB0BEC5.toInt()
                 }
             )

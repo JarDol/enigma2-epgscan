@@ -30,7 +30,7 @@
     <string name="section_storage">Storage</string>
     <string name="section_storage_desc">medium (USB drive / device storage), timeshift, local recordings, logs</string>
     <string name="storage_header_medium">Medium</string>
-    <string name="storage_medium">Medium for timeshift, recordings and logs</string>
+    <string name="storage_medium">Medium for timeshift, buffers, recordings and logs</string>
     <string name="storage_header_recordings">Local recordings (from timeshift and buffers)</string>
     <string name="storage_header_logs">Logs and app storage</string>
     <string name="storage_none">None</string>

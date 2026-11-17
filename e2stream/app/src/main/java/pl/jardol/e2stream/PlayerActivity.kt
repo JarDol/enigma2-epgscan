@@ -1883,6 +1883,7 @@ class PlayerActivity : Activity() {
             val limit = sleepLimitMs()
             val now = SystemClock.elapsedRealtime()
             if (limit <= 0) { sleepDlg?.dismiss(); sleepDlg = null; sleepAt = 0; return }
+            if (settingsOpen) { sleepAt = now + limit; return }   // w ustawieniach nie wyłączamy; licznik liczy od powrotu
             if (sleepAt == 0L) sleepAt = now + limit
             val dlg = sleepDlg?.takeIf { it.isShowing }
             if (AppState.recording) {
