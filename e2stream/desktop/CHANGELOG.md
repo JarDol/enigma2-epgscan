@@ -3,6 +3,20 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.7.0
+
+- Pilot-klawiatura (np. G20S Pro): „Przejmuj klawisze systemowe” (Ustawienia → Pilot) — gdy E2Stream jest aktywny, klawisze, które Windows obsługuje sam (Home / przeglądarka, multimedia, Menu, klawisz Windows), trafiają tylko do E2Stream. Domyślnie tylko z pilota (urządzenia USB / Bluetooth) — klawiatura laptopa działa zwykle; do wyboru też ze wszystkich klawiatur albo wyłączone. W innych oknach wszystko po staremu. Decyzje (urządzenie, przejęty / do Windows) w logu
+- „Przycisk zasilania Windows (Power pilota)”: odczyt i zmiana działania przycisku zasilania w bieżącym planie zasilania („Nic nie rób” — Power pilota obsługuje tylko E2Stream), z przywróceniem poprzedniego ustawienia
+- Przesunięcie dźwięku −1…+1 s co 50 ms (Ustawienia → Dźwięk, menu, klawisz pilota) — okno zostaje otwarte (◀ ▶ zmienia od razu, Wstecz zamyka)
+- Pasek kanału: zegar hh:mm:ss pod logo (wielkości tytułu audycji, kolor nazwy kanału), w linii nazwy stan bufora timeshiftu („B 12:34 · −1:05”), czerwone ● przy nagrywaniu
+- Historia kanałów (▼ podczas oglądania, menu, klawisz): ostatnio oglądane kanały ze wszystkich bukietów; wybór przełącza też bukiet
+- Nowe akcje klawiszy pilota: nagraj / zakończ nagrywanie (REC), nagrania z dekodera, nagrania lokalne, historia, następny / poprzedni bukiet, przełączenia, harmonogramy dekodera, uruchom kanał od nowa, przesunięcie dźwięku, statystyki, wyślij log na dekoder
+- Menu: „Zatrzymaj nagrywanie…”, „Przesunięcie dźwięku”, „Historia kanałów”, „Nagrania lokalne”, „Statystyki na ekranie”, „Wyślij log na dekoder”; nowe pozycje trafiają w miejsce z kolejności domyślnej (nie na koniec zapisanej kolejności)
+- Okno ścieżki dźwięku zostaje po wyborze (wyjście Wstecz)
+- „Zostaw obraz poprzedniego kanału” (domyślnie włączone) — bez czarnego ekranu przy przełączaniu
+- Aktualizacja: do 3 prób pobrania co ~10 s; przed instalacją kończone nagranie lokalne (zapisane)
+- Komunikaty: zdarzenie w pierwszej linii (✓ / ✗), szczegóły w drugiej, bez pełnych ścieżek
+
 ## 0.6.0
 
 - Wyświetlanie obrazu przez kartę graficzną (domyślnie): VLC oddaje klatki YUV 4:2:0 bez przeliczania, a kolory (BT.601/709/2020) i skalowanie do okna liczy shader przy rysowaniu — jak wyjście Direct3D 11 w zwykłym VLC. Procesor tylko kopiuje dane; przy 4K HEVC 10-bit (dekodowanym programowo — karty w laptopach tej generacji go nie dekodują) zostaje zapas na dekodowanie. Obraz BT.2020 (4K, HLG) — przybliżona konwersja barw do ekranu. Ustawienia → Odtwarzanie → „Wyświetlanie obrazu”: karta graficzna / procesor (jak do 0.5.1)

@@ -5,6 +5,7 @@ enum class NavAction(val label: String) {
     NONE("— brak —"),
     CHANNEL_BANNER("Pokaż pasek kanału"),
     CHANNEL_LIST("Lista kanałów"),
+    HISTORY("Historia kanałów"),
     EPG_EVENT("EPG wydarzenia (opis bieżącej audycji)"),
     EPG_CHANNEL("EPG kanału"),
     MULTI_EPG("Multi-EPG bukietu"),
@@ -33,7 +34,7 @@ object NavigationKeyMap {
         VirtualRemoteKey.LEFT to NavAction.EPG_CHANNEL,
         VirtualRemoteKey.RIGHT to NavAction.MULTI_EPG,
         VirtualRemoteKey.UP to NavAction.CHANNEL_LIST,
-        VirtualRemoteKey.DOWN to NavAction.CHANNEL_LIST,
+        VirtualRemoteKey.DOWN to NavAction.HISTORY,
     )
 
     val bannerDefaults: Map<VirtualRemoteKey, NavAction> = mapOf(
@@ -41,7 +42,7 @@ object NavigationKeyMap {
         VirtualRemoteKey.LEFT to NavAction.EPG_CHANNEL,
         VirtualRemoteKey.RIGHT to NavAction.MULTI_EPG,
         VirtualRemoteKey.UP to NavAction.CHANNEL_LIST,
-        VirtualRemoteKey.DOWN to NavAction.CHANNEL_LIST,
+        VirtualRemoteKey.DOWN to NavAction.HISTORY,
     )
 
     fun resolve(defaults: Map<VirtualRemoteKey, NavAction>, overrides: String): Map<VirtualRemoteKey, NavAction> =

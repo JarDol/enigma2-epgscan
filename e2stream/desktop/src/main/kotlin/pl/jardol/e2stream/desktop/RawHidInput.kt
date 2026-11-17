@@ -40,6 +40,10 @@ internal class RawHidInput(
     private val onPower: (String) -> Unit = {},
     /** Zwraca true, gdy klawisz ma być obsłużony przez program i nie trafić do Windows (np. głośność). */
     private val interceptKey: (physicalId: String, down: Boolean) -> Boolean = { _, _ -> false },
+    /** Przejmowanie klawiszy systemowych przy aktywnym E2Stream: "remote" (tylko z pilota USB/Bluetooth), "all", "off". */
+    private val systemKeyMode: () -> String = { "off" },
+    /** Przejęty klawisz systemowy z klawiatury pilota (Windows go nie dostał) — do obsługi w programie. */
+    private val onSystemKey: (physicalId: String) -> Unit = {},
 ) : AutoCloseable {
     private val ready = CountDownLatch(1)
     private val failure = AtomicReference<Throwable?>()
@@ -65,9 +69,13 @@ internal class RawHidInput(
         ) {
             onPower(physicalId)
         }
+        val down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN
         val intercepted = code >= 0 && !isPower && isForegroundApplication() &&
-            interceptKey(physicalId, message == WM_KEYDOWN || message == WM_SYSKEYDOWN)
-        if (intercepted || isPower && isForegroundApplication() ||
+            interceptKey(physicalId, down)
+        val system = code >= 0 && !isPower && !intercepted && (data.flags and LLKHF_INJECTED) == 0 &&
+            data.vkCode in SYSTEM_KEYS && isForegroundApplication() && isApplicationFocused() &&
+            takeSystemKey(data.vkCode, down)
+        if (intercepted || system || isPower && isForegroundApplication() ||
             code >= 0 && data.vkCode in setOf(VK_BROWSER_BACK, VK_BROWSER_HOME) &&
             isForegroundApplication() && isApplicationFocused() && suppressBrowserKeys()
         ) {
@@ -96,6 +104,70 @@ internal class RawHidInput(
             throw IOException("Nie udało się uruchomić odbiornika pilota HID.", it)
         }
     }
+
+    // ---------- Klawisze systemowe pilota (Home/przeglądarka, multimedia, Menu, Windows) ----------
+
+    /** Ostatni klawisz z odczytu klawiatur: czy z urządzenia zewnętrznego (USB/Bluetooth) i kiedy. */
+    private data class KeySource(val external: Boolean, val device: String, val at: Long)
+    private val keyboardSources = HashMap<Int, KeySource>()
+    @Volatile private var lastConsumerExternal = KeySource(false, "", 0L)
+    private var systemDecisions = 0
+    private val heldSystemKeys = HashSet<Int>()
+
+    /**
+     * Czy przejąć klawisz systemowy (Windows go nie dostanie). Źródło klawisza z odczytu urządzeń (Raw Input) —
+     * wiadomości czekające w kolejce są odczytywane przed decyzją. Klawiatura laptopa (bez VID) — zwykle do Windows.
+     */
+    private fun takeSystemKey(vk: Int, down: Boolean): Boolean {
+        val mode = systemKeyMode()
+        if (mode == "off") return false
+        if (!down) return heldSystemKeys.remove(vk)
+        pumpRawInput()
+        val now = System.currentTimeMillis()
+        val keyboard = keyboardSources[vk]?.takeIf { now - it.at <= SOURCE_WINDOW_MS }
+        val consumer = lastConsumerExternal.takeIf { it.external && now - it.at <= SOURCE_WINDOW_MS && vk !in WINDOWS_KEYS }
+        val source = keyboard ?: consumer
+        val take = when {
+            mode == "all" -> true
+            source != null -> source.external
+            // Źródło nieznane: klawisz Windows zostaje dla Windows, pozostałe przejmowane (E2Stream jest aktywny).
+            else -> vk !in WINDOWS_KEYS
+        }
+        if (systemDecisions < MAX_DECISION_LOGS) {
+            systemDecisions++
+            onDiagnostic(
+                "klawisz systemowy 0x%02X: %s — %s".format(
+                    vk,
+                    when {
+                        source == null -> "źródło nieznane"
+                        source.external -> "z urządzenia ${source.device}"
+                        else -> "z klawiatury komputera"
+                    },
+                    if (take) "przejęty przez E2Stream" else "do Windows",
+                ),
+            )
+        }
+        if (take) {
+            heldSystemKeys += vk
+            // Z klawiatury pilota (nie z raportu HID multimediów — ten obsługuje odczyt HID) — akcja w programie.
+            if (keyboard != null || consumer == null) onSystemKey(UniversalRemoteMap.keyId(vk))
+        }
+        return take
+    }
+
+    private val pumpMessage = WinUser.MSG()
+
+    /** Odczyt czekających WM_INPUT (źródło klawisza) przed decyzją w haku klawiatury. */
+    private fun pumpRawInput() {
+        val target = window ?: return
+        var guard = 0
+        while (guard++ < 16 && User32.INSTANCE.PeekMessage(pumpMessage, target, WM_INPUT, WM_INPUT, PM_REMOVE)) {
+            User32.INSTANCE.DispatchMessage(pumpMessage)
+        }
+    }
+
+    private fun isExternalDevice(path: String): Boolean =
+        Regex("VID[_&]", RegexOption.IGNORE_CASE).containsMatchIn(path) && !path.contains("ACPI", ignoreCase = true)
 
     private fun runMessageLoop() {
         var registeredClass: String? = null
@@ -161,6 +233,8 @@ internal class RawHidInput(
             deviceUsage(device.hDevice)?.let(usages::add)
         }
         usages += CONSUMER_CONTROL_USAGE
+        // Klawiatury (także klawiatura pilota-myszki): źródło klawiszy systemowych.
+        usages += KEYBOARD_USAGE
         usageRegistry.registerNew(usages)
     }
 
@@ -245,6 +319,14 @@ internal class RawHidInput(
         if (RawInputApi.INSTANCE.GetRawInputData(rawHandle, RID_INPUT, data, size, headerSize) == UINT_ERROR) {
             return
         }
+        if (data.getInt(0) == RIM_TYPEKEYBOARD) {
+            val keyboardDevice = WinNT.HANDLE(data.getPointer(8))
+            val vk = data.getShort(headerSize.toLong() + 6).toInt() and 0xFFFF
+            val info = deviceInfo(keyboardDevice)
+            val path = info?.path.orEmpty()
+            keyboardSources[vk] = KeySource(isExternalDevice(path), info?.vendorProduct ?: "nieznane", System.currentTimeMillis())
+            return
+        }
         if (data.getInt(0) != RIM_TYPEHID) return
         val device = WinNT.HANDLE(data.getPointer(8))
         val reportSize = data.getInt(headerSize.toLong())
@@ -252,6 +334,8 @@ internal class RawHidInput(
         if (reportSize <= 1 || reportCount <= 0 || reportSize.toLong() * reportCount > size.value - headerSize - 8) return
         val deviceInfo = deviceInfo(device) ?: return
         val deviceHandle = Pointer.nativeValue(device.pointer)
+        // Raport multimediów / sterowania systemem z urządzenia zewnętrznego — Windows zamieni go zaraz na klawisz (VK).
+        lastConsumerExternal = KeySource(isExternalDevice(deviceInfo.path), deviceInfo.vendorProduct, System.currentTimeMillis())
         val payload = ByteArray(reportSize - 1)
         for (index in 0 until reportCount) {
             val reportOffset = headerSize.toLong() + 8 + reportSize.toLong() * index
@@ -369,6 +453,19 @@ internal class RawHidInput(
         private const val RIDI_DEVICENAME = 0x20000007
         private const val RIDI_DEVICEINFO = 0x2000000B
         private const val RIM_TYPEHID = 2
+        private const val RIM_TYPEKEYBOARD = 1
+        private const val PM_REMOVE = 0x0001
+        private const val LLKHF_INJECTED = 0x10
+        private const val SOURCE_WINDOW_MS = 250L
+        private const val MAX_DECISION_LOGS = 40
+        private val KEYBOARD_USAGE = 0x0001.toShort() to 0x0006.toShort()
+        /** Klawisz Windows (lewy, prawy). */
+        private val WINDOWS_KEYS = setOf(0x5B, 0x5C)
+        /**
+         * Klawisze, które Windows obsługuje sam niezależnie od okna: Windows, Menu kontekstowe, uśpij, przeglądarka,
+         * multimedia, poczta / aplikacje. Głośność (0xAD–0xAF) — osobne ustawienie „Głośność w programie”.
+         */
+        private val SYSTEM_KEYS = WINDOWS_KEYS + setOf(0x5D, 0x5F) + (0xA6..0xAC).toSet() + (0xB0..0xB7).toSet()
         private const val RIDEV_INPUTSINK = 0x00000100
         private const val RIDEV_DEVNOTIFY = 0x00002000
         private const val UINT_ERROR = -1

@@ -222,10 +222,14 @@ fun main() {
             var volumeOsdGeneration by remember { mutableIntStateOf(0) }
             var volumeOsdVisible by remember { mutableStateOf(false) }
             val volumeKeyIds = remember { AtomicReference<Set<String>>(emptySet()) }
+            val systemKeysMode = remember { AtomicReference("remote") }
+            var activeRecording by remember { mutableStateOf<ActiveRecording?>(null) }
             val captureActive = remember { AtomicBoolean(false) }
             fun openMenu() = navigation.openMenu(
                 DesktopMenuItem.visible(config.menuOrder, config.menuHidden)
-                    .filter { it != DesktopMenuItem.RECORD || (timeshift != null && playingRecording == null) },
+                    .filter { it != DesktopMenuItem.RECORD || (timeshift != null && playingRecording == null) }
+                    .filter { it != DesktopMenuItem.STOP_RECORDING || activeRecording != null }
+                    .filter { it != DesktopMenuItem.HISTORY || config.history.length > 2 },
             )
             LaunchedEffect(config.appLanguage) { AppLanguage.apply(config.appLanguage) }
             var lastVirtualKey by remember { mutableStateOf<VirtualRemoteKey?>(null) }
@@ -238,6 +242,7 @@ fun main() {
                 globalActivateKeys.set(if (captureButton == null) universalBindings[VirtualRemoteKey.ACTIVATE].orEmpty() else emptySet())
                 activateAnyKey.set(captureButton == null && config.activateAnyRemoteKey)
                 captureActive.set(captureButton != null)
+                systemKeysMode.set(config.systemKeys)
                 volumeKeyIds.set(
                     if (!config.volumeKeysApp) emptySet()
                     else listOf(VirtualRemoteKey.VOLUME_UP, VirtualRemoteKey.VOLUME_DOWN, VirtualRemoteKey.MUTE)
@@ -449,12 +454,12 @@ fun main() {
                 }
                 result.onSuccess { where ->
                     logUploadStatus = "wysłano: $where"
-                    if (manual) status = "Log wysłany: $where"
+                    if (manual) status = "✓ Log wysłany na dekoder\n${where.substringAfterLast('/').substringBefore(" (")}"
                 }.onFailure { error ->
                     if (error is CancellationException) throw error
                     AppLog.markDirty()
                     logUploadStatus = "błąd: ${error.message}"
-                    if (manual) status = "Nie udało się wysłać logu: ${error.message}"
+                    if (manual) status = "✗ Nie udało się wysłać logu\n${error.message}"
                 }
             }
 
@@ -483,7 +488,6 @@ fun main() {
 
             // EIT ze strumienia: tunel do VLC (bez timeshiftu) i wersja danych do odświeżenia paska.
             var streamTap by remember { mutableStateOf<StreamTap?>(null) }
-            var activeRecording by remember { mutableStateOf<ActiveRecording?>(null) }
             var eitVersion by remember { mutableIntStateOf(0) }
             var eitJob by remember { mutableStateOf<Job?>(null) }
 
@@ -658,6 +662,10 @@ fun main() {
                         config.copy(
                             lastBouquetRef = selectedBouquet?.ref?.takeIf { !isRecordingsBouquet(it) } ?: config.lastBouquetRef,
                             lastChannelRef = channel.ref,
+                            history = ChannelHistory.push(
+                                config.history,
+                                HistoryEntry(channel.ref, channel.name, selectedBouquet?.ref?.takeIf { !isRecordingsBouquet(it) } ?: config.lastBouquetRef),
+                            ),
                         ),
                     )
                 } catch (e: Exception) {
@@ -1745,7 +1753,62 @@ fun main() {
                     options = tracks.map { it.name },
                     selected = selected,
                     subtitles = tracks.map { if (it.id == current) "odtwarzana" else null },
-                ) { index -> onSelect(index) }
+                    keepOpen = true,
+                ) { index ->
+                    onSelect(index)
+                    // okno zostaje (wyjście Wstecz) — znacznik „odtwarzana” przy wybranej ścieżce
+                    quickPick = quickPick?.let { pick ->
+                        pick.copy(selected = index, subtitles = tracks.indices.map { if (it == index) "odtwarzana" else null })
+                    }
+                }
+            }
+
+            // ---------- Przesunięcie dźwięku ----------
+
+            val audioDelaySteps = (-1000..1000 step 50).toList()
+            fun audioDelayLabel(ms: Int): String = when {
+                ms == 0 -> "0 ms (bez przesunięcia)"
+                ms > 0 -> "+$ms ms (dźwięk później)"
+                else -> "$ms ms (dźwięk wcześniej)"
+            }
+            fun applyAudioDelay(ms: Int) {
+                val value = ms.coerceIn(-1000, 1000) / 50 * 50
+                saveConfig(config.copy(audioDelayMs = value))
+                vlcSession?.setAudioDelay(value)
+                status = "Przesunięcie dźwięku: ${audioDelayLabel(value)}"
+            }
+            /** Przesunięcie dźwięku −1…+1 s co 50 ms (wspólne dla wszystkich kanałów); okno zostaje do Wstecz. */
+            fun showAudioDelay(inSettings: Boolean = false) {
+                val options = audioDelaySteps.map(::audioDelayLabel)
+                val selected = audioDelaySteps.indexOf(config.audioDelayMs).coerceAtLeast(0)
+                if (inSettings) {
+                    navigator.openChoice(
+                        SettingsChoice("Przesunięcie dźwięku", options, selected, body = "Dodatnie — dźwięk później niż obraz (gdy dźwięk wyprzedza obraz).") {
+                            applyAudioDelay(audioDelaySteps[it])
+                        },
+                    )
+                    return
+                }
+                fun pick(index: Int): QuickPick = QuickPick(
+                    title = "Przesunięcie dźwięku",
+                    options = options,
+                    selected = index,
+                    subtitles = audioDelaySteps.map { if (it == config.audioDelayMs) "ustawione" else null },
+                    body = "◀ ▶ co 50 ms, OK — ustaw, Wstecz — zamknij",
+                    keepOpen = true,
+                    autoClose = false,
+                    onHorizontal = { direction ->
+                        quickPick?.let { current ->
+                            val next = (current.selected + direction).coerceIn(0, audioDelaySteps.lastIndex)
+                            applyAudioDelay(audioDelaySteps[next])
+                            quickPick = current.copy(selected = next, subtitles = audioDelaySteps.map { if (it == audioDelaySteps[next]) "ustawione" else null })
+                        }
+                    },
+                ) { index ->
+                    applyAudioDelay(audioDelaySteps[index])
+                    quickPick = quickPick?.copy(selected = index, subtitles = audioDelaySteps.map { if (it == audioDelaySteps[index]) "ustawione" else null })
+                }
+                quickPick = pick(selected)
             }
 
             // ---------- EPG ----------
@@ -2116,20 +2179,39 @@ fun main() {
 
             // ---------- Aktualizacja aplikacji z GitHuba ----------
             var updateStatus by remember { mutableStateOf("") }
+            var powerButtonSummary by remember { mutableStateOf("Power pilota wyłącza komputer? Ustaw tu „Nic nie rób”") }
             var updateBusy by remember { mutableStateOf(false) }
             fun installUpdate(release: Updater.Release) {
                 if (updateBusy) return
                 updateBusy = true
                 scope.launch {
                     try {
-                        val file = withContext(Dispatchers.IO) {
-                            Updater.download(release) { percent ->
-                                EventQueue.invokeLater { updateStatus = "pobieranie ${release.version}: $percent%" }
+                        // Do 3 prób co ~10 s — plik na GitHubie bywa niegotowy tuż po wydaniu.
+                        var file: java.io.File? = null
+                        for (attempt in 1..3) {
+                            try {
+                                file = withContext(Dispatchers.IO) {
+                                    Updater.download(release) { percent ->
+                                        EventQueue.invokeLater { updateStatus = "pobieranie ${release.version}: $percent%" }
+                                    }
+                                }
+                                break
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                if (attempt == 3) throw e
+                                logInfo("aktualizacja: próba $attempt nieudana (${e.message}) — ponawiam za 10 s")
+                                updateStatus = "pobieranie nieudane (${e.message}) — ponawiam za 10 s (próba ${attempt + 1}/3)"
+                                delay(10_000)
                             }
                         }
-                        logInfo("aktualizacja: pobrano ${file.name} — uruchamiam instalator")
+                        val installer = file ?: return@launch
+                        logInfo("aktualizacja: pobrano ${installer.name} — uruchamiam instalator")
                         updateStatus = "uruchamiam instalator ${release.version}…"
-                        withContext(Dispatchers.IO) { Updater.launchInstaller(file) }
+                        // Trwające nagranie lokalne i bufor zamykane przed instalacją (nagranie zapisane).
+                        if (activeRecording != null) logInfo("aktualizacja: kończę nagranie lokalne przed instalacją")
+                        withContext(Dispatchers.IO) { runCatching { timeshift?.close() } }
+                        withContext(Dispatchers.IO) { Updater.launchInstaller(installer) }
                         delay(1500)
                         exitApplication()
                     } catch (e: CancellationException) {
@@ -2296,13 +2378,13 @@ fun main() {
                         EventQueue.invokeLater {
                             if (activeRecording?.dir == result.dir) activeRecording = null
                             if (result.files == 0) runCatching { result.dir.deleteRecursively() }
-                            status = if (result.files == 0) "Nagranie puste — nic nie zapisano."
-                            else "Nagranie zapisane: ${title ?: channel.name} (${result.bytes / 1_000_000} MB, ${result.reason})."
+                            status = if (result.files == 0) "✗ Nagranie puste — nic nie zapisano."
+                            else "✓ Nagranie zapisane: ${title ?: channel.name}\n${result.bytes / 1_000_000} MB · ${result.reason}"
                         }
                     }
                     if (!ok) {
                         dir.deleteRecursively()
-                        status = "Nie udało się rozpocząć nagrania (bufor timeshiftu pusty?)."
+                        status = "✗ Nie udało się rozpocząć nagrania\nbufor timeshiftu pusty?"
                         return@launch
                     }
                     activeRecording = ActiveRecording(dir, title ?: channel.name, channel.ref)
@@ -2414,12 +2496,95 @@ fun main() {
                 }
             }
 
+            // ---------- Historia, bukiety, nagrania, log — akcje klawiszy i menu ----------
+
+            /** Okno „Historia”: ostatnio oglądane kanały ze wszystkich bukietów; wybór przełącza też bukiet. */
+            fun openHistory() {
+                val entries = ChannelHistory.parse(config.history)
+                if (entries.isEmpty()) {
+                    status = "Historia kanałów jest pusta."
+                    return
+                }
+                val bouquetNames = catalog?.bouquets.orEmpty().associate { it.ref to it.name }
+                val current = playingChannel?.let { serviceKey(it.ref) }
+                quickPick = QuickPick(
+                    title = "Historia kanałów",
+                    options = entries.map { it.name },
+                    selected = 0,
+                    subtitles = entries.map { entry ->
+                        listOfNotNull(
+                            "oglądany".takeIf { serviceKey(entry.ref) == current },
+                            bouquetNames[entry.bouquet],
+                        ).joinToString(" · ").ifBlank { null }
+                    },
+                ) { index ->
+                    val entry = entries[index]
+                    val bouquet = catalog?.bouquets?.firstOrNull { it.ref == entry.bouquet }
+                    scope.launch {
+                        if (bouquet != null && selectedBouquet?.ref != bouquet.ref) loadBouquetChannels(bouquet)
+                        val channel = channels.firstOrNull { serviceKey(it.ref) == serviceKey(entry.ref) }
+                            ?: Channel(0, entry.name, entry.ref)
+                        startChannel(channel)
+                    }
+                }
+            }
+
+            /** Następny / poprzedni bukiet: lista kanałów otwarta na sąsiednim bukiecie. */
+            fun stepBouquet(step: Int) {
+                val bouquets = visibleBouquets()
+                if (bouquets.isEmpty()) return
+                val index = bouquets.indexOfFirst { it.ref == selectedBouquet?.ref }
+                val next = bouquets[((if (index < 0) 0 else index) + step).mod(bouquets.size)]
+                scope.launch {
+                    if (loadBouquetChannels(next)) {
+                        channelListSelected = 0
+                        showChannelList = true
+                        status = "Bukiet: ${next.name}"
+                    }
+                }
+            }
+
+            /** „Zatrzymaj nagrywanie…”: lista trwających nagrań, OK zatrzymuje od razu (okno zostaje z resztą). */
+            fun openStopRecording() {
+                val recording = activeRecording
+                if (recording == null) {
+                    status = "Nic się nie nagrywa."
+                    return
+                }
+                val channelName = playingChannel?.takeIf { it.ref == recording.channelRef }?.name
+                quickPick = QuickPick(
+                    title = "Zatrzymaj nagrywanie",
+                    options = listOf(listOfNotNull(channelName, recording.title).joinToString(" · ")),
+                    selected = 0,
+                    subtitles = listOf("OK — zatrzymaj i zapisz"),
+                ) { stopLocalRecording() }
+            }
+
+            /** REC: nagraj z timeshiftu, w trakcie nagrania — zakończ. */
+            fun recordKey() {
+                when {
+                    activeRecording != null -> stopLocalRecording()
+                    timeshift != null && playingRecording == null -> pickRecording()
+                    else -> status = "Nagrywanie lokalne wymaga timeshiftu — Ustawienia → Odtwarzanie i obraz → Timeshift."
+                }
+            }
+
+            fun sendLogNow() {
+                if (config.host.isBlank()) {
+                    status = "Najpierw ustaw dekoder."
+                    return
+                }
+                status = "Wysyłanie logu na dekoder…"
+                scope.launch { uploadLog(manual = true) }
+            }
+
             fun runNavAction(action: NavAction) {
                 when (action) {
                     NavAction.NONE -> Unit
                     NavAction.CHANNEL_BANNER ->
                         if (playingChannel != null) bannerGeneration++ else status = "Nie odtwarzasz żadnego kanału."
                     NavAction.CHANNEL_LIST -> openChannelList()
+                    NavAction.HISTORY -> openHistory()
                     NavAction.EPG_EVENT -> showCurrentEvent()
                     NavAction.EPG_CHANNEL -> playingChannel?.let { showChannelEpg(it) } ?: pickEpgChannel { showChannelEpg(it) }
                     NavAction.MULTI_EPG -> showMultiEpg()
@@ -2453,6 +2618,12 @@ fun main() {
                     DesktopMenuItem.EPG_SEARCH -> openEpgSearch()
                     DesktopMenuItem.AUDIO -> showAudioPick()
                     DesktopMenuItem.RECORD -> pickRecording()
+                    DesktopMenuItem.STOP_RECORDING -> openStopRecording()
+                    DesktopMenuItem.AUDIO_DELAY -> showAudioDelay()
+                    DesktopMenuItem.HISTORY -> openHistory()
+                    DesktopMenuItem.LOCAL_RECORDINGS -> openRecordingsList(local = true)
+                    DesktopMenuItem.STATS -> saveConfig(config.copy(showStats = !config.showStats))
+                    DesktopMenuItem.SEND_LOG -> sendLogNow()
                     DesktopMenuItem.ACTIVATE_KEYS -> openSettings(SettingsScreen.REMOTE)
                     DesktopMenuItem.EXIT -> {
                         powerDialogOpen.set(true)
@@ -2747,6 +2918,11 @@ fun main() {
                 )
                 SettingsScreen.PLAYBACK -> listOf(
                     SettingItem.Header("VLC"),
+                    SettingItem.Toggle(
+                        "Zostaw obraz poprzedniego kanału",
+                        config.keepLastFrame,
+                        "przy przełączaniu ostatnia klatka zostaje do pojawienia się nowego obrazu (bez czarnego ekranu)",
+                    ) { saveConfig(config.copy(keepLastFrame = it)) },
                     SettingItem.Action(
                         "Wyświetlanie obrazu",
                         if (config.vlcRender == "cpu") "procesor — klatki RGB z VLC (jak do 0.5.1)"
@@ -2962,6 +3138,7 @@ fun main() {
                             config.copy(audioLang = it.trim())
                         }
                     },
+                    SettingItem.Action("Przesunięcie dźwięku", audioDelayLabel(config.audioDelayMs)) { showAudioDelay(inSettings = true) },
                     SettingItem.Header("Zmiany VLC"),
                     SettingItem.Action("Zastosuj teraz", "uruchamia ponownie bieżący kanał z nowymi ustawieniami") {
                         if (playingChannel == null) status = "Nie odtwarzasz żadnego kanału." else restartPlayback()
@@ -3262,6 +3439,66 @@ fun main() {
                             "dodatkowe klawisze (np. klawiatury albo pilota-klawiatury); nie zmienia ich zwykłej funkcji • ${item.summary}",
                             item.onClick,
                         )
+                    },
+                    SettingItem.Action(
+                        "Przejmuj klawisze systemowe",
+                        when (config.systemKeys) {
+                            "all" -> "ze wszystkich klawiatur, gdy E2Stream jest aktywny"
+                            "off" -> "wyłączone — Windows obsługuje Home, multimedia, Menu, klawisz Windows"
+                            else -> "tylko z pilota (USB/Bluetooth), gdy E2Stream jest aktywny — klawiatura laptopa działa zwykle"
+                        },
+                    ) {
+                        val values = listOf("remote", "all", "off")
+                        choose(
+                            "Przejmuj klawisze systemowe",
+                            listOf("Tylko z pilota (USB / Bluetooth)", "Ze wszystkich klawiatur", "Wyłączone"),
+                            values.indexOf(config.systemKeys).coerceAtLeast(0),
+                        ) { saveConfig(config.copy(systemKeys = values[it]), "Klawisze systemowe: ${listOf("tylko z pilota", "ze wszystkich klawiatur", "wyłączone")[it]}.") }
+                    },
+                    SettingItem.Action("Przycisk zasilania Windows (Power pilota)", powerButtonSummary) {
+                        scope.launch {
+                            val state = withContext(Dispatchers.IO) { WindowsPowerButton.query() }
+                            if (state == null) {
+                                status = "Nie udało się odczytać ustawień zasilania Windows (powercfg)."
+                                return@launch
+                            }
+                            powerButtonSummary = "teraz: ${WindowsPowerButton.describe(state)}"
+                            val previous = config.powerButtonPrev.split(',').mapNotNull { it.trim().toIntOrNull() }
+                                .takeIf { it.size == 2 }?.let { WindowsPowerButton.State(it[0], it[1]) }
+                            val options = buildList {
+                                add("Nic nie rób — Power pilota tylko dla E2Stream (zalecane)")
+                                if (previous != null && previous != state) add("Przywróć: ${WindowsPowerButton.describe(previous)}")
+                                add("Zostaw: ${WindowsPowerButton.describe(state)}")
+                            }
+                            navigator.openChoice(
+                                SettingsChoice(
+                                    "Przycisk zasilania Windows",
+                                    options,
+                                    0,
+                                    body = "Klawisz Power pilota Windows traktuje jak przycisk zasilania laptopa i żadna aplikacja go nie zatrzyma. " +
+                                        "„Nic nie rób” dotyczy też przycisku laptopa (przytrzymanie przez kilka sekund nadal wyłącza komputer). " +
+                                        "Teraz: ${WindowsPowerButton.describe(state)}.",
+                                ) { index ->
+                                    val target = when {
+                                        index == 0 -> WindowsPowerButton.State(0, 0)
+                                        options[index].startsWith("Przywróć") -> previous
+                                        else -> null
+                                    } ?: return@SettingsChoice
+                                    scope.launch {
+                                        val ok = withContext(Dispatchers.IO) { WindowsPowerButton.set(target) }
+                                        if (ok) {
+                                            if (index == 0 && config.powerButtonPrev.isBlank()) saveConfig(config.copy(powerButtonPrev = "${state.ac},${state.dc}"))
+                                            if (index != 0) saveConfig(config.copy(powerButtonPrev = ""))
+                                            powerButtonSummary = "teraz: ${WindowsPowerButton.describe(target)}"
+                                            status = "✓ Przycisk zasilania Windows: ${WindowsPowerButton.describe(target)}"
+                                            logInfo("zasilanie: przycisk zasilania Windows → ${WindowsPowerButton.describe(target)}")
+                                        } else {
+                                            status = "✗ Nie udało się zmienić przycisku zasilania\nustaw ręcznie: Panel sterowania → Opcje zasilania"
+                                        }
+                                    }
+                                }
+                            )
+                        }
                     },
                     SettingItem.Action("Klawisze pilota", "przypisz klawisze pilota i klawiatury do przycisków") {
                         navigator.push(SettingsScreen.REMOTE_KEYS, settingsItems(SettingsScreen.REMOTE_KEYS))
@@ -3617,7 +3854,7 @@ fun main() {
                         VirtualRemoteKey.CHANNEL_UP -> quickPick = pick.copy(selected = (pick.selected - 8).coerceAtLeast(0))
                         VirtualRemoteKey.CHANNEL_DOWN -> quickPick = pick.copy(selected = (pick.selected + 8).coerceAtMost(pick.options.lastIndex))
                         VirtualRemoteKey.OK -> {
-                            quickPick = null
+                            if (!pick.keepOpen) quickPick = null
                             pick.onSelect(pick.selected)
                         }
                         VirtualRemoteKey.LEFT, VirtualRemoteKey.RIGHT -> {
@@ -3761,6 +3998,19 @@ fun main() {
                     VirtualRemoteKey.DELETE -> Unit
                     VirtualRemoteKey.AUDIO -> runNavAction(NavAction.AUDIO)
                     VirtualRemoteKey.LAST_CHANNEL -> recall()
+                    VirtualRemoteKey.RECORD -> recordKey()
+                    VirtualRemoteKey.RECORDINGS -> openRecordingsList()
+                    VirtualRemoteKey.LOCAL_RECORDINGS -> openRecordingsList(local = true)
+                    VirtualRemoteKey.HISTORY -> openHistory()
+                    VirtualRemoteKey.BOUQUET_NEXT -> stepBouquet(1)
+                    VirtualRemoteKey.BOUQUET_PREV -> stepBouquet(-1)
+                    VirtualRemoteKey.ZAP_TIMERS -> openZapTimers()
+                    VirtualRemoteKey.DECODER_TIMERS -> openDecoderTimers()
+                    VirtualRemoteKey.RESTART_CHANNEL ->
+                        if (playingChannel != null && playingRecording == null) restartPlayback() else status = "Nie odtwarzasz żadnego kanału."
+                    VirtualRemoteKey.AUDIO_DELAY -> showAudioDelay()
+                    VirtualRemoteKey.STATS -> saveConfig(config.copy(showStats = !config.showStats))
+                    VirtualRemoteKey.SEND_LOG -> sendLogNow()
                     VirtualRemoteKey.REWIND, VirtualRemoteKey.FAST_FORWARD, VirtualRemoteKey.STOP ->
                         status = "Timeshift jest wyłączony — Ustawienia → Odtwarzanie i obraz → Timeshift."
                     VirtualRemoteKey.DIGIT_0, VirtualRemoteKey.DIGIT_1, VirtualRemoteKey.DIGIT_2,
@@ -3999,6 +4249,23 @@ fun main() {
                             }
                             true
                         },
+                        systemKeyMode = { systemKeysMode.get() },
+                        onSystemKey = { physicalId ->
+                            EventQueue.invokeLater {
+                                inputMode.onKey()
+                                val label = UniversalRemoteMap.label(physicalId)
+                                val key = UniversalRemoteMap.findKey(universalBindings, physicalId)
+                                val button = captureButton
+                                remoteDiagnostics.log { "source=hook-system $label mapped=${key ?: "none"}" }
+                                when {
+                                    showExitConfirmation -> Unit
+                                    button != null -> savePhysicalBinding(button, physicalId, label)
+                                    isRemoteTestOpen() && navigator.choice == null -> recordTest("Klawisz systemowy", label, key)
+                                    key != null -> handleVirtualKey(key)
+                                    else -> status = "Klawisz $label przejęty przez E2Stream — przypisz go w Ustawienia → Pilot → Klawisze pilota."
+                                }
+                            }
+                        },
                     )
                 } catch (e: Exception) {
                     status = "Obsługa pilota HID niedostępna: ${e.message ?: e.javaClass.simpleName}"
@@ -4114,6 +4381,13 @@ fun main() {
                         onBack = { stopPlayback("Odtwarzanie zatrzymane.") },
                         playback = playbackBar,
                         recordingLabel = activeRecording?.title,
+                        bufferInfo = {
+                            timeshift?.takeIf { playingRecording == null }?.let { ts ->
+                                val now = monotonicMs()
+                                val shown = vlcSession?.let { runCatching { ts.shownWall(it.time()) }.getOrNull() } ?: now
+                                bufferBannerText(ts.buffer.spanMs(), (now - shown).coerceAtLeast(0))
+                            }
+                        },
                         onTogglePause = ::togglePlaybackPause,
                         onSeek = when {
                             playingRecording != null -> { forward -> seekRecording(if (forward) 30_000 else -10_000) }
@@ -4193,7 +4467,7 @@ fun main() {
                             pick.onBack?.invoke()
                         },
                         onSelect = { index ->
-                            quickPick = null
+                            if (!pick.keepOpen) quickPick = null
                             pick.onSelect(index)
                         },
                     )

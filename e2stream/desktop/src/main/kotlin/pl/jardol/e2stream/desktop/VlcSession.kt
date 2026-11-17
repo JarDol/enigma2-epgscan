@@ -33,6 +33,8 @@ internal fun vlcMediaOptions(config: DesktopConfig): List<String> = buildList {
             else -> "none"
         },
     )
+    // Przesunięcie dźwięku względem obrazu (ms; dodatnie — dźwięk później).
+    if (config.audioDelayMs != 0) add(":audio-desync=${config.audioDelayMs}")
     val languages = config.audioLang.split(',', ';', ' ').map(String::trim).filter(String::isNotEmpty)
     if (languages.isNotEmpty()) add(":audio-language=${languages.joinToString(",")}")
     if (config.username.isNotBlank()) {
@@ -503,6 +505,8 @@ class VlcSession(private val onError: (String) -> Unit) {
             val ms = (System.nanoTime() - playStartedNs) / 1_000_000
             AppLog.i("start: obraz po $ms ms" + if (label.isNotBlank()) " ($label)" else "")
         }
+        // Bez „zostaw obraz poprzedniego kanału” — czarny ekran do pierwszej klatki nowego strumienia.
+        if (!config.keepLastFrame) frames.clear()
         frames.awaitingFirst = false
         frames.armOnFormat = true
         frames.fullResolution = config.vlcFullRes
@@ -514,6 +518,13 @@ class VlcSession(private val onError: (String) -> Unit) {
         val started = player.media().play(url, *options.toTypedArray())
         if (!started) throw IOException("VLC nie przyjął strumienia.")
         paused = false
+    }
+
+    /** Zmiana przesunięcia dźwięku w trakcie odtwarzania (ms) — bez ponownego otwierania strumienia. */
+    fun setAudioDelay(ms: Int) {
+        if (!closed) runCatching { player.audio().setDelay(ms * 1000L) }
+        lastOptions = lastOptions.filterNot { it.startsWith(":audio-desync=") } +
+            if (ms != 0) listOf(":audio-desync=$ms") else emptyList()
     }
 
     /** Położenie odtwarzania (ms) od początku bieżącego materiału; -1, gdy nieznane. */

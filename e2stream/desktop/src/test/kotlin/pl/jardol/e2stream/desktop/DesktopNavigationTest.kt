@@ -23,7 +23,7 @@ class DesktopNavigationTest {
         navigation.handleMenuKey(VirtualRemoteKey.DOWN)
         assertEquals(DesktopMenuItem.EXIT.ordinal, navigation.menuSelected)
         navigation.handleMenuKey(VirtualRemoteKey.DOWN)
-        assertEquals(MenuKeyResult(true, DesktopMenuItem.CHANNEL_LIST), navigation.handleMenuKey(VirtualRemoteKey.OK))
+        assertEquals(MenuKeyResult(true, DesktopMenuItem.entries.first()), navigation.handleMenuKey(VirtualRemoteKey.OK))
     }
 
     @Test
@@ -32,22 +32,17 @@ class DesktopNavigationTest {
             order = listOf("IMAGE", "UNKNOWN", "CHANNEL_LIST", "IMAGE"),
             hidden = setOf("REMOTE_TEST", "SETTINGS"),
         )
-        assertEquals(
-            listOf(
-                DesktopMenuItem.IMAGE, DesktopMenuItem.CHANNEL_LIST, DesktopMenuItem.RECORDINGS,
-                DesktopMenuItem.ZAP_TIMERS, DesktopMenuItem.DECODER_TIMERS, DesktopMenuItem.WINDOW,
-                DesktopMenuItem.MULTI_EPG, DesktopMenuItem.EPG_CHANNEL, DesktopMenuItem.EPG_SEARCH, DesktopMenuItem.AUDIO,
-                DesktopMenuItem.RECORD, DesktopMenuItem.ACTIVATE_KEYS,
-                DesktopMenuItem.SETTINGS, DesktopMenuItem.EXIT,
-            ),
-            items,
-        )
+        // zapisana kolejność zachowana, ukryte pominięte, nowe pozycje dopisane, na końcu Ustawienia i Wyłącz
+        assertTrue(items.indexOf(DesktopMenuItem.IMAGE) < items.indexOf(DesktopMenuItem.CHANNEL_LIST))
+        assertFalse(DesktopMenuItem.REMOTE_TEST in items)
+        assertEquals(listOf(DesktopMenuItem.SETTINGS, DesktopMenuItem.EXIT), items.takeLast(2))
+        assertEquals(DesktopMenuItem.configurableItems.size - 1 + 2, items.size)
         val navigation = DesktopNavigation()
         navigation.openMenu(items)
-        assertEquals(12, navigation.menuSelected)
+        assertEquals(items.size - 2, navigation.menuSelected)
         navigation.handleMenuKey(VirtualRemoteKey.DOWN)
         navigation.handleMenuKey(VirtualRemoteKey.DOWN)
-        assertEquals(MenuKeyResult(true, DesktopMenuItem.IMAGE), navigation.handleMenuKey(VirtualRemoteKey.OK))
+        assertEquals(MenuKeyResult(true, items.first()), navigation.handleMenuKey(VirtualRemoteKey.OK))
     }
 
     @Test
@@ -69,5 +64,15 @@ class DesktopNavigationTest {
         assertFalse(navigation.showMenu)
         navigation.toggleControls()
         assertFalse(navigation.controlsVisible)
+    }
+}
+
+class MenuOrderTest {
+    @Test
+    fun newItemsGoToDefaultPlaceNotToTheEnd() {
+        // zapis sprzed dodania „Przesunięcie dźwięku” i „Statystyki”: nowe pozycje obok swoich domyślnych sąsiadów
+        val saved = DesktopMenuItem.configurableItems.filter { it != DesktopMenuItem.AUDIO_DELAY && it != DesktopMenuItem.STATS }.map { it.name }
+        val order = DesktopMenuItem.inOrder(saved)
+        assertEquals(DesktopMenuItem.configurableItems, order)
     }
 }

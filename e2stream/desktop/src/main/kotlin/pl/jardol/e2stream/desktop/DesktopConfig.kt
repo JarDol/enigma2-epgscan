@@ -135,6 +135,16 @@ data class DesktopConfig(
     val vlcRender: String = "gpu",
     /** Lżejsze dekodowanie (bez filtra wygładzającego HEVC/H.264): "uhd" — kanały 4K, "always", "off". */
     val lightDecode: String = "uhd",
+    /** Przesunięcie dźwięku względem obrazu, ms (−1000…+1000, co 50). */
+    val audioDelayMs: Int = 0,
+    /** Przy przełączaniu kanału zostaw ostatni obraz do pojawienia się nowego. */
+    val keepLastFrame: Boolean = true,
+    /** Historia oglądanych kanałów (JSON: [{ref,name,bouquet}], najnowszy pierwszy, do 50). */
+    val history: String = "[]",
+    /** Przejmowanie klawiszy systemowych przy aktywnym E2Stream: "remote" — tylko z pilota (USB/Bluetooth), "all", "off". */
+    val systemKeys: String = "remote",
+    /** Działanie przycisku zasilania Windows przed zmianą z E2Stream (−1 — nie zmieniano): "ac,dc". */
+    val powerButtonPrev: String = "",
 ) {
     fun save(path: Path = configPath()) {
         Files.createDirectories(path.parent)
@@ -239,6 +249,11 @@ data class DesktopConfig(
             setProperty("vlcFullRes", vlcFullRes.toString())
             setProperty("vlcRender", vlcRender)
             setProperty("lightDecode", lightDecode)
+            setProperty("audioDelayMs", audioDelayMs.toString())
+            setProperty("keepLastFrame", keepLastFrame.toString())
+            setProperty("history", history)
+            setProperty("systemKeys", systemKeys)
+            setProperty("powerButtonPrev", powerButtonPrev)
     }
 
     companion object {
@@ -393,6 +408,11 @@ data class DesktopConfig(
                 vlcFullRes = bool("vlcFullRes", defaults.vlcFullRes),
                 vlcRender = properties.getProperty("vlcRender")?.takeIf { it in setOf("gpu", "cpu") } ?: defaults.vlcRender,
                 lightDecode = properties.getProperty("lightDecode")?.takeIf { it in setOf("uhd", "always", "off") } ?: defaults.lightDecode,
+                audioDelayMs = (properties.getProperty("audioDelayMs")?.toIntOrNull() ?: defaults.audioDelayMs).coerceIn(-1000, 1000) / 50 * 50,
+                keepLastFrame = bool("keepLastFrame", defaults.keepLastFrame),
+                history = string("history", defaults.history),
+                systemKeys = properties.getProperty("systemKeys")?.takeIf { it in setOf("remote", "all", "off") } ?: defaults.systemKeys,
+                powerButtonPrev = string("powerButtonPrev", defaults.powerButtonPrev),
             )
         }
 

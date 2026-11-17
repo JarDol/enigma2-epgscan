@@ -100,7 +100,7 @@ class SettingsModelTest {
         )
         assertEquals(NavAction.CHANNEL_LIST, map[VirtualRemoteKey.OK])
         assertEquals(NavAction.CH_UP, map[VirtualRemoteKey.UP])
-        assertEquals(NavAction.CHANNEL_LIST, map[VirtualRemoteKey.DOWN])
+        assertEquals(NavAction.HISTORY, map[VirtualRemoteKey.DOWN])
         assertNull(map[VirtualRemoteKey.MENU])
         assertEquals(map, NavigationKeyMap.resolve(emptyMap(), NavigationKeyMap.encode(map)))
     }

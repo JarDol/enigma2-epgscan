@@ -47,6 +47,18 @@ enum class VirtualRemoteKey(val label: String) {
     DIGIT_8("8"),
     DIGIT_9("9"),
     ACTIVATE("Aktywuj okno E2Stream"),
+    RECORD("Nagraj (w trakcie nagrania — zakończ)"),
+    RECORDINGS("Nagrania z dekodera"),
+    LOCAL_RECORDINGS("Nagrania lokalne"),
+    HISTORY("Lista kanałów — historia"),
+    BOUQUET_NEXT("Następny bukiet"),
+    BOUQUET_PREV("Poprzedni bukiet"),
+    ZAP_TIMERS("Przełączenia wg harmonogramu"),
+    DECODER_TIMERS("Harmonogramy dekodera"),
+    RESTART_CHANNEL("Uruchom kanał od nowa"),
+    AUDIO_DELAY("Przesunięcie dźwięku"),
+    STATS("Statystyki na ekranie"),
+    SEND_LOG("Wyślij log na dekoder"),
 }
 
 object UniversalRemoteMap {

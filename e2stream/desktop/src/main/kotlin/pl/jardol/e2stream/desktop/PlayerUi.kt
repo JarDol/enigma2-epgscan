@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
@@ -119,6 +120,8 @@ internal fun PlayerPage(
     barsHidden: Boolean = false,
     /** Trwające nagranie z timeshiftu — czerwony wskaźnik ● REC. */
     recordingLabel: String? = null,
+    /** Stan bufora na pasku kanału (np. „B 12:34”); null — bez bufora. */
+    bufferInfo: (() -> String?)? = null,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     var statusVisible by remember { mutableStateOf(false) }
@@ -229,6 +232,8 @@ internal fun PlayerPage(
                         picon = picon,
                         piconStyle = piconStyle,
                         iconScale = bannerIconScale,
+                        bufferInfo = bufferInfo,
+                        recording = recordingLabel != null,
                     )
                 }
                 stats?.let { Text(it, color = secondary, fontSize = 13.sp, maxLines = 1) }
@@ -264,7 +269,17 @@ internal fun PlayerPage(
     }
 }
 
-/** Pasek kanału jak w Androidzie: ikona kanału, nazwa i zegar, bieżąca audycja z postępem i następna audycja. */
+private val bannerClockFormat = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+
+internal fun bannerClock(): String = java.time.LocalTime.now().format(bannerClockFormat)
+
+/**
+ * Stan bufora na pasku kanału: „B 12:34” (długość bufora timeshiftu), przy oglądaniu z opóźnieniem „B 12:34 · −1:05”.
+ */
+internal fun bufferBannerText(spanMs: Long, behindMs: Long): String =
+    "B ${formatDuration(spanMs)}" + if (behindMs >= 2000) " · −${formatDuration(behindMs)}" else ""
+
+/** Pasek kanału jak w Androidzie: ikona kanału z zegarem pod spodem, nazwa i stan bufora, bieżąca audycja z postępem i następna. */
 @Composable
 private fun ChannelBanner(
     channel: Channel,
@@ -275,17 +290,34 @@ private fun ChannelBanner(
     picon: ImageBitmap?,
     piconStyle: PiconStyle,
     iconScale: Float,
+    bufferInfo: (() -> String?)? = null,
+    recording: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val accent = colors.primary
     val secondary = colors.onSurfaceVariant
+    // Zegar hh:mm:ss i stan bufora odświeżane co sekundę (pasek nie zależy od odświeżania audycji).
+    var clockText by remember { mutableStateOf(bannerClock()) }
+    var buffer by remember { mutableStateOf(bufferInfo?.invoke()) }
+    val currentInfo by rememberUpdatedState(bufferInfo)
+    LaunchedEffect(Unit) {
+        while (true) {
+            clockText = bannerClock()
+            buffer = currentInfo?.invoke()
+            delay(1000 - System.currentTimeMillis() % 1000)
+        }
+    }
     Row(
         Modifier.fillMaxWidth().padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (piconStyle != PiconStyle.OFF) {
-            ChannelIcon(picon, piconStyle == PiconStyle.WITH_LOGO, 150.dp * iconScale, 90.dp * iconScale)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (piconStyle != PiconStyle.OFF) {
+                ChannelIcon(picon, piconStyle == PiconStyle.WITH_LOGO, 150.dp * iconScale, 90.dp * iconScale)
+            }
+            // Godzina pod logo: pogrubiona, wielkości tytułu audycji, kolor nazwy kanału.
+            Text(clockText, color = accent, fontSize = 26.sp * fontScale, fontWeight = FontWeight.Bold, maxLines = 1)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -298,7 +330,9 @@ private fun ChannelBanner(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(time(now), color = secondary, fontSize = 22.sp * fontScale)
+                // W linii nazwy kanału — stan bufora (jak na Androidzie, wariant B), czerwone ● przy nagrywaniu.
+                if (recording) Text("● ", color = Color(0xFFE53935), fontSize = 22.sp * fontScale, fontWeight = FontWeight.Bold)
+                buffer?.let { Text(it, color = secondary, fontSize = 22.sp * fontScale, maxLines = 1) }
             }
             Text(
                 current?.title ?: "Brak danych bieżącej audycji",
@@ -575,6 +609,8 @@ internal data class QuickPick(
     /** Strzałki lewo/prawo (−1/+1) zamiast powrotu, np. zmiana godziny w EPG. */
     val onHorizontal: ((Int) -> Unit)? = null,
     val fontScale: Float = 1f,
+    /** OK nie zamyka okna (wyjście klawiszem Wstecz) — np. przesunięcie dźwięku, ścieżka dźwięku. */
+    val keepOpen: Boolean = false,
     val onSelect: (Int) -> Unit,
 )
 
