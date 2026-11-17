@@ -112,7 +112,20 @@ object Updater {
         return 0
     }
 
+    /** Pobranie z ponowieniem: tuż po wydaniu plik na GitHubie bywa jeszcze niegotowy — do 3 prób co ~10 s. */
     fun download(ctx: Context, info: Info, progress: (Int) -> Unit): File {
+        var last: IOException? = null
+        for (i in 1..3) {
+            try { return downloadOnce(ctx, info, progress) } catch (e: IOException) {
+                last = e
+                AppLog.i("aktualizacja: próba $i z 3 nieudana (${e.message})" + if (i < 3) " — ponawiam za 10 s" else "")
+                if (i < 3) Thread.sleep(10_000)
+            }
+        }
+        throw last ?: IOException("Pobieranie nieudane")
+    }
+
+    private fun downloadOnce(ctx: Context, info: Info, progress: (Int) -> Unit): File {
         // poprzednie pobrane APK (~100 MB każdy) nie zostają w pamięci podręcznej
         for (d in listOfNotNull(ctx.externalCacheDir, ctx.cacheDir).distinct())
             d.listFiles { f -> f.name.startsWith("e2stream-") && (f.name.endsWith(".apk") || f.name.endsWith(".apk.part")) }?.forEach { it.delete() }

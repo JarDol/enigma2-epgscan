@@ -122,13 +122,6 @@ class SettingsActivity : Activity() {
             )
             "Odtwarzanie i obraz" -> listOf(
         Item.Action(getString(R.string.setting_playback_engine), { if (p.engine == "vlc") "VLC" else "ExoPlayer" }) { chooseEngine() },
-        // wspólne dla VLC i ExoPlayera (z tunelowaniem i bez)
-        Item.Action(getString(R.string.setting_av_shift), { avShiftLabel(this, p.avShiftMs) }) {
-            val o = AvShift.values
-            TvDialog.single(this, getString(R.string.setting_av_shift), o.map { avShiftLabel(this, it) }, o.indexOf(p.avShiftMs).coerceAtLeast(0)) { w ->
-                p.avShiftMs = o[w]; AvShift.ms = o[w]; markChanged("przesunięcie dźwięku = ${o[w]} ms"); items = buildItems(); refresh()
-            }
-        },
     ) + (if (p.engine == "vlc") listOf(
         Item.Action(getString(R.string.setting_vlc_deinterlacing), { deintName(p.vlcDeint) }) { chooseDeint() },
         Item.Action(getString(R.string.setting_vlc_hardware_acceleration), { hwName(p.vlcHwMode) }) { chooseHw() },
@@ -148,6 +141,13 @@ class SettingsActivity : Activity() {
                 Item.Header(getString(R.string.setting_audio)),
         Item.Text(getString(R.string.setting_preferred_language), { p.audioLang }, { p.audioLang = it }, hint = "Kody lub nazwy, np. pl/pol/Polish, en/eng/English"),
         Item.Toggle(getString(R.string.setting_prefer_ac3_e_ac3), { p.preferAc3 }, { p.preferAc3 = it }),
+        // przesunięcie dźwięku — wspólne dla VLC i ExoPlayera (z tunelowaniem i bez)
+        Item.Action(getString(R.string.setting_av_shift), { avShiftLabel(this, p.avShiftMs) }) {
+            val o = AvShift.values
+            TvDialog.single(this, getString(R.string.setting_av_shift), o.map { avShiftLabel(this, it) }, o.indexOf(p.avShiftMs).coerceAtLeast(0)) { w ->
+                p.avShiftMs = o[w]; AvShift.ms = o[w]; markChanged("przesunięcie dźwięku = ${o[w]} ms"); items = buildItems(); refresh()
+            }
+        },
             )
             "Wygląd" -> listOf(
                 Item.Header(getString(R.string.setting_channel_list)),

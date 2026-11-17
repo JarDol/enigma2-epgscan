@@ -2471,8 +2471,11 @@ class PlayerActivity : Activity() {
             ui.removeCallbacks(this)
             if (isFinishing) return
             ui.postDelayed(this, 30_000)
-            if (recMode || currentUrl == null) return
-            val (n, sum) = streamsMbps()
+            // nagranie z dekodera (strumień HTTP) z oknami PiP — też liczone; nagranie lokalne nie obciąża łącza
+            val recNet = recMode && recItem?.let { !LocalRecordings.isLocal(it.path) } == true && bgChans.any { it.pip >= 0 }
+            if ((recMode && !recNet) || (!recMode && currentUrl == null)) return
+            var (n, sum) = streamsMbps()
+            if (recNet) { n++; sum += analyzer?.bitrateKbps?.takeIf { it > 0 }?.let { it / 1000.0 } ?: 8.0 }
             val l = NetInfo.read(this@PlayerActivity)
             netLink = l
             var gaps = 0
@@ -2488,6 +2491,7 @@ class PlayerActivity : Activity() {
                 AppLog.i("łącze: ${l ?: "?"}; strumienie $n × razem ${"%.1f".format(sum)} Mb/s; luki teraz $gaps, w 10 min ${gaps10min()}")
             when {
                 bgChans.isNotEmpty() && gaps >= 2 -> netAsk(n, l)
+                recNet && gaps >= 1 && gaps10min() >= 2 -> netAsk(n, l)
                 bgChans.isEmpty() && mainGap && now - netMainMsgAt > 1_800_000 -> {
                     netMainMsgAt = now
                     showMessage(getString(R.string.net_main_gaps, l?.toString() ?: "?"))
@@ -2504,6 +2508,8 @@ class PlayerActivity : Activity() {
         val pip = bgChans.filter { it.pip >= 0 && it.lrec == null }.maxByOrNull { it.addedAt }
         val link = l?.toString() ?: "?"
         val (question, act) = when {
+            // przy nagraniu z dekodera: zamykane okno PiP (bufor ostatniego kanału zostaje)
+            recMode -> if (pip != null) getString(R.string.net_ask_pip, streams, link, pip.name) to { pipClose(pip) } else return
             prefs.bgCount > 0 && prev.isNotEmpty() -> getString(R.string.net_ask_bg, streams, link, prefs.bgCount, prefs.bgCount - 1) to {
                 prefs.bgCount = prefs.bgCount - 1
                 AppLog.i("łącze: bufor poprzednich kanałów zmniejszony do ${prefs.bgCount} (luki przy $streams strumieniach, $link)")
