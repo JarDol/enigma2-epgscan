@@ -802,6 +802,24 @@ class TimeshiftRecorder(
         }, "timeshift-zapis").start()
     }
 
+    /** Początek trwającego zapisu (0 — brak); strażnik zapisu sprawdza, czy zapis nie utknął. */
+    @Volatile var writeStartedAt = 0L
+    /** Czasy zapisów dłuższych niż 1 s (strażnik: ≥3 w ciągu minuty). */
+    private val slowWrites = java.util.ArrayDeque<Long>()
+
+    /** Kłopot z nośnikiem: utknięty zapis (> 5 s) albo ≥ 3 zapisy > 1 s w minucie; null — w porządku. */
+    fun storageTrouble(now: Long = SystemClock.elapsedRealtime()): String? {
+        val w = writeStartedAt
+        if (w > 0 && now - w > 5_000) return "zapis trwa ${(now - w) / 1000} s"
+        synchronized(slowWrites) {
+            while (slowWrites.isNotEmpty() && now - slowWrites.first() > 60_000) slowWrites.removeFirst()
+            if (slowWrites.size >= 3) return "${slowWrites.size}× zapis > 1 s w minucie"
+        }
+        return null
+    }
+
+    fun clearTrouble() { synchronized(slowWrites) { slowWrites.clear() } }
+
     /** Wątek zapisu: dane z kolejki do analizatora (który zapisuje do bufora); wolne zapisy do logu. */
     private fun writeLoop(source: TsAnalyzer?, session: Long?) {
         val b = ByteArray(188 * 700)
@@ -813,8 +831,10 @@ class TimeshiftRecorder(
                 val n = queue.take(b, b.size)
                 if (n <= 0) break
                 val t0 = SystemClock.elapsedRealtime()
-                analyzer()?.let { a -> if (a === source) a.feed(b, 0, n, session) }
+                writeStartedAt = t0
+                try { analyzer()?.let { a -> if (a === source) a.feed(b, 0, n, session) } } finally { writeStartedAt = 0 }
                 val ms = SystemClock.elapsedRealtime() - t0
+                if (ms > 1_000) synchronized(slowWrites) { slowWrites.addLast(t0) }
                 if (ms > 300) {
                     slowCount++; maxMs = maxOf(maxMs, ms)
                     val now = SystemClock.elapsedRealtime()

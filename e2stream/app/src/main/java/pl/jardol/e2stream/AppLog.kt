@@ -23,8 +23,9 @@ object AppLog {
     var dirty = false
         private set
 
-    fun init(ctx: Context, dir: File? = null) {
-        val d = dir ?: ctx.getExternalFilesDir(null) ?: ctx.filesDir
+    fun init(ctx: Context, @Suppress("UNUSED_PARAMETER") dir: File? = null) {
+        // log zawsze w pamięci urządzenia (nie na karcie/USB z buforami): przy zawieszeniu nośnika widać, co się działo
+        val d = ctx.getExternalFilesDir(null) ?: ctx.filesDir
         synchronized(lock) { file = File(d, "e2stream.log") }
     }
 
