@@ -3531,19 +3531,27 @@ class PlayerActivity : Activity() {
         }
     }
 
+    /** Krok przewijania strzałkami: ◀ ▶ — krok w sekundach, ▲ ▼ — w minutach; przytrzymanie: 2× / 3× więcej. */
+    private fun seekStepMs(code: Int, repeat: Int): Long {
+        val held = repeat > 0
+        return if (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)
+            prefs.tsStepSec * 1000L * (if (held) 2 else 1)
+        else prefs.tsStepMin * 60_000L * (if (held) 3 else 1)
+    }
+
     /** Klawisze w trybie timeshiftu. */
-    private fun tsKey(code: Int): Boolean {
+    private fun tsKey(code: Int, repeat: Int = 0): Boolean {
         if (code in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT) AppLog.i("timeshift: strzałka $code, pasek kanału=$tsChBar, widoczny=${banner.visibility == View.VISIBLE}")
         // Strzałki przewijają wyłącznie na widocznym pasku timeshiftu.
         if (code in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT &&
             !timeshiftNavigationOnBanner(banner.visibility == View.VISIBLE, tsChBar)) return false
         when (code) {
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                val back = if (code == KeyEvent.KEYCODE_DPAD_LEFT) prefs.tsStepSec * 1000L else prefs.tsStepMin * 60_000L
+                val back = seekStepMs(code, repeat)
                 if (tsMode) { tsSetShifted(true); tsSeek(-back) } else tsEnter(pause = false, backMs = back)
             }
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> {
-                val forward = if (code == KeyEvent.KEYCODE_DPAD_RIGHT) prefs.tsStepSec * 1000L else prefs.tsStepMin * 60_000L
+                val forward = seekStepMs(code, repeat)
                 if (tsMode && tsShifted) tsSeek(forward) else { showMessage(getString(R.string.message_already_live)); tsCtlOpen() }
             }
             // Wstecz: najpierw zamyka pasek (także przy pauzie), dopiero kolejne naciśnięcie wraca na żywo
@@ -4532,12 +4540,9 @@ class PlayerActivity : Activity() {
 
     /** Klawisze podczas odtwarzania nagrania. */
     private fun recKey(code: Int, e: KeyEvent): Boolean {
-        val fast = e.repeatCount > 3          // przytrzymanie przyspiesza przewijanie
         when (code) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> recSeek(if (fast) -60_000 else -10_000)
-            KeyEvent.KEYCODE_DPAD_RIGHT -> recSeek(if (fast) 120_000 else 30_000)
-            KeyEvent.KEYCODE_DPAD_UP -> recSeek(5 * 60_000)
-            KeyEvent.KEYCODE_DPAD_DOWN -> recSeek(-5 * 60_000)
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN -> recSeek(-seekStepMs(code, e.repeatCount))
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> recSeek(seekStepMs(code, e.repeatCount))
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> recSeek(60_000)
             KeyEvent.KEYCODE_MEDIA_REWIND -> recSeek(-60_000)
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> recTogglePause()
@@ -4954,7 +4959,7 @@ class PlayerActivity : Activity() {
         }
 
         if (recMode && recKey(keyCode, event)) { if (keyCode == KeyEvent.KEYCODE_BACK) backExit.reset(); return true }
-        if ((tsCtl || (keyCode == KeyEvent.KEYCODE_BACK && tsMode && tsShifted)) && tsKey(keyCode)) {
+        if ((tsCtl || (keyCode == KeyEvent.KEYCODE_BACK && tsMode && tsShifted)) && tsKey(keyCode, event.repeatCount)) {
             if (keyCode == KeyEvent.KEYCODE_BACK) backExit.reset()
             return true
         }
