@@ -125,6 +125,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         segs.clear()
         total = 0
         kfCount = 0; kfHead = 0
+        psiPat = null; psiPmtPids.clear(); psiPmt.clear()
         ringLen = 0
         failed = null
         shrunk = false
@@ -299,22 +300,84 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
 
     // --- klatki kluczowe: miejsca (bajt, chwila) początku PES obrazu z SPS / VPS / nagłówkiem sekwencji MPEG-2
     // albo z flagą random_access — start odtwarzania z bufora od pewnej klatki, z zapasem
-    private val kfPos = LongArray(KF_MAX)
-    private val kfWall = LongArray(KF_MAX)
+    // indeks rośnie razem z buforem (bez limitu); wpisy starsze niż okno są odcinane z przodu (kfHead)
+    private var kfPos = LongArray(KF_INIT)
+    private var kfWall = LongArray(KF_INIT)
     private var kfHead = 0
     private var kfCount = 0
+
+    // ostatnie PAT i PMT ze strumienia: nagranie z bufora zaczyna się w środku strumienia (granica kawałka),
+    // więc dostaje je na początku — bez nich ExoPlayer nie znajduje PMT/PCR w pierwszych 112 kB i nagranie jest nieprzewijalne
+    private var psiPat: ByteArray? = null
+    private val psiPmtPids = HashSet<Int>()
+    private val psiPmt = LinkedHashMap<Int, ByteArray>()
+
+    private fun capturePsi(b: ByteArray, p: Int) {
+        if (((b[p + 3].toInt() shr 4) and 3) != 1 || b[p + 4] != 0.toByte()) return
+        val pid = ((b[p + 1].toInt() and 0x1f) shl 8) or (b[p + 2].toInt() and 0xff)
+        if (pid != 0 && pid !in psiPmtPids) return
+        val tid = b[p + 5].toInt() and 0xff
+        val len = ((b[p + 6].toInt() and 0x0f) shl 8) or (b[p + 7].toInt() and 0xff)
+        if (len < 9 || 8 + len > 183) return
+        if (pid == 0) {
+            if (tid != 0) return
+            val pids = HashSet<Int>()
+            var q = p + 13
+            val end = p + 5 + 3 + len - 4
+            while (q + 4 <= end) {
+                val prog = ((b[q].toInt() and 0xff) shl 8) or (b[q + 1].toInt() and 0xff)
+                if (prog != 0) pids += ((b[q + 2].toInt() and 0x1f) shl 8) or (b[q + 3].toInt() and 0xff)
+                q += 4
+            }
+            if (pids.isEmpty()) return
+            if (pids != psiPmtPids) { psiPmtPids.clear(); psiPmtPids += pids; psiPmt.keys.retainAll(pids) }
+            psiPat = b.copyOfRange(p, p + 188)
+        } else if (tid == 2) {
+            psiPmt[pid] = b.copyOfRange(p, p + 188)
+        }
+    }
+
+    /** Początek nagrania: PAT + PMT (gdy już widziane) jako part-00000.ts. */
+    private fun writePsiHeader(dir: File) {
+        val pat = psiPat ?: return
+        if (psiPmt.isEmpty()) return
+        try {
+            java.io.FileOutputStream(File(dir, "part-00000.ts")).use { o ->
+                o.write(pat)
+                psiPmt.values.forEach { o.write(it) }
+            }
+        } catch (e: Exception) { AppLog.i("nagranie: zapis nagłówka PAT/PMT nieudany ($e)") }
+    }
+
+    private fun addKeyframe(pos: Long, now: Long) {
+        if (kfHead + kfCount == kfPos.size) {
+            if (kfHead >= kfPos.size / 2) {
+                System.arraycopy(kfPos, kfHead, kfPos, 0, kfCount)
+                System.arraycopy(kfWall, kfHead, kfWall, 0, kfCount)
+                kfHead = 0
+            } else {
+                kfPos = kfPos.copyOf(kfPos.size * 2)
+                kfWall = kfWall.copyOf(kfWall.size * 2)
+            }
+        }
+        val i = kfHead + kfCount
+        kfPos[i] = pos; kfWall[i] = now
+        kfCount++
+    }
+
+    private fun trimKeyframes(oldest: Long) {
+        while (kfCount > 0 && kfPos[kfHead] < oldest) { kfHead++; kfCount-- }
+        if (kfCount == 0) kfHead = 0
+    }
 
     private fun markKeyframes(b: ByteArray, off: Int, len: Int, now: Long) {
         var p = off
         val end = off + len
         while (p + 188 <= end) {
+            if (b[p] == SYNC && (b[p + 1].toInt() and 0x40) != 0) capturePsi(b, p)
             if (b[p] == SYNC && (b[p + 1].toInt() and 0x40) != 0 && isKeyframeStart(b, p)) {
                 val pos = total + (p - off)
-                if (kfCount == 0 || kfPos[(kfHead + kfCount - 1) % KF_MAX] < pos) {
-                    val i = (kfHead + kfCount) % KF_MAX
-                    kfPos[i] = pos; kfWall[i] = now
-                    if (kfCount < KF_MAX) kfCount++ else kfHead = (kfHead + 1) % KF_MAX
-                }
+                if (kfCount == 0 || kfPos[kfHead + kfCount - 1] < pos) addKeyframe(pos, now)
             }
             p += 188
         }
@@ -355,10 +418,19 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
      */
     fun keyframeAt(wall: Long): Pair<Long, Long>? = synchronized(lock) {
         val oldest = segs.firstOrNull()?.start ?: return null
-        for (k in kfCount - 1 downTo 0) {
-            val i = (kfHead + k) % KF_MAX
+        // czasy rosną razem z pozycją: wyszukiwanie binarne ostatniego wpisu nie późniejszego niż wall
+        var lo = 0
+        var hi = kfCount - 1
+        var k = -1
+        while (lo <= hi) {
+            val mid = (lo + hi) ushr 1
+            if (kfWall[kfHead + mid] <= wall) { k = mid; lo = mid + 1 } else hi = mid - 1
+        }
+        while (k >= 0) {
+            val i = kfHead + k
             if (kfPos[i] < oldest) break
-            if (kfWall[i] <= wall && kfPos[i] < total) return kfPos[i] to kfWall[i]
+            if (kfPos[i] < total) return kfPos[i] to kfWall[i]
+            k--
         }
         null
     }
@@ -368,7 +440,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         val lo = if (ramOnly) total - ringLen else (segs.firstOrNull()?.start ?: 0)
         val out = ArrayList<Long>(max)
         for (k in kfCount - 1 downTo 0) {
-            val p = kfPos[(kfHead + k) % KF_MAX]
+            val p = kfPos[kfHead + k]
             if (p < lo) break
             if (p < total) out += p
             if (out.size >= max) break
@@ -379,6 +451,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
     private fun dropOldest() {
         val s = segs.removeAt(0)
         trimmed = true
+        trimKeyframes(segs.firstOrNull()?.start ?: (s.start + s.len))
         val f = s.file
         val p = pin
         if (p != null && s.start + s.len > p.from) {           // kawałek nagrania: przeniesiony, nie usunięty
@@ -417,6 +490,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
     fun startPin(dir: File, from: Long): Pin? = synchronized(lock) {
         if (pin != null || failed != null) return null
         dir.mkdirs()
+        writePsiHeader(dir)
         val start = maxOf(from, segs.firstOrNull()?.start ?: total)
         Pin(dir, start, wallAt(start)).also { pin = it }
     }
@@ -551,7 +625,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         }
 
         private val SEQ = java.util.concurrent.atomic.AtomicInteger()
-        private const val KF_MAX = 4096
+        private const val KF_INIT = 1024
         /** Ostatnie dane w pamięci: ~8 s przy 8 Mb/s (na bufor, także kanały w tle). */
         const val RING = 8 * 1024 * 1024
         private const val SYNC = 0x47.toByte()
