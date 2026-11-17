@@ -607,13 +607,21 @@ class SettingsActivity : Activity() {
         gated(getString(R.string.setting_automatic_timeshift), {
             if (p.bufPlay) getString(R.string.ts_delay_buffer_play) else tsDelayName(p.tsDelay)
         }) { if (p.bufPlay) toast(getString(R.string.ts_delay_buffer_play)) else chooseTsDelay() },
-        gated(getString(R.string.setting_seek_seconds), { "${p.tsStepSec} s" }) {
-            val o = listOf(5, 10, 15, 30)
-            TvDialog.single(this, getString(R.string.message_seek), o.map { "$it s" }, o.indexOf(p.tsStepSec).coerceAtLeast(0)) { w -> p.tsStepSec = o[w]; markChanged("timeshift: krok ◀ ▶ = ${o[w]} s"); items = buildItems(); refresh() }
+        gated(getString(R.string.setting_seek_lr_short), { "${p.tsStepSec} s" }) {
+            val o = listOf(1, 2, 3, 4, 5)
+            TvDialog.single(this, getString(R.string.message_seek), o.map { "$it s" }, o.indexOf(p.tsStepSec).coerceAtLeast(0)) { w -> p.tsStepSec = o[w]; markChanged("przewijanie ◀ ▶ krótkie = ${o[w]} s"); items = buildItems(); refresh() }
         },
-        gated(getString(R.string.setting_seek_minutes), { "${p.tsStepMin} min" }) {
-            val o = listOf(1, 3, 5, 10, 15)
-            TvDialog.single(this, getString(R.string.message_seek_2), o.map { "$it min" }, o.indexOf(p.tsStepMin).coerceAtLeast(0)) { w -> p.tsStepMin = o[w]; markChanged("timeshift: krok ▲ ▼ = ${o[w]} min"); items = buildItems(); refresh() }
+        gated(getString(R.string.setting_seek_lr_long), { "${p.tsStepSecLong} s" }) {
+            val o = listOf(10, 15, 20, 25, 30)
+            TvDialog.single(this, getString(R.string.message_seek), o.map { "$it s" }, o.indexOf(p.tsStepSecLong).coerceAtLeast(0)) { w -> p.tsStepSecLong = o[w]; markChanged("przewijanie ◀ ▶ długie = ${o[w]} s"); items = buildItems(); refresh() }
+        },
+        gated(getString(R.string.setting_seek_ud_short), { Prefs.stepMinLabel(p.tsStepUdSec) }) {
+            val o = listOf(30, 60, 90, 120)
+            TvDialog.single(this, getString(R.string.message_seek_2), o.map { Prefs.stepMinLabel(it) }, o.indexOf(p.tsStepUdSec).coerceAtLeast(0)) { w -> p.tsStepUdSec = o[w]; markChanged("przewijanie ▲ ▼ krótkie = ${o[w]} s"); items = buildItems(); refresh() }
+        },
+        gated(getString(R.string.setting_seek_ud_long), { "${p.tsStepUdLongMin} min" }) {
+            val o = listOf(3, 6, 9, 12, 15)
+            TvDialog.single(this, getString(R.string.message_seek_2), o.map { "$it min" }, o.indexOf(p.tsStepUdLongMin).coerceAtLeast(0)) { w -> p.tsStepUdLongMin = o[w]; markChanged("przewijanie ▲ ▼ długie = ${o[w]} min"); items = buildItems(); refresh() }
         },
         Item.Toggle(getString(R.string.setting_back_on_empty_screen_live_tv), { p.tsBackLive }, { p.tsBackLive = it }),
         Item.Header(getString(R.string.storage_header_recordings)),

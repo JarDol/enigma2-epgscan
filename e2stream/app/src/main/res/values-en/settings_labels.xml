@@ -38,8 +38,10 @@
     <string name="setting_timeshift" formatted="false">Timeshift</string>
     <string name="setting_timeshift_buffer_location" formatted="false">Timeshift buffer location</string>
     <string name="setting_automatic_timeshift" formatted="false">Automatic timeshift</string>
-    <string name="setting_seek_seconds" formatted="false">Seek ◀ ▶ (seconds)</string>
-    <string name="setting_seek_minutes" formatted="false">Seek ▲ ▼ (minutes)</string>
+    <string name="setting_seek_lr_short" formatted="false">Seek ◀ ▶ – short press</string>
+    <string name="setting_seek_lr_long" formatted="false">Seek ◀ ▶ – hold</string>
+    <string name="setting_seek_ud_short" formatted="false">Seek ▲ ▼ – short press</string>
+    <string name="setting_seek_ud_long" formatted="false">Seek ▲ ▼ – hold</string>
     <string name="setting_back_on_empty_screen_live_tv" formatted="false">Back on empty screen → live TV</string>
     <string name="setting_allow_buffer_in_device_storage" formatted="false">Allow buffer in device storage</string>
     <string name="setting_audio" formatted="false">Audio</string>

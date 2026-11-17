@@ -129,12 +129,20 @@ class Prefs(ctx: Context) {
         set(v) = putI("tsMin", v)
 
     /** Timeshift: ile sekund po przełączeniu kanału zaczyna się zapis do bufora (skakanie po kanałach nie zapisuje na dysk). */
+    /** Przewijanie ◀ ▶: krótkie naciśnięcie 1–5 s, przytrzymanie 10–30 s. */
     var tsStepSec: Int
-        get() = sp.getInt("tsStepSec", 5)
+        get() = sp.getInt("tsStepSec", 5).coerceIn(1, 5)
         set(v) = putI("tsStepSec", v)
-    var tsStepMin: Int
-        get() = sp.getInt("tsStepMin", 1)
-        set(v) = putI("tsStepMin", v)
+    var tsStepSecLong: Int
+        get() = sp.getInt("tsStepSecLong", 10).coerceIn(10, 30)
+        set(v) = putI("tsStepSecLong", v)
+    /** Przewijanie ▲ ▼: krótkie naciśnięcie 30–120 s, przytrzymanie 3–15 min. */
+    var tsStepUdSec: Int
+        get() = sp.getInt("tsStepUdSec", 60).coerceIn(30, 120)
+        set(v) = putI("tsStepUdSec", v)
+    var tsStepUdLongMin: Int
+        get() = sp.getInt("tsStepUdLongMin", 3).coerceIn(3, 15)
+        set(v) = putI("tsStepUdLongMin", v)
     var tsBackLive: Boolean
         get() = sp.getBoolean("tsBackLive", false)
         set(v) = putB("tsBackLive", v)
@@ -677,6 +685,7 @@ class Prefs(ctx: Context) {
 
     companion object {
         const val DEFAULT_FTP_DIR = "/media/hdd/e2stream"
+        fun stepMinLabel(sec: Int): String = (sec / 60.0).toString().removeSuffix(".0").replace(".", ",") + " min"
         fun isChannelKey(k: String) = k.startsWith("pmts_") || k.startsWith("audio_")
     }
 }

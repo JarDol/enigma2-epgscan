@@ -3428,7 +3428,7 @@ class PlayerActivity : Activity() {
         bannerStart.text = ""
         bannerEnd.text = getString(R.string.player_live_lower)
         bannerProgress.progress = 1000
-        bannerNext.text = getString(R.string.player_ts_controls, prefs.tsStepSec, prefs.tsStepMin)
+        bannerNext.text = getString(R.string.player_ts_controls, "${prefs.tsStepSec}/${prefs.tsStepSecLong} s", "${Prefs.stepMinLabel(prefs.tsStepUdSec)}/${prefs.tsStepUdLongMin} min")
         banner.visibility = View.VISIBLE
         ui.removeCallbacks(hideBanner)
         ui.postDelayed(hideBanner, prefs.tsBannerSec.coerceIn(1, 30) * 1000L)
@@ -3535,8 +3535,8 @@ class PlayerActivity : Activity() {
     private fun seekStepMs(code: Int, repeat: Int): Long {
         val held = repeat > 0
         return if (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)
-            prefs.tsStepSec * 1000L * (if (held) 2 else 1)
-        else prefs.tsStepMin * 60_000L * (if (held) 3 else 1)
+            (if (held) prefs.tsStepSecLong else prefs.tsStepSec) * 1000L
+        else if (held) prefs.tsStepUdLongMin * 60_000L else prefs.tsStepUdSec * 1000L
     }
 
     /** Klawisze w trybie timeshiftu. */
@@ -3595,7 +3595,7 @@ class PlayerActivity : Activity() {
         bannerStart.text = ""
         bannerEnd.text = getString(R.string.player_live_lower)
         bannerProgress.progress = timeshiftBufferProgress(shown, oldest, now)
-        bannerNext.text = getString(R.string.player_ts_controls, prefs.tsStepSec, prefs.tsStepMin)
+        bannerNext.text = getString(R.string.player_ts_controls, "${prefs.tsStepSec}/${prefs.tsStepSecLong} s", "${Prefs.stepMinLabel(prefs.tsStepUdSec)}/${prefs.tsStepUdLongMin} min")
     }
 
     /** Co sekundę: pasek, ukrywanie, pilnowanie okna przy długiej pauzie. */

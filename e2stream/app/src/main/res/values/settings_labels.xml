@@ -38,8 +38,10 @@
     <string name="setting_timeshift" formatted="false">Timeshift</string>
     <string name="setting_timeshift_buffer_location" formatted="false">Miejsce bufora timeshiftu</string>
     <string name="setting_automatic_timeshift" formatted="false">Automatyczny timeshift</string>
-    <string name="setting_seek_seconds" formatted="false">Przewijanie ◀ ▶ (sekundy)</string>
-    <string name="setting_seek_minutes" formatted="false">Przewijanie ▲ ▼ (minuty)</string>
+    <string name="setting_seek_lr_short" formatted="false">Przewijanie ◀ ▶ – krótkie naciśnięcie</string>
+    <string name="setting_seek_lr_long" formatted="false">Przewijanie ◀ ▶ – przytrzymanie</string>
+    <string name="setting_seek_ud_short" formatted="false">Przewijanie ▲ ▼ – krótkie naciśnięcie</string>
+    <string name="setting_seek_ud_long" formatted="false">Przewijanie ▲ ▼ – przytrzymanie</string>
     <string name="setting_back_on_empty_screen_live_tv" formatted="false">Wstecz na pustym ekranie → na żywo</string>
     <string name="setting_allow_buffer_in_device_storage" formatted="false">Zezwól na bufor w pamięci urządzenia</string>
     <string name="setting_audio" formatted="false">Dźwięk</string>
