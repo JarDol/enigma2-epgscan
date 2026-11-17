@@ -263,20 +263,6 @@ object Tools {
         }.start()
     }
 
-    /** Log PiP (3 ostatnie sesje) na dekoder. */
-    fun uploadPipLog(ctx: Context, prefs: Prefs, msg: (String) -> Unit) {
-        if (prefs.host.isBlank()) return
-        val data = PipLog.snapshot()
-        Thread {
-            try {
-                val where = Upload.send(prefs, "e2stream-pip-${prefs.fileTag}.log", data)
-                ui.post { msg(ctx.getString(R.string.service_log_sent, where)) }
-            } catch (e: Exception) {
-                ui.post { msg(ctx.getString(R.string.service_log_error, e.message ?: e.toString())) }
-            }
-        }.start()
-    }
-
     /** Wysyła wszystkie zrzuty stall-*.ts przez FTP. */
     fun uploadDumps(ctx: Context, prefs: Prefs, msg: (String) -> Unit) {
         val dirs = listOfNotNull(Storage.dir(ctx, prefs), ctx.getExternalFilesDir(null), ctx.filesDir).distinct()

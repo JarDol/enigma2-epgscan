@@ -396,7 +396,7 @@ class PlayerActivity : Activity() {
 
     private fun showPipTripped() {
         TvDialog.confirm(this, getString(R.string.pip_tripped_title), getString(R.string.pip_tripped_msg), listOf(
-            TvDialog.Btn(getString(R.string.pip_send_log)) { Tools.uploadPipLog(this, prefs) { showMessage(it) } },
+            TvDialog.Btn(getString(R.string.action_send_log)) { uploadLog(true) },
             TvDialog.Btn(getString(R.string.message_close))))
     }
 
@@ -3030,7 +3030,6 @@ class PlayerActivity : Activity() {
         }
         if (open.size < PIP_MAX) acts += pick to { pipReplace = null; pipPickChannel() }
         if (open.isNotEmpty()) acts += getString(R.string.pip_close_all) to { for (c in open) pipClose(c) }
-        acts += getString(R.string.pip_send_log) to { Tools.uploadPipLog(this, prefs) { showMessage(it) } }
         TvDialog.list(this, getString(R.string.pip_title), acts.map { TvDialog.Item(it.first) }, sel.coerceIn(0, acts.size - 1), widthFrac = 0.5f) { i ->
             val (label, run) = acts[i]
             run()
