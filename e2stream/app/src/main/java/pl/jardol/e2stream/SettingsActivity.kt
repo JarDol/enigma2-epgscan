@@ -605,7 +605,7 @@ class SettingsActivity : Activity() {
         Item.Toggle(getString(R.string.setting_bg_status_msg), { p.bgStatusMsg }, { p.bgStatusMsg = it }),
     )) + (if (!Features.PIP || !p.bufPlay) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_pip_enabled), { getString(if (p.pipEnabled) R.string.settings_enabled else R.string.settings_disabled) }) {
-            p.pipEnabled = !p.pipEnabled; markChanged("PiP (eksperymentalne) = ${p.pipEnabled}"); items = buildItems(); refresh()
+            p.pipEnabled = !p.pipEnabled; markChanged("PiP = ${p.pipEnabled}"); items = buildItems(); refresh()
         },
     )) + (if (!Features.PIP || !p.bufPlay || !p.pipEnabled) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_pip_mode), { pipName(p.pipFrameMs) }) {
@@ -1279,6 +1279,8 @@ class SettingsActivity : Activity() {
                 when {
                     it is Item.Toggle && it.get() -> 0xFF81C784.toInt()
                     it is Item.Toggle -> 0xFFE57373.toInt()
+                    it is Item.Action && value.text == getString(R.string.settings_enabled) -> 0xFF81C784.toInt()
+                    it is Item.Action && value.text == getString(R.string.settings_disabled) -> 0xFFE57373.toInt()
                     else -> 0xFFB0BEC5.toInt()
                 }
             )

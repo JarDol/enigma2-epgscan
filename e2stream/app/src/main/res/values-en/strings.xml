@@ -54,7 +54,7 @@
     <string name="setting_pip_mode">Picture in PiP windows</string>
     <string name="setting_pip_frames">frame every %1$d s</string>
     <string name="setting_pip_frames_s">frame every %1$s s</string>
-    <string name="setting_pip_enabled">PiP (experimental)</string>
+    <string name="setting_pip_enabled">PiP</string>
     <string name="pip_pick_title">PiP – choose a channel</string>
     <string name="pip_is_main">This is the channel being watched</string>
     <string name="pip_already">The channel is already in a PiP window</string>

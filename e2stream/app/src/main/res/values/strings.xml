@@ -55,7 +55,7 @@
     <string name="setting_pip_mode">Obraz w oknach PiP</string>
     <string name="setting_pip_frames">klatka co %1$d s</string>
     <string name="setting_pip_frames_s">klatka co %1$s s</string>
-    <string name="setting_pip_enabled">PiP (eksperymentalne)</string>
+    <string name="setting_pip_enabled">PiP</string>
     <string name="pip_pick_title">PiP – wybierz kanał</string>
     <string name="pip_is_main">To jest oglądany kanał</string>
     <string name="pip_already">Kanał jest już w oknie PiP</string>

@@ -5307,7 +5307,7 @@ class PlayerActivity : Activity() {
         prefs.host, prefs.streamPort, prefs.httpPort, prefs.user, prefs.pass, prefs.tunneling, prefs.watchdog,
         prefs.stallSec, prefs.bufferMs, prefs.rebufferMs, prefs.cushionSlow, prefs.dropRestart, prefs.audioLang,
         prefs.preferAc3, prefs.saveTs, prefs.tsRingMb, prefs.pluginPort, prefs.pluginToken,
-        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma, prefs.tsMin, prefs.tsDir, prefs.tsDelay,
+        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma, prefs.tsMin, prefs.tsDir, prefs.tsDelay, prefs.bufPlay, prefs.bgCount, prefs.pipEnabled,
     ).joinToString("|")
 
     override fun onResume() {
