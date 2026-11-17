@@ -429,6 +429,8 @@ class PlayerActivity : Activity() {
     }
 
     private fun markPlaybackHealthy() {
+        ui.removeCallbacks(restartRunnable)
+        restartPending = false
         playbackRecovery.markHealthy()
         if (prefs.playbackAttempt.isNotEmpty()) {
             prefs.playbackAttempt = ""
@@ -975,7 +977,7 @@ class PlayerActivity : Activity() {
             checkScrambled()
             val a = analyzer
             val p = player
-            if (!encrypted && a != null && p != null && p.playbackState == Player.STATE_BUFFERING &&
+            if (!recMode && !pvActive && !encrypted && a != null && p != null && p.playbackState == Player.STATE_BUFFERING &&
                 p.videoFormat == null && a.pmtMissingMs() > 3000
             ) {
                 scheduleRestart("brak PMT w strumieniu ${a.pmtMissingMs()} ms")
@@ -1179,7 +1181,8 @@ class PlayerActivity : Activity() {
         cushionReset()
         lastStartMs = -1
         // SID serwisu = 4. pole referencji (hex), np. 1:0:19:3DD2:640:13E:820000:0:0:0:
-        val sid = url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
+        val sref = if (recMode) recItem?.sref.orEmpty().ifBlank { url.substringAfterLast('/') } else url.substringAfterLast('/')
+        val sid = sref.split(":").getOrNull(3)?.toIntOrNull(16) ?: -1
         proxy?.invalidate()
         // odtwarzanie przez bufor: połączenie zapisu do bufora działa dalej (ten sam kanał) — analizator bez zmian
         val bufReuse = !recMode && bufLive && tsRec != null && tsRecAn != null && tsRecAn === analyzer && tsLiveUrl == url && bufReady()
@@ -4406,14 +4409,25 @@ class PlayerActivity : Activity() {
     private fun recSeek(deltaMs: Long) {
         val p = player ?: return
         val dur = p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
-        if (!p.isCurrentMediaItemSeekable && !recSeekWarned) {
+        if (readyLogged && !p.isCurrentMediaItemSeekable && !recSeekWarned) {
             recSeekWarned = true
             AppLog.i("nagranie: odtwarzacz nie pozwala przewijać (długość ${if (p.duration > 0) fmtMs(p.duration) else "nieznana"}, pozycja ${fmtMs(p.currentPosition)})")
         }
         val src = recByteSrc()
         val known = recItem?.let { r -> p.duration.takeIf { it > 0 } ?: (r.lengthSec * 1000).takeIf { it > 0 } } ?: 0L
         if (src == null || known <= 0 || !pvStart()) {
-            p.seekTo((p.currentPosition + deltaMs).coerceIn(0, maxOf(0, dur - 1000)))
+            val base = if (recPending >= 0) recPending else p.currentPosition
+            val target = (base + deltaMs).coerceIn(0, maxOf(0, (if (dur < Long.MAX_VALUE) dur else known.takeIf { it > 0 } ?: dur) - 1000))
+            if (!p.isCurrentMediaItemSeekable && p.playbackState == Player.STATE_BUFFERING &&
+                SystemClock.elapsedRealtime() - streamStartAt < 10_000) {
+                // ExoPlayer jeszcze mierzy długość — seek teraz przerwałby pomiar; wykonujemy go po jego zakończeniu
+                recPending = target
+                showRecBanner()
+                ui.removeCallbacks(recApply)
+                ui.postDelayed(recApply, 200)
+                return
+            }
+            p.seekTo(target)
             showRecBanner()
             return
         }
@@ -4431,6 +4445,11 @@ class PlayerActivity : Activity() {
     private val recApply: Runnable = Runnable {
         if (pvWaitFrame { ui.postDelayed(recApply, 150) }) return@Runnable
         val p = player
+        if (p != null && recMode && !p.isCurrentMediaItemSeekable && p.playbackState == Player.STATE_BUFFERING &&
+            SystemClock.elapsedRealtime() - streamStartAt < 10_000) {
+            ui.postDelayed(recApply, 150)
+            return@Runnable
+        }
         val t = recPending
         recPending = -1
         if (p != null && recMode && t >= 0) {
