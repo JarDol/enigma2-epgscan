@@ -35,11 +35,15 @@ class UpdateInfoProvider : ContentProvider() {
             for (f in logFiles()) c.addRow(arrayOf<Any>(f.name, f.length(), f.lastModified()))
             return c
         }
-        val cols = arrayOf("auto", "channel")
+        val cols = arrayOf("auto", "channel", "mode", "busy", "running")
         val ctx = context ?: return MatrixCursor(cols)
         val p = Prefs(ctx)
-        // kanał automatycznej aktualizacji apki — APK Updater instaluje sam tylko wydania z tego kanału
-        return MatrixCursor(cols).apply { addRow(arrayOf<Any>(if (p.autoUpdate) 1 else 0, p.updateChannel)) }
+        // auto = 1 tylko dla trybu "on" (zgodność ze starym APK Updaterem); mode: off / notify / on;
+        // busy = trwa nagrywanie (czekać z instalacją); running = apka jest otwarta (tryb notify instaluje tylko przy zatrzymanej)
+        return MatrixCursor(cols).apply {
+            addRow(arrayOf<Any>(if (p.updateMode == "on") 1 else 0, p.updateChannel, p.updateMode,
+                if (AppState.recording) 1 else 0, if (AppState.foreground) 1 else 0))
+        }
     }
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {

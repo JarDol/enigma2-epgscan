@@ -386,6 +386,11 @@ class PlayerActivity : Activity() {
         if (recreateForLanguage()) return
         if (!epgReturnFromSettings) epgStartupPending = true
         epgReturnFromSettings = false
+        AppState.foreground = true
+        TvDialog.onInput = { sleepInput() }
+        sleepAt = 0
+        ui.removeCallbacks(sleepTick)
+        ui.post(sleepTick)
         ZapWakeAlarms.setAppForeground(this, true)
         ZapWakeAlarms.sync(this)
         if (safeMode) return
@@ -661,6 +666,11 @@ class PlayerActivity : Activity() {
             }
         }
         panelTimer.setActive(false)
+        AppState.foreground = false
+        AppState.recording = activeRecs() > 0
+        ui.removeCallbacks(sleepTick)
+        sleepDlg?.dismiss(); sleepDlg = null
+        TvDialog.onInput = null
         ZapWakeAlarms.setAppForeground(this, false)
         settingsOpen = false      // po powrocie i tak pełny start (onStart)
         backgrounded = true       // wyjście do ekranu głównego — po powrocie start jak przy uruchomieniu
@@ -1856,6 +1866,68 @@ class PlayerActivity : Activity() {
         panel.visibility = View.GONE
     }
 
+    private var sleepAt = 0L
+    private var sleepDlg: Dialog? = null
+
+    private fun sleepLimitMs() = prefs.sleepHours * 3_600_000L
+
+    private fun sleepInput() {
+        if (!::prefs.isInitialized || sleepDlg?.isShowing == true) return
+        sleepAt = SystemClock.elapsedRealtime() + sleepLimitMs()
+    }
+
+    private val sleepTick = object : Runnable {
+        override fun run() {
+            ui.postDelayed(this, 1000)
+            AppState.recording = activeRecs() > 0
+            val limit = sleepLimitMs()
+            val now = SystemClock.elapsedRealtime()
+            if (limit <= 0) { sleepDlg?.dismiss(); sleepDlg = null; sleepAt = 0; return }
+            if (sleepAt == 0L) sleepAt = now + limit
+            val dlg = sleepDlg?.takeIf { it.isShowing }
+            if (AppState.recording) {
+                // nagrywanie trwa — nie wyłączaj, odliczanie od nowa
+                if (dlg != null) { dlg.dismiss(); sleepDlg = null }
+                sleepAt = now + limit
+                return
+            }
+            val left = sleepAt - now
+            when {
+                left <= 0 -> { dlg?.dismiss(); sleepDlg = null; sleepShutdown() }
+                dlg != null -> TvDialog.setMessage(dlg, getString(R.string.sleep_timer_message, ((left + 999) / 1000).toInt()))
+                left <= 60_000 && !settingsOpen -> showSleepDialog(left)
+            }
+        }
+    }
+
+    private fun showSleepDialog(leftMs: Long) {
+        sleepDlg = TvDialog.confirm(this, getString(R.string.sleep_timer_title),
+            getString(R.string.sleep_timer_message, ((leftMs + 999) / 1000).toInt()),
+            listOf(
+                TvDialog.Btn(getString(R.string.sleep_timer_postpone)) {
+                    sleepDlg = null
+                    sleepAt = SystemClock.elapsedRealtime() + 15 * 60_000L + 60_000L
+                },
+                TvDialog.Btn(getString(R.string.sleep_timer_now)) { sleepDlg = null; sleepShutdown() },
+            ),
+            onBack = { sleepDlg = null; sleepAt = SystemClock.elapsedRealtime() + sleepLimitMs() },
+            timeoutSec = 0)
+    }
+
+    private fun sleepShutdown() {
+        AppLog.i("wyłączenie po bezczynności (${prefs.sleepHours} h) — zamykam aplikację")
+        finishAndRemoveTask()
+    }
+
+    private fun chooseSleep() {
+        val o = listOf(0) + Prefs.SLEEP_HOURS
+        val labels = o.map { if (it <= 0) getString(R.string.sleep_timer_off) else getString(R.string.sleep_timer_hours, it) }
+        TvDialog.single(this, getString(R.string.sleep_timer_menu), labels, o.indexOf(prefs.sleepHours).coerceAtLeast(0)) { w ->
+            prefs.sleepHours = o[w]
+            sleepAt = 0
+        }
+    }
+
     private val panelTimer = IdleTimeout(
         { if (::prefs.isInitialized) prefs.channelListSec else 0 },
         { task, delay -> ui.postDelayed(task, delay) }, { ui.removeCallbacks(it) },
@@ -1874,12 +1946,12 @@ class PlayerActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN) resetPanelTimer()
+        if (event.action == KeyEvent.ACTION_DOWN) { resetPanelTimer(); sleepInput() }
         return super.dispatchKeyEvent(event)
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_DOWN) resetPanelTimer()
+        if (event.action == MotionEvent.ACTION_DOWN) { resetPanelTimer(); sleepInput() }
         return super.dispatchTouchEvent(event)
     }
 
@@ -4587,7 +4659,8 @@ class PlayerActivity : Activity() {
         bannerStart.text = fmtMs(pos)
         bannerEnd.text = if (dur > 0) "${fmtMs(dur)}   (−${fmtMs(maxOf(0, dur - pos))})" else ""
         bannerProgress.progress = if (dur > 0) (pos * 1000 / dur).toInt().coerceIn(0, 1000) else 0
-        bannerNext.text = getString(if (recChapters.size > 1) R.string.player_recording_controls_chapters else R.string.player_recording_controls)
+        bannerNext.text = getString(if (recChapters.size > 1) R.string.player_recording_controls_chapters else R.string.player_recording_controls,
+            "${prefs.tsStepSec}/${prefs.tsStepSecLong} s", "${Prefs.stepMinLabel(prefs.tsStepUdSec)}/${prefs.tsStepUdLongMin} min")
     }
 
     /** Co 0,5 s w trybie nagrania: odświeżenie paska, ukrycie po czasie, zapis miejsca co 15 s. */
@@ -5397,6 +5470,7 @@ class PlayerActivity : Activity() {
             "engine" to { doAct(Act.ENGINE, 0) },
             "tunneling" to { doAct(Act.TUNNELING, 0) },
             "send_log" to { showMessage(getString(R.string.action_sending_log)); Tools.uploadLog(this, prefs, true) { showMessage(it) } },
+            "sleep" to { chooseSleep() },
         )
         val canRecord = !recMode && prefs.tsMin > 0 && currentUrl != null && localRec == null
         val items = QuickMenu.ordered(prefs).mapNotNull { e ->

@@ -35,7 +35,7 @@ internal object SettingsBackup {
         "confirmDialogSec" to p.confirmDialogSec, "epgChannelSec" to p.epgChannelSec,
         "epgMultiSec" to p.epgMultiSec, "infoDialogSec" to p.infoDialogSec,
         "hideInfoDialogs" to p.hideInfoDialogs, "pin" to p.pin, "pinMin" to p.pinMin,
-        "autoUpdate" to p.autoUpdate, "updateChannel" to p.updateChannel,
+        "autoUpdate" to p.autoUpdate, "updateMode" to p.updateMode, "sleepHours" to p.sleepHours, "updateChannel" to p.updateChannel,
         "showStats" to p.showStats, "cleanTs" to p.cleanTs, "saveTs" to p.saveTs,
         "tsRingMb" to p.tsRingMb, "logFtp" to p.logFtp, "tsFtp" to p.tsFtp,
     )

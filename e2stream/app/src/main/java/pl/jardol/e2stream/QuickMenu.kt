@@ -21,13 +21,14 @@ object QuickMenu {
         Entry("tunneling", R.string.action_tunneling),
         Entry("stats", R.string.setting_on_screen_statistics),
         Entry("send_log", R.string.action_send_log),
+        Entry("sleep", R.string.sleep_timer_menu),
     )
 
     /** Domyślnie ukryte (EPG jest pod klawiszami i na liście kanałów). */
     val HIDDEN_BY_DEFAULT = setOf("event", "channel_epg", "multi_epg", "search", "engine", "tunneling")
 
     /** Pozycje dodane później — widoczne domyślnie także przy starszym zapisie widoczności. */
-    val ADDED_LATER = setOf("buffered", "stats", "send_log", "av_shift", "pip")
+    val ADDED_LATER = setOf("buffered", "stats", "send_log", "av_shift", "pip", "sleep")
 
     private val byId = configurable.associateBy { it.id }
 

@@ -629,8 +629,19 @@ class Prefs(ctx: Context) {
      * nie = tylko informacja i ręczna aktualizacja z ustawień. APK Updater czyta to przez [UpdateInfoProvider].
      */
     var autoUpdate: Boolean
-        get() = sp.getBoolean("autoUpdate", true)
-        set(v) = putB("autoUpdate", v)
+        get() = updateMode == "on"
+        set(v) { updateMode = if (v) "on" else "off" }
+
+    /** "off" / "notify" (tylko powiadomienie; APK Updater aktualizuje przy zatrzymanej apce) / "on". Migracja z autoUpdate. */
+    var updateMode: String
+        get() = sp.getString("updateMode", null)?.takeIf { it in UPDATE_MODES }
+            ?: if (sp.getBoolean("autoUpdate", true)) "on" else "off"
+        set(v) { sp.edit().putString("updateMode", v).putBoolean("autoUpdate", v == "on").apply() }
+
+    /** Czas bezczynności do wyłączenia aplikacji, godz. (0 = wyłączone). */
+    var sleepHours: Int
+        get() = sp.getInt("sleepHours", 0).takeIf { it == 0 || it in SLEEP_HOURS } ?: 0
+        set(v) = putI("sleepHours", v)
 
     var updateChannel: String
         get() = s("updateChannel", "stable")
@@ -685,6 +696,8 @@ class Prefs(ctx: Context) {
 
     companion object {
         const val DEFAULT_FTP_DIR = "/media/hdd/e2stream"
+        val UPDATE_MODES = listOf("off", "notify", "on")
+        val SLEEP_HOURS = listOf(1, 2, 3, 6, 12, 24)
         fun stepMinLabel(sec: Int): String = (sec / 60.0).toString().removeSuffix(".0").replace(".", ",") + " min"
         fun isChannelKey(k: String) = k.startsWith("pmts_") || k.startsWith("audio_")
     }

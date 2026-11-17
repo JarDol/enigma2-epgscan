@@ -63,7 +63,7 @@
     <string name="player_from_beginning">Od początku</string>
     <string name="player_recording_removed">Usunięto nagranie</string>
     <string name="player_recording_remove_failed">Nie udało się usunąć nagrania</string>
-    <string name="player_recording_controls">◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pauza   WSTECZ powrót do TV</string>
+    <string name="player_recording_controls">◀ ▶ ±%1$s   ▲ ▼ ±%2$s   OK pauza   WSTECZ powrót do TV</string>
     <string name="player_recordings_folder">Katalog nagrań</string>
     <string name="player_next_event">Następnie  %1$s  %2$s</string>
     <string name="player_missing_number">Brak kanału %1$d w bukiecie</string>
@@ -126,5 +126,16 @@
     <string name="player_localrec_no_end">bez zakończenia</string>
     <string name="player_rec_chapters_title">Audycje w nagraniu</string>
     <string name="player_rec_chapters_menu">Menu…</string>
-    <string name="player_recording_controls_chapters">◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pauza   przytrzymaj OK audycje   WSTECZ powrót do TV</string>
-</resources>
+    <string name="player_recording_controls_chapters">◀ ▶ ±%1$s   ▲ ▼ ±%2$s   OK pauza   przytrzymaj OK audycje   WSTECZ powrót do TV</string>
+    <string name="setting_update_mode">Automatyczna aktualizacja</string>
+    <string name="update_mode_off">Wyłączona</string>
+    <string name="update_mode_notify">Tylko powiadomienie</string>
+    <string name="update_mode_on">Włączona</string>
+    <string name="setting_sleep_timer">Wyłącz po bezczynności</string>
+    <string name="sleep_timer_off">Wyłączone</string>
+    <string name="sleep_timer_hours">%1$d h</string>
+    <string name="sleep_timer_menu">Wyłączenie po bezczynności…</string>
+    <string name="sleep_timer_title">Brak aktywności</string>
+    <string name="sleep_timer_message">Aplikacja zamknie się za %1$d s.\nKlawisz WSTECZ anuluje wyłączenie.</string>
+    <string name="sleep_timer_postpone">Przełóż o 15 minut</string>
+    <string name="sleep_timer_now">Wyłącz</string></resources>

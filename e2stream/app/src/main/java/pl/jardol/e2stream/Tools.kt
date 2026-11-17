@@ -314,7 +314,11 @@ object Tools {
                     releases.firstOrNull()?.let { Updater.newer(it.version, cur) } == true -> {
                         val info = releases.first()
                         when {
-                            Prefs(a).autoUpdate -> {
+                            Prefs(a).updateMode == "on" && AppState.recording -> {
+                                AppLog.i("aktualizacja automatyczna ${info.version}: wstrzymana na czas nagrywania")
+                                msg(a.getString(R.string.update_available, info.version))
+                            }
+                            Prefs(a).updateMode == "on" -> {
                                 AppLog.i("aktualizacja automatyczna: ${info.version}")
                                 msg(a.getString(R.string.update_updating, info.version))
                                 downloadAndInstall(a, info, msg)

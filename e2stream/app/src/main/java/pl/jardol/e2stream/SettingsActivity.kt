@@ -274,7 +274,18 @@ class SettingsActivity : Activity() {
             }
         },
         Item.Action(getString(R.string.setting_check_for_updates), { getString(R.string.settings_version, Tools.appVersion(this)) }) { Tools.checkUpdate(this, true) { toast(it) } },
-        Item.Toggle(getString(R.string.setting_automatic_update), { p.autoUpdate }, { p.autoUpdate = it }),
+        Item.Action(getString(R.string.setting_update_mode), { updateModeLabel(p.updateMode) }) {
+            val o = Prefs.UPDATE_MODES
+            TvDialog.single(this, getString(R.string.setting_update_mode), o.map { updateModeLabel(it) }, o.indexOf(p.updateMode).coerceAtLeast(0)) { w ->
+                p.updateMode = o[w]; markChanged("aktualizacja automatyczna = ${o[w]}"); items = buildItems(); refresh()
+            }
+        },
+        Item.Action(getString(R.string.setting_sleep_timer), { sleepLabel(p.sleepHours) }) {
+            val o = listOf(0) + Prefs.SLEEP_HOURS
+            TvDialog.single(this, getString(R.string.setting_sleep_timer), o.map { sleepLabel(it) }, o.indexOf(p.sleepHours).coerceAtLeast(0)) { w ->
+                p.sleepHours = o[w]; markChanged("wyłączenie po bezczynności = ${o[w]} h"); items = buildItems(); refresh()
+            }
+        },
                 Item.Action(getString(R.string.setting_application_information_readme)) { showReadme("E2Stream", "e2stream/README.md") },
                 Item.Header(getString(R.string.setting_epg_scan_plugin)),
                 Item.Action(getString(R.string.setting_plugin_on_receiver), { if (p.pluginOk) getString(R.string.settings_version, p.pluginVersion) else getString(R.string.settings_plugin_absent_details) }) { checkPlugin() },
@@ -513,6 +524,14 @@ class SettingsActivity : Activity() {
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_LONG).show()
 
     private fun refresh() = adapter.notifyDataSetChanged()
+
+    private fun updateModeLabel(mode: String) = getString(when (mode) {
+        "notify" -> R.string.update_mode_notify
+        "on" -> R.string.update_mode_on
+        else -> R.string.update_mode_off
+    })
+
+    private fun sleepLabel(h: Int) = if (h <= 0) getString(R.string.sleep_timer_off) else getString(R.string.sleep_timer_hours, h)
 
     private fun markChanged(what: String) {
         changed = true

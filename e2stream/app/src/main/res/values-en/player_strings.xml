@@ -63,7 +63,7 @@
     <string name="player_from_beginning">From beginning</string>
     <string name="player_recording_removed">Recording deleted</string>
     <string name="player_recording_remove_failed">Could not delete recording</string>
-    <string name="player_recording_controls">◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pause   BACK return to TV</string>
+    <string name="player_recording_controls">◀ ▶ ±%1$s   ▲ ▼ ±%2$s   OK pause   BACK return to TV</string>
     <string name="player_recordings_folder">Recordings folder</string>
     <string name="player_next_event">Next  %1$s  %2$s</string>
     <string name="player_missing_number">No channel %1$d in bouquet</string>
@@ -126,5 +126,16 @@
     <string name="player_localrec_no_end">not to the end</string>
     <string name="player_rec_chapters_title">Programmes in this recording</string>
     <string name="player_rec_chapters_menu">Menu…</string>
-    <string name="player_recording_controls_chapters">◀ ▶ −10 s / +30 s   ▲ ▼ ±5 min   OK pause   hold OK programmes   BACK return to TV</string>
-</resources>
+    <string name="player_recording_controls_chapters">◀ ▶ ±%1$s   ▲ ▼ ±%2$s   OK pause   hold OK programmes   BACK return to TV</string>
+    <string name="setting_update_mode">Automatic update</string>
+    <string name="update_mode_off">Off</string>
+    <string name="update_mode_notify">Notify only</string>
+    <string name="update_mode_on">On</string>
+    <string name="setting_sleep_timer">Turn off when idle</string>
+    <string name="sleep_timer_off">Off</string>
+    <string name="sleep_timer_hours">%1$d h</string>
+    <string name="sleep_timer_menu">Turn off when idle…</string>
+    <string name="sleep_timer_title">No activity</string>
+    <string name="sleep_timer_message">The app will close in %1$d s.\nBACK cancels the shutdown.</string>
+    <string name="sleep_timer_postpone">Postpone 15 minutes</string>
+    <string name="sleep_timer_now">Turn off</string></resources>
