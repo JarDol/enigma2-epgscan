@@ -2501,18 +2501,31 @@ class PlayerActivity : Activity() {
             repeat(gaps) { gapLog.addLast(now to n) }
             if (++netLogN % 2 == 0 || gaps > 0)
                 AppLog.i("łącze: ${l ?: "?"}; strumienie $n × razem ${"%.1f".format(sum)} Mb/s; luki teraz $gaps, w 10 min ${gaps10min()}")
+            // ostatnie ~2 min (4 sprawdzenia co 30 s): czy luki się utrzymują
+            gapTicks.addLast(gaps > 0)
+            while (gapTicks.size > 4) gapTicks.removeFirst()
+            val lasting = gapTicks.size >= 4 && gapTicks.count { it } >= 3
             when {
                 bgChans.isNotEmpty() && gaps >= 2 -> netAsk(n, l)
                 recNet && gaps >= 1 && gaps10min() >= 2 -> netAsk(n, l)
-                bgChans.isEmpty() && mainGap && now - netMainMsgAt > 1_800_000 -> {
-                    netMainMsgAt = now
-                    showMessage(getString(R.string.net_main_gaps, l?.toString() ?: "?"))
-                }
+            }
+            // podpowiedź o łączu (raz na 30 min): sam oglądany kanał z luką, albo luki trwają mimo pytania / gdy nie ma czego zamknąć
+            val hint = (n <= 1 && mainGap) || (n > 1 && lasting)
+            if (hint && now - netMainMsgAt > 1_800_000 && TvDialog.top() == null) {
+                netMainMsgAt = now
+                val link = l?.toString() ?: "?"
+                val msg = if (n <= 1) getString(R.string.net_hint_one, link)
+                    else getString(R.string.net_hint_many, link, n)
+                AppLog.i("łącze: podpowiedź — $msg")
+                showMessage(msg)
             }
         }
     }
 
     /** Pytanie przy lukach w równoległych strumieniach: mniej buforów poprzednich kanałów albo zamknięcie okna PiP. */
+    /** Luki w kolejnych sprawdzeniach łącza (co 30 s) — do podpowiedzi przy trwałych przerwach. */
+    private val gapTicks = ArrayDeque<Boolean>()
+
     private fun netAsk(streams: Int, l: NetInfo.Link?) {
         if (netAskOff || SystemClock.elapsedRealtime() < netAskSnoozeUntil || TvDialog.top() != null) return
         netAskSnoozeUntil = SystemClock.elapsedRealtime() + 120_000      // bez ponawiania w trakcie decyzji

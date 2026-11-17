@@ -66,6 +66,8 @@
     <string name="net_slow">Za słabe łącze (%1$s) — bez kolejnego strumienia z dekodera</string>
     <string name="net_closed">Słabe łącze (%2$s) — zamknięto bufor w tle: %1$s</string>
     <string name="net_main_gaps">Przerwy w odbiorze oglądanego kanału — sprawdź łącze (%1$s)</string>
+    <string name="net_hint_one">Przerwy w odbiorze oglądanego kanału (%1$s). Pomoże lepszy zasięg WiFi albo kabel</string>
+    <string name="net_hint_many">Słaby odbiór (%1$s, strumieni naraz: %2$d) — przerwy w obrazie. Pomoże mniej okien PiP / buforów w tle albo kabel</string>
     <string name="net_ask_title">Przerwy w odbiorze</string>
     <string name="net_ask_bg">Przerwy w odbiorze przy %1$d strumieniach naraz (%2$s).\n\nZmniejszyć bufor poprzednich kanałów z %3$d do %4$d?</string>
     <string name="net_ask_pip">Przerwy w odbiorze przy %1$d strumieniach naraz (%2$s).\n\nZamknąć okno PiP: %3$s?</string>
