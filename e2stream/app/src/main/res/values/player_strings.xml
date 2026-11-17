@@ -138,4 +138,5 @@
     <string name="sleep_timer_title">Brak aktywności</string>
     <string name="sleep_timer_message">Aplikacja zamknie się za %1$d s.\nKlawisz WSTECZ anuluje wyłączenie.</string>
     <string name="sleep_timer_postpone">Przełóż o 15 minut</string>
-    <string name="sleep_timer_now">Wyłącz</string></resources>
+    <string name="sleep_timer_now">Wyłącz</string>    <string name="setting_epg_fetch">Pobieraj EPG</string>
+</resources>

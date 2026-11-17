@@ -407,6 +407,12 @@ class Prefs(ctx: Context) {
         get() = s("epgHour", "05:00")
         set(v) = putS("epgHour", v)
 
+    /** Pobieranie EPG: "off" / "daily" / "startup". Migracja ze starych epgDaily i epgUpdateMode. */
+    var epgFetch: String
+        get() = sp.getString("epgFetch", null)?.takeIf { it in listOf("off", EpgUpdatePolicy.DAILY, EpgUpdatePolicy.STARTUP) }
+            ?: if (!sp.getBoolean("epgDaily", true)) "off" else epgUpdateMode
+        set(v) = putS("epgFetch", v)
+
     var epgUpdateMode: String
         get() = s("epgUpdateMode", EpgUpdatePolicy.DAILY)
         set(v) = putS("epgUpdateMode", v)

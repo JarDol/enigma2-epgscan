@@ -138,4 +138,5 @@
     <string name="sleep_timer_title">No activity</string>
     <string name="sleep_timer_message">The app will close in %1$d s.\nBACK cancels the shutdown.</string>
     <string name="sleep_timer_postpone">Postpone 15 minutes</string>
-    <string name="sleep_timer_now">Turn off</string></resources>
+    <string name="sleep_timer_now">Turn off</string>    <string name="setting_epg_fetch">Download EPG</string>
+</resources>

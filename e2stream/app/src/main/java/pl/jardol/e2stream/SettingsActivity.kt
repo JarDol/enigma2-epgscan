@@ -160,22 +160,23 @@ class SettingsActivity : Activity() {
                 pctItem(getString(R.string.setting_channel_banner_picon), { p.uiBannerIcon }, { p.uiBannerIcon = it }),
             )
             "EPG i picony kanałów" -> listOf(
-        Item.Action(getString(R.string.setting_epg_scan_update), {
-            getString(if (p.epgUpdateMode == EpgUpdatePolicy.STARTUP) R.string.settings_every_start else R.string.settings_daily)
+        Item.Action(getString(R.string.setting_epg_fetch), {
+            getString(when (p.epgFetch) { EpgUpdatePolicy.STARTUP -> R.string.settings_every_start; EpgUpdatePolicy.DAILY -> R.string.settings_daily; else -> R.string.update_mode_off })
         }) {
-            val modes = listOf(EpgUpdatePolicy.DAILY, EpgUpdatePolicy.STARTUP)
-            TvDialog.single(this, getString(R.string.message_epg_scan_update),
-                listOf(getString(R.string.settings_daily), getString(R.string.settings_every_start)),
-                modes.indexOf(p.epgUpdateMode).coerceAtLeast(0)) { w ->
-                p.epgUpdateMode = modes[w]
-                markChanged("EPG Scan: aktualizacja ${if (w == 0) "raz dziennie" else "przy uruchomieniu"}")
-                refresh()
+            val modes = listOf("off", EpgUpdatePolicy.DAILY, EpgUpdatePolicy.STARTUP)
+            TvDialog.single(this, getString(R.string.setting_epg_fetch),
+                listOf(getString(R.string.update_mode_off), getString(R.string.settings_daily), getString(R.string.settings_every_start)),
+                modes.indexOf(p.epgFetch).coerceAtLeast(0)) { w ->
+                p.epgFetch = modes[w]
+                markChanged("pobieranie EPG = ${modes[w]}")
+                items = buildItems(); refresh()
             }
         },
-        Item.Toggle(getString(R.string.setting_download_epg_daily_without_epg_scan_plugin), { p.epgDaily }, { p.epgDaily = it }),
+    ) + (if (p.epgFetch == EpgUpdatePolicy.DAILY) listOf<Item>(
         Item.Text(getString(R.string.setting_epg_download_time), { p.epgHour },
             { v -> if (Regex("^\\d{1,2}:\\d{2}$").matches(v.trim())) p.epgHour = v.trim() else toast(getString(R.string.message_format_hh_mm)) },
             InputType.TYPE_CLASS_DATETIME or InputType.TYPE_DATETIME_VARIATION_TIME, hint = "HH:MM"),
+    ) else emptyList()) + listOf<Item>(
         num(getString(R.string.setting_days_of_epg_to_download), { p.epgDays }, { p.epgDays = it }, 1..14),
         Item.Toggle(getString(R.string.setting_eit_from_stream), { p.eitStream }, { v ->
             if (!v) { p.eitStream = false; items = buildItems(); refresh() } else enableStreamEit()

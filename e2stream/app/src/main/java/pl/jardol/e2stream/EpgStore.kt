@@ -87,9 +87,11 @@ object EpgSync {
     /** true, gdy od ostatniego terminu harmonogramu EPG nie było pobierane. */
     fun due(prefs: Prefs, startupPending: Boolean): Boolean {
         if (running || prefs.host.isBlank()) return false
-        if (prefs.pluginOk) return EpgUpdatePolicy.shouldCheck(
-            prefs.epgUpdateMode, startupPending, prefs.packCheckAt, startOfToday())
-        return prefs.epgDaily && prefs.lastEpgFetch < lastScheduled(prefs.epgHour)
+        return when (prefs.epgFetch) {
+            EpgUpdatePolicy.STARTUP -> startupPending
+            EpgUpdatePolicy.DAILY -> maxOf(prefs.lastEpgFetch, prefs.packCheckAt) < lastScheduled(prefs.epgHour)
+            else -> false
+        }
     }
 
     private fun startOfToday(): Long {
@@ -255,11 +257,9 @@ object EpgSync {
             if (prefs.pluginOk) {
                 val r = try { fromPack(localized, prefs, store, manual, progress) } catch (e: Exception) {
                     val message = localized.getString(R.string.epg_pack_error, e.message ?: e.toString())
-                    AppLog.i(message)
-                    running = false
-                    failed()
-                    done(message)
-                    return@Thread
+                    // brak danych wtyczki (budowanie, pusta paczka, błąd) — pobieramy z OpenWebif
+                    AppLog.i("$message — pobieram z OpenWebif")
+                    null
                 }
                 if (r != null) {
                     running = false

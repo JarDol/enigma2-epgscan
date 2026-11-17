@@ -20,7 +20,7 @@ internal object SettingsBackup {
         "recMaxHours" to p.recMaxHours, "recMaxPct" to p.recMaxPct, "recInternalOk" to p.recInternalOk,
         "uiListFont" to p.uiListFont, "uiListIcon" to p.uiListIcon, "uiEpgFont" to p.uiEpgFont,
         "uiBannerFont" to p.uiBannerFont, "uiBannerIcon" to p.uiBannerIcon,
-        "epgDaily" to p.epgDaily, "epgHour" to p.epgHour, "epgDays" to p.epgDays,
+        "epgDaily" to p.epgDaily, "epgFetch" to p.epgFetch, "epgHour" to p.epgHour, "epgDays" to p.epgDays,
         "epgUpdateMode" to p.epgUpdateMode, "picons" to p.picons,
         "missingPiconLogo" to p.missingPiconLogo, "piconDir" to p.piconDir,
         "hiddenBouquets" to p.hiddenBouquets, "quickMenuOrder" to p.quickMenuOrder.joinToString(","),
