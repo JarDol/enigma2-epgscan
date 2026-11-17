@@ -530,6 +530,10 @@ class PlayerActivity : Activity() {
             // Android trzyma aplikację w pamięci; po powrocie z ekranu głównego zachowujemy się jak przy
             // uruchomieniu: bez otwartej listy, kanał startowy albo ostatni (wg ustawień)
             backgrounded = false
+            if (bgChans.isNotEmpty()) {
+                AppLog.i("start: pozostałe bufory w tle po powrocie (${bgChans.joinToString { it.name }}) — zamykam")
+                bgDropAll("powrót do aplikacji")
+            }
             if (panel.visibility == View.VISIBLE) hidePanel()
             settingsVersion = -1
         }
@@ -2342,9 +2346,12 @@ class PlayerActivity : Activity() {
     private fun bgOf(c: Channel): BgChan? {
         if (bgChans.isEmpty() || c.ref.isBlank()) return null
         val k = OpenWebif.key(c.ref)
-        return bgChans.firstOrNull { it.ch?.ref?.let { r -> OpenWebif.key(r) == k } == true || it.url == api.streamUrl(c) }
+        val m = bgChans.firstOrNull { it.ch?.ref?.let { r -> OpenWebif.key(r) == k } == true || it.url == api.streamUrl(c) }
+        if (m != null && bgBadgeLogged.add(m.name)) AppLog.i("lista: znacznik B dla ${c.name} — bufor w tle ${m.name} (PiP ${m.pip + 1}, zapis ${m.lrec != null}, odłożony ${m.parked})")
+        return m
     }
     private val bgChans = ArrayList<BgChan>()
+    private val bgBadgeLogged = HashSet<String>()
     private var bgPromoted = false
 
     private fun bgAllowed() = prefs.bufPlay && TimeshiftBuffer.dir(this, prefs) != null
@@ -2369,6 +2376,7 @@ class PlayerActivity : Activity() {
         // w osobnym wątku: przy zawieszonym nośniku zamknięcie pliku może czekać — nie blokuje obrazu ani pilota
         val b = c.buf
         Thread({ try { b.reset() } catch (_: Exception) {} }, "bufor-zamykanie").start()
+        bgBadgeLogged.remove(c.name)
         AppLog.i("bufor w tle: ${c.name} zamknięty ($reason)")
         pipRefresh()
     }
