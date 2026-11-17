@@ -62,6 +62,9 @@ class PlayerActivity : Activity() {
         const val ACTION_SCHEDULE_ZAP = "pl.jardol.e2stream.SCHEDULE_ZAP"
     }
 
+    private var decTimerSel = 0
+    private var zapTimerSel = 0
+
     private fun showDecoderTimers() {
         showMessage(getString(R.string.message_loading_timers_from_receiver))
         io.execute {
@@ -93,8 +96,13 @@ class PlayerActivity : Activity() {
                 }
                 addSection(getString(R.string.player_future), future)
                 addSection(getString(R.string.player_completed), completed)
-                TvDialog.list(this, getString(R.string.message_receiver_timers), labels,
-                    hint = getString(R.string.player_details_hint), widthFrac = 0.75f) { selected ->
+                // po szczegółach / usunięciu lista wraca na tę samą pozycję (wyjście WSTECZ)
+                val first = labels.indexOfFirst { !it.header }
+                val at = decTimerSel.takeIf { it in labels.indices && !labels[it].header }
+                    ?: labels.indices.lastOrNull { it <= decTimerSel && !labels[it].header } ?: first
+                TvDialog.list(this, getString(R.string.message_receiver_timers), labels, at,
+                    hint = getString(R.string.player_details_hint), widthFrac = 0.75f, onCancel = { decTimerSel = 0 }) { selected ->
+                    decTimerSel = selected
                     actions[selected]?.let { showDecoderTimer(it) }
                 }
             }
@@ -2149,14 +2157,18 @@ class PlayerActivity : Activity() {
                 }
             }
         }
-        TvDialog.list(this, getString(R.string.message_scheduled_switches), items,
-            hint = getString(R.string.player_details_remove_hint), widthFrac = 0.72f,
+        // po szczegółach / usunięciu lista wraca na tę samą pozycję (wyjście WSTECZ)
+        val at = zapTimerSel.takeIf { it in items.indices && !items[it].header }
+            ?: items.indices.lastOrNull { it <= zapTimerSel && !items[it].header } ?: items.indexOfFirst { !it.header }
+        TvDialog.list(this, getString(R.string.message_scheduled_switches), items, at,
+            hint = getString(R.string.player_details_remove_hint), widthFrac = 0.72f, onCancel = { zapTimerSel = 0 },
             onLongPick = { position ->
                 historyEntries[position]?.let {
+                    zapTimerSel = position
                     ui.post { showZapHistoryEntry(it) }
                     true
                 } ?: false
-            }) { w -> actions[w]?.invoke() }
+            }) { w -> zapTimerSel = w; actions[w]?.invoke() }
     }
 
     private fun zapOutcomeLabel(outcome: String) = when (outcome) {
@@ -3792,7 +3804,7 @@ class PlayerActivity : Activity() {
     )
 
     /** Lista bieżących nagrań (oglądany kanał i bufory w tle): stacja + tytuł; OK zatrzymuje od razu (bez pytania). */
-    private fun showStopRecs() {
+    private fun showStopRecs(sel: Int = 0) {
         val recs = ArrayList<Triple<String, String, () -> Unit>>()
         localRec?.let { r ->
             recs += Triple(r.meta.optString("service").ifBlank { r.ch.name }, r.meta.optString("title"),
@@ -3806,8 +3818,10 @@ class PlayerActivity : Activity() {
         if (recs.isEmpty()) return
         val items = recs.map { TvDialog.Item(it.first, it.second) } +
             (if (recs.size > 1) listOf(TvDialog.Item(getString(R.string.player_rec_stop_all))) else emptyList())
-        TvDialog.list(this, getString(R.string.player_rec_stop_title), items, 0, widthFrac = 0.55f) { i ->
+        TvDialog.list(this, getString(R.string.player_rec_stop_title), items, sel.coerceIn(0, items.size - 1), widthFrac = 0.55f) { i ->
             if (i < recs.size) recs[i].third() else recs.asReversed().forEach { it.third() }
+            // lista zostaje z pozostałymi nagraniami; pusta — zamyka się sama
+            whenNoDialog { if (activeRecs() > 0) showStopRecs(minOf(i, activeRecs() - 1)) }
         }
     }
 
@@ -3858,7 +3872,18 @@ class PlayerActivity : Activity() {
     private fun refreshPanelRows() { if (panel.visibility == View.VISIBLE) adapter.notifyDataSetChanged() }
 
     /** Menu → Buforowane kanały: oglądany kanał (gdy gra przez bufor) i kanały w tle; zakończenie bufora i zapis na dysk. */
-    private fun showBufferedMenu() {
+    /** Menu po zmianie wraca, gdy nie ma już innego okna (np. potwierdzenia); wyjście tylko WSTECZ. */
+    private fun whenNoDialog(tries: Int = 40, block: () -> Unit) {
+        ui.postDelayed({
+            when {
+                isFinishing -> {}
+                TvDialog.top() == null -> block()
+                tries > 0 -> whenNoDialog(tries - 1, block)
+            }
+        }, 300)
+    }
+
+    private fun showBufferedMenu(sel: Int = 0) {
         val cur = playList.getOrNull(playIndex)
         val main = if (bufLive && tsBuf != null && cur != null && !recMode) cur else null
         if (main == null && bgChans.isEmpty()) { showMessage(getString(R.string.action_no_buffered)); return }
@@ -3867,19 +3892,19 @@ class PlayerActivity : Activity() {
             if (c == null) TvDialog.Item((if (localRec != null) "● " else "") + "▶  " + main!!.name,
                 getString(R.string.player_bg_span_main, fmtMs(tsBuf?.spanMs() ?: 0)))
             else TvDialog.Item((if (c.lrec != null) "● " else "") + c.name, getString(R.string.player_bg_span, fmtMs(c.buf.spanMs())))
-        }, 0, widthFrac = 0.45f) { i ->
+        }, sel.coerceIn(0, chans.size - 1), widthFrac = 0.45f) { i ->
             val bg = chans[i]
             if (bg != null && bg !in bgChans) return@list
             val ch = if (bg == null) main!! else bg.ch ?: Channel(0, bg.name, "")
             io.execute {
                 val ev = currentEventOf(bg, ch)
-                runOnUiThread { bufferedActions(bg, ch, ev) }
+                runOnUiThread { bufferedActions(bg, ch, ev, i) }
             }
         }
     }
 
-    private fun bufferedActions(bg: BgChan?, ch: Channel, ev: EpgEvent?) {
-        if (bg != null && bg !in bgChans) return
+    private fun bufferedActions(bg: BgChan?, ch: Channel, ev: EpgEvent?, listSel: Int = 0, sel: Int = 0) {
+        if (bg != null && bg !in bgChans) { showBufferedMenu(listSel); return }
         val acts = ArrayList<Pair<String, () -> Unit>>()
         if (bg != null) acts += getString(R.string.player_bg_close) to { bgCloseAsk(bg) }
         val r = if (bg == null) localRec else bg.lrec
@@ -3891,7 +3916,19 @@ class PlayerActivity : Activity() {
             acts += getString(R.string.player_bgrec_now, fmtMs((bg?.buf ?: tsBuf)?.spanMs() ?: 0)) to { bgRecStart(bg, REC_NOW, ch, ev) }
             acts += getString(R.string.player_bgrec_until) to { bgRecStart(bg, REC_UNTIL_DROP, ch, ev) }
         }
-        TvDialog.list(this, bg?.name ?: ch.name, acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f) { j -> acts[j].second() }
+        // po akcji okno wraca (kanał zamknięty — lista buforowanych); WSTECZ — do listy, drugi WSTECZ zamyka
+        TvDialog.list(this, bg?.name ?: ch.name, acts.map { TvDialog.Item(it.first) }, sel.coerceIn(0, acts.size - 1), widthFrac = 0.5f,
+            onCancel = { whenNoDialog { showBufferedMenu(listSel) } }) { j ->
+            acts[j].second()
+            whenNoDialog {
+                if (bg != null && bg !in bgChans) {
+                    if (bgChans.isNotEmpty() || (bufLive && tsBuf != null && !recMode)) showBufferedMenu(listSel)
+                } else io.execute {
+                    val e = currentEventOf(bg, ch)
+                    runOnUiThread { bufferedActions(bg, ch, e, listSel, j) }
+                }
+            }
+        }
     }
 
     /** Zgoda na pamięć urządzenia, limit miejsca — jak przy nagraniu bieżącego kanału — i start zapisu z bufora w tle. */
@@ -5059,12 +5096,13 @@ class PlayerActivity : Activity() {
     /** Przesunięcie dźwięku: lista −1000…+1000 ms, bieżąca wartość zaznaczona; działa od razu. */
     private fun chooseAvShift() {
         val o = AvShift.values
-        TvDialog.single(this, getString(R.string.setting_av_shift), o.map { avShiftLabel(this, it) }, o.indexOf(prefs.avShiftMs).coerceAtLeast(0)) { w ->
+        // okno zostaje otwarte (ustawianie i sprawdzanie na żywo), wyjście WSTECZ
+        TvDialog.singleLive(this, getString(R.string.setting_av_shift), o.map { avShiftLabel(this, it) }, o.indexOf(prefs.avShiftMs).coerceAtLeast(0)) { w ->
             prefs.avShiftMs = o[w]
             AvShift.ms = o[w]
             vlc?.applyAudioDelay()
             AppLog.i("dźwięk: przesunięcie ${o[w]} ms")
-            showMessage(getString(R.string.setting_av_shift) + ": " + avShiftLabel(this, o[w]))
+            w
         }
     }
 
@@ -5383,7 +5421,7 @@ class PlayerActivity : Activity() {
             }
             val labels = tracks.map { it.name }
             val selected = tracks.indexOfFirst { it.id == engine?.selectedAudioTrackId() }
-            TvDialog.single(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels, selected) { which ->
+            TvDialog.singleLive(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels, selected) { which ->
                 val track = tracks.getOrNull(which)
                 val previous = engine?.selectedAudioTrackId()
                 ui.removeCallbacks(audioCheck)
@@ -5393,8 +5431,10 @@ class PlayerActivity : Activity() {
                         prefs.setAudioFor(ch.ref, "${track.id}|${track.language}|${track.codec}")
                         AppLog.i("wybrano audio dla ${ch.name}: ${track.name} (ID ${track.id}, poprzedni $previous, VLC)")
                     }
+                    which
                 } else {
                     showMessage(getString(R.string.message_could_not_select_audio_track))
+                    -1
                 }
             }
             return
@@ -5405,8 +5445,9 @@ class PlayerActivity : Activity() {
         }
         val labels = tracks.map { audioLabel(it.format) }.toTypedArray()
         val sel = tracks.indexOfFirst { it.group.isTrackSelected(it.index) }
-        TvDialog.single(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels.toList(), sel) { which ->
+        TvDialog.singleLive(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels.toList(), sel) { which ->
             selectAudio(tracks[which], remember = true)
+            which
         }
     }
 

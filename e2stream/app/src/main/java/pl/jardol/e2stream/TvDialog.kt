@@ -319,12 +319,12 @@ object TvDialog {
         a: Activity, title: String, items: List<Item>, selected: Int = -1,
         hint: String = a.getString(R.string.dialog_select_hint), widthFrac: Float = 0.55f,
         onCancel: () -> Unit = {}, wrap: Boolean = false,
-        onLongPick: ((Int) -> Boolean)? = null, stacked: Boolean = false, onPick: (Int) -> Unit,
+        onLongPick: ((Int) -> Boolean)? = null, stacked: Boolean = false, keepOpen: Boolean = false, onPick: (Int) -> Unit,
     ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel) { ctx, dlg ->
         listView(ctx, items, selected, stacked).apply {
             if (wrap) enableCarousel(this) { items.indexOfFirst { !it.header } to items.indexOfLast { !it.header } }
             setOnItemClickListener { _, _, w, _ ->
-                if (!items[w].header) { dlg.dismiss(); onPick(w) }
+                if (!items[w].header) { if (!keepOpen) dlg.dismiss(); onPick(w) }
             }
             if (onLongPick != null) {
                 isLongClickable = true
@@ -343,6 +343,30 @@ object TvDialog {
     /** Lista jednokrotnego wyboru z oznaczonym bieżącym wyborem. */
     fun single(a: Activity, title: String, labels: List<String>, selected: Int, onCancel: () -> Unit = {}, onPick: (Int) -> Unit) =
         list(a, title, labels.mapIndexed { i, l -> Item(l, mark = if (i == selected) 3 else 0) }, selected, onCancel = onCancel, onPick = onPick)
+
+    /**
+     * Lista jednokrotnego wyboru, która zostaje otwarta: OK wybiera (zmiana działa od razu, znacznik przechodzi),
+     * wyjście tylko WSTECZ. [onPick] zwraca pozycję do zaznaczenia (-1 — bez zmiany znacznika).
+     */
+    fun singleLive(a: Activity, title: String, labels: List<String>, selected: Int, onCancel: () -> Unit = {}, onPick: (Int) -> Int): Dialog {
+        val items = labels.mapIndexed { i, l -> Item(l, mark = if (i == selected) 3 else 0) }
+        var lvRef: ListView? = null
+        val d = list(a, title, items, selected, onCancel = onCancel, keepOpen = true) { w ->
+            val m = onPick(w)
+            if (m >= 0) {
+                items.forEachIndexed { i, it -> it.mark = if (i == m) 3 else 0 }
+                ((lvRef?.adapter) as? BaseAdapter)?.notifyDataSetChanged()
+            }
+        }
+        lvRef = findList(d.window?.decorView)
+        return d
+    }
+
+    private fun findList(v: View?): ListView? {
+        if (v is ListView) return v
+        if (v is ViewGroup) for (i in 0 until v.childCount) findList(v.getChildAt(i))?.let { return it }
+        return null
+    }
 
     /** Lista z polami wyboru: OK przełącza, WSTECZ zapisuje i zamyka. */
     fun multi(a: Activity, title: String, labels: List<String>, checked: BooleanArray, subs: List<String>? = null,
