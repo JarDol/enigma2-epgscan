@@ -79,6 +79,10 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     private val offEma = LongArray(8192) { NONE }
     private val badRun = IntArray(8192)
     @Volatile var tsFixed = 0L
+    /** Luka w danych programu (błąd CC) — następny pakiet z PCR dostaje znacznik nieciągłości. */
+    private var discPending = false
+    /** Ile razy oznaczono nieciągłość zegara po luce (VLC przestawia zegar zamiast stać). */
+    @Volatile var discMarked = 0L
         private set
     private var cachedSection: ByteArray? = null
     private var recentPk = 0L
@@ -198,6 +202,8 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         injectPkts = null
         pidSeen.fill(0); lastDts.fill(-1); lastStep.fill(0); offEma.fill(NONE); badRun.fill(0)
         tsFixed = 0
+        discPending = false
+        discMarked = 0
         lastPcrTicks = -1
         pcrPid = -1
         injectIdx = 0
@@ -368,6 +374,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         }
 
         var disc = false
+        var hasPcr = false
         var payload = o + 4
         if ((afc and 2) != 0) {
             val afl = u(p, o + 4)
@@ -375,9 +382,13 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
             if (afl > 0 && afl <= 183) {
                 val flags = u(p, o + 5)
                 disc = (flags and 0x80) != 0
-                if ((flags and 0x10) != 0 && afl >= 7) pcr(pid, p, o + 6, disc)
+                if ((flags and 0x10) != 0 && afl >= 7) {
+                    pcr(pid, p, o + 6, disc)
+                    hasPcr = true
+                }
             }
         }
+        if ((afc and 1) == 0) markDisc(p, o, pid, hasPcr, disc, mutable)   // pakiet tylko z PCR (bez danych)
         if ((afc and 1) != 0) {
             val last = pidCc[pid]
             if (last >= 0 && !disc) {
@@ -388,9 +399,16 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
                     ccErrors++; ivCc++; pidCcErr[pid]++
                     val lost = (cc - exp + 16) and 0x0f
                     event("błąd CC pid ${pidName(pid)}: oczekiwano $exp, jest $cc (~$lost pakietów brak)")
+                    if (pid == pcrPid || pid in videoPids || pid in audioPids) {
+                        // luka w danych programu: znaczniki za nią mogą być przesunięte o czas luki — to nie błąd
+                        // nadawcy, więc bez „poprawiania” (cofałoby obraz); zegar oznaczany jako nieciągły
+                        discPending = true
+                        offEma.fill(NONE); lastDts.fill(-1); badRun.fill(0)
+                    }
                 }
             }
             pidCc[pid] = cc
+            markDisc(p, o, pid, hasPcr, disc, mutable)
             if (pid == Eit.PID) {
                 eitPackets++
                 if (eitEnabled && expectedSid >= 0 && payload < o + 188) eitAsm.packet(p, o, payload)
@@ -403,6 +421,18 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
                 else if (pid == pmtPid || (pmtPid < 0 && pmtCandidates.contains(pid))) parsePmt(p, payload, o + 188, pid)
             }
         }
+    }
+
+    /**
+     * Pierwszy PCR po luce: discontinuity_indicator — odtwarzacz (VLC) przestawia zegar od razu,
+     * zamiast czekać na znaczniki odległe o czas luki (zacięcie obrazu).
+     */
+    private fun markDisc(p: ByteArray, o: Int, pid: Int, hasPcr: Boolean, disc: Boolean, mutable: Boolean) {
+        if (!hasPcr || pid != pcrPid || !discPending || !mutable) return
+        discPending = false
+        if (disc) return
+        p[o + 5] = (u(p, o + 5) or 0x80).toByte()
+        discMarked++
     }
 
     private fun pcr(pid: Int, p: ByteArray, i: Int, disc: Boolean) {
@@ -424,6 +454,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
             if (d < 0 || d > 700) {
                 pcrJumps++; ivPcr++
                 event("skok PCR pid ${pidName(pid)}: $d ms")
+                if (pid == pcrPid) discPending = true      // ten pakiet z PCR też dostaje znacznik nieciągłości
             }
         }
     }
@@ -813,7 +844,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         val worst = (0 until 8192).filter { pidCcErr[it] > 0 }
             .sortedByDescending { pidCcErr[it] }.take(5)
             .joinToString(" ") { "${pidName(it)}=${pidCcErr[it]}" }
-        return "TS razem: ${bytes / 1_000_000} MB, PMT pid $pmtPid ${if (pmtSeen) "jest" else "BRAK"}, wstawiony ×$pmtInjected, poprawione znaczniki $tsFixed, wyczyszczone $cleaned, CC $ccErrors, TEI $teiErrors, kodowane $scrambled, sync $syncLoss, PCR $pcrJumps, PMT $pmtChanges, maks. odczyt $maxGapMs ms" +
+        return "TS razem: ${bytes / 1_000_000} MB, PMT pid $pmtPid ${if (pmtSeen) "jest" else "BRAK"}, wstawiony ×$pmtInjected, poprawione znaczniki $tsFixed, oznaczone luki $discMarked, wyczyszczone $cleaned, CC $ccErrors, TEI $teiErrors, kodowane $scrambled, sync $syncLoss, PCR $pcrJumps, PMT $pmtChanges, maks. odczyt $maxGapMs ms" +
             (if (worst.isNotEmpty()) " | CC wg PID: $worst" else "") +
             " | ostatnio wideo−audio $avDiffMs ms, wideo PTS−PCR min $videoLeadMs ms"
     }
