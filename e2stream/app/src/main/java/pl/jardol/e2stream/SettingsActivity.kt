@@ -573,10 +573,12 @@ class SettingsActivity : Activity() {
 
     /**
      * Jedno miejsce na nośnik (dysk USB / pamięć urządzenia za zgodą / brak) i wszystko, co z niego korzysta:
-     * timeshift, nagrania lokalne, logi. Bez dostępnego nośnika pozycje są nieaktywne (opis zamiast wartości);
-     * ustawienia zostają — po podłączeniu dysku wszystko działa jak przedtem.
+     * timeshift, nagrania lokalne, logi. Przy „Brak” zostają informacje o wymaganym nośniku;
+     * odłączony wybrany nośnik zachowuje nieaktywne opcje. Wartości ustawień zostają.
      */
-    private fun storageItems(): List<Item> = listOf(
+    private fun storageItems(): List<Item> {
+        val selected = p.tsDir.isNotBlank() || p.tsInternalOk
+        return listOf(
         Item.Header(getString(R.string.storage_header_medium)),
         Item.Action(getString(R.string.storage_medium), { tsPlace() }) { chooseTsDir() },
         Item.Header(getString(R.string.storage_header_buffer_play)),
@@ -589,7 +591,7 @@ class SettingsActivity : Activity() {
             markChanged("odtwarzanie przez bufor: ${if (p.bufPlay) "włączone" else "wyłączone"}")
             items = buildItems(); refresh()
         },
-    ) + (if (!p.bufPlay) emptyList<Item>() else listOf(
+    ) + (if (!selected || !p.bufPlay) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_bg_buffer), {
             if (!p.bufPlay) getString(R.string.setting_bg_buffer_needs) else bgCountName(p.bgCount)
         }) {
@@ -599,16 +601,16 @@ class SettingsActivity : Activity() {
                 p.bgCount = o[w]; markChanged("bufor poprzednich kanałów: ${bgCountName(o[w])}"); items = buildItems(); refresh()
             }
         },
-    )) + (if (!p.bufPlay || p.bgCount <= 0) emptyList<Item>() else listOf(
+    )) + (if (!selected || !p.bufPlay || p.bgCount <= 0) emptyList<Item>() else listOf(
         // czas bufora — tylko gdy bufor poprzednich kanałów włączony
         gated(getString(R.string.setting_bg_buffer_time), { bgName(p.bgBufMin) }) { chooseBgBuffer() },
         Item.Toggle(getString(R.string.setting_bg_full_msg), { p.bgFullMsg }, { p.bgFullMsg = it }),
         Item.Toggle(getString(R.string.setting_bg_status_msg), { p.bgStatusMsg }, { p.bgStatusMsg = it }),
-    )) + (if (!Features.PIP || !p.bufPlay) emptyList<Item>() else listOf(
+    )) + (if (!Features.PIP || (selected && !p.bufPlay)) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_pip_enabled), { getString(if (p.pipEnabled) R.string.settings_enabled else R.string.settings_disabled) }) {
             p.pipEnabled = !p.pipEnabled; markChanged("PiP = ${p.pipEnabled}"); items = buildItems(); refresh()
         },
-    )) + (if (!Features.PIP || !p.bufPlay || !p.pipEnabled) emptyList<Item>() else listOf(
+    )) + (if (!selected || !Features.PIP || !p.bufPlay || !p.pipEnabled) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_pip_mode), { pipName(p.pipFrameMs) }) {
             val o = listOf(1000, 2000, 3000, 5000)
             TvDialog.single(this, getString(R.string.setting_pip_mode), o.map { pipName(it) }, o.indexOf(p.pipFrameMs).coerceAtLeast(0)) { w ->
@@ -624,7 +626,7 @@ class SettingsActivity : Activity() {
     )) + listOf(
         Item.Header(getString(R.string.setting_timeshift_pause_and_rewind_live_tv)),
         gated(getString(R.string.setting_timeshift), { tsValue() }) { chooseTs() },
-    ) + (if (p.tsMin <= 0) emptyList<Item>() else listOf(
+    ) + (if (!selected || p.tsMin <= 0) emptyList<Item>() else listOf(
         // przy odtwarzaniu przez bufor zapis rusza od razu (odtwarzacz czyta z bufora) — opóźnienie nieaktywne, ustawienie zostaje
         gated(getString(R.string.setting_automatic_timeshift), {
             if (p.bufPlay) getString(R.string.ts_delay_buffer_play) else tsDelayName(p.tsDelay)
@@ -664,6 +666,7 @@ class SettingsActivity : Activity() {
         Item.Action(getString(R.string.setting_log_and_dump_storage_location), { Storage.dir(this, p).absolutePath }) { chooseStorage() },
         Item.Action(getString(R.string.setting_app_storage), { getString(R.string.setting_app_storage_value) }) { showAppStorage() },
     )
+    }
 
     /** Długość bufora bieżącego kanału (timeshift albo krótki bufor samego odtwarzania przez bufor). */
     private fun mainBufMin() = if (p.tsMin > 0) p.tsMin else TimeshiftBuffer.BUF_PLAY_MIN
@@ -827,8 +830,8 @@ class SettingsActivity : Activity() {
             if (p.tsDir.isBlank() && !p.tsInternalOk) 3 else 0)
         TvDialog.list(this, getString(R.string.message_timeshift_buffer_location), items + none, -1, widthFrac = 0.6f) { w ->
             if (w >= opts.size) {
-                // bez nośnika: timeshift wyłączony, zgoda na pamięć urządzenia cofnięta, logi wracają do pamięci aplikacji
-                p.tsDir = ""; p.tsInternalOk = false; p.tsMin = 0
+                // Brak nośnika wyłącza zapis bez kasowania ustawień na czas ponownego wyboru.
+                p.tsDir = ""; p.tsInternalOk = false
                 markChanged("pamięć masowa: brak nośnika")
                 if (Storage.followTimeshift(p)) AppLog.init(this, Storage.dir(this, p))
                 this.items = buildItems(); refresh()
