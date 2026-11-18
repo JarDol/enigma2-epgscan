@@ -3058,7 +3058,14 @@ class PlayerActivity : Activity() {
     }
 
     /** Dekoder okna PiP: programowy, do pamięci, tworzony raz na kanał w oknie; między klatkami flush. */
-    private class PipCodec(val codec: android.media.MediaCodec, val mime: String, val maxIn: Int)
+    private class PipCodec(val codec: android.media.MediaCodec, val mime: String, val maxIn: Int, val name: String)
+
+    private fun safeCodecName(codec: android.media.MediaCodec, requestedName: String): String = try {
+        codec.name
+    } catch (e: IllegalStateException) {
+        PipLog.i("dekoder $requestedName: nie można odczytać nazwy ($e)")
+        requestedName
+    }
 
     private fun pipRelease(w: PipWin) {
         val pc = w.codec ?: return
@@ -3137,11 +3144,12 @@ class PlayerActivity : Activity() {
         if (pc == null) {
             val maxIn = maxOf(maxUnit + 65536, 1 shl 20)
             val codec = TsFrames.openDecoder(swName, mime, maxIn)
-            pc = PipCodec(codec, mime, maxIn)
+            pc = PipCodec(codec, mime, maxIn, safeCodecName(codec, swName))
             w.codec = pc
-            PipLog.i("okno ${w.idx + 1}: ${c.name} — dekoder ${codec.name} ($type)")
+            PipLog.i("okno ${w.idx + 1}: ${c.name} — dekoder ${pc.name} ($type)")
         }
         val codec = pc.codec
+        val codecName = pc.name
         val pw = w.pw; val ph = w.ph
         if (w.px.size != pw * ph) w.px = IntArray(pw * ph)
         val bmp = w.bmps[w.bmpTurn]?.takeIf { it.width == pw && it.height == ph }
@@ -3156,13 +3164,23 @@ class PlayerActivity : Activity() {
             ok = true
         } finally {
             // gotowy na następną klatkę; dekoder, który nie odpowiada albo zgłosił błąd — zwalniany
-            if (!ok || !shown) pipRelease(w) else try { codec.flush() } catch (_: Exception) { pipRelease(w) }
+            if (!ok || !shown) {
+                pipRelease(w)
+            } else {
+                try {
+                    codec.flush()
+                } catch (e: IllegalStateException) {
+                    pipRelease(w)
+                    val trace = android.util.Log.getStackTraceString(e).replace('\n', ' ').trim()
+                    PipLog.i("okno ${w.idx + 1} (${c.name}): $codecName — błąd flush; stos: $trace")
+                }
+            }
         }
-        if (!shown) return Grab(-1, "$type ${au / 1000} kB, ${codec.name}: dekoder nie oddał obrazu")
+        if (!shown) return Grab(-1, "$type ${au / 1000} kB, $codecName: dekoder nie oddał obrazu")
         w.bmpTurn = 1 - w.bmpTurn
         val g = w.gen
         ui.post { if (w.gen == g) w.iv.setImageBitmap(bmp) }
-        return Grab(SystemClock.elapsedRealtime() - t0, "$type ${ends.size} jedn. ${au / 1000} kB, $desc, ${codec.name}")
+        return Grab(SystemClock.elapsedRealtime() - t0, "$type ${ends.size} jedn. ${au / 1000} kB, $desc, $codecName")
     }
 
     /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału; menu zostaje otwarte do WSTECZ. */
