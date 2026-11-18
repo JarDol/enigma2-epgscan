@@ -64,6 +64,15 @@ class SettingsStorageTest {
         choices.performItemClick(choices.adapter.getView(selected, null, choices), selected, selected.toLong())
     }
 
+    private fun chooseTimeshift(index: Int) {
+        val position = rows().indexOfFirst {
+            it.findViewById<TextView>(R.id.label)?.text?.toString() == activity.getString(R.string.setting_timeshift)
+        }
+        list.performItemClick(list.adapter.getView(position, null, list), position, position.toLong())
+        val choices = findList(ShadowDialog.getLatestDialog().window!!.decorView)!!
+        choices.performItemClick(choices.adapter.getView(index, null, choices), index, index.toLong())
+    }
+
     private fun findList(view: View): ListView? {
         if (view is ListView) return view
         if (view is ViewGroup) for (i in 0 until view.childCount) findList(view.getChildAt(i))?.let { return it }
@@ -188,5 +197,37 @@ class SettingsStorageTest {
         chooseMedium { it.count - 1 }
         assertFalse(has(R.string.setting_buffer_write_batch))
         assertEquals(512 * 1024, prefs.tsWriteBatchBytes)
+    }
+
+    @Test
+    fun enablingAndDisablingTimeshiftImmediatelyUpdatesDependentRowsAndKeepsFocus() {
+        prefs.tsInternalOk = true
+        prefs.tsMin = 0
+        openStorage()
+
+        val timeshiftPosition = rows().indexOfFirst {
+            it.findViewById<TextView>(R.id.label)?.text?.toString() == activity.getString(R.string.setting_timeshift)
+        }
+        assertTrue(timeshiftPosition >= 0)
+        assertFalse(has(R.string.setting_automatic_timeshift))
+        assertFalse(has(R.string.setting_rec_max_hours))
+
+        val fit = TimeshiftBuffer.fitMinutes(TimeshiftBuffer.internalBase(activity))
+        val enabledMinutes = TimeshiftBuffer.recommended(fit, false)
+        assertTrue("test storage must fit at least one timeshift option", enabledMinutes > 0)
+        list.setSelection(timeshiftPosition)
+        chooseTimeshift(TimeshiftBuffer.choices(false).indexOf(enabledMinutes))
+
+        assertEquals(enabledMinutes, prefs.tsMin)
+        assertTrue(has(R.string.setting_automatic_timeshift))
+        assertTrue(has(R.string.setting_rec_max_hours))
+        assertEquals(timeshiftPosition, list.selectedItemPosition)
+
+        list.setSelection(timeshiftPosition)
+        chooseTimeshift(0)
+        assertEquals(0, prefs.tsMin)
+        assertFalse(has(R.string.setting_automatic_timeshift))
+        assertFalse(has(R.string.setting_rec_max_hours))
+        assertEquals(timeshiftPosition, list.selectedItemPosition)
     }
 }

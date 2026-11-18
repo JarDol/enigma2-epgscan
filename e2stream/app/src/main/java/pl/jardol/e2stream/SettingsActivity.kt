@@ -825,6 +825,7 @@ class SettingsActivity : Activity() {
             if (m > fit) { toast(getString(R.string.ts_choose_shorter, fmtMin(m))); return@list }
             p.tsMin = m
             markChanged("timeshift = $m min")
+            this.items = buildItems()
             refresh()
         }
     }
