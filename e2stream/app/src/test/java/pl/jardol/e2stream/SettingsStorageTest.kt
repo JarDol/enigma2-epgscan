@@ -169,4 +169,24 @@ class SettingsStorageTest {
         assertTrue(has(R.string.setting_pip_mode))
         assertTrue(has(R.string.setting_seek_lr_short))
     }
+
+    @Test
+    fun writeBatchOptionRequiresSelectedMediumAndBufferPlayback() {
+        prefs.tsInternalOk = true
+        prefs.bufPlay = true
+        prefs.tsWriteBatchBytes = 512 * 1024
+        openStorage()
+        assertTrue(has(R.string.setting_buffer_write_batch))
+
+        prefs.bufPlay = false
+        openStorage()
+        assertFalse(has(R.string.setting_buffer_write_batch))
+        assertEquals(512 * 1024, prefs.tsWriteBatchBytes)
+
+        prefs.bufPlay = true
+        openStorage()
+        chooseMedium { it.count - 1 }
+        assertFalse(has(R.string.setting_buffer_write_batch))
+        assertEquals(512 * 1024, prefs.tsWriteBatchBytes)
+    }
 }

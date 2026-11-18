@@ -2501,8 +2501,7 @@ class PlayerActivity : Activity() {
         if (c.pip >= 0) { c.pip = -1; pipRefresh() }
         c.an.tee = null; c.an.onEit = null
         // w osobnym wątku: przy zawieszonym nośniku zamknięcie pliku może czekać — nie blokuje obrazu ani pilota
-        val b = c.buf
-        Thread({ try { b.reset() } catch (_: Exception) {} }, "bufor-zamykanie").start()
+        closeBufferAsync(c.buf)
         bgBadgeLogged.remove(c.name)
         AppLog.i("bufor w tle: ${c.name} zamknięty ($reason)")
         pipRefresh()
@@ -2510,6 +2509,17 @@ class PlayerActivity : Activity() {
     }
 
     private fun bgDropAll(reason: String) { for (c in bgChans.toList()) bgDrop(c, reason) }
+
+    private fun closeBufferAsync(buffer: TimeshiftBuffer) {
+        Thread({
+            try {
+                buffer.close()
+                TimeshiftBuffer.cleanupAsync(buffer.dir)
+            } catch (e: Exception) {
+                AppLog.i("timeshift: zamknięcie bufora nieudane (${buffer.dir.name}, $e)")
+            }
+        }, "bufor-zamykanie").start()
+    }
 
     private val storageGuard = StorageGuard()
     private var guardScheduled = false
@@ -2787,7 +2797,7 @@ class PlayerActivity : Activity() {
             if (tsMode) tsLeave()
             bufStop("powrót na kanał buforowany w tle")
             if (localRec != null) finishLocalRec("zmiana kanału", restartLive = false)
-            tsBuf?.reset()
+            tsBuf?.let { closeBufferAsync(it) }
             tsBuf = null
             // przejęcie: ten sam analizator (bez resetu sesji), bufor, połączenie i dziennik
             analyzer = target.an
@@ -2820,7 +2830,7 @@ class PlayerActivity : Activity() {
         val used = bgChans.map { it.buf.dir }.toSet() + listOfNotNull(tsBuf?.dir)
         val dir = TimeshiftBuffer.slotDirs(root).firstOrNull { it !in used } ?: return null
         val url = api.streamUrl(ch)
-        val buf = TimeshiftBuffer(dir, pipBufLen(), root)
+        val buf = TimeshiftBuffer(dir, pipBufLen(), root, prefs.tsWriteBatchBytes)
         val an = TsAnalyzer(0) { msg -> AppLog.i("PiP ${ch.name}: $msg") }
         an.pmtCacheGet = { sid -> prefs.pmtFor(sid) ?: PmtBuilder.build(sid, prefs.pidsFor(sid)) }
         an.pmtCachePut = { sid, b -> prefs.setPmtFor(sid, b) }
@@ -3343,7 +3353,7 @@ class PlayerActivity : Activity() {
         tsWriteFrom = if (prefs.bufPlay) 0L else if (prefs.tsDelay < 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + prefs.tsDelay * 1000L
         val min = if (prefs.tsMin > 0) prefs.tsMin else if (prefs.bufPlay) TimeshiftBuffer.BUF_PLAY_MIN else 0
         if (min <= 0) {
-            tsBuf?.reset(); tsBuf = null
+            tsBuf?.let { closeBufferAsync(it) }; tsBuf = null
             return
         }
         val dir = TimeshiftBuffer.dir(this, prefs)
@@ -3354,23 +3364,25 @@ class PlayerActivity : Activity() {
                 AppLog.i("timeshift: nośnik ${prefs.tsDir.ifBlank { "pamięć urządzenia (brak zgody)" }} niedostępny — timeshift wyłączony")
                 if (prefs.tsMin <= 0) showMessage(getString(R.string.player_bufplay_fallback)) else showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)))
             }
-            tsBuf?.reset(); tsBuf = null
+            tsBuf?.let { closeBufferAsync(it) }; tsBuf = null
             return
         }
         tsWarned = false
         val b = tsBuf
         if (b == null || b.root != dir) {
-            b?.reset()
+            b?.let { closeBufferAsync(it) }
             if (b != null) bgDropAll("zmiana nośnika")
             // katalog nie zajęty przez kanały buforowane w tle
             val used = bgChans.map { it.buf.dir }.toSet()
             val slot = TimeshiftBuffer.slotDirs(dir).first { it !in used }
-            tsBuf = TimeshiftBuffer(slot, min, dir).also { it.pcrPid = { analyzer?.pcrPid ?: -1 } }
+            tsBuf = TimeshiftBuffer(slot, min, dir, prefs.tsWriteBatchBytes).also { it.pcrPid = { analyzer?.pcrPid ?: -1 } }
             AppLog.i("timeshift: $min min w ${slot.absolutePath} (wolne ${TimeshiftBuffer.gb(dir.usableSpace)})")
         } else {
             b.maxMin = min
+            b.writeBatchBytes = prefs.tsWriteBatchBytes
             b.reset()
         }
+        bgChans.forEach { it.buf.writeBatchBytes = prefs.tsWriteBatchBytes }
         scheduleStorageGuard()
     }
 
@@ -3394,7 +3406,7 @@ class PlayerActivity : Activity() {
         bufStop("koniec odtwarzania na żywo")
         if (!keepBg) bgDropAll("koniec odtwarzania na żywo")
         tsCtl = false; tsChBar = false
-        tsBuf?.reset()
+        tsBuf?.let { closeBufferAsync(it) }
         // po powrocie wszystko od nowa: nowy bufor w katalogu głównym, bez przejętych połączeń i analizatorów kanałów w tle
         tsBuf = null
         tsRec?.stop(); tsRec = null; tsRecAn = null

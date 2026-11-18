@@ -592,6 +592,16 @@ class SettingsActivity : Activity() {
             items = buildItems(); refresh()
         },
     ) + (if (!selected || !p.bufPlay) emptyList<Item>() else listOf(
+            gated(getString(R.string.setting_buffer_write_batch), { writeBatchName(p.tsWriteBatchBytes) }) {
+                val sizes = TimeshiftBuffer.WRITE_BATCH_OPTIONS.toList()
+                TvDialog.single(this, getString(R.string.setting_buffer_write_batch), sizes.map { writeBatchName(it) },
+                    sizes.indexOf(p.tsWriteBatchBytes).coerceAtLeast(0)) { w ->
+                    p.tsWriteBatchBytes = sizes[w]
+                    markChanged("partia zapisu bufora = ${writeBatchName(sizes[w])}")
+                    items = buildItems(); refresh()
+                }
+            },
+    )) + (if (!selected || !p.bufPlay) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_bg_buffer), {
             if (!p.bufPlay) getString(R.string.setting_bg_buffer_needs) else bgCountName(p.bgCount)
         }) {
@@ -670,6 +680,13 @@ class SettingsActivity : Activity() {
 
     /** Długość bufora bieżącego kanału (timeshift albo krótki bufor samego odtwarzania przez bufor). */
     private fun mainBufMin() = if (p.tsMin > 0) p.tsMin else TimeshiftBuffer.BUF_PLAY_MIN
+
+    private fun writeBatchName(bytes: Int): String = when (bytes) {
+        0 -> getString(R.string.setting_buffer_write_batch_off)
+        256 * 1024 -> getString(R.string.setting_buffer_write_batch_256)
+        512 * 1024 -> getString(R.string.setting_buffer_write_batch_512)
+        else -> getString(R.string.setting_buffer_write_batch_1024)
+    }
 
     private fun bgCountName(n: Int): String = when (n) {
         0 -> getString(R.string.settings_disabled)

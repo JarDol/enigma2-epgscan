@@ -303,6 +303,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("bufPlay", false)
         set(v) = putB("bufPlay", v)
 
+    /** Buforowanie zapisów timeshiftu w RAM przed zapisem na nośnik (0 = wyłączone). */
+    var tsWriteBatchBytes: Int
+        get() = sp.getInt("tsWriteBatchBytes", 0).takeIf { it in TIMESHIFT_WRITE_BATCHES } ?: 0
+        set(v) = putI("tsWriteBatchBytes", v.takeIf { it in TIMESHIFT_WRITE_BATCHES } ?: 0)
+
     /** Bufor poprzednich kanałów: ile kanałów buforowanych w tle (0 — wyłączony, 1–3); dawniej włączony = 2. */
     var bgCount: Int
         get() = if (sp.contains("bgCount")) sp.getInt("bgCount", 0).coerceIn(0, 3) else if (sp.getInt("bgBufMin", 0) != 0) 2 else 0
@@ -707,6 +712,7 @@ class Prefs(ctx: Context) {
     }
 
     companion object {
+        private val TIMESHIFT_WRITE_BATCHES = TimeshiftBuffer.WRITE_BATCH_OPTIONS.toSet()
         const val DEFAULT_FTP_DIR = "/media/hdd/e2stream"
         val UPDATE_MODES = listOf("off", "notify", "on")
         val SLEEP_HOURS = listOf(1, 2, 3, 6, 12, 24)
