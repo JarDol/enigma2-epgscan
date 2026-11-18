@@ -224,6 +224,12 @@ class SettingsActivity : Activity() {
         Item.Action(getString(R.string.setting_remote_control_key_mapping)) { showKeyMap() },
         Item.Action(getString(R.string.setting_map_ok_and_arrows_without_banner)) { showNavigationMap(false) },
         Item.Action(getString(R.string.setting_map_ok_and_arrows_with_channel_banner)) { showNavigationMap(true) },
+        Item.Action(getString(R.string.setting_sleep_timer), { sleepLabel(p.sleepHours) }) {
+            val o = listOf(0) + Prefs.SLEEP_HOURS
+            TvDialog.single(this, getString(R.string.setting_sleep_timer), o.map { sleepLabel(it) }, o.indexOf(p.sleepHours).coerceAtLeast(0)) { w ->
+                p.sleepHours = o[w]; markChanged("wyłączenie po bezczynności = ${o[w]} h"); items = buildItems(); refresh()
+            }
+        },
         Item.Toggle(getString(R.string.setting_resume_last_channel_on_startup), { p.resumeLast }, { p.resumeLast = it }),
         Item.Action(getString(R.string.setting_switch_to_channel_on_startup), {
             if (p.resumeLast) getString(R.string.settings_start_disabled) else p.startChannelName.ifBlank { getString(R.string.settings_first_channel) }
@@ -279,12 +285,6 @@ class SettingsActivity : Activity() {
             val o = Prefs.UPDATE_MODES
             TvDialog.single(this, getString(R.string.setting_update_mode), o.map { updateModeLabel(it) }, o.indexOf(p.updateMode).coerceAtLeast(0)) { w ->
                 p.updateMode = o[w]; markChanged("aktualizacja automatyczna = ${o[w]}"); items = buildItems(); refresh()
-            }
-        },
-        Item.Action(getString(R.string.setting_sleep_timer), { sleepLabel(p.sleepHours) }) {
-            val o = listOf(0) + Prefs.SLEEP_HOURS
-            TvDialog.single(this, getString(R.string.setting_sleep_timer), o.map { sleepLabel(it) }, o.indexOf(p.sleepHours).coerceAtLeast(0)) { w ->
-                p.sleepHours = o[w]; markChanged("wyłączenie po bezczynności = ${o[w]} h"); items = buildItems(); refresh()
             }
         },
                 Item.Action(getString(R.string.setting_application_information_readme)) { showReadme("E2Stream", "e2stream/README.md") },

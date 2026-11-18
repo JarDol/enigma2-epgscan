@@ -351,9 +351,8 @@ class PlayerActivity : Activity() {
         // bezpiecznik PiP: poprzednia sesja skończyła się z otwartymi oknami (awaria, zabicie, zawieszenie Androida)
         if (prefs.pipActive) {
             prefs.pipActive = false
+            PipLog.i("bezpiecznik: poprzednia sesja zakończyła się z otwartym PiP; ustawienie PiP=${prefs.pipEnabled}")
             if (prefs.pipEnabled) {
-                prefs.pipEnabled = false
-                PipLog.i("bezpiecznik: poprzednia sesja zakończona z otwartym PiP — PiP wyłączone")
                 ui.postDelayed({ if (!isFinishing) showPipTripped() }, 2500)
             }
         }
@@ -389,6 +388,10 @@ class PlayerActivity : Activity() {
         AppState.foreground = true
         TvDialog.onInput = { sleepInput() }
         sleepAt = 0
+        val now = SystemClock.elapsedRealtime()
+        if (sleepLogStartedAt == 0L) sleepLogStartedAt = now
+        sleepStatusLoggedAt = now
+        AppLog.i("auto-zamknięcie: limit bezczynności ${prefs.sleepHours} h")
         ui.removeCallbacks(sleepTick)
         ui.post(sleepTick)
         ZapWakeAlarms.setAppForeground(this, true)
@@ -400,6 +403,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun showPipTripped() {
+        PipLog.i("pokazuję komunikat o problemie z PiP; ustawienie PiP pozostaje ${prefs.pipEnabled}")
         TvDialog.confirm(this, getString(R.string.pip_tripped_title), getString(R.string.pip_tripped_msg), listOf(
             TvDialog.Btn(getString(R.string.action_send_log)) { uploadLog(true) },
             TvDialog.Btn(getString(R.string.message_close))))
@@ -1868,12 +1872,57 @@ class PlayerActivity : Activity() {
 
     private var sleepAt = 0L
     private var sleepDlg: Dialog? = null
+    private var lastPilotInputAt = 0L
+    private var lastPilotInputWall = 0L
+    private var sleepLogStartedAt = 0L
+    private var sleepStatusLoggedAt = 0L
 
     private fun sleepLimitMs() = prefs.sleepHours * 3_600_000L
+
+    private fun notePilotInput() {
+        lastPilotInputAt = SystemClock.elapsedRealtime()
+        lastPilotInputWall = System.currentTimeMillis()
+    }
 
     private fun sleepInput() {
         if (!::prefs.isInitialized || sleepDlg?.isShowing == true) return
         sleepAt = SystemClock.elapsedRealtime() + sleepLimitMs()
+    }
+
+    private fun activeRecordings(): List<LocalRec> = buildList {
+        localRec?.let(::add)
+        bgChans.mapNotNull { it.lrec }.forEach(::add)
+    }
+
+    private fun sleepCloseAt(idleDeadline: Long, recordings: List<LocalRec>, now: Long) =
+        AutoCloseDeadline.at(
+            idleDeadline,
+            recordings.map {
+                AutoCloseRecording(
+                    if (it.mode == REC_EVENT) AutoCloseRecordingKind.PROGRAM else AutoCloseRecordingKind.BUFFER,
+                    it.untilWall
+                )
+            },
+            now,
+            System.currentTimeMillis()
+        )
+
+    private fun logSleepStatus(now: Long, limit: Long, deadline: Long, recordings: List<LocalRec>) {
+        if (now - sleepStatusLoggedAt < AutoCloseDeadline.LOG_INTERVAL_MS) return
+        val inputAt = lastPilotInputAt.takeIf { it > 0 } ?: sleepLogStartedAt
+        val inputWall = lastPilotInputWall.takeIf { it > 0 }
+        val noPilotFor = (now - inputAt).coerceAtLeast(0)
+        val closesAt = if (limit > 0) {
+            val closeWall = System.currentTimeMillis() + (deadline - now)
+            hm.format(Date(closeWall))
+        } else "wyłączone"
+        val recInfo = recordings.maxByOrNull { it.untilWall }?.let {
+            "nagranie audycji „${it.meta.optString("title").replace(Regex("\\s+"), " ").trim()}” do ${hm.format(Date(it.untilWall))}"
+        } ?: "brak nagrania audycji"
+        val lastInput = inputWall?.let { hm.format(Date(it)) } ?: "od uruchomienia"
+        AppLog.i("auto-zamknięcie: brak sygnału pilota przez ${fmtMs(noPilotFor)} (ostatni: $lastInput); " +
+            "przewidywane zamknięcie aplikacji: $closesAt; $recInfo")
+        sleepStatusLoggedAt = now
     }
 
     private val sleepTick = object : Runnable {
@@ -1882,17 +1931,19 @@ class PlayerActivity : Activity() {
             AppState.recording = activeRecs() > 0
             val limit = sleepLimitMs()
             val now = SystemClock.elapsedRealtime()
+            val activeRecordings = activeRecordings()
+            val programRecs = activeRecordings.filter { it.mode == REC_EVENT }
+            if (limit > 0 && sleepAt == 0L) sleepAt = now + limit
+            val closeAt = if (limit > 0) sleepCloseAt(sleepAt, activeRecordings, now) else 0L
+            logSleepStatus(now, limit, closeAt, programRecs)
             if (limit <= 0) { sleepDlg?.dismiss(); sleepDlg = null; sleepAt = 0; return }
-            if (settingsOpen) { sleepAt = now + limit; return }   // w ustawieniach nie wyłączamy; licznik liczy od powrotu
-            if (sleepAt == 0L) sleepAt = now + limit
+            if (settingsOpen) return
             val dlg = sleepDlg?.takeIf { it.isShowing }
-            if (AppState.recording) {
-                // nagrywanie trwa — nie wyłączaj, odliczanie od nowa
+            if (programRecs.isNotEmpty() && sleepAt <= now) {
                 if (dlg != null) { dlg.dismiss(); sleepDlg = null }
-                sleepAt = now + limit
                 return
             }
-            val left = sleepAt - now
+            val left = closeAt - now
             when {
                 left <= 0 -> { dlg?.dismiss(); sleepDlg = null; sleepShutdown() }
                 dlg != null -> TvDialog.setMessage(dlg, getString(R.string.sleep_timer_message, ((left + 999) / 1000).toInt()))
@@ -1947,7 +1998,7 @@ class PlayerActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN) { resetPanelTimer(); sleepInput() }
+        if (event.action == KeyEvent.ACTION_DOWN) { notePilotInput(); resetPanelTimer(); sleepInput() }
         return super.dispatchKeyEvent(event)
     }
 
@@ -2455,6 +2506,7 @@ class PlayerActivity : Activity() {
         bgBadgeLogged.remove(c.name)
         AppLog.i("bufor w tle: ${c.name} zamknięty ($reason)")
         pipRefresh()
+        refreshPanelRows()
     }
 
     private fun bgDropAll(reason: String) { for (c in bgChans.toList()) bgDrop(c, reason) }
@@ -2530,6 +2582,7 @@ class PlayerActivity : Activity() {
         for (o in bgChans) o.parked = false
         c.parked = true
         bgChans += c
+        refreshPanelRows()
         if (keep != null) {
             c.lrec = keep
             ui.removeCallbacks(bgRecTick); ui.postDelayed(bgRecTick, 5000)
@@ -2758,6 +2811,7 @@ class PlayerActivity : Activity() {
             AppLog.i("bufor w tle: powrót na $name — odtwarzanie od razu z bufora (${target.buf.spanMs() / 1000} s zapisu)")
         }
         pipRefresh()
+        refreshPanelRows()
     }
 
     /** Nowy kanał buforowany w tle (dla okna PiP): własne połączenie, analizator i bufor w wolnym podkatalogu. */
@@ -2785,6 +2839,7 @@ class PlayerActivity : Activity() {
         rec.start()
         ui.removeCallbacks(bgTick); ui.postDelayed(bgTick, 5_000)
         AppLog.i("bufor w tle: ${ch.name} — nowe połączenie dla PiP, bufor ${buf.maxMin} min w ${dir.absolutePath}")
+        refreshPanelRows()
         return c
     }
 
@@ -2972,7 +3027,11 @@ class PlayerActivity : Activity() {
                         }
                     } catch (e: Exception) {
                         pipRelease(w)
-                        if (!w.failLogged) { w.failLogged = true; PipLog.i("okno ${w.idx + 1} (${c.name}): klatka nieudana ($e)") }
+                        if (!w.failLogged) {
+                            w.failLogged = true
+                            val trace = android.util.Log.getStackTraceString(e).replace('\n', ' ').trim()
+                            PipLog.i("okno ${w.idx + 1} (${c.name}): klatka nieudana; stos: $trace")
+                        }
                     }
                 }
                 val spent = SystemClock.elapsedRealtime() - t0
@@ -3146,6 +3205,7 @@ class PlayerActivity : Activity() {
         c.pip = free
         c.buf.maxMin = pipBufLen()
         pipRefresh()
+        refreshPanelRows()
     }
 
     private fun pipClose(c: BgChan) {
@@ -3155,6 +3215,7 @@ class PlayerActivity : Activity() {
         // bufor ostatnio oglądanego kanału (odłożony na czas nagrań) zostaje
         if (prefs.bgCount == 0 && !c.parked) bgDrop(c, "zamknięte okno PiP") else c.buf.maxMin = bgBufLen()
         pipRefresh()
+        refreshPanelRows()
     }
 
     private fun pipSwap(c: BgChan) {
@@ -3827,7 +3888,7 @@ class PlayerActivity : Activity() {
             bg.lrec = r
             showMessage(getString(R.string.player_localrec_started, title))
             ui.removeCallbacks(bgRecTick); ui.postDelayed(bgRecTick, 5000)
-            if (panel.visibility == View.VISIBLE) adapter.notifyDataSetChanged()
+            refreshPanelRows()
             return
         }
         localRec = r
@@ -3835,6 +3896,7 @@ class PlayerActivity : Activity() {
         showMessage(getString(R.string.player_localrec_started, title))
         ui.removeCallbacks(localRecTick)
         ui.postDelayed(localRecTick, 5000)
+        refreshPanelRows()
         playList.getOrNull(playIndex)?.let { if (banner.visibility == View.VISIBLE && !tsCtl) showBanner(it) }
     }
 
@@ -3880,7 +3942,7 @@ class PlayerActivity : Activity() {
             LocalRecordings.delete(pin.dir)
             showMessage(getString(R.string.player_localrec_empty))
         } else showMessage(getString(R.string.player_localrec_saved, title, fmtMs(lengthSec * 1000), reasonText(reason)))
-        if (!main && panel.visibility == View.VISIBLE) adapter.notifyDataSetChanged()
+        refreshPanelRows()
         if (restartLive && wasShifted && url != null && !recMode) {
             failStreak = 0
             startStream(url)
@@ -4011,7 +4073,19 @@ class PlayerActivity : Activity() {
         }
     }
 
-    private fun refreshPanelRows() { if (panel.visibility == View.VISIBLE) adapter.notifyDataSetChanged() }
+    private fun refreshPanelRows() {
+        if (panel.visibility != View.VISIBLE) return
+        if (panelHist) {
+            val selectedRef = panelList.getOrNull(list.selectedItemPosition)?.ref
+            panelList = historyChannels()
+            val selected = selectedRef?.let { ref ->
+                panelList.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(ref) }
+            } ?: -1
+            refreshPanel(selected.coerceAtLeast(0))
+        } else {
+            adapter.notifyDataSetChanged()
+        }
+    }
 
     /** Menu → Buforowane kanały: oglądany kanał (gdy gra przez bufor) i kanały w tle; zakończenie bufora i zapis na dysk. */
     /** Menu po zmianie wraca, gdy nie ma już innego okna (np. potwierdzenia); wyjście tylko WSTECZ. */
