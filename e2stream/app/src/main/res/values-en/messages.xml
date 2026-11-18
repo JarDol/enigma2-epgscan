@@ -9,7 +9,7 @@
     <string name="message_60_s_test" formatted="false">60 s test</string>
     <string name="message_send_log" formatted="false">Send log</string>
     <string name="message_close" formatted="false">Close</string>
-    <string name="message_remove_completed_switches_after" formatted="false">Remove completed switches after</string>
+    <string name="message_remove_completed_switches_after" formatted="false">Remove completed schedule switches after</string>
     <string name="message_set_a_pin_first" formatted="false">Set a PIN first</string>
     <string name="message_update_channel" formatted="false">Update channel</string>
     <string name="message_loading_information" formatted="false">Loading information…</string>

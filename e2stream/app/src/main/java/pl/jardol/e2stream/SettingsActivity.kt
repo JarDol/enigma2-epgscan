@@ -251,12 +251,12 @@ class SettingsActivity : Activity() {
         Item.Toggle(getString(R.string.setting_message_bar), { p.messageBar }, { p.messageBar = it; items = buildItems() }),
         *(if (p.messageBar) arrayOf(num(getString(R.string.setting_message_bar_duration), { p.messageBarSec }, { p.messageBarSec = it }, 1..10)) else emptyArray()),
         num(getString(R.string.setting_timeshift_banner_duration_s), { p.tsBannerSec }, { p.tsBannerSec = it }, 1..30),
-        num(getString(R.string.setting_channel_list_duration_s_0_no_timeout), { p.channelListSec }, { p.channelListSec = it }, 0..600),
-        num(getString(R.string.setting_action_dialog_duration_s_0_no_timeout), { p.actionDialogSec }, { p.actionDialogSec = it }, 0..600),
-        num(getString(R.string.setting_confirmation_dialog_duration_s_0_no_timeout), { p.confirmDialogSec }, { p.confirmDialogSec = it }, 0..600),
-        num(getString(R.string.setting_channel_epg_duration_s_0_no_timeout), { p.epgChannelSec }, { p.epgChannelSec = it }, 0..600),
-        num(getString(R.string.setting_multi_epg_duration_s_0_no_timeout), { p.epgMultiSec }, { p.epgMultiSec = it }, 0..600),
-        num(getString(R.string.setting_information_dialog_duration_s_0_no_timeout), { p.infoDialogSec }, { p.infoDialogSec = it }, 0..600),
+        num(getString(R.string.setting_channel_list_duration_s_0_no_timeout), { p.channelListSec }, { p.channelListSec = it }, 0..30),
+        num(getString(R.string.setting_action_dialog_duration_s_0_no_timeout), { p.actionDialogSec }, { p.actionDialogSec = it }, 0..30),
+        num(getString(R.string.setting_confirmation_dialog_duration_s_0_no_timeout), { p.confirmDialogSec }, { p.confirmDialogSec = it }, 0..30),
+        num(getString(R.string.setting_channel_epg_duration_s_0_no_timeout), { p.epgChannelSec }, { p.epgChannelSec = it }, 0..30),
+        num(getString(R.string.setting_multi_epg_duration_s_0_no_timeout), { p.epgMultiSec }, { p.epgMultiSec = it }, 0..30),
+        num(getString(R.string.setting_information_dialog_duration_s_0_no_timeout), { p.infoDialogSec }, { p.infoDialogSec = it }, 0..30),
         Item.Toggle(getString(R.string.setting_show_information_dialogs), { !p.hideInfoDialogs }, { p.hideInfoDialogs = !it }),
         Item.Text(getString(R.string.setting_settings_pin), { p.pin }, { p.pin = it.trim() },
             InputType.TYPE_CLASS_NUMBER, secret = true, hint = "maks. 6 cyfr; puste = bez blokady"),
@@ -674,8 +674,10 @@ class SettingsActivity : Activity() {
         else -> getString(R.string.setting_bg_buffer_n, n)
     }
 
+    private fun bgSameName(): String = getString(if (p.tsMin > 0) R.string.setting_bg_buffer_same else R.string.setting_bg_buffer_same_buf, mainBufMin())
+
     private fun bgName(m: Int): String = when {
-        m <= 0 -> getString(R.string.setting_bg_buffer_same, mainBufMin())
+        m <= 0 -> bgSameName()
         else -> getString(R.string.setting_bg_buffer_manual, minOf(m, mainBufMin()))
     }
 
@@ -688,7 +690,7 @@ class SettingsActivity : Activity() {
 
     /** Czas bufora poprzednich kanałów: taki sam jak timeshift / ręczny w minutach (najwyżej jak timeshift). */
     private fun chooseBgBuffer() {
-        val opts = listOf(getString(R.string.setting_bg_buffer_same, mainBufMin()),
+        val opts = listOf(bgSameName(),
             getString(R.string.setting_bg_buffer_manual_pick) + if (p.bgBufMin > 0) " (${minOf(p.bgBufMin, mainBufMin())} min)" else "")
         val sel = if (p.bgBufMin > 0) 1 else 0
         TvDialog.single(this, getString(R.string.setting_bg_buffer_time), opts, sel) { w ->

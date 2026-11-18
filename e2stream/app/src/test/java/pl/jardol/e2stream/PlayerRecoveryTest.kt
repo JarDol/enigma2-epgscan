@@ -77,7 +77,7 @@ class PlayerRecoveryTest {
         context.getSharedPreferences("e2stream", Context.MODE_PRIVATE).edit().clear().commit()
         val prefs = Prefs(context)
         assertTrue(prefs.messageBar)
-        assertEquals(3, prefs.messageBarSec)
+        assertEquals(5, prefs.messageBarSec)
         prefs.playbackAttempt = "unfinished / VLC"
         prefs.channelSync = false
         prefs.logFtp = false
@@ -90,7 +90,7 @@ class PlayerRecoveryTest {
         val message = get<TextView>(activity, "message")
         show.invoke(activity, "Test")
         assertEquals(View.VISIBLE, message.visibility)
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(2999))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(4999))
         assertEquals(View.VISIBLE, message.visibility)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
         assertEquals(View.GONE, message.visibility)
@@ -196,7 +196,7 @@ class PlayerRecoveryTest {
         assertEquals(VlcFailureAction.RETRY, recovery.vlcFailureAction())
 
         get<Runnable>(activity, "connectionGuardTick").run()
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(2999))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(4999))
         assertEquals(0, starts)
 
         ServerSocket(port).use { server ->

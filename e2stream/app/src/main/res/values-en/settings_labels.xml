@@ -73,7 +73,7 @@
     <string name="setting_switch_to_channel_on_startup" formatted="false">Switch to channel on startup</string>
     <string name="setting_wake_tv_for_scheduled_switches_experimental" formatted="false">Wake TV for scheduled switches (experimental)</string>
     <string name="setting_wake_up_diagnostics" formatted="false">Wake-up diagnostics</string>
-    <string name="setting_remove_completed_switches_after" formatted="false">Remove completed switches after</string>
+    <string name="setting_remove_completed_switches_after" formatted="false">Remove completed schedule switches after</string>
     <string name="setting_reverse_when_changing_channels" formatted="false">Reverse ▲ / ▼ when changing channels</string>
     <string name="setting_channel_banner_duration_s" formatted="false">Channel banner duration (s)</string>
     <string name="setting_timeshift_banner_duration_s" formatted="false">Timeshift banner duration (s)</string>

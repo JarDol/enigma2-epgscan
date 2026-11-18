@@ -46,6 +46,7 @@
     <string name="ts_delay_buffer_play">immediately (playback through buffer)</string>
     <string name="setting_bg_buffer">Previous channels buffer (background recording)</string>
     <string name="setting_bg_buffer_needs">requires playback through buffer</string>
+    <string name="setting_bg_buffer_same_buf">same as buffer (%1$d min)</string>
     <string name="setting_bg_buffer_same">same as timeshift (%1$d min)</string>
     <string name="setting_bg_buffer_manual">%1$d min</string>
     <string name="setting_bg_buffer_manual_pick">Manual (minutes)</string>

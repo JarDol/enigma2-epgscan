@@ -47,6 +47,7 @@
     <string name="ts_delay_buffer_play">od razu (odtwarzanie przez bufor)</string>
     <string name="setting_bg_buffer">Bufor poprzednich kanałów (zapis w tle)</string>
     <string name="setting_bg_buffer_needs">wymaga odtwarzania przez bufor</string>
+    <string name="setting_bg_buffer_same_buf">taki sam jak bufor (%1$d min)</string>
     <string name="setting_bg_buffer_same">taki sam jak timeshift (%1$d min)</string>
     <string name="setting_bg_buffer_manual">%1$d min</string>
     <string name="setting_bg_buffer_manual_pick">Ręczny w minutach</string>

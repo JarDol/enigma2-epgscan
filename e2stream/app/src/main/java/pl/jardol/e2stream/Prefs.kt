@@ -582,45 +582,45 @@ class Prefs(ctx: Context) {
         set(v) = putI("zapHistoryDays", if (v in listOf(7, 14, 28)) v else 0)
 
     var bannerSec: Int
-        get() = sp.getInt("bannerSec", 4)
-        set(v) = putI("bannerSec", v)
+        get() = sp.getInt("bannerSec", 7).coerceIn(1, 30)
+        set(v) = putI("bannerSec", v.coerceIn(1, 30))
 
     var messageBar: Boolean
         get() = sp.getBoolean("messageBar", true)
         set(v) = putB("messageBar", v)
 
     var messageBarSec: Int
-        get() = sp.getInt("messageBarSec", 3).coerceIn(1, 10)
+        get() = sp.getInt("messageBarSec", 5).coerceIn(1, 10)
         set(v) = putI("messageBarSec", v.coerceIn(1, 10))
 
     var tsBannerSec: Int
-        get() = sp.getInt("tsBannerSec", bannerSec)
-        set(v) = putI("tsBannerSec", v)
+        get() = sp.getInt("tsBannerSec", 15).coerceIn(1, 30)
+        set(v) = putI("tsBannerSec", v.coerceIn(1, 30))
 
     var channelListSec: Int
-        get() = sp.getInt("channelListSec", 30)
-        set(v) = putI("channelListSec", v)
+        get() = sp.getInt("channelListSec", 15).coerceIn(0, 30)
+        set(v) = putI("channelListSec", v.coerceIn(0, 30))
 
     var actionDialogSec: Int
-        get() = sp.getInt("epgEventSec", 30).coerceIn(0, 600)
-        set(v) = putI("epgEventSec", v.coerceIn(0, 600))
+        get() = sp.getInt("epgEventSec", 15).coerceIn(0, 30)
+        set(v) = putI("epgEventSec", v.coerceIn(0, 30))
 
     var confirmDialogSec: Int
-        get() = sp.getInt("confirmDialogSec", 30).coerceIn(0, 600)
-        set(v) = putI("confirmDialogSec", v.coerceIn(0, 600))
+        get() = sp.getInt("confirmDialogSec", 15).coerceIn(0, 30)
+        set(v) = putI("confirmDialogSec", v.coerceIn(0, 30))
 
     var epgChannelSec: Int
-        get() = sp.getInt("epgChannelSec", 30)
-        set(v) = putI("epgChannelSec", v)
+        get() = sp.getInt("epgChannelSec", 15).coerceIn(0, 30)
+        set(v) = putI("epgChannelSec", v.coerceIn(0, 30))
 
     var epgMultiSec: Int
-        get() = sp.getInt("epgMultiSec", 30)
-        set(v) = putI("epgMultiSec", v)
+        get() = sp.getInt("epgMultiSec", 15).coerceIn(0, 30)
+        set(v) = putI("epgMultiSec", v.coerceIn(0, 30))
 
     /** Czas wyświetlania komunikatów w sekundach; 0 = bez limitu. */
     var infoDialogSec: Int
-        get() = sp.getInt("infoDialogSec", 15).coerceIn(0, 600)
-        set(v) = putI("infoDialogSec", v.coerceIn(0, 600))
+        get() = sp.getInt("infoDialogSec", 15).coerceIn(0, 30)
+        set(v) = putI("infoDialogSec", v.coerceIn(0, 30))
 
     var hideInfoDialogs: Boolean
         get() = sp.getBoolean("hideInfoDialogs", false)

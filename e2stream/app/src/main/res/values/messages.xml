@@ -9,7 +9,7 @@
     <string name="message_60_s_test" formatted="false">Test 60 s</string>
     <string name="message_send_log" formatted="false">Wyślij log</string>
     <string name="message_close" formatted="false">Zamknij</string>
-    <string name="message_remove_completed_switches_after" formatted="false">Czyść zrealizowane po</string>
+    <string name="message_remove_completed_switches_after" formatted="false">Usuń wykonane przełączenia z harmonogramu po</string>
     <string name="message_set_a_pin_first" formatted="false">Najpierw ustaw PIN</string>
     <string name="message_update_channel" formatted="false">Kanał aktualizacji</string>
     <string name="message_loading_information" formatted="false">Pobieram opis…</string>
