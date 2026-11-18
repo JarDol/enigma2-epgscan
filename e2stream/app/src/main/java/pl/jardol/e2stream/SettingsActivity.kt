@@ -522,6 +522,22 @@ class SettingsActivity : Activity() {
         super.onDestroy()
     }
 
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != ApkUpdaterHandoff.REQUEST_CODE) return
+        if (resultCode != RESULT_OK) {
+            val message = data?.getStringExtra(ApkUpdaterHandoff.EXTRA_MESSAGE)
+                .orEmpty().ifBlank { getString(R.string.update_handoff_not_accepted) }
+            AppLog.i("aktualizacja: APK Updater nie przyjął zadania ($resultCode)")
+            toast(message)
+            return
+        }
+        AppLog.i("aktualizacja: APK Updater trwale przyjął zadanie")
+        Tools.finishAfterUpdaterAccepted?.invoke()
+        finish()
+    }
+
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_LONG).show()
 
     private fun refresh() = adapter.notifyDataSetChanged()

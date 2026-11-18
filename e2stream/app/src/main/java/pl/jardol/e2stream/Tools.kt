@@ -240,6 +240,7 @@ object Tools {
      * i procesor dla pobierania i instalacji). Ustawia go PlayerActivity; null — odtwarzacz nie działa.
      */
     @Volatile var beforeManualUpdate: (() -> Unit)? = null
+    @Volatile var finishAfterUpdaterAccepted: (() -> Unit)? = null
 
     fun logName(prefs: Prefs) = "e2stream-${prefs.fileTag}.log"
 
@@ -355,6 +356,10 @@ object Tools {
     }
 
     private fun downloadAndInstall(a: Activity, info: Updater.Info, msg: (String) -> Unit, manual: Boolean = false) {
+        if (manual && ApkUpdaterHandoff.startForResult(a, info, Prefs(a).updateChannel, allowDowngrade = Updater.newer(appVersion(a), info.version))) {
+            AppLog.i("aktualizacja ręczna: przekazano ${info.tag} do APK Updatera")
+            return
+        }
         if (manual) beforeManualUpdate?.let { stop ->
             AppLog.i("aktualizacja ręczna: zatrzymuję odtwarzanie i bufory")
             try { stop() } catch (e: Exception) { AppLog.i("aktualizacja: błąd zatrzymania odtwarzania $e") }

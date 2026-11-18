@@ -246,10 +246,17 @@ class PlayerActivity : Activity() {
             if (!isDestroyed && (player != null || vlc != null || tsRec != null || bgChans.isNotEmpty())) releasePlayer()
         }
     }
+    private val finishAfterUpdaterAccepted: () -> Unit = {
+        if (!isDestroyed) {
+            releasePlayer()
+            finish()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Tools.beforeManualUpdate = stopForUpdate
+        Tools.finishAfterUpdaterAccepted = finishAfterUpdaterAccepted
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
         scheduledChannelRef = intent.getStringExtra(EXTRA_SCHEDULE_REF)
@@ -701,6 +708,7 @@ class PlayerActivity : Activity() {
     override fun onDestroy() {
         super.onDestroy()
         if (Tools.beforeManualUpdate === stopForUpdate) Tools.beforeManualUpdate = null
+        if (Tools.finishAfterUpdaterAccepted === finishAfterUpdaterAccepted) Tools.finishAfterUpdaterAccepted = null
         ui.removeCallbacksAndMessages(null)
         io.shutdownNow()
         probeIo.shutdownNow()

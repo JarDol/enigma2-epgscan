@@ -1,7 +1,9 @@
 package pl.jardol.e2stream
 
+import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -229,5 +231,29 @@ class SettingsStorageTest {
         assertFalse(has(R.string.setting_automatic_timeshift))
         assertFalse(has(R.string.setting_rec_max_hours))
         assertEquals(timeshiftPosition, list.selectedItemPosition)
+    }
+
+    @Test
+    fun onlyAcceptedUpdaterResultClosesE2Stream() {
+        var closed = false
+        Tools.finishAfterUpdaterAccepted = { closed = true }
+        try {
+            deliverUpdaterResult(Activity.RESULT_CANCELED, Intent())
+            assertFalse(closed)
+            assertFalse(activity.isFinishing)
+
+            deliverUpdaterResult(Activity.RESULT_OK, null)
+            assertTrue(closed)
+            assertTrue(activity.isFinishing)
+        } finally {
+            Tools.finishAfterUpdaterAccepted = null
+        }
+    }
+
+    private fun deliverUpdaterResult(resultCode: Int, data: Intent?) {
+        SettingsActivity::class.java.getDeclaredMethod(
+            "onActivityResult", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Intent::class.java,
+        ).apply { isAccessible = true }
+            .invoke(activity, ApkUpdaterHandoff.REQUEST_CODE, resultCode, data)
     }
 }

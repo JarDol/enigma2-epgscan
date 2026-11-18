@@ -17,7 +17,13 @@ object Updater {
 
     private const val API = "https://api.github.com/repos/JarDol/enigma2-epgscan/releases?per_page=50"
 
-    data class Info(val version: String, val url: String, val name: String, val prerelease: Boolean)
+    data class Info(
+        val version: String,
+        val url: String,
+        val name: String,
+        val prerelease: Boolean,
+        val tag: String,
+    )
     internal data class Asset(val name: String, val url: String)
     internal data class Release(val tag: String, val prerelease: Boolean, val draft: Boolean, val assets: List<Asset>)
 
@@ -69,7 +75,7 @@ object Updater {
             val apk = release.assets.firstOrNull {
                 it.name == "e2stream-$version.apk" && it.url.isNotBlank()
             } ?: return@mapNotNull null
-            Info(version, apk.url, apk.name, release.prerelease)
+            Info(version, apk.url, apk.name, release.prerelease, release.tag)
         }.distinctBy { it.version }.sortedWith { a, b -> compareVersions(b.version, a.version) }
     }
 

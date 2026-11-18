@@ -22,6 +22,10 @@ class UpdaterTest {
             listOf("0.18.31-beta.1", "0.18.30", "0.18.29"),
             Updater.selectReleases(releases, "beta").map { it.version },
         )
+        assertEquals(
+            "e2stream-v0.18.31-beta.1",
+            Updater.selectReleases(releases, "beta").first().tag,
+        )
     }
 
     @Test

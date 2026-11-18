@@ -15,6 +15,7 @@
     <string name="update_install_error">Błąd instalacji: %1$s</string>
     <string name="update_download_error">Błąd pobierania: %1$s</string>
     <string name="update_downgrade_warning">\n\nAndroid może odmówić instalacji starszej wersji; ta możliwość zależy od systemu urządzenia.</string>
+    <string name="update_handoff_not_accepted">APK Updater nie przyjął zadania. E2Stream pozostał otwarty.</string>
     <string name="update_title">Aktualizacja E2Stream</string>
     <string name="update_confirm">Wybrana wersja %1$s (masz %2$s). Pobrać i zainstalować?%3$s</string>
     <string name="update_install">Zainstaluj</string>
