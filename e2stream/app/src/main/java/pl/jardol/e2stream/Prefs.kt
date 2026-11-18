@@ -173,7 +173,13 @@ class Prefs(ctx: Context) {
     /** Timeshift: katalog nośnika (pusty = pamięć urządzenia). */
     var tsDir: String
         get() = s("tsDir")
-        set(v) = putS("tsDir", v)
+        set(v) = setTimeshiftStorage(v, "")
+
+    val tsStorageName: String get() = s("tsStorageName")
+
+    fun setTimeshiftStorage(path: String, name: String) {
+        sp.edit().putString("tsDir", path).putString("tsStorageName", name).apply()
+    }
 
     /** Katalog zapisu logów i zrzutów TS (pusty = domyślny katalog aplikacji). */
     var storageDir: String

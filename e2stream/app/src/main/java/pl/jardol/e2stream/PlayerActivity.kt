@@ -2511,47 +2511,47 @@ class PlayerActivity : Activity() {
 
     private fun bgDropAll(reason: String) { for (c in bgChans.toList()) bgDrop(c, reason) }
 
-    private val bgTick = object : Runnable {
+    private val storageGuard = StorageGuard()
+    private var guardScheduled = false
+    private val storageGuardTick = object : Runnable {
         override fun run() {
-            ui.removeCallbacks(this)
+            guardScheduled = false
+            if (isFinishing || isDestroyed) return
             guardTick()
-            if (bgChans.isNotEmpty()) ui.postDelayed(this, 5_000)
+            scheduleStorageGuard()
         }
     }
 
-    private var guardAt = 0L
+    private fun scheduleStorageGuard() {
+        if (guardScheduled || (tsBuf == null && bgChans.isEmpty())) return
+        guardScheduled = true
+        ui.postDelayed(storageGuardTick, StorageGuard.CHECK_MS)
+    }
 
-    /**
-     * Strażnik zapisu na nośnik: przy błędzie zapisu, utkniętym zapisie (> 5 s) albo ≥ 3 zapisach > 1 s w minucie
-     * (w którymkolwiek buforze) zamykany jest jeden bufor w tle — najdawniej opuszczony, razem z jego oknem PiP;
-     * bufory z trwającym nagraniem na końcu. Kolejny dopiero po minucie, jeśli kłopot trwa. Bufor oglądanego kanału zostaje.
-     */
     private fun guardTick() {
-        if (isFinishing || bgChans.isEmpty()) return
         val now = SystemClock.elapsedRealtime()
-        val failed = bgChans.firstOrNull { it.buf.failed != null }
-        val reason = failed?.let { "błąd zapisu" }
-            ?: tsBuf?.failed?.let { "błąd zapisu (bufor oglądanego kanału)" }
-            ?: tsRec?.storageTrouble(now)
-            ?: bgChans.firstNotNullOfOrNull { it.rec.storageTrouble(now) }
-            ?: return
-        if (failed == null && now - guardAt < 60_000) return
-        guardAt = now
-        val v = failed ?: bgChans.filter { it.lrec == null }.minByOrNull { if (it.pip >= 0) it.addedAt else it.leftAt }
-            ?: bgChans.minByOrNull { it.leftAt } ?: return
-        tsRec?.clearTrouble(); for (c in bgChans) c.rec.clearTrouble()
-        val hadPip = v.pip >= 0
-        val ch = v.ch ?: Channel(0, v.name, "")
-        AppLog.i("strażnik zapisu: $reason — zamykam ${v.name}${if (hadPip) " (z oknem PiP)" else ""}")
-        io.execute {
-            val ev = try { currentEventOf(v, ch)?.title } catch (_: Exception) { null }
-            runOnUiThread {
-                if (hadPip && v.pip >= 0) { v.pip = -1; pipRefresh() }
-                bgDrop(v, "strażnik zapisu: $reason")
-                refreshPanelRows()
-                val what = v.name + (ev?.takeIf { it.isNotBlank() }?.let { " - $it" } ?: "")
-                showMessage(getString(if (hadPip) R.string.guard_closed_pip else R.string.guard_closed, what))
+        val buffers = bgChans.map { it.buf } + listOfNotNull(tsBuf)
+        val (buf, reason) = buffers.firstNotNullOfOrNull { b ->
+            b.storageTrouble(now, storageGuard.lastDropAt)?.let { b to it }
+        } ?: return
+        val victim = storageGuard.chooseDrop(now, bgChans.filter { it.buf.root == buf.root }.map { c ->
+            StorageGuard.Background(c, c.lrec != null, c.buf.failed != null, if (c.pip >= 0) c.addedAt else c.leftAt)
+        })
+        if (victim != null) {
+            // Select and remove on the UI thread, before the channel can start recording or become current.
+            val hadPip = victim.pip >= 0
+            val wall = System.currentTimeMillis() / 1000
+            val title = victim.journal.snapshot().lastOrNull { it.begin <= wall && wall < it.end }?.title
+            val what = victim.name + (title?.takeIf { it.isNotBlank() }?.let { " - $it" } ?: "")
+            bgDrop(victim, "strażnik zapisu: $reason")
+            refreshPanelRows()
+            if (AppState.foreground) {
+                showMessage(getString(if (hadPip) R.string.guard_closed_pip else R.string.guard_closed, what), force = true)
             }
+        } else if (AppState.foreground && storageGuard.shouldWarn(now)) {
+            val name = Storage.recordingName(this, prefs, buf.root.parentFile)
+            AppLog.i("strażnik zapisu: $reason — sprawdź nośnik: $name")
+            showMessage(getString(R.string.guard_check_storage, name), force = true)
         }
     }
 
@@ -2594,7 +2594,7 @@ class PlayerActivity : Activity() {
         journal = ProgramJournal()
         analyzer = null
         ensureAnalyzer()
-        ui.removeCallbacks(bgTick); ui.postDelayed(bgTick, 5_000)
+        scheduleStorageGuard()
     }
 
     /**
@@ -2778,7 +2778,7 @@ class PlayerActivity : Activity() {
                 journal = ProgramJournal()
                 analyzer = null
                 if (target == null) ensureAnalyzer()
-                ui.removeCallbacks(bgTick); ui.postDelayed(bgTick, 5_000)
+                scheduleStorageGuard()
             }
         }
         if (target != null) {
@@ -2837,7 +2837,7 @@ class PlayerActivity : Activity() {
         val c = BgChan(url, ch.name, buf, an, rec, j, ch, bIdx, list)
         bgChans += c
         rec.start()
-        ui.removeCallbacks(bgTick); ui.postDelayed(bgTick, 5_000)
+        scheduleStorageGuard()
         AppLog.i("bufor w tle: ${ch.name} — nowe połączenie dla PiP, bufor ${buf.maxMin} min w ${dir.absolutePath}")
         refreshPanelRows()
         return c
@@ -3371,6 +3371,7 @@ class PlayerActivity : Activity() {
             b.maxMin = min
             b.reset()
         }
+        scheduleStorageGuard()
     }
 
     private var tsWarned = false
@@ -4931,9 +4932,11 @@ class PlayerActivity : Activity() {
         ui.postDelayed(hideBanner, prefs.bannerSec.coerceIn(1, 30) * 1000L)
     }
 
-    private fun showMessage(t: String) {
+    private fun showMessage(t: String) = showMessage(t, force = false)
+
+    private fun showMessage(t: String, force: Boolean) {
         ui.removeCallbacks(hideMessage)
-        if (!prefs.messageBar) {
+        if (!force && !prefs.messageBar) {
             message.visibility = View.GONE
             return
         }

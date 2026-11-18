@@ -71,6 +71,7 @@
     <string name="net_hint_many">Słaby odbiór (%1$s, strumieni naraz: %2$d) — przerwy w obrazie. Pomoże mniej okien PiP / buforów w tle albo kabel</string>
     <string name="guard_closed">Usunięto bufor dla: %1$s</string>
     <string name="guard_closed_pip">Usunięto bufor i PiP dla: %1$s</string>
+    <string name="guard_check_storage">Sprawdź urządzenie do nagrywania: %1$s</string>
     <string name="net_ask_title">Przerwy w odbiorze</string>
     <string name="net_ask_bg">Przerwy w odbiorze przy %1$d strumieniach naraz (%2$s).\n\nZmniejszyć bufor poprzednich kanałów z %3$d do %4$d?</string>
     <string name="net_ask_pip">Przerwy w odbiorze przy %1$d strumieniach naraz (%2$s).\n\nZamknąć okno PiP: %3$s?</string>

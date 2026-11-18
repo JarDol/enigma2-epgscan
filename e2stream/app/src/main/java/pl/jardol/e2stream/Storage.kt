@@ -6,7 +6,7 @@ import android.os.Environment
 import android.os.storage.StorageManager
 import java.io.File
 
-data class StorageOption(val path: String, val label: String)
+data class StorageOption(val path: String, val label: String, val name: String)
 
 /**
  * Miejsca zapisu dostępne bez dodatkowych uprawnień: katalogi aplikacji na każdym
@@ -17,19 +17,35 @@ object Storage {
 
     fun options(ctx: Context): List<StorageOption> {
         val out = ArrayList<StorageOption>()
-        val sm = ctx.getSystemService(Context.STORAGE_SERVICE) as StorageManager
         for (d in ctx.getExternalFilesDirs(null)) {
             if (d == null) continue
-            val desc = if (Build.VERSION.SDK_INT >= 24) {
-                try { sm.getStorageVolume(d)?.getDescription(ctx) } catch (_: Exception) { null }
-            } else null
             val removable = try { Environment.isExternalStorageRemovable(d) } catch (_: Exception) { false }
-            val name = desc ?: ctx.getString(if (removable) R.string.storage_removable else R.string.storage_device)
+            val name = volumeName(ctx, d) ?: ctx.getString(if (removable) R.string.storage_removable else R.string.storage_device)
             val free = d.usableSpace / 1_000_000
-            out.add(StorageOption(d.absolutePath, ctx.getString(R.string.storage_free, name, free, d.absolutePath)))
+            out.add(StorageOption(d.absolutePath, ctx.getString(R.string.storage_free, name, free, d.absolutePath), name))
         }
-        out.add(StorageOption(ctx.filesDir.absolutePath, ctx.getString(R.string.storage_private, ctx.filesDir.absolutePath)))
+        val label = ctx.getString(R.string.storage_private, ctx.filesDir.absolutePath)
+        out.add(StorageOption(ctx.filesDir.absolutePath, label, label.substringBefore('\n')))
         return out
+    }
+
+    private fun volumeName(ctx: Context, dir: File): String? =
+        if (Build.VERSION.SDK_INT >= 24) {
+            val sm = ctx.getSystemService(Context.STORAGE_SERVICE) as StorageManager
+            try { sm.getStorageVolume(dir)?.getDescription(ctx)?.takeIf { it.isNotBlank() } }
+            catch (_: IllegalArgumentException) { null }
+        } else null
+
+    fun recordingName(ctx: Context, prefs: Prefs, base: File?): String {
+        val selected = prefs.tsDir
+        if (selected.isNotBlank() && base?.absolutePath == selected && prefs.tsStorageName.isNotBlank()) {
+            return prefs.tsStorageName
+        }
+        if (base == null || base == TimeshiftBuffer.internalBase(ctx)) {
+            return prefs.tsStorageName.takeIf { selected.isBlank() && it.isNotBlank() }
+                ?: ctx.getString(R.string.storage_device)
+        }
+        return volumeName(ctx, base) ?: ctx.getString(R.string.storage_removable)
     }
 
     fun dir(ctx: Context, prefs: Prefs): File {

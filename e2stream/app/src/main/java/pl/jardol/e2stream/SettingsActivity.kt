@@ -779,7 +779,7 @@ class SettingsActivity : Activity() {
     }
 
     private fun storageName(path: String): String =
-        Storage.options(this).firstOrNull { it.path == path }?.label?.substringBefore("\n")?.substringBefore(" —") ?: path
+        Storage.recordingName(this, p, java.io.File(path))
 
     private fun chooseTs() {
         if (TimeshiftBuffer.dir(this, p) == null) {
@@ -818,7 +818,7 @@ class SettingsActivity : Activity() {
             val fit = TimeshiftBuffer.fitMinutes(java.io.File(o.path, "timeshift"))
             val rec = TimeshiftBuffer.recommended(fit, !isInt)
             val cur = if (isInt) p.tsDir.isBlank() && p.tsInternalOk else o.path == p.tsDir
-            TvDialog.Item(o.label.substringBefore("\n").substringBefore(" —"),
+            TvDialog.Item(o.name,
                 if (usable) getString(R.string.ts_permission_needed)
                 else getString(R.string.ts_space_choice, TimeshiftBuffer.gb(java.io.File(o.path).usableSpace), fmtMin(fit)) + if (rec > 0) getString(R.string.ts_recommended_choice, fmtMin(rec)) else "",
                 if (cur) 3 else 0)
@@ -839,14 +839,14 @@ class SettingsActivity : Activity() {
                 if (!p.tsInternalOk) {
                     TvDialog.confirm(this, getString(R.string.message_buffer_in_device_storage),
                         getString(R.string.ts_flash_warning),
-                        listOf(TvDialog.Btn(getString(R.string.message_allow)) { p.tsInternalOk = true; setTsDir("") }, TvDialog.Btn(getString(R.string.message_no))))
-                } else setTsDir("")
-            } else setTsDir(o.path)
+                        listOf(TvDialog.Btn(getString(R.string.message_allow)) { p.tsInternalOk = true; setTsDir("", o.name) }, TvDialog.Btn(getString(R.string.message_no))))
+                } else setTsDir("", o.name)
+            } else setTsDir(o.path, o.name)
         }
     }
 
-    private fun setTsDir(path: String) {
-        p.tsDir = path
+    private fun setTsDir(path: String, name: String) {
+        p.setTimeshiftStorage(path, name)
         val fit = tsFit()
         val rec = TimeshiftBuffer.recommended(fit, tsUsb())
         if (p.tsMin > fit) {

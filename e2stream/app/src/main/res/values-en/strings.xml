@@ -70,6 +70,7 @@
     <string name="net_hint_many">Weak reception (%1$s, %2$d streams at once) — gaps in the picture. Fewer PiP windows / background buffers or a cable will help</string>
     <string name="guard_closed">Buffer removed for: %1$s</string>
     <string name="guard_closed_pip">Buffer and PiP removed for: %1$s</string>
+    <string name="guard_check_storage">Check the recording device: %1$s</string>
     <string name="net_ask_title">Reception gaps</string>
     <string name="net_ask_bg">Reception gaps with %1$d streams at once (%2$s).\n\nReduce previous-channel buffers from %3$d to %4$d?</string>
     <string name="net_ask_pip">Reception gaps with %1$d streams at once (%2$s).\n\nClose PiP window: %3$s?</string>
