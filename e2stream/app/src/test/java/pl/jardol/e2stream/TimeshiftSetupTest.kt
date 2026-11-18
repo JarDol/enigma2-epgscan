@@ -2,6 +2,8 @@ package pl.jardol.e2stream
 
 import android.app.Application
 import android.content.Context
+import android.os.Looper
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
 import android.widget.Button
@@ -19,6 +21,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
@@ -55,6 +58,43 @@ class TimeshiftSetupTest {
     private fun dialogMessage(): String =
         ShadowDialog.getLatestDialog().window!!.decorView
             .findViewWithTag<TextView>("dialog-message").text.toString()
+
+    @Test
+    fun storageGuardNotifiesAfterClosingBackgroundAndWarnsIfCurrentStillStalls() {
+        val medium = activity.cacheDir.resolve("recording-medium")
+        prefs.setTimeshiftStorage(medium.absolutePath, "Philips USB — Nagrania")
+        prefs.messageBar = false
+        val buffer = TimeshiftBuffer(medium.resolve("timeshift"), 5)
+        val health = TimeshiftBuffer::class.java.getDeclaredField("writeHealth").apply { isAccessible = true }
+            .get(buffer) as StorageWriteHealth
+        health.begin(SystemClock.elapsedRealtime())
+        PlayerActivity::class.java.getDeclaredField("tsBuf").apply { isAccessible = true }.set(activity, buffer)
+        val background = TimeshiftBuffer(buffer.root.resolve("kanal-2"), 5, buffer.root)
+        val analyzer = TsAnalyzer(0) {}
+        val recorder = TimeshiftRecorder("http://unused", null, { analyzer }, {}, onFailure = {})
+        val bgClass = PlayerActivity::class.java.declaredClasses.single { it.simpleName == "BgChan" }
+        val channel = bgClass.declaredConstructors.single().apply { isAccessible = true }
+            .newInstance("http://unused", "Kanał w tle", background, analyzer, recorder, ProgramJournal(), null, 0, emptyList<Channel>())
+        val backgrounds = arrayListOf(channel)
+        PlayerActivity::class.java.getDeclaredField("bgChans").apply { isAccessible = true }.set(activity, backgrounds)
+        val schedule = PlayerActivity::class.java.getDeclaredMethod("scheduleStorageGuard").apply { isAccessible = true }
+        val foreground = AppState.foreground
+        try {
+            AppState.foreground = true
+            schedule.invoke(activity)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10))
+            val message = PlayerActivity::class.java.getDeclaredField("message").apply { isAccessible = true }
+                .get(activity) as TextView
+            assertTrue(backgrounds.isEmpty())
+            assertEquals(View.VISIBLE, message.visibility)
+            assertEquals(activity.getString(R.string.guard_closed, "Kanał w tle"), message.text.toString())
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5))
+            assertEquals(View.VISIBLE, message.visibility)
+            assertEquals(activity.getString(R.string.guard_check_storage, "Philips USB — Nagrania"), message.text.toString())
+        } finally {
+            AppState.foreground = foreground
+        }
+    }
 
     @Test
     fun noLocationOpensSettingsWithTimeshiftSelectedForBothEngines() {

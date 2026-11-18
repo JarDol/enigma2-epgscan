@@ -40,6 +40,11 @@
     <string name="storage_requires_timeshift">requires timeshift to be enabled</string>
     <string name="storage_header_buffer_play">Playback through buffer</string>
     <string name="setting_buffer_play">Playback through buffer (single connection to the receiver)</string>
+    <string name="setting_buffer_write_batch">Buffer write batch</string>
+    <string name="setting_buffer_write_batch_off">Disabled</string>
+    <string name="setting_buffer_write_batch_256">256 KiB</string>
+    <string name="setting_buffer_write_batch_512">512 KiB</string>
+    <string name="setting_buffer_write_batch_1024">1 MiB</string>
     <string name="player_bufplay_fallback">Playback through buffer unavailable (no medium) — playing directly</string>
     <string name="buffer_play_shared">timeshift buffer %1$d min</string>
     <string name="buffer_play_short">%1$d min buffer</string>
@@ -70,6 +75,7 @@
     <string name="net_hint_many">Weak reception (%1$s, %2$d streams at once) — gaps in the picture. Fewer PiP windows / background buffers or a cable will help</string>
     <string name="guard_closed">Buffer removed for: %1$s</string>
     <string name="guard_closed_pip">Buffer and PiP removed for: %1$s</string>
+    <string name="guard_check_storage">Check the recording device: %1$s</string>
     <string name="net_ask_title">Reception gaps</string>
     <string name="net_ask_bg">Reception gaps with %1$d streams at once (%2$s).\n\nReduce previous-channel buffers from %3$d to %4$d?</string>
     <string name="net_ask_pip">Reception gaps with %1$d streams at once (%2$s).\n\nClose PiP window: %3$s?</string>

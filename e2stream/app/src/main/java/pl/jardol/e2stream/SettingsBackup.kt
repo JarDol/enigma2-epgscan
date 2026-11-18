@@ -14,7 +14,7 @@ internal object SettingsBackup {
         "dropRestart" to p.dropRestart, "watchdog" to p.watchdog,
         "stallSec" to p.stallSec, "bufferMs" to p.bufferMs, "rebufferMs" to p.rebufferMs,
         "cushionSlow" to p.cushionSlow, "afrMode" to p.afrMode, "audioLang" to p.audioLang,
-        "preferAc3" to p.preferAc3, "tsMin" to p.tsMin, "tsStepSec" to p.tsStepSec,
+        "preferAc3" to p.preferAc3, "tsWriteBatchBytes" to p.tsWriteBatchBytes, "tsMin" to p.tsMin, "tsStepSec" to p.tsStepSec,
         "tsStepSecLong" to p.tsStepSecLong, "tsStepUdSec" to p.tsStepUdSec, "tsStepUdLongMin" to p.tsStepUdLongMin, "tsBackLive" to p.tsBackLive, "tsDelay" to p.tsDelay,
         "tsInternalOk" to p.tsInternalOk, "tsDir" to p.tsDir, "storageDir" to p.storageDir, "storageDirAuto" to p.storageDirAuto,
         "recMaxHours" to p.recMaxHours, "recMaxPct" to p.recMaxPct, "recInternalOk" to p.recInternalOk,

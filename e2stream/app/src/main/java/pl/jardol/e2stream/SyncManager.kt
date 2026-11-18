@@ -34,7 +34,7 @@ object SyncManager {
         "httpPort", "streamPort", "user", "pass", "blockOnDisconnect", "appLanguage", "discoverySubnet",
         "tunneling", "engine", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma", "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon", "watchdog", "stallSec", "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "dropRestart",
         "audioLang", "preferAc3",
-        "logFtp", "ftpUser", "ftpPass", "ftpDir", "saveTs", "tsRingMb", "tsFtp", "cleanTs",
+        "logFtp", "ftpUser", "ftpPass", "ftpDir", "saveTs", "tsRingMb", "tsFtp", "cleanTs", "tsWriteBatchBytes",
         "hiddenBouquets", "pin", "pinMin", "invertUpDown", "bannerSec", "tsBannerSec", "messageBar", "messageBarSec",
         "channelListSec", "epgEventSec", "confirmDialogSec", "epgChannelSec", "epgMultiSec", "infoDialogSec", "hideInfoDialogs", "resumeLast",
         "startBouquet", "startChannel", "startChannelName", "autoUpdate", "updateMode", "keyMap", "keyMapNoBanner", "keyMapBanner",
@@ -49,7 +49,7 @@ object SyncManager {
         "engine", "tunneling", "vlcDeint", "vlcHw", "vlcHwMode", "vlcChroma",
         "uiListFont", "uiListIcon", "uiEpgFont", "uiBannerFont", "uiBannerIcon",
         "bufferMs", "rebufferMs", "cushionSlow", "afrMode", "stallSec", "dropRestart", "watchdog",
-        "showStats", "saveTs", "tsRingMb", "tsFtp", "preferAc3", "blockOnDisconnect", "appLanguage", "discoverySubnet",
+        "showStats", "saveTs", "tsRingMb", "tsFtp", "tsWriteBatchBytes", "preferAc3", "blockOnDisconnect", "appLanguage", "discoverySubnet",
     )
 
     /** Ustawienia usunięte z aplikacji — znikają z kopii na dekoderze przy najbliższej synchronizacji. */

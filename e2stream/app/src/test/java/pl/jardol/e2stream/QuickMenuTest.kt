@@ -9,7 +9,11 @@ class QuickMenuTest {
         val order = QuickMenu.allInOrder(listOf("search", "audio", "unknown", "search"))
 
         assertEquals(
-            listOf("search", "audio", "event", "channel_epg", "multi_epg", "zap_timers", "decoder_timers"),
+            listOf(
+                "av_shift", "event", "channel_epg", "multi_epg", "search", "record", "record_stop",
+                "pip", "buffered", "audio", "zap_timers", "decoder_timers", "engine", "tunneling",
+                "stats", "send_log", "sleep",
+            ),
             order.map { it.id },
         )
     }

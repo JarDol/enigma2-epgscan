@@ -41,6 +41,11 @@
     <string name="storage_requires_timeshift">wymaga włączonego timeshiftu</string>
     <string name="storage_header_buffer_play">Odtwarzanie przez bufor</string>
     <string name="setting_buffer_play">Odtwarzanie przez bufor (jedno połączenie z dekoderem)</string>
+    <string name="setting_buffer_write_batch">Partia zapisu bufora</string>
+    <string name="setting_buffer_write_batch_off">Wyłączone</string>
+    <string name="setting_buffer_write_batch_256">256 KiB</string>
+    <string name="setting_buffer_write_batch_512">512 KiB</string>
+    <string name="setting_buffer_write_batch_1024">1 MiB</string>
     <string name="player_bufplay_fallback">Odtwarzanie przez bufor niedostępne (brak nośnika) — odtwarzam bezpośrednio</string>
     <string name="buffer_play_shared">bufor timeshiftu %1$d min</string>
     <string name="buffer_play_short">bufor %1$d min</string>
@@ -71,6 +76,7 @@
     <string name="net_hint_many">Słaby odbiór (%1$s, strumieni naraz: %2$d) — przerwy w obrazie. Pomoże mniej okien PiP / buforów w tle albo kabel</string>
     <string name="guard_closed">Usunięto bufor dla: %1$s</string>
     <string name="guard_closed_pip">Usunięto bufor i PiP dla: %1$s</string>
+    <string name="guard_check_storage">Sprawdź urządzenie do nagrywania: %1$s</string>
     <string name="net_ask_title">Przerwy w odbiorze</string>
     <string name="net_ask_bg">Przerwy w odbiorze przy %1$d strumieniach naraz (%2$s).\n\nZmniejszyć bufor poprzednich kanałów z %3$d do %4$d?</string>
     <string name="net_ask_pip">Przerwy w odbiorze przy %1$d strumieniach naraz (%2$s).\n\nZamknąć okno PiP: %3$s?</string>
