@@ -368,8 +368,16 @@ class PlayerRecoveryTest {
         call(activity, "tsCtlOpen")
         assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
         assertEquals(1000, get<ProgressBar>(activity, "bannerProgress").progress)
-        val packets = ByteArray(188 * 20_000) { if (it % 188 == 0) 0x47 else 0 }
+        val packets = ByteArray(188 * 20_000).apply {
+            for (offset in indices step 188) {
+                this[offset] = 0x47.toByte()
+                this[offset + 3] = 0x20.toByte()
+                this[offset + 4] = 7
+                this[offset + 5] = 0x10
+            }
+        }
         buffer.write(packets, 0, packets.size)
+        assertTrue(buffer.total > 0)
         val oldest = buffer.oldestWall
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5))
         call(activity, "tsCtlOpen")
@@ -395,6 +403,7 @@ class PlayerRecoveryTest {
         assertEquals(1000, get<ProgressBar>(activity, "bannerProgress").progress)
         assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
         assertTrue(get<TextView>(activity, "bannerNow").text.toString().contains("0:33"))
+        call(activity, "pvCancel")
         get<Runnable>(activity, "tsApply").run()
         assertEquals(activity.getString(R.string.player_ts_start, "0:33"), get<TextView>(activity, "message").text.toString())
         assertEquals(0, get<ProgressBar>(activity, "bannerProgress").progress)

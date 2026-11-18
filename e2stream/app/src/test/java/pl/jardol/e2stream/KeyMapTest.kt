@@ -12,14 +12,14 @@ class KeyMapTest {
         assertEquals(Act.EPG_CHANNEL, withoutBanner[KeyEvent.KEYCODE_DPAD_LEFT])
         assertEquals(Act.MULTI_EPG, withoutBanner[KeyEvent.KEYCODE_DPAD_RIGHT])
         assertEquals(Act.CHANNEL_LIST, withoutBanner[KeyEvent.KEYCODE_DPAD_UP])
-        assertEquals(Act.CHANNEL_LIST, withoutBanner[KeyEvent.KEYCODE_DPAD_DOWN])
+        assertEquals(Act.HISTORY_LIST, withoutBanner[KeyEvent.KEYCODE_DPAD_DOWN])
 
         val withBanner = KeyMap.navigationMap(KeyMap.navigationBannerDefaults, "")
         assertEquals(Act.EPG_EVENT, withBanner[KeyEvent.KEYCODE_DPAD_CENTER])
         assertEquals(Act.EPG_CHANNEL, withBanner[KeyEvent.KEYCODE_DPAD_LEFT])
         assertEquals(Act.MULTI_EPG, withBanner[KeyEvent.KEYCODE_DPAD_RIGHT])
         assertEquals(Act.CHANNEL_LIST, withBanner[KeyEvent.KEYCODE_DPAD_UP])
-        assertEquals(Act.CHANNEL_LIST, withBanner[KeyEvent.KEYCODE_DPAD_DOWN])
+        assertEquals(Act.HISTORY_LIST, withBanner[KeyEvent.KEYCODE_DPAD_DOWN])
     }
 
     @Test
