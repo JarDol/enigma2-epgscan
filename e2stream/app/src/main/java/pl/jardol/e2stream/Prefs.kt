@@ -173,7 +173,13 @@ class Prefs(ctx: Context) {
     /** Timeshift: katalog nośnika (pusty = pamięć urządzenia). */
     var tsDir: String
         get() = s("tsDir")
-        set(v) = putS("tsDir", v)
+        set(v) = setTimeshiftStorage(v, "")
+
+    val tsStorageName: String get() = s("tsStorageName")
+
+    fun setTimeshiftStorage(path: String, name: String) {
+        sp.edit().putString("tsDir", path).putString("tsStorageName", name).apply()
+    }
 
     /** Katalog zapisu logów i zrzutów TS (pusty = domyślny katalog aplikacji). */
     var storageDir: String
@@ -296,6 +302,11 @@ class Prefs(ctx: Context) {
     var bufPlay: Boolean
         get() = sp.getBoolean("bufPlay", false)
         set(v) = putB("bufPlay", v)
+
+    /** Buforowanie zapisów timeshiftu w RAM przed zapisem na nośnik (0 = wyłączone). */
+    var tsWriteBatchBytes: Int
+        get() = sp.getInt("tsWriteBatchBytes", 0).takeIf { it in TIMESHIFT_WRITE_BATCHES } ?: 0
+        set(v) = putI("tsWriteBatchBytes", v.takeIf { it in TIMESHIFT_WRITE_BATCHES } ?: 0)
 
     /** Bufor poprzednich kanałów: ile kanałów buforowanych w tle (0 — wyłączony, 1–3); dawniej włączony = 2. */
     var bgCount: Int
@@ -701,6 +712,7 @@ class Prefs(ctx: Context) {
     }
 
     companion object {
+        private val TIMESHIFT_WRITE_BATCHES = TimeshiftBuffer.WRITE_BATCH_OPTIONS.toSet()
         const val DEFAULT_FTP_DIR = "/media/hdd/e2stream"
         val UPDATE_MODES = listOf("off", "notify", "on")
         val SLEEP_HOURS = listOf(1, 2, 3, 6, 12, 24)

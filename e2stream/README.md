@@ -175,7 +175,12 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 * zapas w trakcie oglądania (domyślnie 4500 ms): po starcie odtwarzanie jest lekko zwalniane (0,95×, wysokość dźwięku bez zmian), aż bufor dojdzie do zapasu; przerwy w paczkach z dekodera nie powodują wtedy czkawki. Przy tunelowaniu zwolnienia nie ma (zmiana prędkości psuła płynność obrazu) – wtedy o płynności decyduje bufor startowy (na MiBox 4 zalecane 2500 ms), a zapas buduje się po pierwszym niedoborze,
 * odświeżanie ekranu (bez zmian / 50 Hz / automatycznie),
 * pasek komunikatów odtwarzacza: włączony domyślnie, czas wyświetlania 1–10 s (domyślnie 3 s).
-  Wyłączenie ukrywa także ostrzeżenia na tym pasku; okna dialogowe działają niezależnie.
+  Wyłączenie ukrywa zwykłe komunikaty, ale nie powiadomienia o odciążeniu nośnika ani ostrzeżenia o problemie z zapisem; okna dialogowe działają niezależnie.
+  Przy poważnych opóźnieniach zapisu aplikacja odciąża nośnik, zamykając bufory w tle bez aktywnego nagrania
+  (wraz z przypisanym PiP). Nie zamyka bufora oglądanego kanału ani aktywnych nagrań. Jeśli opóźnienia trwają
+  lub nie ma bezpiecznego bufora do zamknięcia, pokazuje nazwę nośnika w ostrzeżeniu nie częściej niż raz na minutę.
+  Po wybraniu nośnika „Brak” ustawienia buforowania, PiP i timeshiftu są ukryte poza informacjami o wymaganym
+  nośniku. Ich zapisane wartości pozostają i wracają po wybraniu nośnika, z zachowaniem zależności od przełączników.
   Wielkość tekstu paska komunikatów jest zgodna z ustawieniem czcionki paska kanału,
 * preferowany język dźwięku i AC3,
 * log przez FTP: użytkownik (root), hasło, katalog na dekoderze.

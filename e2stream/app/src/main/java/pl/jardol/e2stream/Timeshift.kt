@@ -13,6 +13,9 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 internal fun timeshiftEarliestSeekWall(oldestWall: Long, now: Long): Long =
     minOf(oldestWall + 10_000, now)
@@ -35,7 +38,13 @@ internal fun timeshiftBufferProgress(shownWall: Long, oldestWall: Long, now: Lon
  * odczyt może zacząć się w dowolnym bajcie. Najstarsza minuta wypada, gdy okno przekroczy [maxMin]
  * albo zabraknie miejsca. Czas to zegar monotoniczny (SystemClock.elapsedRealtime) chwili odbioru.
  */
-class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „timeshift” nośnika (bufory w tle: podkatalogi) */ val root: File = dir) {
+class TimeshiftBuffer(
+    val dir: File,
+    @Volatile var maxMin: Int,
+    /** katalog „timeshift” nośnika (bufory w tle: podkatalogi) */
+    val root: File = dir,
+    @Volatile var writeBatchBytes: Int = 0,
+) {
 
     private class Seg(val file: File, val start: Long, val wall: Long) {
         @Volatile var len = 0L
@@ -43,7 +52,14 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
 
     private val segs = ArrayList<Seg>()
     private val lock = Object()
+    private val writeHealth = StorageWriteHealth()
     private var out: FileOutputStream? = null
+    private var writeBatch: ByteArray? = null
+    private var writeBatchUsed = 0
+    private var writeBatchFlush: ScheduledFuture<*>? = null
+    private var writeBatchGeneration = 0L
+    private var writeBatchExecutor: ScheduledExecutorService? = null
+    private var closed = false
     private var nextIdx = 0
     @Volatile var total = 0L
         private set
@@ -114,12 +130,14 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
 
     /** Nowy kanał / koniec: wszystko od zera; stare pliki kasowane w tle (bez czekania). */
     fun reset() = synchronized(lock) {
+        if (pin != null) finishPin()          // nagranie trwało — zachowaj także jego częściową partię
+        cancelBatchFlush()
+        writeBatchUsed = 0
         reportWriters()
         if (writerId != -1L) { staleId = writerId; staleUntil = SystemClock.elapsedRealtime() + 5000; staleLogged = false }
         writerId = -1L
         switches = 0; switchesLogged = 0; switchesReported = 0
         waitPcr = true; skipped = 0; skippedPids.clear()
-        if (pin != null) finishPin()          // nagranie trwało — kawałki zachowane, nie skasowane
         try { out?.close() } catch (_: Exception) {}
         out = null
         segs.clear()
@@ -128,12 +146,26 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         psiPat = null; psiPmtPids.clear(); psiPmt.clear()
         ringLen = 0
         failed = null
+        writeHealth.reset()
         shrunk = false
         trimmed = false
         pendLen = 0
         session = newSession()
         cleanupAsync(dir, session)
         lock.notifyAll()
+    }
+
+    /** Zamyka bufor po odłączeniu go od kanału i opróżnia ostatnią częściową partię. */
+    fun close() = synchronized(lock) {
+        if (closed) return
+        cancelBatchFlush()
+        try { flushWriteBatch() } catch (e: IOException) { failWrite(e) }
+        try { out?.close() } catch (e: IOException) { failWrite(e) }
+        out = null
+        closed = true
+        writeBatchExecutor?.shutdownNow()
+        writeBatchExecutor = null
+        writeBatch = null
     }
 
     private val pend = ByteArray(188)
@@ -182,6 +214,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
     fun write(b: ByteArray, off: Int, len: Int) {
         if (len <= 0) return
         synchronized(lock) {
+            if (closed) return
             if (failed != null) return
             if (!trackWriter(len)) return
             try {
@@ -217,8 +250,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
                     System.arraycopy(b, o, pend, 0, pendLen)
                 }
             } catch (e: IOException) {
-                failed = e.message ?: e.toString()
-                AppLog.i("timeshift: błąd zapisu — bufor wyłączony ($failed)")
+                failWrite(e)
             }
             lock.notifyAll()
         }
@@ -227,18 +259,52 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
     private fun aligned(b: ByteArray, o: Int, end: Int): Boolean =
         b[o] == SYNC && (o + 188 >= end || b[o + 188] == SYNC) && (o + 376 >= end || b[o + 376] == SYNC)
 
+    internal fun storageTrouble(now: Long, after: Long): String? =
+        if (failed != null) "błąd zapisu" else writeHealth.storageTrouble(now, after)
+
     private fun writeRaw(b: ByteArray, off: Int, len: Int) {
         val now = SystemClock.elapsedRealtime()
         val cur = segs.lastOrNull()
         if (cur == null || out == null || now - cur.wall >= 60_000) rotate(now)
-        markKeyframes(b, off, len, now)
-        out!!.write(b, off, len)
+        val batchSize = writeBatchBytes.takeIf { it in WRITE_BATCH_OPTIONS } ?: 0
+        if (batchSize == 0) {
+            flushWriteBatch()
+            markKeyframes(b, off, len, now)
+            writeDirect(b, off, len)
+            commitRaw(b, off, len)
+            return
+        }
+        val batchLimit = batchSize / 188 * 188
+        if (writeBatchUsed >= batchLimit) flushWriteBatch()
+        val batch = writeBatch ?: ByteArray(MAX_WRITE_BATCH).also { writeBatch = it }
+        var src = off
+        var left = len
+        while (left > 0) {
+            if (writeBatchUsed == 0) scheduleBatchFlush()
+            val n = minOf(left, batchLimit - writeBatchUsed)
+            System.arraycopy(b, src, batch, writeBatchUsed, n)
+            writeBatchUsed += n
+            src += n
+            left -= n
+            if (writeBatchUsed == batchLimit) flushWriteBatch()
+        }
+    }
+
+    private fun writeDirect(b: ByteArray, off: Int, len: Int) {
+        val now = SystemClock.elapsedRealtime()
+        writeHealth.begin(now)
+        try { out?.write(b, off, len) ?: throw IOException("timeshift: brak pliku zapisu") }
+        finally { writeHealth.end(SystemClock.elapsedRealtime()) }
+    }
+
+    private fun commitRaw(b: ByteArray, off: Int, len: Int) {
         ringPut(b, off, len)
         segs.last().len += len
         total += len
     }
 
     private fun rotate(now: Long) {
+        flushWriteBatch()
         reportWriters()
         try { out?.close() } catch (_: Exception) {}
         val f = File(dir, "$session${nextIdx++}.ts")
@@ -247,6 +313,56 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         // okno: najwyżej maxMin pełnych minut (+ bieżąca); mało miejsca — wypadają najstarsze
         while (segs.size > maxOf(2, maxMin + 1)) dropOldest()
         while (segs.size > 2 && dir.usableSpace < RESERVE) { dropOldest(); shrunk = true }
+    }
+
+    private fun scheduleBatchFlush() {
+        if (writeBatchFlush != null || closed) return
+        val executor = writeBatchExecutor ?: java.util.concurrent.Executors.newSingleThreadScheduledExecutor { task ->
+            Thread(task, "timeshift-partia").apply { isDaemon = true }
+        }.also { writeBatchExecutor = it }
+        val generation = ++writeBatchGeneration
+        writeBatchFlush = executor.schedule({
+            synchronized(lock) {
+                if (generation != writeBatchGeneration || closed || writeBatchUsed == 0) return@synchronized
+                writeBatchFlush = null
+                try { flushWriteBatch() } catch (e: IOException) { failWrite(e) }
+                lock.notifyAll()
+            }
+        }, WRITE_BATCH_MAX_WAIT_MS, TimeUnit.MILLISECONDS)
+    }
+
+    private fun cancelBatchFlush() {
+        writeBatchGeneration++
+        writeBatchFlush?.cancel(false)
+        writeBatchFlush = null
+    }
+
+    /** Caller holds [lock]; segment length advances only after a successful disk write. */
+    @Throws(IOException::class)
+    private fun flushWriteBatch() {
+        val n = writeBatchUsed
+        if (n <= 0) return
+        cancelBatchFlush()
+        if (failed != null) {
+            writeBatchUsed = 0
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        writeHealth.begin(now)
+        val batch = writeBatch ?: throw IOException("timeshift: brak partii do zapisu")
+        try { out?.write(batch, 0, n) ?: throw IOException("timeshift: brak pliku zapisu") }
+        finally { writeHealth.end(SystemClock.elapsedRealtime()) }
+        markKeyframes(batch, 0, n, now)
+        commitRaw(batch, 0, n)
+        writeBatchUsed = 0
+        lock.notifyAll()
+    }
+
+    private fun failWrite(e: IOException) {
+        failed = e.message ?: e.toString()
+        writeBatchUsed = 0
+        cancelBatchFlush()
+        AppLog.i("timeshift: błąd zapisu — bufor wyłączony ($failed)")
     }
 
     // --- ostatnie RING bajtów w pamięci: odtwarzanie na żywo i tuż za żywym czyta z RAM, nie z dysku
@@ -488,6 +604,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
 
     /** Początek nagrania: przypięcie kawałków od bajtu [from] (najstarszy dostępny, gdy wcześniejszy). */
     fun startPin(dir: File, from: Long): Pin? = synchronized(lock) {
+        try { flushWriteBatch() } catch (e: IOException) { failWrite(e); return null }
         if (pin != null || failed != null) return null
         dir.mkdirs()
         writePsiHeader(dir)
@@ -497,6 +614,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
 
     /** Bajty nagrania razem z kawałkami jeszcze w buforze. */
     fun pinnedBytes(): Long = synchronized(lock) {
+        try { flushWriteBatch() } catch (e: IOException) { failWrite(e) }
         val p = pin ?: return 0
         p.bytes + segs.filter { it.start + it.len > p.from }.sumOf { it.len }
     }
@@ -507,6 +625,7 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
      */
     fun finishPin(): Pin? = synchronized(lock) {
         val p = pin ?: return null
+        try { flushWriteBatch() } catch (e: IOException) { failWrite(e) }
         try { out?.close() } catch (_: Exception) {}
         out = null
         pendLen = 0
@@ -625,6 +744,9 @@ class TimeshiftBuffer(val dir: File, @Volatile var maxMin: Int, /** katalog „t
         }
 
         private val SEQ = java.util.concurrent.atomic.AtomicInteger()
+        const val WRITE_BATCH_MAX_WAIT_MS = 500L
+        const val MAX_WRITE_BATCH = 1024 * 1024
+        val WRITE_BATCH_OPTIONS = intArrayOf(0, 256 * 1024, 512 * 1024, 1024 * 1024)
         private const val KF_INIT = 1024
         /** Ostatnie dane w pamięci: ~8 s przy 8 Mb/s (na bufor, także kanały w tle). */
         const val RING = 8 * 1024 * 1024
@@ -876,24 +998,6 @@ class TimeshiftRecorder(
         }, "timeshift-zapis").start()
     }
 
-    /** Początek trwającego zapisu (0 — brak); strażnik zapisu sprawdza, czy zapis nie utknął. */
-    @Volatile var writeStartedAt = 0L
-    /** Czasy zapisów dłuższych niż 1 s (strażnik: ≥3 w ciągu minuty). */
-    private val slowWrites = java.util.ArrayDeque<Long>()
-
-    /** Kłopot z nośnikiem: utknięty zapis (> 5 s) albo ≥ 3 zapisy > 1 s w minucie; null — w porządku. */
-    fun storageTrouble(now: Long = SystemClock.elapsedRealtime()): String? {
-        val w = writeStartedAt
-        if (w > 0 && now - w > 5_000) return "zapis trwa ${(now - w) / 1000} s"
-        synchronized(slowWrites) {
-            while (slowWrites.isNotEmpty() && now - slowWrites.first() > 60_000) slowWrites.removeFirst()
-            if (slowWrites.size >= 3) return "${slowWrites.size}× zapis > 1 s w minucie"
-        }
-        return null
-    }
-
-    fun clearTrouble() { synchronized(slowWrites) { slowWrites.clear() } }
-
     /** Wątek zapisu: dane z kolejki do analizatora (który zapisuje do bufora); wolne zapisy do logu. */
     private fun writeLoop(source: TsAnalyzer?, session: Long?) {
         val b = ByteArray(188 * 700)
@@ -905,10 +1009,8 @@ class TimeshiftRecorder(
                 val n = queue.take(b, b.size)
                 if (n <= 0) break
                 val t0 = SystemClock.elapsedRealtime()
-                writeStartedAt = t0
-                try { analyzer()?.let { a -> if (a === source) a.feed(b, 0, n, session) } } finally { writeStartedAt = 0 }
+                analyzer()?.let { a -> if (a === source) a.feed(b, 0, n, session) }
                 val ms = SystemClock.elapsedRealtime() - t0
-                if (ms > 1_000) synchronized(slowWrites) { slowWrites.addLast(t0) }
                 if (ms > 300) {
                     slowCount++; maxMs = maxOf(maxMs, ms)
                     val now = SystemClock.elapsedRealtime()
