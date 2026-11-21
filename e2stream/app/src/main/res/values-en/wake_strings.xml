@@ -12,9 +12,10 @@
     <string name="wake_overlay">Display over other apps: %1$s</string>
     <string name="wake_monitor">Schedule reminder: %1$s before</string>
     <string name="wake_fullscreen_blocked">blocked</string>
-    <string name="wake_overlay_countdown">Switching in %1$s</string>
+    <string name="wake_overlay_event_time">%1$s</string>
+    <string name="wake_overlay_countdown">Switching in: %1$s</string>
     <string name="wake_overlay_switch_now">Switch now</string>
-    <string name="wake_overlay_switch_countdown">Switch now (%1$s)</string>
+    <string name="wake_overlay_record_decoder">Record on receiver</string>
     <string name="wake_overlay_cancel">Cancel</string>
     <string name="wake_pending">Pending events: %1$d</string>
     <string name="wake_next">Next: %1$s — %2$s (%3$d)</string>

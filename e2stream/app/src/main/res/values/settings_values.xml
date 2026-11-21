@@ -19,6 +19,11 @@
     <string name="settings_wake_monitor_off">0 s — bez popupu</string>
     <string name="settings_wake_monitor_seconds">%1$d s</string>
     <string name="settings_wake_monitor_minute">%1$d min</string>
+    <string name="settings_wake_overlay_top_left">Lewy górny róg</string>
+    <string name="settings_wake_overlay_bottom_left">Lewy dolny róg</string>
+    <string name="settings_wake_overlay_top_right">Prawy górny róg</string>
+    <string name="settings_wake_overlay_bottom_right">Prawy dolny róg</string>
+    <string name="settings_wake_overlay_center">Środek ekranu</string>
     <string name="settings_never_clean">nie czyść</string>
     <string name="settings_after_days">%1$d dniach</string>
     <string name="settings_pin_inactive">nieaktywne (brak PIN-u)</string>

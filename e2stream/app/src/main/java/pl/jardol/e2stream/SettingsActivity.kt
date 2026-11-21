@@ -247,6 +247,16 @@ class SettingsActivity : Activity() {
                 refresh()
             }
         },
+        Item.Action(getString(R.string.setting_wake_popup_position), { wakeOverlayPositionLabel(p.wakeOverlayPosition) }) {
+            val positions = Prefs.WAKE_OVERLAY_POSITIONS
+            TvDialog.single(this, getString(R.string.setting_wake_popup_position),
+                positions.map { wakeOverlayPositionLabel(it) }, positions.indexOf(p.wakeOverlayPosition).coerceAtLeast(0)) { selected ->
+                p.wakeOverlayPosition = positions[selected]
+                markChanged("położenie popupu harmonogramu = ${positions[selected]}")
+                items = buildItems()
+                refresh()
+            }
+        },
         Item.Action(getString(R.string.setting_wake_overlay_permission), {
             getString(if (ZapWakeAlarms.canDrawOverlays(this)) R.string.wake_allowed else R.string.wake_no_permission)
         }) {
@@ -582,6 +592,14 @@ class SettingsActivity : Activity() {
         300 -> getString(R.string.settings_wake_monitor_minute, 5)
         else -> getString(R.string.settings_wake_monitor_seconds, seconds)
     }
+
+    private fun wakeOverlayPositionLabel(position: Int) = getString(when (position) {
+        Prefs.WAKE_OVERLAY_TOP_LEFT -> R.string.settings_wake_overlay_top_left
+        Prefs.WAKE_OVERLAY_BOTTOM_LEFT -> R.string.settings_wake_overlay_bottom_left
+        Prefs.WAKE_OVERLAY_TOP_RIGHT -> R.string.settings_wake_overlay_top_right
+        Prefs.WAKE_OVERLAY_CENTER -> R.string.settings_wake_overlay_center
+        else -> R.string.settings_wake_overlay_bottom_right
+    })
 
     private fun refresh() = adapter.notifyDataSetChanged()
 

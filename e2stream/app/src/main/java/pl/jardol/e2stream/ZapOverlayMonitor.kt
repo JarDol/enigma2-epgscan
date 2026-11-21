@@ -13,11 +13,42 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 internal object ZapOverlayMonitor {
     private val active = mutableMapOf<String, Overlay>()
 
+    internal data class Placement(val gravity: Int, val x: Int, val y: Int)
+
     internal fun isShowing(key: String) = active.containsKey(key)
+
+    internal fun placement(position: Int, margin: Int): Placement = when (position) {
+        Prefs.WAKE_OVERLAY_TOP_LEFT -> Placement(Gravity.TOP or Gravity.LEFT, margin, margin)
+        Prefs.WAKE_OVERLAY_BOTTOM_LEFT -> Placement(Gravity.BOTTOM or Gravity.LEFT, margin, margin)
+        Prefs.WAKE_OVERLAY_TOP_RIGHT -> Placement(Gravity.TOP or Gravity.RIGHT, margin, margin)
+        Prefs.WAKE_OVERLAY_CENTER -> Placement(Gravity.CENTER, 0, 0)
+        else -> Placement(Gravity.BOTTOM or Gravity.RIGHT, margin, margin)
+    }
+
+    internal fun eventTimeRange(begin: Long, end: Long): String {
+        val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+        return "${formatter.format(Date(begin * 1000))} - ${formatter.format(Date(end * 1000))}"
+    }
+
+    internal fun formatCountdown(seconds: Long): String {
+        val safeSeconds = seconds.coerceAtLeast(0)
+        val hours = safeSeconds / 3600
+        val minutes = (safeSeconds % 3600) / 60
+        val remainder = safeSeconds % 60
+        return if (hours > 0) {
+            "%d:%02d:%02d".format(Locale.ROOT, hours, minutes, remainder)
+        } else {
+            "%02d:%02d".format(Locale.ROOT, safeSeconds / 60, remainder)
+        }
+    }
 
     internal fun dismissAll() {
         active.values.toList().forEach { it.remove() }
@@ -81,8 +112,7 @@ internal object ZapOverlayMonitor {
                 }
                 if (left != lastDisplayed) {
                     lastDisplayed = left
-                    countdown.text = context.getString(R.string.wake_overlay_countdown, format(left))
-                    switchButton.text = context.getString(R.string.wake_overlay_switch_countdown, format(left))
+                    countdown.text = context.getString(R.string.wake_overlay_countdown, formatCountdown(left))
                 }
                 handler.postDelayed(this, 250)
             }
@@ -117,11 +147,23 @@ internal object ZapOverlayMonitor {
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(0, dp(3), 0, dp(2))
             })
+            val scheduleInfo = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(3), 0, dp(2))
+            }
+            scheduleInfo.addView(TextView(context).apply {
+                text = context.getString(R.string.wake_overlay_event_time, eventTimeRange(timer.begin, timer.end))
+                textSize = 13f
+                setTextColor(TvDialog.GREY)
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             countdown = TextView(context).apply {
                 textSize = 13f
                 setTextColor(TvDialog.GREY)
+                gravity = Gravity.END
             }
-            root.addView(countdown)
+            scheduleInfo.addView(countdown)
+            root.addView(scheduleInfo)
 
             val buttons = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -134,6 +176,13 @@ internal object ZapOverlayMonitor {
                 setOnClickListener { switch() }
             }
             buttons.addView(switchButton)
+            buttons.addView(Button(context, null, 0, R.style.TvDialogButton).apply {
+                text = context.getString(R.string.wake_overlay_record_decoder)
+                isFocusable = true
+                setOnClickListener { recordOnDecoder() }
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                marginStart = dp(8)
+            })
             buttons.addView(Button(context, null, 0, R.style.TvDialogButton).apply {
                 text = context.getString(R.string.wake_overlay_cancel)
                 isFocusable = true
@@ -153,9 +202,10 @@ internal object ZapOverlayMonitor {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT,
             ).apply {
-                gravity = Gravity.BOTTOM or Gravity.END
-                x = dp(24)
-                y = dp(24)
+                val placement = placement(Prefs(context).wakeOverlayPosition, dp(24))
+                gravity = placement.gravity
+                x = placement.x
+                y = placement.y
                 softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
             }
             attached = true
@@ -202,8 +252,33 @@ internal object ZapOverlayMonitor {
             remove()
         }
 
-        private fun format(seconds: Long) =
-            "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
+        private fun recordOnDecoder() {
+            if (finished) return
+            if (ZapTimers.list(context).none { it.key() == key }) {
+                remove()
+                return
+            }
+            ZapTimers.remove(context, timer)
+            ZapWakeAlarms.cancelNotification(context, key)
+            AppLog.i("wybudzanie: nakładka — nagraj na dekoderze key=$key")
+            remove()
+            Thread {
+                val result = try {
+                    OpenWebif(Prefs(context)).timerAdd(timer.ref,
+                        EpgEvent(timer.eventId, timer.begin, (timer.end - timer.begin).coerceAtLeast(0),
+                            timer.title, "", "", timer.ref, timer.channel))
+                } catch (e: Exception) {
+                    false to (e.message ?: e.toString())
+                }
+                ZapTimers.mark(context, timer, if (result.first) ZapTimers.RECORDED else ZapTimers.RECORD_FAILED)
+                AppLog.i("wybudzanie: wynik nagrania na dekoderze key=$key: ${result.first} ${result.second}")
+                handler.post {
+                    val message = if (result.first) context.getString(R.string.prompt_recording_set)
+                        else context.getString(R.string.prompt_recording_failed, result.second)
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                }
+            }.start()
+        }
 
         private fun dp(value: Int) = (value * context.resources.displayMetrics.density).toInt()
     }

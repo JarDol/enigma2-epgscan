@@ -166,9 +166,11 @@ ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji s
 Po włączeniu tej opcji alarm systemowy może wybudzić urządzenie do 5 minut przed audycją.
 Ustawienie „Wybudzanie: monit przed harmonogramem” wybiera czas wyświetlenia popupu
 (domyślnie 30 s); przy aktywnym ekranie i zgodzie na wyświetlanie nad innymi aplikacjami
-popup pojawia się jako nakładka bez uruchamiania odtwarzacza. „Przełącz teraz” uruchamia
-E2Stream od razu, a brak reakcji przełącza kanał o czasie audycji; „Anuluj” pomija zdarzenie.
-Ustawienie 0 s wyłącza monit.
+popup pojawia się jako nakładka bez uruchamiania odtwarzacza. Pokazuje godziny audycji i licznik
+do przełączenia; „Przełącz teraz” uruchamia E2Stream od razu, „Nagraj na dekoderze” ustawia
+timer nagrania na Enigma2, a „Anuluj” pomija zdarzenie. Pozycję okna można wybrać w ustawieniu
+„Położenie popupu harmonogramu” (cztery rogi lub środek). Brak reakcji przełącza kanał o czasie
+audycji. Ustawienie 0 s wyłącza monit.
 Gdy ekran jest wygaszony, nakładka jest niedostępna lub jej dodanie się nie powiedzie,
 aplikacja przechodzi do bezpośredniego uruchomienia odtwarzacza z powiadomieniem awaryjnym.
 Przy dodatnim czasie ustawiany jest też alarm na początek audycji, aby ponowić próbę,

@@ -18,6 +18,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowSettings
+import java.util.Calendar
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
@@ -58,6 +59,39 @@ class ZapWakeAlarmsTest {
         assertEquals(985_000L, ZapWakeAlarms.alarmTriggerAt(begin, 15, 0))
         assertEquals(700_000L, ZapWakeAlarms.alarmTriggerAt(begin, 999, 0))
         assertEquals(10_000L, ZapWakeAlarms.alarmTriggerAt(1, 30, 9_000))
+    }
+
+    @Test
+    fun overlayPositionDefaultsToBottomRightAndSupportsAllCornersAndCenter() {
+        assertEquals(Prefs.WAKE_OVERLAY_BOTTOM_RIGHT, Prefs(context).wakeOverlayPosition)
+        val margin = 24
+        assertEquals(ZapOverlayMonitor.Placement(android.view.Gravity.TOP or android.view.Gravity.LEFT, margin, margin),
+            ZapOverlayMonitor.placement(Prefs.WAKE_OVERLAY_TOP_LEFT, margin))
+        assertEquals(ZapOverlayMonitor.Placement(android.view.Gravity.BOTTOM or android.view.Gravity.LEFT, margin, margin),
+            ZapOverlayMonitor.placement(Prefs.WAKE_OVERLAY_BOTTOM_LEFT, margin))
+        assertEquals(ZapOverlayMonitor.Placement(android.view.Gravity.TOP or android.view.Gravity.RIGHT, margin, margin),
+            ZapOverlayMonitor.placement(Prefs.WAKE_OVERLAY_TOP_RIGHT, margin))
+        assertEquals(ZapOverlayMonitor.Placement(android.view.Gravity.BOTTOM or android.view.Gravity.RIGHT, margin, margin),
+            ZapOverlayMonitor.placement(Prefs.WAKE_OVERLAY_BOTTOM_RIGHT, margin))
+        assertEquals(ZapOverlayMonitor.Placement(android.view.Gravity.CENTER, 0, 0),
+            ZapOverlayMonitor.placement(Prefs.WAKE_OVERLAY_CENTER, margin))
+        Prefs(context).wakeOverlayPosition = 99
+        assertEquals(Prefs.WAKE_OVERLAY_BOTTOM_RIGHT, Prefs(context).wakeOverlayPosition)
+    }
+
+    @Test
+    fun overlayShowsProgrammeHoursAndCountdownBesideIt() {
+        val start = Calendar.getInstance().apply {
+            set(2026, Calendar.MAY, 1, 21, 5, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis / 1000
+        val end = Calendar.getInstance().apply {
+            set(2026, Calendar.MAY, 1, 21, 15, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis / 1000
+        assertEquals("21:05 - 21:15", ZapOverlayMonitor.eventTimeRange(start, end))
+        assertEquals("00:19", ZapOverlayMonitor.formatCountdown(19))
+        assertEquals("1:00:00", ZapOverlayMonitor.formatCountdown(3600))
     }
 
     @Test
