@@ -115,9 +115,21 @@ class EpgUi(
     /** Bieżąca audycja tylko z pamięci / zapisanego EPG (bez zapytań do dekodera) — dla listy kanałów. */
     fun localNow(ref: String): EpgEvent? {
         val n = now()
-        val ev = synchronized(cache) { cache[OpenWebif.key(ref)]?.second }
-            ?: try { store.read(ref)?.second } catch (_: Exception) { null }
+        val k = OpenWebif.key(ref)
+        val ev = synchronized(cache) { cache[k]?.second }
+            ?: try {
+                store.read(ref)?.second?.also {
+                    synchronized(cache) { cache.putIfAbsent(k, System.currentTimeMillis() to it) }
+                }
+            } catch (_: Exception) { null }
             ?: emptyList()
+        return withEit(ref, ev).firstOrNull { it.begin <= n && it.end > n }
+    }
+
+    /** Bieżąca audycja wyłącznie z pamięci — do natychmiastowego pokazania na liście. */
+    fun cachedNow(ref: String): EpgEvent? {
+        val n = now()
+        val ev = synchronized(cache) { cache[OpenWebif.key(ref)]?.second } ?: emptyList()
         return withEit(ref, ev).firstOrNull { it.begin <= n && it.end > n }
     }
 
