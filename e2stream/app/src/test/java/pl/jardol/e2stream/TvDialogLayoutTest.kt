@@ -2,8 +2,11 @@ package pl.jardol.e2stream
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import org.junit.Assert.assertEquals
@@ -15,11 +18,54 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowSettings
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class, qualifiers = "w1280dp-h720dp-land-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class TvDialogLayoutTest {
+    @Test
+    fun scheduleOverlayButtonsStayReadableAtDifferentWidths() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val now = System.currentTimeMillis() / 1000
+        val timer = ZapTimers.Timer("1:0:1:123:456:", "Kanał", "Audycja", now + 120, now + 720)
+        context.getSharedPreferences("zaptimers", Context.MODE_PRIVATE).edit().clear().commit()
+        ShadowSettings.setCanDrawOverlays(true)
+        ZapTimers.add(context, timer)
+        try {
+            assertTrue(ZapOverlayMonitor.show(context, timer))
+            val active = ZapOverlayMonitor::class.java.getDeclaredField("active").apply { isAccessible = true }
+                .get(ZapOverlayMonitor) as Map<*, *>
+            val overlay = active[timer.key()]!!
+            val root = overlay.javaClass.getDeclaredField("root").apply { isAccessible = true }.get(overlay) as ViewGroup
+            val buttons = root.getChildAt(root.childCount - 1) as LinearLayout
+            assertEquals(3, buttons.childCount)
+
+            for (width in listOf(520, 390, 300, 520)) {
+                root.measure(
+                    View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.AT_MOST),
+                )
+                root.layout(0, 0, root.measuredWidth, root.measuredHeight)
+                if (width == 520) assertEquals(LinearLayout.HORIZONTAL, buttons.orientation)
+                if (width == 300) assertEquals(LinearLayout.VERTICAL, buttons.orientation)
+                for (i in 0 until buttons.childCount) {
+                    val button = buttons.getChildAt(i) as Button
+                    assertEquals("Button wraps at width $width: ${button.text}", 1, button.lineCount)
+                    assertTrue("Button clipped at width $width: ${button.text}",
+                        button.left >= 0 && button.right <= buttons.width && button.bottom <= buttons.height)
+                    assertTrue("Text clipped at width $width: ${button.text}",
+                        button.layout.getEllipsisCount(0) == 0 &&
+                            button.paint.measureText(button.text.toString()) <=
+                            button.width - button.compoundPaddingLeft - button.compoundPaddingRight)
+                }
+            }
+        } finally {
+            ZapOverlayMonitor.dismissAll()
+            ShadowSettings.setCanDrawOverlays(false)
+        }
+    }
+
     @Test
     fun receiverRowsKeepAddressesVisibleAndDescriptionsCompact() {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
