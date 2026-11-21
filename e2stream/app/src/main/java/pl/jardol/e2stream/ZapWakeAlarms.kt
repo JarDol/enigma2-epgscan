@@ -12,6 +12,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 
 /** Systemowe alarmy RTC_WAKEUP dla harmonogramu; aplikacja może zostać uruchomiona przez pełnoekranowe powiadomienie. */
@@ -21,19 +23,13 @@ object ZapWakeAlarms {
     private const val ACTION_ZAP = "pl.jardol.e2stream.ZAP_ALARM"
     private const val ACTION_TEST = "pl.jardol.e2stream.ZAP_TEST_ALARM"
     private const val EXTRA_KEY = "timer_key"
+    private const val EXTRA_SCHEDULED_AT = "scheduled_at"
 
     fun canScheduleExact(ctx: Context): Boolean = Build.VERSION.SDK_INT < 31 ||
         (ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
 
     fun canUseFullScreen(ctx: Context): Boolean = Build.VERSION.SDK_INT < 34 ||
         (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).canUseFullScreenIntent()
-
-    fun setAppForeground(ctx: Context, foreground: Boolean) {
-        ctx.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().putBoolean("foreground", foreground).apply()
-    }
-
-    private fun isAppForeground(ctx: Context) =
-        ctx.getSharedPreferences(STORE, Context.MODE_PRIVATE).getBoolean("foreground", false)
 
     fun sync(ctx: Context) {
         val app = ctx.applicationContext
@@ -52,14 +48,18 @@ object ZapWakeAlarms {
             AppLog.i("wybudzanie: anulowano alarm $key")
         }
         for (timer in timers) {
-            val intent = alarmIntent(app, timer)
+            val at = (timer.begin * 1000).coerceAtLeast(System.currentTimeMillis() + 1000)
+            val intent = alarmIntent(app, timer).putExtra(EXTRA_SCHEDULED_AT, at)
             val pi = pending(app, timer.key(), intent)
-            val at = (timer.begin * 1000 - 30_000).coerceAtLeast(System.currentTimeMillis() + 1000)
             try {
-                if (Build.VERSION.SDK_INT >= 23) alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-                else alarm.setExact(AlarmManager.RTC_WAKEUP, at, pi)
+                val show = PendingIntent.getActivity(app, timer.key().hashCode(),
+                    Intent(app, PlayerActivity::class.java).apply {
+                        action = Intent.ACTION_MAIN
+                        addCategory(Intent.CATEGORY_LAUNCHER)
+                    }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                alarm.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), pi)
                 Log.i("E2Stream", "Harmonogram alarm: ${timer.key()} ustawiony na $at")
-                AppLog.i("wybudzanie: ustawiono alarm ${timer.key()} na $at")
+                AppLog.i("wybudzanie: ustawiono AlarmClock ${timer.key()} scheduledTime=$at")
             } catch (e: SecurityException) {
                 Log.w("E2Stream", "Nie można ustawić dokładnego alarmu ${timer.key()}", e)
                 AppLog.i("wybudzanie: błąd ustawienia ${timer.key()}: $e")
@@ -127,8 +127,9 @@ object ZapWakeAlarms {
             putExtra("test", true)
             putExtra("test_id", testId)
         }
-        val pi = pending(ctx, "test-$testId", intent)
         val at = System.currentTimeMillis() + 60_000
+        intent.putExtra(EXTRA_SCHEDULED_AT, at)
+        val pi = pending(ctx, "test-$testId", intent)
         try {
             if (Build.VERSION.SDK_INT >= 23) {
                 (ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
@@ -146,14 +147,28 @@ object ZapWakeAlarms {
         }
     }
 
-    internal fun isForeground(ctx: Context) = isAppForeground(ctx)
+    internal fun isForeground() = AppState.foreground
+
+    internal fun cancelNotification(ctx: Context, key: String) {
+        (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(key.hashCode())
+    }
+
+    internal fun scheduledPlayerIntent(ctx: Context, timer: ZapTimers.Timer) =
+        Intent(ctx, PlayerActivity::class.java).apply {
+            action = PlayerActivity.ACTION_SCHEDULE_ZAP
+            data = Uri.parse("e2stream://zap/${Uri.encode(timer.key())}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY, timer.key())
+            putExtra(PlayerActivity.EXTRA_SCHEDULE_REF, timer.ref)
+        }
 
     internal fun showNotification(ctx: Context, intent: Intent, key: String, channel: String, title: String, begin: Long, testId: String? = null) {
         val manager = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(NotificationChannel(CHANNEL, AppLanguage.wrap(ctx).getString(R.string.wake_notification_channel), NotificationManager.IMPORTANCE_HIGH))
         }
-        val launch = Intent(ctx, ZapPromptActivity::class.java).apply {
+        val timer = if (testId == null) ZapTimers.list(ctx).firstOrNull { it.key() == key } else null
+        val launch = if (timer != null) scheduledPlayerIntent(ctx, timer) else Intent(ctx, ZapPromptActivity::class.java).apply {
             action = "pl.jardol.e2stream.OPEN_ZAP_ALARM"
             data = intent.data
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -161,7 +176,7 @@ object ZapWakeAlarms {
             putExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY, key)
             if (testId != null) putExtra(PlayerActivity.EXTRA_WAKE_TEST_ID, testId)
         }
-        if (Build.VERSION.SDK_INT <= 28) {
+        if (Build.VERSION.SDK_INT <= 28 && testId != null) {
             try {
                 ctx.startActivity(launch)
                 AppLog.i("wybudzanie: bezpośrednio uruchomiono ZapPromptActivity API ${Build.VERSION.SDK_INT} key=$key")
@@ -188,7 +203,8 @@ object ZapWakeAlarms {
             .build()
         try {
             manager.notify(key.hashCode(), notification)
-            AppLog.i("wybudzanie: NotificationManager.notify OK key=$key fullScreenAllowed=${canUseFullScreen(ctx)}")
+            val importance = if (Build.VERSION.SDK_INT >= 26) manager.getNotificationChannel(CHANNEL)?.importance else null
+            AppLog.i("wybudzanie: NotificationManager.notify OK key=$key fullScreenAllowed=${canUseFullScreen(ctx)} notificationsEnabled=${manager.areNotificationsEnabled()} channelImportance=$importance")
         } catch (e: SecurityException) {
             Log.w("E2Stream", "Brak uprawnienia do powiadomienia harmonogramu", e)
             AppLog.i("wybudzanie: notify SecurityException key=$key: $e")
@@ -200,31 +216,63 @@ class ZapAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         intent ?: return
         val prefs = Prefs(context)
+        val now = System.currentTimeMillis()
+        val scheduled = intent.getLongExtra("scheduled_at", 0L)
+        val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        AppLog.i("wybudzanie: alarm scheduledTime=$scheduled actualTriggerTime=$now driftMs=${if (scheduled > 0) now - scheduled else "?"} interactive=${power.isInteractive}")
         if (intent.getBooleanExtra("test", false)) {
             val id = intent.getStringExtra("test_id") ?: "?"
-            Log.i("E2Stream", "TEST alarm RTC_WAKEUP dotarł: $id; appForeground=${ZapWakeAlarms.isForeground(context)}")
-            AppLog.i("wybudzanie: TEST RTC_WAKEUP DOSTARCZONY id=$id appForeground=${ZapWakeAlarms.isForeground(context)}")
+            Log.i("E2Stream", "TEST alarm RTC_WAKEUP dotarł: $id; appForeground=${ZapWakeAlarms.isForeground()}")
+            AppLog.i("wybudzanie: TEST RTC_WAKEUP DOSTARCZONY id=$id appForeground=${ZapWakeAlarms.isForeground()}")
             ZapWakeAlarms.showNotification(context, intent, "test-$id", AppLanguage.wrap(context).getString(R.string.wake_test_title),
                 AppLanguage.wrap(context).getString(R.string.wake_test_arrived), System.currentTimeMillis() / 1000, id)
             return
         }
-        if (!prefs.wakeForZap || ZapWakeAlarms.isForeground(context)) {
-            Log.i("E2Stream", "Alarm pominięty: wakeForZap=${prefs.wakeForZap}, appForeground=${ZapWakeAlarms.isForeground(context)}")
-            AppLog.i("wybudzanie: alarm pominięty wakeForZap=${prefs.wakeForZap} appForeground=${ZapWakeAlarms.isForeground(context)}")
+        if (!prefs.wakeForZap || (ZapWakeAlarms.isForeground() && power.isInteractive)) {
+            Log.i("E2Stream", "Alarm pominięty: wakeForZap=${prefs.wakeForZap}, appForeground=${ZapWakeAlarms.isForeground()}")
+            AppLog.i("wybudzanie: alarm pominięty wakeForZap=${prefs.wakeForZap} appForeground=${ZapWakeAlarms.isForeground()}")
             return
         }
         val key = intent.getStringExtra("timer_key") ?: return
-        if (ZapTimers.list(context).none { it.key() == key }) {
+        val timer = ZapTimers.list(context).firstOrNull { it.key() == key }
+        if (timer == null) {
             Log.w("E2Stream", "Alarm dotarł, ale timer już nie istnieje: $key")
             AppLog.i("wybudzanie: alarm dotarł, timer nie istnieje key=$key")
             return
         }
+        if (System.currentTimeMillis() / 1000 < timer.begin) {
+            AppLog.i("wybudzanie: alarm przed czasem key=$key — ponawiam planowanie")
+            ZapWakeAlarms.sync(context)
+            return
+        }
         Log.i("E2Stream", "Alarm harmonogramu dotarł: $key")
         AppLog.i("wybudzanie: alarm harmonogramu DOSTARCZONY key=$key")
+        @Suppress("DEPRECATION")
+        try {
+            val wake = power.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                "e2stream:scheduled-wake"
+            )
+            wake.acquire(10_000L)
+            AppLog.i("wybudzanie: wake lock aktywny maks. 10 s")
+        } catch (e: SecurityException) {
+            AppLog.i("wybudzanie: brak zgody na wake lock: $e")
+        } catch (e: IllegalArgumentException) {
+            AppLog.i("wybudzanie: wake lock nieobsługiwany: $e")
+        }
         ZapWakeAlarms.showNotification(context, intent, key,
             intent.getStringExtra("channel") ?: "E2Stream",
             intent.getStringExtra("title") ?: AppLanguage.wrap(context).getString(R.string.wake_scheduled_event),
             intent.getLongExtra("begin", System.currentTimeMillis() / 1000))
+        AppLog.i("wybudzanie: próba bezpośredniego startu PlayerActivity key=$key overlayAllowed=${Settings.canDrawOverlays(context)}")
+        try {
+            context.startActivity(ZapWakeAlarms.scheduledPlayerIntent(context, timer))
+            AppLog.i("wybudzanie: żądanie startActivity wysłane key=$key (system może je zablokować)")
+        } catch (e: SecurityException) {
+            AppLog.i("wybudzanie: startActivity odrzucony key=$key: $e")
+        } catch (e: android.content.ActivityNotFoundException) {
+            AppLog.i("wybudzanie: brak PlayerActivity key=$key: $e")
+        }
     }
 }
 

@@ -227,8 +227,12 @@ class PlayerActivity : Activity() {
     private var wakeTimerKey: String? = null
     private var wakeTestId: String? = null
     private var scheduledChannelRef: String? = null
+    private var scheduledChannelKey: String? = null
+    private var scheduledSwitchInFlight: String? = null
+    private var scheduledFailedKey: String? = null
     private var scheduledAppliedRef: String? = null      // kanał z harmonogramu dostrojony przed końcem startu
     private var scheduledAppliedAt = 0L
+    private var scheduledAppliedWake = false
     private var connectionDialog: Dialog? = null
     private var connectionProbePending = false
     private var connectionProbeId = 0
@@ -254,8 +258,8 @@ class PlayerActivity : Activity() {
         Tools.beforeManualUpdate = stopForUpdate
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
-        scheduledChannelRef = intent.getStringExtra(EXTRA_SCHEDULE_REF)
-        if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
+        receiveScheduledIntent(intent)
+        if ((wakeTimerKey != null || wakeTestId != null || scheduledChannelRef != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
@@ -396,7 +400,6 @@ class PlayerActivity : Activity() {
         AppLog.i("auto-zamknięcie: limit bezczynności ${prefs.sleepHours} h")
         ui.removeCallbacks(sleepTick)
         ui.post(sleepTick)
-        ZapWakeAlarms.setAppForeground(this, true)
         ZapWakeAlarms.sync(this)
         if (safeMode) return
         startUp()
@@ -464,12 +467,13 @@ class PlayerActivity : Activity() {
         setIntent(intent)
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
-        scheduledChannelRef = intent.getStringExtra(EXTRA_SCHEDULE_REF) ?: scheduledChannelRef
+        receiveScheduledIntent(intent)
         AppLog.i("wybudzanie: onNewIntent key=$wakeTimerKey testId=$wakeTestId")
-        if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
+        if ((wakeTimerKey != null || wakeTestId != null || scheduledChannelRef != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
+        if (intent.action == ACTION_SCHEDULE_ZAP) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (safeMode) return
         zapPrompted = null
         ui.removeCallbacks(zapTick)
@@ -554,7 +558,7 @@ class PlayerActivity : Activity() {
             settingsVersion = prefs.version
             loadBouquets()
         } else {
-            currentUrl?.let { startStream(it) }
+            if (scheduledChannelRef == null) currentUrl?.let { startStream(it) }
             applyScheduledChannel()
         }
     }
@@ -677,7 +681,6 @@ class PlayerActivity : Activity() {
         ui.removeCallbacks(sleepTick)
         sleepDlg?.dismiss(); sleepDlg = null
         TvDialog.onInput = null
-        ZapWakeAlarms.setAppForeground(this, false)
         settingsOpen = false      // po powrocie i tak pełny start (onStart)
         backgrounded = true       // wyjście do ekranu głównego — po powrocie start jak przy uruchomieniu
         ui.removeCallbacks(epgTick)
@@ -1631,8 +1634,10 @@ class PlayerActivity : Activity() {
                     val ci = ch.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(wantC) }.let { if (it < 0) 0 else it }
                     // kanał z harmonogramu wybrany w trakcie tego startu ma pierwszeństwo przed startowym
                     val forced = scheduledAppliedRef?.takeIf { android.os.SystemClock.elapsedRealtime() - scheduledAppliedAt < 30_000 }
+                    val forcedWake = forced != null && scheduledAppliedWake
                     scheduledAppliedRef = null
-                    if (ch.isNotEmpty() && (forced == null || playList.isEmpty())) {
+                    scheduledAppliedWake = false
+                    if (ch.isNotEmpty() && scheduledChannelRef == null && !forcedWake && (forced == null || playList.isEmpty())) {
                         playIndex = -1
                         playIn(bi, ch, ci)
                         if (returnChannel != null) {
@@ -1640,7 +1645,7 @@ class PlayerActivity : Activity() {
                         }
                     }
                     if (returnChannel != null) settingsReturnChannel = null
-                    if (forced != null) {
+                    if (forced != null && !forcedWake) {
                         AppLog.i("harmonogram: start nie nadpisuje kanału z harmonogramu ${OpenWebif.key(forced)}")
                         zapTo(forced)
                     }
@@ -1656,15 +1661,67 @@ class PlayerActivity : Activity() {
         }
     }
 
+    private fun receiveScheduledIntent(intent: Intent) {
+        if (intent.action != ACTION_SCHEDULE_ZAP) return
+        val ref = intent.getStringExtra(EXTRA_SCHEDULE_REF) ?: return
+        val key = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
+        if (key != null) {
+            val timer = ZapTimers.list(this).firstOrNull { it.key() == key }
+            if (timer == null || timer.begin > System.currentTimeMillis() / 1000 || OpenWebif.key(timer.ref) != OpenWebif.key(ref)) {
+                AppLog.i("wybudzanie: pomijam nieaktualne lub wykonane zdarzenie key=$key")
+                ZapWakeAlarms.cancelNotification(this, key)
+                return
+            }
+            if (scheduledChannelKey == key || scheduledSwitchInFlight == key) {
+                AppLog.i("wybudzanie: pomijam powtórne żądanie key=$key")
+                return
+            }
+        }
+        scheduledChannelRef = ref
+        scheduledChannelKey = key
+        scheduledFailedKey = null
+        AppLog.i("wybudzanie: PlayerActivity odebrała kanał harmonogramu key=$key")
+    }
+
     private fun applyScheduledChannel() {
         if (safeMode) return
         val ref = scheduledChannelRef ?: return
         if (bouquets.isEmpty()) return
+        val key = scheduledChannelKey
+        if (key != null && ZapTimers.list(this).none { it.key() == key }) {
+            scheduledChannelRef = null
+            scheduledChannelKey = null
+            ZapWakeAlarms.cancelNotification(this, key)
+            AppLog.i("wybudzanie: pomijam wygasłe zdarzenie key=$key")
+            return
+        }
         scheduledChannelRef = null
+        scheduledChannelKey = null
+        scheduledSwitchInFlight = key
         scheduledAppliedRef = ref
+        scheduledAppliedWake = key != null
         scheduledAppliedAt = android.os.SystemClock.elapsedRealtime()
         AppLog.i("harmonogram: Oglądaj — dostrajam kanał ${OpenWebif.key(ref)}")
-        ui.post { if (!isFinishing) zapTo(ref, forceTune = true) }
+        ui.post {
+            if (isFinishing) {
+                scheduledSwitchInFlight = null
+                return@post
+            }
+            zapTo(ref, forceTune = true, stillValid = {
+                key == null || ZapTimers.list(this).any { it.key() == key }
+            }) { ok, detail ->
+                scheduledSwitchInFlight = null
+                if (key != null) {
+                    if (ok && ZapTimers.completeSwitchIfPending(this, key)) {
+                        ZapWakeAlarms.cancelNotification(this, key)
+                        AppLog.i("wybudzanie: przełączenie rozpoczęte i zdarzenie zakończone key=$key")
+                    } else if (!ok) {
+                        scheduledFailedKey = key
+                        AppLog.i("wybudzanie: przełączenie nieudane key=$key: $detail")
+                    }
+                }
+            }
+        }
     }
 
     /** Nowa lista bukietów (zmiana widocznych) bez przerywania odtwarzanego kanału. */
@@ -2198,6 +2255,10 @@ class PlayerActivity : Activity() {
             val now = System.currentTimeMillis() / 1000
             val t = timers.firstOrNull { it.begin - 30 <= now }
             if (t == null) {
+                ui.postDelayed(this, 5000)
+                return
+            }
+            if (t.key() == scheduledChannelKey || t.key() == scheduledSwitchInFlight || t.key() == scheduledFailedKey) {
                 ui.postDelayed(this, 5000)
                 return
             }
@@ -5527,6 +5588,10 @@ class PlayerActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (intent.action == ACTION_SCHEDULE_ZAP) {
+            val power = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            AppLog.i("wybudzanie: PlayerActivity onResume interactive=${power.isInteractive} key=${intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)}")
+        }
         if (recreateForLanguage()) return
         // pierwsza konfiguracja: wybrano dekoder w ustawieniach, a decyzja o kopii ustawień jeszcze nie zapadła —
         // pytanie od razu, niezależnie od tego, czy po powrocie z ustawień był pełny start (onStart)
@@ -5716,9 +5781,14 @@ class PlayerActivity : Activity() {
     private fun zapTo(
         ref: String,
         forceTune: Boolean = false,
+        stillValid: (() -> Boolean)? = null,
         onResult: ((Boolean, String) -> Unit)? = null,
     ) {
         if (safeMode) return
+        if (stillValid?.invoke() == false) {
+            onResult?.invoke(false, "zdarzenie anulowane lub wygasłe")
+            return
+        }
         val k = OpenWebif.key(ref)
         val i = playList.indexOfFirst { OpenWebif.key(it.ref) == k }
         if (!forceTune && i >= 0 && i == playIndex && currentUrl != null && !recMode) {
@@ -5747,6 +5817,10 @@ class PlayerActivity : Activity() {
                 val j = ch.indexOfFirst { OpenWebif.key(it.ref) == k }
                 if (j >= 0) {
                     runOnUiThread {
+                        if (stillValid?.invoke() == false) {
+                            onResult?.invoke(false, "zdarzenie anulowane lub wygasłe")
+                            return@runOnUiThread
+                        }
                         hidePanel()
                         playIn(bi, ch, j)
                         onResult?.invoke(true, getString(R.string.player_switch_started, ch[j].name))

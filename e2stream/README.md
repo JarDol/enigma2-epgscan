@@ -163,6 +163,11 @@ Korzystanie z pilota lub dotyku zeruje licznik, a otwarcie innego okna wstrzymuj
 
 Diagnostyka wybudzania (status i test alarmu) jest dostępna tylko w wersjach beta;
 ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji stabilnej.
+Po włączeniu tej opcji zdarzenie używa alarmu systemowego w chwili początku audycji
+i próbuje wybudzić urządzenie oraz otworzyć E2Stream; awaryjnie wysyła powiadomienie.
+Uruchamianie w tle może wymagać zgody na wyświetlanie nad innymi aplikacjami, a włączenie
+telewizora zależy od obsługi i ustawień HDMI-CEC. Dostarczenie alarmu i wybudzenie nie są
+gwarantowane na wszystkich urządzeniach. Log podaje planowany i faktyczny czas alarmu.
 
 * adres dekodera, port OpenWebif (80), port streamingu (8001), login/hasło,
 * silnik odtwarzania: ExoPlayer (domyślnie) albo VLC – dla każdego odbiornika osobno; przy VLC wybór usuwania przeplotu i dekodowania sprzętowego/programowego,

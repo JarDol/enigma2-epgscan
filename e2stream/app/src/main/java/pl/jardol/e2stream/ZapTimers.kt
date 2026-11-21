@@ -37,10 +37,14 @@ object ZapTimers {
         return out.sortedBy { it.begin }
     }
 
-    private fun save(ctx: Context, l: List<Timer>) {
+    private fun encodeTimers(l: List<Timer>): String {
         val arr = JSONArray()
         for (t in l) arr.put(JSONObject().put("ref", t.ref).put("ch", t.channel).put("t", t.title).put("b", t.begin).put("e", t.end).put("id", t.eventId))
-        sp(ctx).edit().putString("list", arr.toString()).apply()
+        return arr.toString()
+    }
+
+    private fun save(ctx: Context, l: List<Timer>) {
+        sp(ctx).edit().putString("list", encodeTimers(l)).apply()
     }
 
     fun history(ctx: Context): List<History> {
@@ -57,7 +61,7 @@ object ZapTimers {
         return retained
     }
 
-    private fun saveHistory(ctx: Context, entries: List<History>) {
+    private fun encodeHistory(entries: List<History>): String {
         val arr = JSONArray()
         for (h in entries) {
             val t = h.timer
@@ -65,7 +69,11 @@ object ZapTimers {
                 .put("b", t.begin).put("e", t.end).put("id", t.eventId)
                 .put("outcome", h.outcome).put("at", h.completedAt))
         }
-        sp(ctx).edit().putString("history", arr.toString()).apply()
+        return arr.toString()
+    }
+
+    private fun saveHistory(ctx: Context, entries: List<History>) {
+        sp(ctx).edit().putString("history", encodeHistory(entries)).apply()
     }
 
     internal fun retainHistory(entries: List<History>, now: Long, retentionDays: Int): List<History> {
@@ -99,11 +107,31 @@ object ZapTimers {
         saveHistory(ctx, entries)
     }
 
+    @Synchronized
     fun complete(ctx: Context, t: Timer, outcome: String) {
         save(ctx, list(ctx).filter { it.key() != t.key() })
         ZapWakeAlarms.sync(ctx)
         mark(ctx, t, outcome)
         AppLog.i("harmonogram: ${t.channel} — ${t.title}: $outcome")
+    }
+
+    @Synchronized
+    fun completeSwitchIfPending(ctx: Context, key: String): Boolean {
+        val timers = list(ctx)
+        val timer = timers.firstOrNull { it.key() == key } ?: return false
+        val entries = history(ctx).toMutableList()
+        entries.add(0, History(timer, SWITCHED, System.currentTimeMillis() / 1000))
+        val saved = sp(ctx).edit()
+            .putString("list", encodeTimers(timers.filter { it.key() != key }))
+            .putString("history", encodeHistory(entries))
+            .commit()
+        if (!saved) {
+            AppLog.i("harmonogram: nie udało się zapisać wykonania key=$key")
+            return false
+        }
+        ZapWakeAlarms.sync(ctx)
+        AppLog.i("harmonogram: ${timer.channel} — ${timer.title}: $SWITCHED")
+        return true
     }
 
     fun has(ctx: Context, ref: String, begin: Long) = list(ctx).any { it.key() == Timer(ref, "", "", begin, 0).key() }
