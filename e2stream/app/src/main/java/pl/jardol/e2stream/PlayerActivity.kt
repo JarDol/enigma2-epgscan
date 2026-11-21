@@ -752,6 +752,10 @@ class PlayerActivity : Activity() {
         p.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 AppLog.i("BŁĄD ${error.errorCodeName}: ${error.message} / ${error.cause}")
+                if (isTimeshiftExpiredSegment(error) || (tsMode && tsGoneRecoveryGeneration == tsAudioSourceGen)) {
+                    AppLog.i("timeshift: pomijam ogólny restart — odzyskiwanie po utracie segmentu")
+                    return
+                }
                 scheduleRestart("błąd: ${error.errorCodeName}")
             }
 
@@ -1828,6 +1832,7 @@ class PlayerActivity : Activity() {
 
     /** Lista „Historia” jako osobne okno (klawisz w dół): ostatnio oglądane kanały ze wszystkich bukietów. */
     private var panelHist = false
+    private val historyEpgCache = java.util.concurrent.ConcurrentHashMap<String, EpgEvent>()
     /** Lista kanałów w trybie wyboru kanału do okna PiP. */
     private var panelPip = false
 
@@ -2063,6 +2068,7 @@ class PlayerActivity : Activity() {
         if (b == null && !panelHist) return
         if (b != null && isRecRef(b.ref)) return
         val target = panelList
+        val history = panelHist
         io.execute {
             val map = if (b == null || epg.eitOnly || b.ref == HIST_BOUQUET) emptyMap() else try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
             // kanały, dla których dekoder nie podał bieżącej audycji (np. EPG tylko z paczki EPG Scan
@@ -2075,6 +2081,9 @@ class PlayerActivity : Activity() {
                 if (m == null || m.first.isBlank() || m.third <= n) epg.localNow(c.ref)?.let { local[k] = it }
             }
             runOnUiThread {
+                if (history) for (c in target) {
+                    local[OpenWebif.key(c.ref)]?.let { historyEpgCache[OpenWebif.key(c.ref)] = it }
+                }
                 target.forEach { c ->
                     val k = OpenWebif.key(c.ref)
                     val l = local[k]
@@ -2372,7 +2381,8 @@ class PlayerActivity : Activity() {
     private var tsRec: TimeshiftRecorder? = null
     private var tsMode = false                 // odtwarzanie z bufora (strumień z dekodera zapisuje osobne połączenie)
     private var tsAudioPid: Int? = null
-    private var tsAudioSourceGen = 0
+    @Volatile private var tsAudioSourceGen = 0
+    @Volatile private var tsGoneRecoveryGeneration = -1
     private var tsAudioAppliedGen = -1
     private var tsChBar = false                // w timeshifcie pokazany zwykły pasek kanału (zamiast paska timeshiftu)
     private var tsCtl = false                  // wybrany tryb obsługi timeshiftu, także po ukryciu paska
@@ -3437,6 +3447,7 @@ class PlayerActivity : Activity() {
     private fun tsLeave() {
         pvCancel()
         tsMode = false
+        tsGoneRecoveryGeneration = -1
         tsAudioPid = null
         tsSetShifted(false)
         tsCtl = false
@@ -3523,12 +3534,17 @@ class PlayerActivity : Activity() {
         val b = tsBuf ?: return
         val p = player ?: return
         tsAudioSourceGen++
-        val off = b.offsetAt(wall)
+        val oldest = b.oldestWall
+        val now = SystemClock.elapsedRealtime()
+        val target = maxOf(wall, timeshiftEarliestSeekWall(oldest, now)).coerceAtMost(now)
+        val off = b.offsetAt(target)
         tsBaseWall = b.wallAt(off)
+        val sourceGen = tsAudioSourceGen
+        AppLog.i("timeshift: seek ${wall}→${tsBaseWall} ms, zakres $oldest–$now")
         val hdr = analyzer?.psiHeader()
         val gen = streamGen
         val src = ProgressiveMediaSource.Factory(
-            DataSource.Factory { TimeshiftDataSource(b, off, hdr, onGone = { }) },
+            DataSource.Factory { TimeshiftDataSource(b, off, hdr, onGone = { tsSourceGone(b, sourceGen) }) },
             AvShift.wrap(DefaultExtractorsFactory().setTsExtractorFlags(
                 DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS)),
         ).createMediaSource(MediaItem.fromUri("timeshift://bufor/$gen/$off"))
@@ -3545,6 +3561,29 @@ class PlayerActivity : Activity() {
         watchdog?.paused = tsShifted
         // przeładowanie po przewinięciu nie może zastąpić paska kanału paskiem timeshiftu
         if (tsShifted && !(tsChBar && banner.visibility == View.VISIBLE)) tsShowBanner(sticky = !play)
+    }
+
+    private fun tsSourceGone(buffer: TimeshiftBuffer, sourceGen: Int) {
+        if (sourceGen != tsAudioSourceGen) return
+        tsGoneRecoveryGeneration = sourceGen
+        runOnUiThread {
+            if (!tsMode || tsBuf !== buffer || tsAudioSourceGen != sourceGen) return@runOnUiThread
+            if (tsPending != 0L) {
+                AppLog.i("timeshift: segment zniknął podczas przewijania — zastosuję oczekujący seek")
+                return@runOnUiThread
+            }
+            val now = SystemClock.elapsedRealtime()
+            val oldest = buffer.oldestWall
+            val target = timeshiftRecoveryTarget(oldest, now)
+            AppLog.i("timeshift: utracono segment przy ${tsShownWall()} ms, okno $oldest–$now ms" +
+                (target?.let { ", odzyskiwanie od $it ms" } ?: ", przejście na live"))
+            if (target == null) {
+                tsGoLive("koniec dostępnego bufora")
+            } else {
+                showMessage(getString(R.string.message_timeshift_buffer_full_resuming_from_the_oldest_recorded))
+                tsPlayFrom(target, play = player?.playWhenReady != false)
+            }
+        }
     }
 
     /**
@@ -4278,7 +4317,21 @@ class PlayerActivity : Activity() {
         // historia na końcu — ◀ z pierwszego bukietu przechodzi od razu na nią
         (if (HIST_BOUQUET in prefs.hiddenBouquets) emptyList() else listOf(Bouquet(getString(R.string.player_history), HIST_BOUQUET)))
 
-    private fun historyChannels(): List<Channel> = prefs.history.mapIndexed { i, (ref, name) -> Channel(i + 1, name, ref) }
+    private fun historyChannels(): List<Channel> {
+        val now = System.currentTimeMillis() / 1000
+        return prefs.history.mapIndexed { i, (ref, name) ->
+            Channel(i + 1, name, ref).also { c ->
+                val key = OpenWebif.key(ref)
+                val event = historyEpgCache[key]?.takeIf { it.begin <= now && now < it.end }
+                    ?: epg.cachedNow(ref)?.also { historyEpgCache[key] = it }
+                event?.let {
+                    c.now = it.title
+                    c.nowBegin = it.begin
+                    c.nowEnd = it.end
+                }
+            }
+        }
+    }
 
     /** Kanały bukietu albo (dla „Nagrania”) zawartość bieżącego katalogu nagrań. Poza wątkiem UI. */
     private fun channelsOf(bq: Bouquet): List<Channel> {

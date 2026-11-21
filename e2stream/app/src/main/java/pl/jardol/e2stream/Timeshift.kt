@@ -20,6 +20,18 @@ import java.util.concurrent.TimeUnit
 internal fun timeshiftEarliestSeekWall(oldestWall: Long, now: Long): Long =
     minOf(oldestWall + 10_000, now)
 
+internal fun timeshiftRecoveryTarget(oldestWall: Long, now: Long): Long? =
+    timeshiftEarliestSeekWall(oldestWall, now).takeIf { it < now - 6_000 }
+
+internal fun isTimeshiftExpiredSegment(error: Throwable?): Boolean {
+    var cause = error
+    while (cause != null) {
+        if (cause.message?.contains("timeshift: fragment bufora już usunięty") == true) return true
+        cause = cause.cause
+    }
+    return false
+}
+
 internal fun timeshiftSeekTarget(base: Long, delta: Long, oldestWall: Long, now: Long): Long =
     maxOf(base + delta, timeshiftEarliestSeekWall(oldestWall, now))
 

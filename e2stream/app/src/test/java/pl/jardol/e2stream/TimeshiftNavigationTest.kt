@@ -1,5 +1,6 @@
 package pl.jardol.e2stream
 
+import java.io.IOException
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -28,6 +29,18 @@ class TimeshiftNavigationTest {
     fun startMovesWithBufferAndNeverExceedsCurrentTime() {
         assertEquals(130_000L, timeshiftSeekTarget(110_000, -10_000, 120_000, 200_000))
         assertEquals(205_000L, timeshiftSeekTarget(200_000, -30_000, 200_000, 205_000))
+    }
+
+    @Test
+    fun recoveryTracksTheMovingBufferStartAndUsesLiveWhenNoSafeWindowRemains() {
+        assertEquals(110_000L, timeshiftRecoveryTarget(100_000, 200_000))
+        assertEquals(null, timeshiftRecoveryTarget(194_000, 200_000))
+    }
+
+    @Test
+    fun detectsAnExpiredSegmentThroughWrappedPlayerErrors() {
+        assertTrue(isTimeshiftExpiredSegment(IOException("load failed", IOException("timeshift: fragment bufora już usunięty"))))
+        assertFalse(isTimeshiftExpiredSegment(IOException("network failed")))
     }
 
     @Test
