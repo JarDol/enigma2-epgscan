@@ -16,6 +16,9 @@
     <string name="settings_start_disabled">inactive (resume last channel is enabled)</string>
     <string name="settings_status_alarm">status and alarm test</string>
     <string name="settings_enable_wake_first">enable wake-up first</string>
+    <string name="settings_wake_monitor_off">0 s — no popup</string>
+    <string name="settings_wake_monitor_seconds">%1$d s</string>
+    <string name="settings_wake_monitor_minute">%1$d min</string>
     <string name="settings_never_clean">never remove</string>
     <string name="settings_after_days">%1$d days</string>
     <string name="settings_pin_inactive">inactive (no PIN)</string>

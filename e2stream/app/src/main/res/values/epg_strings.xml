@@ -63,6 +63,7 @@
     <string name="prompt_channel">Kanał</string>
     <string name="prompt_programme">Zaplanowana audycja</string>
     <string name="prompt_switch_countdown">Przełącz (%1$s)</string>
+    <string name="prompt_scheduled_switch_title">Zaplanowane przełączenie</string>
     <string name="prompt_sending_recording">Wysyłam nagranie na dekoder…</string>
     <string name="prompt_recording_set">Nagranie ustawione na dekoderze</string>
     <string name="prompt_recording_failed">Nie udało się ustawić nagrania: %1$s</string>

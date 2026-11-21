@@ -9,6 +9,7 @@
     <string name="wake_no_permission">BRAK ZGODY</string>
     <string name="wake_fullscreen">Pełny ekran: %1$s</string>
     <string name="wake_fullscreen_allowed">dozwolony</string>
+    <string name="wake_monitor">Monit przed harmonogramem: %1$s</string>
     <string name="wake_fullscreen_blocked">zablokowany</string>
     <string name="wake_pending">Oczekujące wydarzenia: %1$d</string>
     <string name="wake_next">Najbliższy: %1$s — %2$s (%3$d)</string>

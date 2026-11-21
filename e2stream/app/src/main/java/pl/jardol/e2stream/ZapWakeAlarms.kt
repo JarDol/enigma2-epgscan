@@ -24,6 +24,7 @@ object ZapWakeAlarms {
     private const val ACTION_TEST = "pl.jardol.e2stream.ZAP_TEST_ALARM"
     private const val EXTRA_KEY = "timer_key"
     private const val EXTRA_SCHEDULED_AT = "scheduled_at"
+    private const val MONITORED_KEYS = "monitor_received"
 
     fun canScheduleExact(ctx: Context): Boolean = Build.VERSION.SDK_INT < 31 ||
         (ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
@@ -38,17 +39,24 @@ object ZapWakeAlarms {
         val previous = prefs.getStringSet("keys", emptySet())?.toSet() ?: emptySet()
         val enabled = Prefs(app).wakeForZap
         val exactAllowed = canScheduleExact(app)
+        val monitorSeconds = Prefs(app).wakeZapMonitorSeconds
         val timers = if (enabled && exactAllowed) ZapTimers.list(app) else emptyList()
         val nextKeys = timers.map { it.key() }.toSet()
+        val monitoredKeys = (prefs.getStringSet(MONITORED_KEYS, emptySet())?.toSet() ?: emptySet())
+            .intersect(nextKeys)
+        if (monitoredKeys != prefs.getStringSet(MONITORED_KEYS, emptySet())) {
+            prefs.edit().putStringSet(MONITORED_KEYS, monitoredKeys).apply()
+        }
 
         AppLog.i("wybudzanie: sync enabled=$enabled exactAllowed=$exactAllowed timers=${timers.size}")
 
         for (key in previous - nextKeys) {
             alarm.cancel(pending(app, key))
+            alarm.cancel(pending(app, key, phase = "start"))
             AppLog.i("wybudzanie: anulowano alarm $key")
         }
         for (timer in timers) {
-            val at = (timer.begin * 1000).coerceAtLeast(System.currentTimeMillis() + 1000)
+            val at = alarmTriggerAt(timer.begin, monitorSeconds, System.currentTimeMillis())
             val intent = alarmIntent(app, timer).putExtra(EXTRA_SCHEDULED_AT, at)
             val pi = pending(app, timer.key(), intent)
             try {
@@ -57,9 +65,24 @@ object ZapWakeAlarms {
                         action = Intent.ACTION_MAIN
                         addCategory(Intent.CATEGORY_LAUNCHER)
                     }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-                alarm.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), pi)
+                if (monitorSeconds <= 0 || timer.key() !in monitoredKeys) {
+                    alarm.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), pi)
+                } else {
+                    alarm.cancel(pi)
+                }
+                if (monitorSeconds > 0) {
+                    val startAt = alarmTriggerAt(timer.begin, 0, System.currentTimeMillis())
+                    val finalIntent = alarmIntent(app, timer)
+                        .setData(Uri.parse("e2stream://zap/${Uri.encode(timer.key())}/start"))
+                        .putExtra(EXTRA_SCHEDULED_AT, startAt)
+                        .putExtra("final_alarm", true)
+                    alarm.setAlarmClock(AlarmManager.AlarmClockInfo(startAt, show),
+                        pending(app, timer.key(), finalIntent, "start"))
+                } else {
+                    alarm.cancel(pending(app, timer.key(), phase = "start"))
+                }
                 Log.i("E2Stream", "Harmonogram alarm: ${timer.key()} ustawiony na $at")
-                AppLog.i("wybudzanie: ustawiono AlarmClock ${timer.key()} scheduledTime=$at")
+                AppLog.i("wybudzanie: ustawiono AlarmClock ${timer.key()} scheduledTime=$at monitorSeconds=$monitorSeconds monitorDelivered=${timer.key() in monitoredKeys} finalWake=${monitorSeconds > 0}")
             } catch (e: SecurityException) {
                 Log.w("E2Stream", "Nie można ustawić dokładnego alarmu ${timer.key()}", e)
                 AppLog.i("wybudzanie: błąd ustawienia ${timer.key()}: $e")
@@ -67,6 +90,20 @@ object ZapWakeAlarms {
         }
         prefs.edit().putStringSet("keys", nextKeys).apply()
     }
+
+    internal fun alarmTriggerAt(beginSeconds: Long, monitorSeconds: Int, nowMillis: Long): Long =
+        ((beginSeconds - monitorSeconds.coerceIn(0, 300)) * 1000).coerceAtLeast(nowMillis + 1000)
+
+    internal fun markMonitorReceived(ctx: Context, key: String) {
+        val prefs = ctx.getSharedPreferences(STORE, Context.MODE_PRIVATE)
+        val keys = prefs.getStringSet(MONITORED_KEYS, emptySet())?.toMutableSet() ?: mutableSetOf()
+        keys += key
+        prefs.edit().putStringSet(MONITORED_KEYS, keys).apply()
+    }
+
+    internal fun monitorWasReceived(ctx: Context, key: String): Boolean =
+        ctx.getSharedPreferences(STORE, Context.MODE_PRIVATE)
+            .getStringSet(MONITORED_KEYS, emptySet())?.contains(key) == true
 
     private fun alarmIntent(ctx: Context, timer: ZapTimers.Timer) = Intent(ctx, ZapAlarmReceiver::class.java).apply {
         action = ACTION_ZAP
@@ -80,22 +117,26 @@ object ZapWakeAlarms {
         putExtra("eventId", timer.eventId)
     }
 
-    private fun pending(ctx: Context, key: String, intent: Intent? = null): PendingIntent {
+    private fun pending(ctx: Context, key: String, intent: Intent? = null, phase: String? = null): PendingIntent {
         val actual = intent ?: Intent(ctx, ZapAlarmReceiver::class.java).apply {
             action = ACTION_ZAP
-            data = Uri.parse("e2stream://zap/${Uri.encode(key)}")
+            data = Uri.parse("e2stream://zap/${Uri.encode(key)}${phase?.let { "/$it" } ?: ""}")
         }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
-        return PendingIntent.getBroadcast(ctx, key.hashCode(), actual, flags)
+        val requestKey = if (phase == null) key else "$key:$phase"
+        return PendingIntent.getBroadcast(ctx, requestKey.hashCode(), actual, flags)
     }
 
     fun cancelAll(ctx: Context) {
         val prefs = ctx.getSharedPreferences(STORE, Context.MODE_PRIVATE)
         val alarm = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val keys = prefs.getStringSet("keys", emptySet())?.toSet() ?: emptySet()
-        for (key in keys) alarm.cancel(pending(ctx, key))
-        prefs.edit().putStringSet("keys", emptySet()).apply()
+        for (key in keys) {
+            alarm.cancel(pending(ctx, key))
+            alarm.cancel(pending(ctx, key, phase = "start"))
+        }
+        prefs.edit().putStringSet("keys", emptySet()).putStringSet(MONITORED_KEYS, emptySet()).apply()
     }
 
     fun notificationAllowed(ctx: Context): Boolean = Build.VERSION.SDK_INT < 33 ||
@@ -109,10 +150,19 @@ object ZapWakeAlarms {
             appendLine(text.getString(R.string.wake_exact, text.getString(if (canScheduleExact(ctx)) R.string.wake_allowed else R.string.wake_no_permission)))
             appendLine(text.getString(R.string.wake_notifications, text.getString(if (notificationAllowed(ctx)) R.string.wake_allowed else R.string.wake_no_permission)))
             appendLine(text.getString(R.string.wake_fullscreen, text.getString(if (canUseFullScreen(ctx)) R.string.wake_fullscreen_allowed else R.string.wake_fullscreen_blocked)))
+            appendLine(text.getString(R.string.wake_monitor, monitorDescription(text, Prefs(ctx).wakeZapMonitorSeconds)))
             appendLine(text.getString(R.string.wake_pending, ZapTimers.list(ctx).size))
             if (next != null) append(text.getString(R.string.wake_next, next.channel, next.title, next.begin))
             else append(text.getString(R.string.wake_no_pending))
         }
+    }
+
+    private fun monitorDescription(ctx: Context, seconds: Int) = when (seconds) {
+        0 -> ctx.getString(R.string.settings_wake_monitor_off)
+        60 -> ctx.getString(R.string.settings_wake_monitor_minute, 1)
+        120 -> ctx.getString(R.string.settings_wake_monitor_minute, 2)
+        300 -> ctx.getString(R.string.settings_wake_monitor_minute, 5)
+        else -> ctx.getString(R.string.settings_wake_monitor_seconds, seconds)
     }
 
     fun scheduleTest(ctx: Context): String {
@@ -228,7 +278,7 @@ class ZapAlarmReceiver : BroadcastReceiver() {
                 AppLanguage.wrap(context).getString(R.string.wake_test_arrived), System.currentTimeMillis() / 1000, id)
             return
         }
-        if (!prefs.wakeForZap || (ZapWakeAlarms.isForeground() && power.isInteractive)) {
+        if (!prefs.wakeForZap) {
             Log.i("E2Stream", "Alarm pominięty: wakeForZap=${prefs.wakeForZap}, appForeground=${ZapWakeAlarms.isForeground()}")
             AppLog.i("wybudzanie: alarm pominięty wakeForZap=${prefs.wakeForZap} appForeground=${ZapWakeAlarms.isForeground()}")
             return
@@ -240,9 +290,18 @@ class ZapAlarmReceiver : BroadcastReceiver() {
             AppLog.i("wybudzanie: alarm dotarł, timer nie istnieje key=$key")
             return
         }
-        if (System.currentTimeMillis() / 1000 < timer.begin) {
-            AppLog.i("wybudzanie: alarm przed czasem key=$key — ponawiam planowanie")
+        if (scheduled > 0 && now + 1000 < scheduled) {
+            AppLog.i("wybudzanie: alarm przed zaplanowanym monitorem key=$key — ponawiam planowanie")
             ZapWakeAlarms.sync(context)
+            return
+        }
+        val finalAlarm = intent.getBooleanExtra("final_alarm", false)
+        if (!finalAlarm && prefs.wakeZapMonitorSeconds > 0 && timer.begin > now / 1000) {
+            ZapWakeAlarms.markMonitorReceived(context, key)
+        }
+        if (ZapWakeAlarms.isForeground() && power.isInteractive) {
+            Log.i("E2Stream", "Alarm pominięty: aplikacja jest na wierzchu")
+            AppLog.i("wybudzanie: alarm pominięty appForeground=true interactive=true finalAlarm=$finalAlarm")
             return
         }
         Log.i("E2Stream", "Alarm harmonogramu dotarł: $key")

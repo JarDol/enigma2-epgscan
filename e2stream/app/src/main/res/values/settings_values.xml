@@ -16,6 +16,9 @@
     <string name="settings_start_disabled">nieaktywne (włączony powrót do ostatniego)</string>
     <string name="settings_status_alarm">status i test alarmu</string>
     <string name="settings_enable_wake_first">najpierw włącz wybudzanie</string>
+    <string name="settings_wake_monitor_off">0 s — bez popupu</string>
+    <string name="settings_wake_monitor_seconds">%1$d s</string>
+    <string name="settings_wake_monitor_minute">%1$d min</string>
     <string name="settings_never_clean">nie czyść</string>
     <string name="settings_after_days">%1$d dniach</string>
     <string name="settings_pin_inactive">nieaktywne (brak PIN-u)</string>

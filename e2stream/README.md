@@ -163,8 +163,12 @@ Korzystanie z pilota lub dotyku zeruje licznik, a otwarcie innego okna wstrzymuj
 
 Diagnostyka wybudzania (status i test alarmu) jest dostępna tylko w wersjach beta;
 ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji stabilnej.
-Po włączeniu tej opcji zdarzenie używa alarmu systemowego w chwili początku audycji
-i próbuje wybudzić urządzenie oraz otworzyć E2Stream; awaryjnie wysyła powiadomienie.
+Po włączeniu tej opcji alarm systemowy może wybudzić urządzenie do 5 minut przed audycją
+i otworzyć E2Stream. Ustawienie „Wybudzanie: monit przed harmonogramem” wybiera czas
+wyświetlenia popupu (domyślnie 30 s); odliczanie kończy się automatycznym przełączeniem,
+a 0 s wyłącza popup. Przy dodatnim czasie ustawiany jest też alarm na początek audycji,
+aby ponowić próbę, jeśli aplikacja wróci w tło. Alarm próbuje wybudzić urządzenie;
+awaryjnie wysyła powiadomienie.
 Uruchamianie w tle może wymagać zgody na wyświetlanie nad innymi aplikacjami, a włączenie
 telewizora zależy od obsługi i ustawień HDMI-CEC. Dostarczenie alarmu i wybudzenie nie są
 gwarantowane na wszystkich urządzeniach. Log podaje planowany i faktyczny czas alarmu.

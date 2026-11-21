@@ -228,6 +228,7 @@ class PlayerActivity : Activity() {
     private var wakeTestId: String? = null
     private var scheduledChannelRef: String? = null
     private var scheduledChannelKey: String? = null
+    private var scheduledMonitorKey: String? = null
     private var scheduledSwitchInFlight: String? = null
     private var scheduledFailedKey: String? = null
     private var scheduledAppliedRef: String? = null      // kanał z harmonogramu dostrojony przed końcem startu
@@ -467,7 +468,7 @@ class PlayerActivity : Activity() {
         setIntent(intent)
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
-        receiveScheduledIntent(intent)
+        val acceptedScheduledIntent = receiveScheduledIntent(intent)
         AppLog.i("wybudzanie: onNewIntent key=$wakeTimerKey testId=$wakeTestId")
         if ((wakeTimerKey != null || wakeTestId != null || scheduledChannelRef != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
@@ -475,11 +476,13 @@ class PlayerActivity : Activity() {
         }
         if (intent.action == ACTION_SCHEDULE_ZAP) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (safeMode) return
-        zapPrompted = null
-        ui.removeCallbacks(zapTick)
-        ui.post(zapTick)
+        if (intent.action != ACTION_SCHEDULE_ZAP || acceptedScheduledIntent) {
+            zapPrompted = null
+            ui.removeCallbacks(zapTick)
+            ui.post(zapTick)
+            applyScheduledChannel()
+        }
         showWakeTestResult()
-        applyScheduledChannel()
     }
 
     private fun showWakeTestResult() {
@@ -558,7 +561,7 @@ class PlayerActivity : Activity() {
             settingsVersion = prefs.version
             loadBouquets()
         } else {
-            if (scheduledChannelRef == null) currentUrl?.let { startStream(it) }
+            if (scheduledChannelRef == null || shouldShowScheduledMonitor()) currentUrl?.let { startStream(it) }
             applyScheduledChannel()
         }
     }
@@ -1637,7 +1640,9 @@ class PlayerActivity : Activity() {
                     val forcedWake = forced != null && scheduledAppliedWake
                     scheduledAppliedRef = null
                     scheduledAppliedWake = false
-                    if (ch.isNotEmpty() && scheduledChannelRef == null && !forcedWake && (forced == null || playList.isEmpty())) {
+                    if (ch.isNotEmpty() && (scheduledChannelRef == null || shouldShowScheduledMonitor()) &&
+                        !forcedWake && (forced == null || playList.isEmpty())
+                    ) {
                         playIndex = -1
                         playIn(bi, ch, ci)
                         if (returnChannel != null) {
@@ -1661,26 +1666,36 @@ class PlayerActivity : Activity() {
         }
     }
 
-    private fun receiveScheduledIntent(intent: Intent) {
-        if (intent.action != ACTION_SCHEDULE_ZAP) return
-        val ref = intent.getStringExtra(EXTRA_SCHEDULE_REF) ?: return
+    private fun receiveScheduledIntent(intent: Intent): Boolean {
+        if (intent.action != ACTION_SCHEDULE_ZAP) return false
+        val ref = intent.getStringExtra(EXTRA_SCHEDULE_REF) ?: return false
         val key = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         if (key != null) {
             val timer = ZapTimers.list(this).firstOrNull { it.key() == key }
-            if (timer == null || timer.begin > System.currentTimeMillis() / 1000 || OpenWebif.key(timer.ref) != OpenWebif.key(ref)) {
+            if (timer == null || OpenWebif.key(timer.ref) != OpenWebif.key(ref)) {
                 AppLog.i("wybudzanie: pomijam nieaktualne lub wykonane zdarzenie key=$key")
                 ZapWakeAlarms.cancelNotification(this, key)
-                return
+                return false
             }
-            if (scheduledChannelKey == key || scheduledSwitchInFlight == key) {
+            if (scheduledChannelKey == key || scheduledMonitorKey == key ||
+                scheduledSwitchInFlight == key || zapPrompted == key
+            ) {
                 AppLog.i("wybudzanie: pomijam powtórne żądanie key=$key")
-                return
+                return false
             }
         }
         scheduledChannelRef = ref
         scheduledChannelKey = key
         scheduledFailedKey = null
         AppLog.i("wybudzanie: PlayerActivity odebrała kanał harmonogramu key=$key")
+        return true
+    }
+
+    private fun shouldShowScheduledMonitor(): Boolean {
+        if (prefs.wakeZapMonitorSeconds <= 0) return false
+        val key = scheduledChannelKey ?: return false
+        val timer = ZapTimers.list(this).firstOrNull { it.key() == key } ?: return false
+        return timer.begin > System.currentTimeMillis() / 1000
     }
 
     private fun applyScheduledChannel() {
@@ -1688,11 +1703,22 @@ class PlayerActivity : Activity() {
         val ref = scheduledChannelRef ?: return
         if (bouquets.isEmpty()) return
         val key = scheduledChannelKey
-        if (key != null && ZapTimers.list(this).none { it.key() == key }) {
+        val timer = key?.let { k -> ZapTimers.list(this).firstOrNull { it.key() == k } }
+        if (key != null && timer == null) {
             scheduledChannelRef = null
             scheduledChannelKey = null
             ZapWakeAlarms.cancelNotification(this, key)
             AppLog.i("wybudzanie: pomijam wygasłe zdarzenie key=$key")
+            return
+        }
+        if (key != null && timer != null && timer.begin > System.currentTimeMillis() / 1000) {
+            scheduledChannelRef = null
+            scheduledChannelKey = null
+            scheduledMonitorKey = key
+            wakeTimerKey = null
+            AppLog.i("wybudzanie: monitor harmonogramu aktywny key=$key pozostało=${timer.begin - System.currentTimeMillis() / 1000}s")
+            ui.removeCallbacks(zapTick)
+            ui.post(zapTick)
             return
         }
         scheduledChannelRef = null
@@ -2245,15 +2271,20 @@ class PlayerActivity : Activity() {
             val timers = ZapTimers.list(this@PlayerActivity)
             if (zapPrompted != null && timers.none { it.key() == zapPrompted }) {
                 try { zapDialog?.dismiss() } catch (_: Exception) {}
+                if (scheduledMonitorKey == zapPrompted) scheduledMonitorKey = null
                 zapDialog = null
                 zapPrompted = null
+            }
+            if (scheduledMonitorKey != null && timers.none { it.key() == scheduledMonitorKey }) {
+                scheduledMonitorKey = null
             }
             if (backgrounded) {
                 ui.postDelayed(this, if (zapPrompted == null) 5000 else 1000)
                 return
             }
             val now = System.currentTimeMillis() / 1000
-            val t = timers.firstOrNull { it.begin - 30 <= now }
+            val monitorSeconds = prefs.wakeZapMonitorSeconds
+            val t = timers.firstOrNull { it.begin - monitorSeconds <= now }
             if (t == null) {
                 ui.postDelayed(this, 5000)
                 return
@@ -2262,31 +2293,32 @@ class PlayerActivity : Activity() {
                 ui.postDelayed(this, 5000)
                 return
             }
-            if (now >= t.begin && wakeTimerKey != t.key() && zapPrompted != t.key()) {
+            if (bouquets.isEmpty()) {
+                ui.postDelayed(this, 1000)
+                return
+            }
+            if (now >= t.begin) {
                 zapFire(t)
                 ui.postDelayed(this, 5000)
                 return
             }
             if (zapPrompted == t.key()) {
-                if (now >= t.begin) {
-                    zapFire(t)
-                    ui.postDelayed(this, 5000)
-                    return
-                }
                 TvDialog.setButtonLabel(zapDialog, 0, getString(R.string.prompt_switch_countdown, zapCountdown(t.begin - now)))
                 ui.postDelayed(this, 1000)
                 return
             }
             zapPrompted = t.key()
+            scheduledMonitorKey = t.key()
             wakeTimerKey = null
-            AppLog.i("harmonogram: za ${t.begin - now} s przełączenie na ${t.channel}")
+            AppLog.i("harmonogram: monit na ${monitorSeconds} s przed przełączeniem ${t.channel} — ${t.title}; automatyczne przełączenie za ${t.begin - now} s")
             val card = EventCard.eventOf(t, this@PlayerActivity)
             val body = EventCard.cachedBody(this@PlayerActivity, t)
-            zapDialog = TvDialog.panel(this@PlayerActivity, null, null,
+            zapDialog = TvDialog.panel(this@PlayerActivity, getString(R.string.prompt_scheduled_switch_title), null,
                 listOf(
                     TvDialog.Btn(getString(R.string.prompt_switch_countdown, zapCountdown(t.begin - now))) { zapFire(t) },
                     TvDialog.Btn(getString(R.string.message_record_on_receiver)) {
                         ZapTimers.remove(this@PlayerActivity, t)
+                        if (scheduledMonitorKey == t.key()) scheduledMonitorKey = null
                         zapPrompted = null
                         zapDialog = null
                         epg.recordTimer(t) { ok ->
@@ -2307,6 +2339,8 @@ class PlayerActivity : Activity() {
 
     private fun zapFire(t: ZapTimers.Timer) {
         ZapTimers.complete(this, t, ZapTimers.SWITCHED)
+        ZapWakeAlarms.cancelNotification(this, t.key())
+        if (scheduledMonitorKey == t.key()) scheduledMonitorKey = null
         zapPrompted = null
         try { zapDialog?.dismiss() } catch (_: Exception) {}
         zapDialog = null
@@ -2323,6 +2357,8 @@ class PlayerActivity : Activity() {
 
     private fun zapSkip(t: ZapTimers.Timer) {
         ZapTimers.complete(this, t, ZapTimers.SKIPPED)
+        ZapWakeAlarms.cancelNotification(this, t.key())
+        if (scheduledMonitorKey == t.key()) scheduledMonitorKey = null
         zapPrompted = null
         zapDialog = null
         AppLog.i("harmonogram: pominięto po wyjściu z okna ${t.channel} — ${t.title}")

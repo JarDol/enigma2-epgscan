@@ -38,13 +38,23 @@ class ZapWakeAlarmsTest {
     }
 
     @Test
-    fun wakeAlarmIsScheduledAtProgrammeStart() {
+    fun wakeAlarmLeadTimeMatchesMonitorSetting() {
         Prefs(context).wakeForZap = true
+        Prefs(context).wakeZapMonitorSeconds = 15
         val t = timer()
         ZapTimers.add(context, t)
         val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val alarm = shadowOf(manager).nextScheduledAlarm!!
-        assertEquals(t.begin * 1000, alarm.alarmClockInfo!!.triggerTime)
+        assertEquals((t.begin - 15) * 1000, alarm.alarmClockInfo!!.triggerTime)
+    }
+
+    @Test
+    fun monitorLeadIsClampedAndZeroMeansNoLead() {
+        val begin = 1000L
+        assertEquals(1_000_000L, ZapWakeAlarms.alarmTriggerAt(begin, 0, 0))
+        assertEquals(985_000L, ZapWakeAlarms.alarmTriggerAt(begin, 15, 0))
+        assertEquals(700_000L, ZapWakeAlarms.alarmTriggerAt(begin, 999, 0))
+        assertEquals(10_000L, ZapWakeAlarms.alarmTriggerAt(1, 30, 9_000))
     }
 
     @Test
@@ -87,12 +97,32 @@ class ZapWakeAlarmsTest {
     }
 
     @Test
-    fun alarmArrivingBeforeStartIsRescheduledWithoutLaunchingPlayer() {
+    fun alarmAtMonitorTimeLaunchesPlayerBeforeProgrammeStart() {
         Prefs(context).wakeForZap = true
-        val t = timer()
+        Prefs(context).wakeZapMonitorSeconds = 30
+        val t = timer(120)
         ZapTimers.add(context, t)
-        ZapAlarmReceiver().onReceive(context, Intent().putExtra("timer_key", t.key()))
-        assertNull(shadowOf(context).nextStartedActivity)
+        ZapAlarmReceiver().onReceive(context, Intent().apply {
+            putExtra("timer_key", t.key())
+            putExtra("scheduled_at", System.currentTimeMillis())
+            putExtra("channel", t.channel)
+            putExtra("title", t.title)
+            putExtra("begin", t.begin)
+        })
+        val launch = shadowOf(context).nextStartedActivity!!
+        assertEquals(PlayerActivity.ACTION_SCHEDULE_ZAP, launch.action)
+        assertEquals(t.key(), launch.getStringExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY))
+        assertTrue(ZapWakeAlarms.monitorWasReceived(context, t.key()))
+    }
+
+    @Test
+    fun receivedMonitorIsNotRearmedButFinalWakeRemainsScheduled() {
+        Prefs(context).wakeForZap = true
+        Prefs(context).wakeZapMonitorSeconds = 30
+        val t = timer(120)
+        ZapTimers.add(context, t)
+        ZapWakeAlarms.markMonitorReceived(context, t.key())
+        ZapWakeAlarms.sync(context)
         val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         assertEquals(t.begin * 1000, shadowOf(manager).nextScheduledAlarm!!.alarmClockInfo!!.triggerTime)
     }
@@ -120,6 +150,27 @@ class ZapWakeAlarmsTest {
         controller.newIntent(intent)
         assertNull(field.get(activity))
         assertEquals(1, ZapTimers.history(context).count { it.timer.key() == t.key() })
+        controller.pause().stop().destroy()
+    }
+
+    @Test
+    fun playerAcceptsMonitorIntentBeforeProgrammeStart() {
+        val prefs = Prefs(context)
+        prefs.playbackAttempt = "unfinished / VLC"
+        prefs.channelSync = false
+        prefs.logFtp = false
+        SyncManager.init(context)
+        val controller = Robolectric.buildActivity(PlayerActivity::class.java).setup()
+        val activity = controller.get()
+        ShadowDialog.getLatestDialog()?.dismiss()
+        val t = timer(180)
+        ZapTimers.add(context, t)
+        val accepted = PlayerActivity::class.java.getDeclaredMethod("receiveScheduledIntent", Intent::class.java)
+            .apply { isAccessible = true }
+            .invoke(activity, ZapWakeAlarms.scheduledPlayerIntent(context, t)) as Boolean
+        assertTrue(accepted)
+        assertEquals(t.key(), PlayerActivity::class.java.getDeclaredField("scheduledChannelKey")
+            .apply { isAccessible = true }.get(activity))
         controller.pause().stop().destroy()
     }
 }

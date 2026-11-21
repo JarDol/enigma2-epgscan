@@ -63,6 +63,7 @@
     <string name="prompt_channel">Channel</string>
     <string name="prompt_programme">Scheduled programme</string>
     <string name="prompt_switch_countdown">Switch (%1$s)</string>
+    <string name="prompt_scheduled_switch_title">Scheduled channel switch</string>
     <string name="prompt_sending_recording">Sending recording to receiver…</string>
     <string name="prompt_recording_set">Recording scheduled on receiver</string>
     <string name="prompt_recording_failed">Could not schedule recording: %1$s</string>

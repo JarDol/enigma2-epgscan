@@ -235,6 +235,17 @@ class SettingsActivity : Activity() {
             if (p.resumeLast) getString(R.string.settings_start_disabled) else p.startChannelName.ifBlank { getString(R.string.settings_first_channel) }
         }) { if (p.resumeLast) toast(getString(R.string.message_first_disable_resume_last_channel_on_startup)) else chooseStartChannel() },
         Item.Toggle(getString(R.string.setting_wake_tv_for_scheduled_switches_experimental), { p.wakeForZap }, { setWakeForZap(it) }),
+        Item.Action(getString(R.string.setting_wake_schedule_monitor), { wakeMonitorLabel(p.wakeZapMonitorSeconds) }) {
+            val seconds = Prefs.WAKE_ZAP_MONITOR_SECONDS
+            TvDialog.single(this, getString(R.string.setting_wake_schedule_monitor),
+                seconds.map { wakeMonitorLabel(it) }, seconds.indexOf(p.wakeZapMonitorSeconds).coerceAtLeast(0)) { selected ->
+                p.wakeZapMonitorSeconds = seconds[selected]
+                ZapWakeAlarms.sync(this)
+                markChanged("monit harmonogramu = ${seconds[selected]} s")
+                items = buildItems()
+                refresh()
+            }
+        },
         *(if (BuildConfig.WAKE_DIAGNOSTICS) arrayOf<Item>(Item.Action(getString(R.string.setting_wake_up_diagnostics), { getString(if (p.wakeForZap) R.string.settings_status_alarm else R.string.settings_enable_wake_first) }) {
             TvDialog.confirm(this, getString(R.string.message_wake_up_diagnostics), ZapWakeAlarms.diagnostics(this), listOf(
                 TvDialog.Btn(getString(R.string.message_60_s_test)) { toast(ZapWakeAlarms.scheduleTest(this)) },
@@ -523,6 +534,14 @@ class SettingsActivity : Activity() {
     }
 
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_LONG).show()
+
+    private fun wakeMonitorLabel(seconds: Int) = when (seconds) {
+        0 -> getString(R.string.settings_wake_monitor_off)
+        60 -> getString(R.string.settings_wake_monitor_minute, 1)
+        120 -> getString(R.string.settings_wake_monitor_minute, 2)
+        300 -> getString(R.string.settings_wake_monitor_minute, 5)
+        else -> getString(R.string.settings_wake_monitor_seconds, seconds)
+    }
 
     private fun refresh() = adapter.notifyDataSetChanged()
 

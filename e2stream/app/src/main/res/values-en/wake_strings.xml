@@ -9,6 +9,7 @@
     <string name="wake_no_permission">NOT ALLOWED</string>
     <string name="wake_fullscreen">Full screen: %1$s</string>
     <string name="wake_fullscreen_allowed">allowed</string>
+    <string name="wake_monitor">Schedule reminder: %1$s before</string>
     <string name="wake_fullscreen_blocked">blocked</string>
     <string name="wake_pending">Pending events: %1$d</string>
     <string name="wake_next">Next: %1$s — %2$s (%3$d)</string>

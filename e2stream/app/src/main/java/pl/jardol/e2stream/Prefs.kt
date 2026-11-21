@@ -669,6 +669,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("wakeForZap", false)
         set(v) = putB("wakeForZap", v)
 
+    /** Czas przed przełączeniem, w którym otwiera się monit; 0 wyłącza monit. */
+    var wakeZapMonitorSeconds: Int
+        get() = sp.getInt("wakeZapMonitorSeconds", 30).takeIf { it in WAKE_ZAP_MONITOR_SECONDS } ?: 30
+        set(v) = putI("wakeZapMonitorSeconds", v.takeIf { it in WAKE_ZAP_MONITOR_SECONDS } ?: 30)
+
     /** Kanał startowy (gdy nie wracamy do ostatniego). */
     var startBouquet: String
         get() = s("startBouquet")
@@ -712,6 +717,7 @@ class Prefs(ctx: Context) {
     }
 
     companion object {
+        val WAKE_ZAP_MONITOR_SECONDS = listOf(0, 15, 30, 60, 120, 300)
         private val TIMESHIFT_WRITE_BATCHES = TimeshiftBuffer.WRITE_BATCH_OPTIONS.toSet()
         const val DEFAULT_FTP_DIR = "/media/hdd/e2stream"
         val UPDATE_MODES = listOf("off", "notify", "on")
