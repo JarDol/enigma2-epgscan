@@ -94,6 +94,7 @@
     <string name="player_localrec_started">● Nagrywanie: %1$s</string>
     <string name="player_localrec_empty">Nagranie puste – nic nie zapisano</string>
     <string name="player_localrec_saved">Zapisano nagranie: %1$s (%2$s)%3$s</string>
+    <string name="settings_stream_restart_saved_recordings">Zmiana ustawień wymagała restartu. Aktywne nagrania zakończono i zapisano jako pliki.</string>
     <string name="player_localrec_reason_event_end">" – koniec audycji"</string>
     <string name="player_localrec_reason_zap">" – zmiana kanału"</string>
     <string name="player_localrec_reason_time">" – limit %1$d h"</string>

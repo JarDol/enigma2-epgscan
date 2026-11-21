@@ -54,6 +54,29 @@ class TimeshiftIndexTest {
     }
 
     @Test
+    fun shrinkingBufferMovesExpiredSegmentsIntoActiveRecording() {
+        val b = newBuffer()
+        val segsField = TimeshiftBuffer::class.java.getDeclaredField("segs").apply { isAccessible = true }
+        repeat(5) {
+            b.write(pcr, 0, pcr.size)
+            val seg = (segsField.get(b) as List<*>).last()!!
+            seg.javaClass.getDeclaredField("wall").apply {
+                isAccessible = true
+                setLong(seg, android.os.SystemClock.elapsedRealtime() - 60_001)
+            }
+        }
+        val recordingDir = File(System.getProperty("java.io.tmpdir"), "tsrec-resize-" + System.nanoTime())
+        val pin = b.startPin(recordingDir, 0)!!
+        b.maxMin = 1
+        b.write(pcr, 0, pcr.size)
+
+        assertEquals(4, pin.parts)
+        assertEquals(2, b.dir.listFiles()!!.count { it.extension == "ts" })
+        assertEquals(4, recordingDir.listFiles()!!.count { it.name.startsWith("part-") && it.extension == "ts" })
+        b.close()
+    }
+
+    @Test
     fun writeBatchFlushesAfterBoundedWaitAndOnClose() {
         val b = newBuffer()
         b.writeBatchBytes = 256 * 1024

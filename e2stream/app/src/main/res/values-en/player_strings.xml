@@ -94,6 +94,7 @@
     <string name="player_localrec_started">● Recording: %1$s</string>
     <string name="player_localrec_empty">Recording empty – nothing saved</string>
     <string name="player_localrec_saved">Recording saved: %1$s (%2$s)%3$s</string>
+    <string name="settings_stream_restart_saved_recordings">Settings required a stream restart. Active recordings were stopped and saved as files.</string>
     <string name="player_localrec_reason_event_end">" – end of programme"</string>
     <string name="player_localrec_reason_zap">" – channel change"</string>
     <string name="player_localrec_reason_time">" – %1$d h limit"</string>

@@ -60,6 +60,8 @@ class PlayerActivity : Activity() {
         const val EXTRA_WAKE_TEST_ID = "zap_alarm_test_id"
         const val EXTRA_SCHEDULE_REF = "schedule_channel_ref"
         const val ACTION_SCHEDULE_ZAP = "pl.jardol.e2stream.SCHEDULE_ZAP"
+        private const val TS_STORAGE_RETRY_MS = 2000L
+        private const val TS_STORAGE_RETRY_MAX = 30
     }
 
     private var decTimerSel = 0
@@ -2498,6 +2500,40 @@ class PlayerActivity : Activity() {
     private fun bgBufLen() = if (prefs.bgBufMin < 0) mainBufMin() else minOf(maxOf(prefs.bgBufMin, 1), mainBufMin())
     private fun pipBufLen() = if (prefs.bgCount == 0) mainBufMin() else bgBufLen()
 
+    private fun applyTimeshiftCapacity() {
+        val mainMin = mainBufMin()
+        tsBuf?.maxMin = mainMin
+        for (c in bgChans) c.buf.maxMin = if (c.pip >= 0) pipBufLen() else bgBufLen()
+        if (tsBuf == null && prefs.tsMin > 0 && currentUrl != null && activeRecs() == 0) {
+            tsStorageRetryEnabled = true
+            tsStorageRetryAttempts = 0
+            tsNewChannel()
+            if (prefs.bufPlay && tsBuf != null) currentUrl?.let { startStream(it) }
+        }
+    }
+
+    private var tsStorageRetryEnabled = true
+    private var tsStorageRetryAttempts = 0
+    private val tsStorageRetry = object : Runnable {
+        override fun run() {
+            if (!tsStorageRetryEnabled || isFinishing || currentUrl == null || recMode || bgChans.isNotEmpty() || tsBuf != null) return
+            if (TimeshiftBuffer.dir(this@PlayerActivity, prefs) != null) {
+                AppLog.i("timeshift: nośnik USB zamontowany — wznawiam konfigurację bufora")
+                tsNewChannel()
+                if (prefs.bufPlay) currentUrl?.let { startStream(it) }
+                return
+            }
+            tsStorageRetryAttempts++
+            if (tsStorageRetryAttempts >= TS_STORAGE_RETRY_MAX) {
+                tsStorageRetryEnabled = false
+                AppLog.i("timeshift: nośnik USB nadal niedostępny po ${TS_STORAGE_RETRY_MAX * TS_STORAGE_RETRY_MS / 1000} s")
+                showMessage(getString(R.string.player_ts_disabled, getString(R.string.player_ts_usb_unavailable)))
+            } else {
+                ui.postDelayed(this, TS_STORAGE_RETRY_MS)
+            }
+        }
+    }
+
     private fun bgEit(j: ProgramJournal): (Long, Int, EitEvent?, EitEvent?) -> Unit = { _, _, now, _ ->
         if (now != null) ui.post {
             j.add(JournalEvent(now.begin, now.end, now.title, listOf(now.shortDesc, now.longDesc).filter { it.isNotBlank() }.distinct().joinToString("\n")))
@@ -3381,20 +3417,34 @@ class PlayerActivity : Activity() {
         tsWriteFrom = if (prefs.bufPlay) 0L else if (prefs.tsDelay < 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + prefs.tsDelay * 1000L
         val min = if (prefs.tsMin > 0) prefs.tsMin else if (prefs.bufPlay) TimeshiftBuffer.BUF_PLAY_MIN else 0
         if (min <= 0) {
+            ui.removeCallbacks(tsStorageRetry)
+            tsStorageRetryEnabled = false
             tsBuf?.let { closeBufferAsync(it) }; tsBuf = null
             return
         }
         val dir = TimeshiftBuffer.dir(this, prefs)
         if (dir == null) {
             // wybrany dysk USB niedostępny, a pamięci urządzenia nie wolno użyć — timeshift wyłączony do czasu podłączenia
-            if (tsBuf != null || !tsWarned) {
-                tsWarned = true
-                AppLog.i("timeshift: nośnik ${prefs.tsDir.ifBlank { "pamięć urządzenia (brak zgody)" }} niedostępny — timeshift wyłączony")
-                if (prefs.tsMin <= 0) showMessage(getString(R.string.player_bufplay_fallback)) else showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)))
+            if (tsBuf != null) {
+                tsBuf?.let { closeBufferAsync(it) }; tsBuf = null
             }
-            tsBuf?.let { closeBufferAsync(it) }; tsBuf = null
+            val retryMount = tsStorageRetryEnabled && prefs.tsDir.isNotBlank()
+            if (!tsWarned) {
+                tsWarned = true
+                AppLog.i("timeshift: nośnik ${prefs.tsDir.ifBlank { "pamięć urządzenia (brak zgody)" }} niedostępny" +
+                    if (retryMount) " — czekam na montowanie USB" else " — timeshift wyłączony")
+            }
+            if (retryMount) {
+                ui.removeCallbacks(tsStorageRetry)
+                ui.postDelayed(tsStorageRetry, TS_STORAGE_RETRY_MS)
+            } else {
+                showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)))
+            }
             return
         }
+        ui.removeCallbacks(tsStorageRetry)
+        tsStorageRetryEnabled = false
+        tsStorageRetryAttempts = 0
         tsWarned = false
         val b = tsBuf
         if (b == null || b.root != dir) {
@@ -3429,6 +3479,7 @@ class PlayerActivity : Activity() {
     /** Wyjście z aplikacji / nagranie: koniec timeshiftu, bufor skasowany (w tle). */
     /** [keepBg] — kanały w tle zostają (odtwarzanie nagrania: zapis w tle i bufor ostatniego kanału). */
     private fun tsStopAll(keepBg: Boolean = false) {
+        ui.removeCallbacks(tsStorageRetry)
         if (localRec != null) finishLocalRec("koniec odtwarzania", restartLive = false)
         if (tsMode) tsLeave()
         bufStop("koniec odtwarzania na żywo")
@@ -5450,6 +5501,7 @@ class PlayerActivity : Activity() {
         PinLock.ask(this, prefs, onCancel = onCancel) {
             settingsOpen = true
             settingsSig = streamSig()
+            settingsTsMin = prefs.tsMin
             settingsBq = prefs.hiddenBouquets.toString()
             startActivity(Intent(this, SettingsActivity::class.java).apply {
                 if (focusTimeshift) putExtra(SettingsActivity.EXTRA_FOCUS_TIMESHIFT, true)
@@ -5460,6 +5512,7 @@ class PlayerActivity : Activity() {
     private var settingsOpen = false
     private var backgrounded = false
     private var settingsSig = ""
+    private var settingsTsMin = 0
     private var settingsBq = ""
     private var settingsReturnChannel: Pair<String, String>? = null
 
@@ -5468,7 +5521,8 @@ class PlayerActivity : Activity() {
         prefs.host, prefs.streamPort, prefs.httpPort, prefs.user, prefs.pass, prefs.tunneling, prefs.watchdog,
         prefs.stallSec, prefs.bufferMs, prefs.rebufferMs, prefs.cushionSlow, prefs.dropRestart, prefs.audioLang,
         prefs.preferAc3, prefs.saveTs, prefs.tsRingMb, prefs.pluginPort, prefs.pluginToken,
-        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma, prefs.tsMin, prefs.tsDir, prefs.tsDelay, prefs.bufPlay, prefs.bgCount, prefs.pipEnabled,
+        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma, prefs.tsDir, prefs.tsDelay, prefs.bufPlay, prefs.bgCount, prefs.pipEnabled,
+        if (prefs.tsMin == 0 && !prefs.bufPlay) "timeshift-disabled" else "",
     ).joinToString("|")
 
     override fun onResume() {
@@ -5496,10 +5550,17 @@ class PlayerActivity : Activity() {
         }
         if (streamSig() != settingsSig) {
             AppLog.i("ustawienia: zmiany dotyczące strumienia — ponowne uruchomienie")
+            val savedRecordings = activeRecs()
+            if (savedRecordings > 0) AppLog.i("ustawienia: restart zakończy i zapisze $savedRecordings aktywnych nagrań")
             releasePlayer()
             settingsVersion = -1
             startUp()
+            if (savedRecordings > 0) showMessage(getString(R.string.settings_stream_restart_saved_recordings))
             return
+        }
+        if (settingsTsMin != prefs.tsMin) {
+            AppLog.i("ustawienia: timeshift ${settingsTsMin}→${prefs.tsMin} min — zmieniam limity buforów bez restartu")
+            applyTimeshiftCapacity()
         }
         // pozostałe zmiany bez zatrzymywania strumienia
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
