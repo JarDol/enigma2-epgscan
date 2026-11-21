@@ -60,6 +60,8 @@ class PlayerActivity : Activity() {
         const val EXTRA_WAKE_TEST_ID = "zap_alarm_test_id"
         const val EXTRA_SCHEDULE_REF = "schedule_channel_ref"
         const val ACTION_SCHEDULE_ZAP = "pl.jardol.e2stream.SCHEDULE_ZAP"
+        private const val TS_STORAGE_RETRY_MS = 2000L
+        private const val TS_STORAGE_RETRY_MAX = 30
     }
 
     private var decTimerSel = 0
@@ -225,8 +227,13 @@ class PlayerActivity : Activity() {
     private var wakeTimerKey: String? = null
     private var wakeTestId: String? = null
     private var scheduledChannelRef: String? = null
+    private var scheduledChannelKey: String? = null
+    private var scheduledMonitorKey: String? = null
+    private var scheduledSwitchInFlight: String? = null
+    private var scheduledFailedKey: String? = null
     private var scheduledAppliedRef: String? = null      // kanał z harmonogramu dostrojony przed końcem startu
     private var scheduledAppliedAt = 0L
+    private var scheduledAppliedWake = false
     private var connectionDialog: Dialog? = null
     private var connectionProbePending = false
     private var connectionProbeId = 0
@@ -252,8 +259,8 @@ class PlayerActivity : Activity() {
         Tools.beforeManualUpdate = stopForUpdate
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
-        scheduledChannelRef = intent.getStringExtra(EXTRA_SCHEDULE_REF)
-        if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
+        receiveScheduledIntent(intent)
+        if ((wakeTimerKey != null || wakeTestId != null || scheduledChannelRef != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
@@ -394,7 +401,6 @@ class PlayerActivity : Activity() {
         AppLog.i("auto-zamknięcie: limit bezczynności ${prefs.sleepHours} h")
         ui.removeCallbacks(sleepTick)
         ui.post(sleepTick)
-        ZapWakeAlarms.setAppForeground(this, true)
         ZapWakeAlarms.sync(this)
         if (safeMode) return
         startUp()
@@ -462,18 +468,21 @@ class PlayerActivity : Activity() {
         setIntent(intent)
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
-        scheduledChannelRef = intent.getStringExtra(EXTRA_SCHEDULE_REF) ?: scheduledChannelRef
+        val acceptedScheduledIntent = receiveScheduledIntent(intent)
         AppLog.i("wybudzanie: onNewIntent key=$wakeTimerKey testId=$wakeTestId")
-        if ((wakeTimerKey != null || wakeTestId != null) && Build.VERSION.SDK_INT >= 27) {
+        if ((wakeTimerKey != null || wakeTestId != null || scheduledChannelRef != null) && Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
+        if (intent.action == ACTION_SCHEDULE_ZAP) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (safeMode) return
-        zapPrompted = null
-        ui.removeCallbacks(zapTick)
-        ui.post(zapTick)
+        if (intent.action != ACTION_SCHEDULE_ZAP || acceptedScheduledIntent) {
+            zapPrompted = null
+            ui.removeCallbacks(zapTick)
+            ui.post(zapTick)
+            applyScheduledChannel()
+        }
         showWakeTestResult()
-        applyScheduledChannel()
     }
 
     private fun showWakeTestResult() {
@@ -552,7 +561,7 @@ class PlayerActivity : Activity() {
             settingsVersion = prefs.version
             loadBouquets()
         } else {
-            currentUrl?.let { startStream(it) }
+            if (scheduledChannelRef == null || shouldShowScheduledMonitor()) currentUrl?.let { startStream(it) }
             applyScheduledChannel()
         }
     }
@@ -675,7 +684,6 @@ class PlayerActivity : Activity() {
         ui.removeCallbacks(sleepTick)
         sleepDlg?.dismiss(); sleepDlg = null
         TvDialog.onInput = null
-        ZapWakeAlarms.setAppForeground(this, false)
         settingsOpen = false      // po powrocie i tak pełny start (onStart)
         backgrounded = true       // wyjście do ekranu głównego — po powrocie start jak przy uruchomieniu
         ui.removeCallbacks(epgTick)
@@ -752,6 +760,10 @@ class PlayerActivity : Activity() {
         p.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 AppLog.i("BŁĄD ${error.errorCodeName}: ${error.message} / ${error.cause}")
+                if (isTimeshiftExpiredSegment(error) || (tsMode && tsGoneRecoveryGeneration == tsAudioSourceGen)) {
+                    AppLog.i("timeshift: pomijam ogólny restart — odzyskiwanie po utracie segmentu")
+                    return
+                }
                 scheduleRestart("błąd: ${error.errorCodeName}")
             }
 
@@ -1625,8 +1637,12 @@ class PlayerActivity : Activity() {
                     val ci = ch.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(wantC) }.let { if (it < 0) 0 else it }
                     // kanał z harmonogramu wybrany w trakcie tego startu ma pierwszeństwo przed startowym
                     val forced = scheduledAppliedRef?.takeIf { android.os.SystemClock.elapsedRealtime() - scheduledAppliedAt < 30_000 }
+                    val forcedWake = forced != null && scheduledAppliedWake
                     scheduledAppliedRef = null
-                    if (ch.isNotEmpty() && (forced == null || playList.isEmpty())) {
+                    scheduledAppliedWake = false
+                    if (ch.isNotEmpty() && (scheduledChannelRef == null || shouldShowScheduledMonitor()) &&
+                        !forcedWake && (forced == null || playList.isEmpty())
+                    ) {
                         playIndex = -1
                         playIn(bi, ch, ci)
                         if (returnChannel != null) {
@@ -1634,7 +1650,7 @@ class PlayerActivity : Activity() {
                         }
                     }
                     if (returnChannel != null) settingsReturnChannel = null
-                    if (forced != null) {
+                    if (forced != null && !forcedWake) {
                         AppLog.i("harmonogram: start nie nadpisuje kanału z harmonogramu ${OpenWebif.key(forced)}")
                         zapTo(forced)
                     }
@@ -1650,15 +1666,88 @@ class PlayerActivity : Activity() {
         }
     }
 
+    private fun receiveScheduledIntent(intent: Intent): Boolean {
+        if (intent.action != ACTION_SCHEDULE_ZAP) return false
+        val ref = intent.getStringExtra(EXTRA_SCHEDULE_REF) ?: return false
+        val key = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
+        if (key != null) {
+            val timer = ZapTimers.list(this).firstOrNull { it.key() == key }
+            if (timer == null || OpenWebif.key(timer.ref) != OpenWebif.key(ref)) {
+                AppLog.i("wybudzanie: pomijam nieaktualne lub wykonane zdarzenie key=$key")
+                ZapWakeAlarms.cancelNotification(this, key)
+                return false
+            }
+            if (scheduledChannelKey == key || scheduledMonitorKey == key ||
+                scheduledSwitchInFlight == key || zapPrompted == key
+            ) {
+                AppLog.i("wybudzanie: pomijam powtórne żądanie key=$key")
+                return false
+            }
+        }
+        scheduledChannelRef = ref
+        scheduledChannelKey = key
+        scheduledFailedKey = null
+        AppLog.i("wybudzanie: PlayerActivity odebrała kanał harmonogramu key=$key")
+        return true
+    }
+
+    private fun shouldShowScheduledMonitor(): Boolean {
+        if (prefs.wakeZapMonitorSeconds <= 0) return false
+        val key = scheduledChannelKey ?: return false
+        val timer = ZapTimers.list(this).firstOrNull { it.key() == key } ?: return false
+        return timer.begin > System.currentTimeMillis() / 1000
+    }
+
     private fun applyScheduledChannel() {
         if (safeMode) return
         val ref = scheduledChannelRef ?: return
         if (bouquets.isEmpty()) return
+        val key = scheduledChannelKey
+        val timer = key?.let { k -> ZapTimers.list(this).firstOrNull { it.key() == k } }
+        if (key != null && timer == null) {
+            scheduledChannelRef = null
+            scheduledChannelKey = null
+            ZapWakeAlarms.cancelNotification(this, key)
+            AppLog.i("wybudzanie: pomijam wygasłe zdarzenie key=$key")
+            return
+        }
+        if (key != null && timer != null && timer.begin > System.currentTimeMillis() / 1000) {
+            scheduledChannelRef = null
+            scheduledChannelKey = null
+            scheduledMonitorKey = key
+            wakeTimerKey = null
+            AppLog.i("wybudzanie: monitor harmonogramu aktywny key=$key pozostało=${timer.begin - System.currentTimeMillis() / 1000}s")
+            ui.removeCallbacks(zapTick)
+            ui.post(zapTick)
+            return
+        }
         scheduledChannelRef = null
+        scheduledChannelKey = null
+        scheduledSwitchInFlight = key
         scheduledAppliedRef = ref
+        scheduledAppliedWake = key != null
         scheduledAppliedAt = android.os.SystemClock.elapsedRealtime()
         AppLog.i("harmonogram: Oglądaj — dostrajam kanał ${OpenWebif.key(ref)}")
-        ui.post { if (!isFinishing) zapTo(ref, forceTune = true) }
+        ui.post {
+            if (isFinishing) {
+                scheduledSwitchInFlight = null
+                return@post
+            }
+            zapTo(ref, forceTune = true, stillValid = {
+                key == null || ZapTimers.list(this).any { it.key() == key }
+            }) { ok, detail ->
+                scheduledSwitchInFlight = null
+                if (key != null) {
+                    if (ok && ZapTimers.completeSwitchIfPending(this, key)) {
+                        ZapWakeAlarms.cancelNotification(this, key)
+                        AppLog.i("wybudzanie: przełączenie rozpoczęte i zdarzenie zakończone key=$key")
+                    } else if (!ok) {
+                        scheduledFailedKey = key
+                        AppLog.i("wybudzanie: przełączenie nieudane key=$key: $detail")
+                    }
+                }
+            }
+        }
     }
 
     /** Nowa lista bukietów (zmiana widocznych) bez przerywania odtwarzanego kanału. */
@@ -1828,6 +1917,7 @@ class PlayerActivity : Activity() {
 
     /** Lista „Historia” jako osobne okno (klawisz w dół): ostatnio oglądane kanały ze wszystkich bukietów. */
     private var panelHist = false
+    private val historyEpgCache = java.util.concurrent.ConcurrentHashMap<String, EpgEvent>()
     /** Lista kanałów w trybie wyboru kanału do okna PiP. */
     private var panelPip = false
 
@@ -2063,6 +2153,7 @@ class PlayerActivity : Activity() {
         if (b == null && !panelHist) return
         if (b != null && isRecRef(b.ref)) return
         val target = panelList
+        val history = panelHist
         io.execute {
             val map = if (b == null || epg.eitOnly || b.ref == HIST_BOUQUET) emptyMap() else try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
             // kanały, dla których dekoder nie podał bieżącej audycji (np. EPG tylko z paczki EPG Scan
@@ -2075,6 +2166,9 @@ class PlayerActivity : Activity() {
                 if (m == null || m.first.isBlank() || m.third <= n) epg.localNow(c.ref)?.let { local[k] = it }
             }
             runOnUiThread {
+                if (history) for (c in target) {
+                    local[OpenWebif.key(c.ref)]?.let { historyEpgCache[OpenWebif.key(c.ref)] = it }
+                }
                 target.forEach { c ->
                     val k = OpenWebif.key(c.ref)
                     val l = local[k]
@@ -2177,44 +2271,54 @@ class PlayerActivity : Activity() {
             val timers = ZapTimers.list(this@PlayerActivity)
             if (zapPrompted != null && timers.none { it.key() == zapPrompted }) {
                 try { zapDialog?.dismiss() } catch (_: Exception) {}
+                if (scheduledMonitorKey == zapPrompted) scheduledMonitorKey = null
                 zapDialog = null
                 zapPrompted = null
+            }
+            if (scheduledMonitorKey != null && timers.none { it.key() == scheduledMonitorKey }) {
+                scheduledMonitorKey = null
             }
             if (backgrounded) {
                 ui.postDelayed(this, if (zapPrompted == null) 5000 else 1000)
                 return
             }
             val now = System.currentTimeMillis() / 1000
-            val t = timers.firstOrNull { it.begin - 30 <= now }
+            val monitorSeconds = prefs.wakeZapMonitorSeconds
+            val t = timers.firstOrNull { it.begin - monitorSeconds <= now }
             if (t == null) {
                 ui.postDelayed(this, 5000)
                 return
             }
-            if (now >= t.begin && wakeTimerKey != t.key() && zapPrompted != t.key()) {
+            if (t.key() == scheduledChannelKey || t.key() == scheduledSwitchInFlight || t.key() == scheduledFailedKey) {
+                ui.postDelayed(this, 5000)
+                return
+            }
+            if (bouquets.isEmpty()) {
+                ui.postDelayed(this, 1000)
+                return
+            }
+            if (now >= t.begin) {
                 zapFire(t)
                 ui.postDelayed(this, 5000)
                 return
             }
             if (zapPrompted == t.key()) {
-                if (now >= t.begin) {
-                    zapFire(t)
-                    ui.postDelayed(this, 5000)
-                    return
-                }
                 TvDialog.setButtonLabel(zapDialog, 0, getString(R.string.prompt_switch_countdown, zapCountdown(t.begin - now)))
                 ui.postDelayed(this, 1000)
                 return
             }
             zapPrompted = t.key()
+            scheduledMonitorKey = t.key()
             wakeTimerKey = null
-            AppLog.i("harmonogram: za ${t.begin - now} s przełączenie na ${t.channel}")
+            AppLog.i("harmonogram: monit na ${monitorSeconds} s przed przełączeniem ${t.channel} — ${t.title}; automatyczne przełączenie za ${t.begin - now} s")
             val card = EventCard.eventOf(t, this@PlayerActivity)
             val body = EventCard.cachedBody(this@PlayerActivity, t)
-            zapDialog = TvDialog.panel(this@PlayerActivity, null, null,
+            zapDialog = TvDialog.panel(this@PlayerActivity, getString(R.string.prompt_scheduled_switch_title), null,
                 listOf(
                     TvDialog.Btn(getString(R.string.prompt_switch_countdown, zapCountdown(t.begin - now))) { zapFire(t) },
                     TvDialog.Btn(getString(R.string.message_record_on_receiver)) {
                         ZapTimers.remove(this@PlayerActivity, t)
+                        if (scheduledMonitorKey == t.key()) scheduledMonitorKey = null
                         zapPrompted = null
                         zapDialog = null
                         epg.recordTimer(t) { ok ->
@@ -2235,6 +2339,8 @@ class PlayerActivity : Activity() {
 
     private fun zapFire(t: ZapTimers.Timer) {
         ZapTimers.complete(this, t, ZapTimers.SWITCHED)
+        ZapWakeAlarms.cancelNotification(this, t.key())
+        if (scheduledMonitorKey == t.key()) scheduledMonitorKey = null
         zapPrompted = null
         try { zapDialog?.dismiss() } catch (_: Exception) {}
         zapDialog = null
@@ -2251,6 +2357,8 @@ class PlayerActivity : Activity() {
 
     private fun zapSkip(t: ZapTimers.Timer) {
         ZapTimers.complete(this, t, ZapTimers.SKIPPED)
+        ZapWakeAlarms.cancelNotification(this, t.key())
+        if (scheduledMonitorKey == t.key()) scheduledMonitorKey = null
         zapPrompted = null
         zapDialog = null
         AppLog.i("harmonogram: pominięto po wyjściu z okna ${t.channel} — ${t.title}")
@@ -2372,7 +2480,8 @@ class PlayerActivity : Activity() {
     private var tsRec: TimeshiftRecorder? = null
     private var tsMode = false                 // odtwarzanie z bufora (strumień z dekodera zapisuje osobne połączenie)
     private var tsAudioPid: Int? = null
-    private var tsAudioSourceGen = 0
+    @Volatile private var tsAudioSourceGen = 0
+    @Volatile private var tsGoneRecoveryGeneration = -1
     private var tsAudioAppliedGen = -1
     private var tsChBar = false                // w timeshifcie pokazany zwykły pasek kanału (zamiast paska timeshiftu)
     private var tsCtl = false                  // wybrany tryb obsługi timeshiftu, także po ukryciu paska
@@ -2487,6 +2596,40 @@ class PlayerActivity : Activity() {
     /** Długość bufora poprzedniego kanału: jak bieżący albo ręczna (najwyżej jak bieżący). */
     private fun bgBufLen() = if (prefs.bgBufMin < 0) mainBufMin() else minOf(maxOf(prefs.bgBufMin, 1), mainBufMin())
     private fun pipBufLen() = if (prefs.bgCount == 0) mainBufMin() else bgBufLen()
+
+    private fun applyTimeshiftCapacity() {
+        val mainMin = mainBufMin()
+        tsBuf?.maxMin = mainMin
+        for (c in bgChans) c.buf.maxMin = if (c.pip >= 0) pipBufLen() else bgBufLen()
+        if (tsBuf == null && prefs.tsMin > 0 && currentUrl != null && activeRecs() == 0) {
+            tsStorageRetryEnabled = true
+            tsStorageRetryAttempts = 0
+            tsNewChannel()
+            if (prefs.bufPlay && tsBuf != null) currentUrl?.let { startStream(it) }
+        }
+    }
+
+    private var tsStorageRetryEnabled = true
+    private var tsStorageRetryAttempts = 0
+    private val tsStorageRetry = object : Runnable {
+        override fun run() {
+            if (!tsStorageRetryEnabled || isFinishing || currentUrl == null || recMode || bgChans.isNotEmpty() || tsBuf != null) return
+            if (TimeshiftBuffer.dir(this@PlayerActivity, prefs) != null) {
+                AppLog.i("timeshift: nośnik USB zamontowany — wznawiam konfigurację bufora")
+                tsNewChannel()
+                if (prefs.bufPlay) currentUrl?.let { startStream(it) }
+                return
+            }
+            tsStorageRetryAttempts++
+            if (tsStorageRetryAttempts >= TS_STORAGE_RETRY_MAX) {
+                tsStorageRetryEnabled = false
+                AppLog.i("timeshift: nośnik USB nadal niedostępny po ${TS_STORAGE_RETRY_MAX * TS_STORAGE_RETRY_MS / 1000} s")
+                showMessage(getString(R.string.player_ts_disabled, getString(R.string.player_ts_usb_unavailable)))
+            } else {
+                ui.postDelayed(this, TS_STORAGE_RETRY_MS)
+            }
+        }
+    }
 
     private fun bgEit(j: ProgramJournal): (Long, Int, EitEvent?, EitEvent?) -> Unit = { _, _, now, _ ->
         if (now != null) ui.post {
@@ -3371,20 +3514,34 @@ class PlayerActivity : Activity() {
         tsWriteFrom = if (prefs.bufPlay) 0L else if (prefs.tsDelay < 0) Long.MAX_VALUE else SystemClock.elapsedRealtime() + prefs.tsDelay * 1000L
         val min = if (prefs.tsMin > 0) prefs.tsMin else if (prefs.bufPlay) TimeshiftBuffer.BUF_PLAY_MIN else 0
         if (min <= 0) {
+            ui.removeCallbacks(tsStorageRetry)
+            tsStorageRetryEnabled = false
             tsBuf?.let { closeBufferAsync(it) }; tsBuf = null
             return
         }
         val dir = TimeshiftBuffer.dir(this, prefs)
         if (dir == null) {
             // wybrany dysk USB niedostępny, a pamięci urządzenia nie wolno użyć — timeshift wyłączony do czasu podłączenia
-            if (tsBuf != null || !tsWarned) {
-                tsWarned = true
-                AppLog.i("timeshift: nośnik ${prefs.tsDir.ifBlank { "pamięć urządzenia (brak zgody)" }} niedostępny — timeshift wyłączony")
-                if (prefs.tsMin <= 0) showMessage(getString(R.string.player_bufplay_fallback)) else showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)))
+            if (tsBuf != null) {
+                tsBuf?.let { closeBufferAsync(it) }; tsBuf = null
             }
-            tsBuf?.let { closeBufferAsync(it) }; tsBuf = null
+            val retryMount = tsStorageRetryEnabled && prefs.tsDir.isNotBlank()
+            if (!tsWarned) {
+                tsWarned = true
+                AppLog.i("timeshift: nośnik ${prefs.tsDir.ifBlank { "pamięć urządzenia (brak zgody)" }} niedostępny" +
+                    if (retryMount) " — czekam na montowanie USB" else " — timeshift wyłączony")
+            }
+            if (retryMount) {
+                ui.removeCallbacks(tsStorageRetry)
+                ui.postDelayed(tsStorageRetry, TS_STORAGE_RETRY_MS)
+            } else {
+                showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)))
+            }
             return
         }
+        ui.removeCallbacks(tsStorageRetry)
+        tsStorageRetryEnabled = false
+        tsStorageRetryAttempts = 0
         tsWarned = false
         val b = tsBuf
         if (b == null || b.root != dir) {
@@ -3419,6 +3576,7 @@ class PlayerActivity : Activity() {
     /** Wyjście z aplikacji / nagranie: koniec timeshiftu, bufor skasowany (w tle). */
     /** [keepBg] — kanały w tle zostają (odtwarzanie nagrania: zapis w tle i bufor ostatniego kanału). */
     private fun tsStopAll(keepBg: Boolean = false) {
+        ui.removeCallbacks(tsStorageRetry)
         if (localRec != null) finishLocalRec("koniec odtwarzania", restartLive = false)
         if (tsMode) tsLeave()
         bufStop("koniec odtwarzania na żywo")
@@ -3437,6 +3595,7 @@ class PlayerActivity : Activity() {
     private fun tsLeave() {
         pvCancel()
         tsMode = false
+        tsGoneRecoveryGeneration = -1
         tsAudioPid = null
         tsSetShifted(false)
         tsCtl = false
@@ -3523,12 +3682,17 @@ class PlayerActivity : Activity() {
         val b = tsBuf ?: return
         val p = player ?: return
         tsAudioSourceGen++
-        val off = b.offsetAt(wall)
+        val oldest = b.oldestWall
+        val now = SystemClock.elapsedRealtime()
+        val target = maxOf(wall, timeshiftEarliestSeekWall(oldest, now)).coerceAtMost(now)
+        val off = b.offsetAt(target)
         tsBaseWall = b.wallAt(off)
+        val sourceGen = tsAudioSourceGen
+        AppLog.i("timeshift: seek ${wall}→${tsBaseWall} ms, zakres $oldest–$now")
         val hdr = analyzer?.psiHeader()
         val gen = streamGen
         val src = ProgressiveMediaSource.Factory(
-            DataSource.Factory { TimeshiftDataSource(b, off, hdr, onGone = { }) },
+            DataSource.Factory { TimeshiftDataSource(b, off, hdr, onGone = { tsSourceGone(b, sourceGen) }) },
             AvShift.wrap(DefaultExtractorsFactory().setTsExtractorFlags(
                 DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS)),
         ).createMediaSource(MediaItem.fromUri("timeshift://bufor/$gen/$off"))
@@ -3545,6 +3709,29 @@ class PlayerActivity : Activity() {
         watchdog?.paused = tsShifted
         // przeładowanie po przewinięciu nie może zastąpić paska kanału paskiem timeshiftu
         if (tsShifted && !(tsChBar && banner.visibility == View.VISIBLE)) tsShowBanner(sticky = !play)
+    }
+
+    private fun tsSourceGone(buffer: TimeshiftBuffer, sourceGen: Int) {
+        if (sourceGen != tsAudioSourceGen) return
+        tsGoneRecoveryGeneration = sourceGen
+        runOnUiThread {
+            if (!tsMode || tsBuf !== buffer || tsAudioSourceGen != sourceGen) return@runOnUiThread
+            if (tsPending != 0L) {
+                AppLog.i("timeshift: segment zniknął podczas przewijania — zastosuję oczekujący seek")
+                return@runOnUiThread
+            }
+            val now = SystemClock.elapsedRealtime()
+            val oldest = buffer.oldestWall
+            val target = timeshiftRecoveryTarget(oldest, now)
+            AppLog.i("timeshift: utracono segment przy ${tsShownWall()} ms, okno $oldest–$now ms" +
+                (target?.let { ", odzyskiwanie od $it ms" } ?: ", przejście na live"))
+            if (target == null) {
+                tsGoLive("koniec dostępnego bufora")
+            } else {
+                showMessage(getString(R.string.message_timeshift_buffer_full_resuming_from_the_oldest_recorded))
+                tsPlayFrom(target, play = player?.playWhenReady != false)
+            }
+        }
     }
 
     /**
@@ -4278,7 +4465,21 @@ class PlayerActivity : Activity() {
         // historia na końcu — ◀ z pierwszego bukietu przechodzi od razu na nią
         (if (HIST_BOUQUET in prefs.hiddenBouquets) emptyList() else listOf(Bouquet(getString(R.string.player_history), HIST_BOUQUET)))
 
-    private fun historyChannels(): List<Channel> = prefs.history.mapIndexed { i, (ref, name) -> Channel(i + 1, name, ref) }
+    private fun historyChannels(): List<Channel> {
+        val now = System.currentTimeMillis() / 1000
+        return prefs.history.mapIndexed { i, (ref, name) ->
+            Channel(i + 1, name, ref).also { c ->
+                val key = OpenWebif.key(ref)
+                val event = historyEpgCache[key]?.takeIf { it.begin <= now && now < it.end }
+                    ?: epg.cachedNow(ref)?.also { historyEpgCache[key] = it }
+                event?.let {
+                    c.now = it.title
+                    c.nowBegin = it.begin
+                    c.nowEnd = it.end
+                }
+            }
+        }
+    }
 
     /** Kanały bukietu albo (dla „Nagrania”) zawartość bieżącego katalogu nagrań. Poza wątkiem UI. */
     private fun channelsOf(bq: Bouquet): List<Channel> {
@@ -5397,6 +5598,7 @@ class PlayerActivity : Activity() {
         PinLock.ask(this, prefs, onCancel = onCancel) {
             settingsOpen = true
             settingsSig = streamSig()
+            settingsTsMin = prefs.tsMin
             settingsBq = prefs.hiddenBouquets.toString()
             startActivity(Intent(this, SettingsActivity::class.java).apply {
                 if (focusTimeshift) putExtra(SettingsActivity.EXTRA_FOCUS_TIMESHIFT, true)
@@ -5407,6 +5609,7 @@ class PlayerActivity : Activity() {
     private var settingsOpen = false
     private var backgrounded = false
     private var settingsSig = ""
+    private var settingsTsMin = 0
     private var settingsBq = ""
     private var settingsReturnChannel: Pair<String, String>? = null
 
@@ -5415,11 +5618,17 @@ class PlayerActivity : Activity() {
         prefs.host, prefs.streamPort, prefs.httpPort, prefs.user, prefs.pass, prefs.tunneling, prefs.watchdog,
         prefs.stallSec, prefs.bufferMs, prefs.rebufferMs, prefs.cushionSlow, prefs.dropRestart, prefs.audioLang,
         prefs.preferAc3, prefs.saveTs, prefs.tsRingMb, prefs.pluginPort, prefs.pluginToken,
-        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma, prefs.tsMin, prefs.tsDir, prefs.tsDelay, prefs.bufPlay, prefs.bgCount, prefs.pipEnabled,
+        prefs.engine, prefs.vlcDeint, prefs.vlcHwMode, prefs.vlcChroma, prefs.tsDir, prefs.tsDelay, prefs.bufPlay, prefs.bgCount, prefs.pipEnabled,
+        if (prefs.tsMin == 0 && !prefs.bufPlay) "timeshift-disabled" else "",
     ).joinToString("|")
 
     override fun onResume() {
         super.onResume()
+        ZapOverlayMonitor.dismissAll()
+        if (intent.action == ACTION_SCHEDULE_ZAP) {
+            val power = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            AppLog.i("wybudzanie: PlayerActivity onResume interactive=${power.isInteractive} key=${intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)}")
+        }
         if (recreateForLanguage()) return
         // pierwsza konfiguracja: wybrano dekoder w ustawieniach, a decyzja o kopii ustawień jeszcze nie zapadła —
         // pytanie od razu, niezależnie od tego, czy po powrocie z ustawień był pełny start (onStart)
@@ -5443,10 +5652,17 @@ class PlayerActivity : Activity() {
         }
         if (streamSig() != settingsSig) {
             AppLog.i("ustawienia: zmiany dotyczące strumienia — ponowne uruchomienie")
+            val savedRecordings = activeRecs()
+            if (savedRecordings > 0) AppLog.i("ustawienia: restart zakończy i zapisze $savedRecordings aktywnych nagrań")
             releasePlayer()
             settingsVersion = -1
             startUp()
+            if (savedRecordings > 0) showMessage(getString(R.string.settings_stream_restart_saved_recordings))
             return
+        }
+        if (settingsTsMin != prefs.tsMin) {
+            AppLog.i("ustawienia: timeshift ${settingsTsMin}→${prefs.tsMin} min — zmieniam limity buforów bez restartu")
+            applyTimeshiftCapacity()
         }
         // pozostałe zmiany bez zatrzymywania strumienia
         stats.visibility = if (prefs.showStats) View.VISIBLE else View.GONE
@@ -5602,9 +5818,14 @@ class PlayerActivity : Activity() {
     private fun zapTo(
         ref: String,
         forceTune: Boolean = false,
+        stillValid: (() -> Boolean)? = null,
         onResult: ((Boolean, String) -> Unit)? = null,
     ) {
         if (safeMode) return
+        if (stillValid?.invoke() == false) {
+            onResult?.invoke(false, "zdarzenie anulowane lub wygasłe")
+            return
+        }
         val k = OpenWebif.key(ref)
         val i = playList.indexOfFirst { OpenWebif.key(it.ref) == k }
         if (!forceTune && i >= 0 && i == playIndex && currentUrl != null && !recMode) {
@@ -5633,6 +5854,10 @@ class PlayerActivity : Activity() {
                 val j = ch.indexOfFirst { OpenWebif.key(it.ref) == k }
                 if (j >= 0) {
                     runOnUiThread {
+                        if (stillValid?.invoke() == false) {
+                            onResult?.invoke(false, "zdarzenie anulowane lub wygasłe")
+                            return@runOnUiThread
+                        }
                         hidePanel()
                         playIn(bi, ch, j)
                         onResult?.invoke(true, getString(R.string.player_switch_started, ch[j].name))

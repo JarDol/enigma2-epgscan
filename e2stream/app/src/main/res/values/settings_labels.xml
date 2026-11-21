@@ -72,6 +72,9 @@
     <string name="setting_resume_last_channel_on_startup" formatted="false">Po uruchomieniu wróć do ostatniego kanału</string>
     <string name="setting_switch_to_channel_on_startup" formatted="false">Po uruchomieniu przełącz na kanał</string>
     <string name="setting_wake_tv_for_scheduled_switches_experimental" formatted="false">Budź TV dla harmonogramu (eksperymentalne)</string>
+    <string name="setting_wake_schedule_monitor" formatted="false">Wybudzanie: monit przed harmonogramem</string>
+    <string name="setting_wake_popup_position" formatted="false">Położenie popupu harmonogramu</string>
+    <string name="setting_wake_overlay_permission" formatted="false">Zgoda: wyświetlanie nad innymi aplikacjami</string>
     <string name="setting_wake_up_diagnostics" formatted="false">Diagnostyka wybudzania</string>
     <string name="setting_remove_completed_switches_after" formatted="false">Usuń wykonane przełączenia z harmonogramu po</string>
     <string name="setting_reverse_when_changing_channels" formatted="false">Odwróć ▲ / ▼ przy zmianie kanału</string>

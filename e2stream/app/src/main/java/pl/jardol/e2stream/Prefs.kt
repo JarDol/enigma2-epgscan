@@ -669,6 +669,17 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("wakeForZap", false)
         set(v) = putB("wakeForZap", v)
 
+    /** Czas przed przełączeniem, w którym otwiera się monit; 0 wyłącza monit. */
+    var wakeZapMonitorSeconds: Int
+        get() = sp.getInt("wakeZapMonitorSeconds", 30).takeIf { it in WAKE_ZAP_MONITOR_SECONDS } ?: 30
+        set(v) = putI("wakeZapMonitorSeconds", v.takeIf { it in WAKE_ZAP_MONITOR_SECONDS } ?: 30)
+
+    /** Położenie popupu wybudzania: 0 = lewy górny, 1 = lewy dolny, 2 = prawy górny, 3 = prawy dolny, 4 = środek. */
+    var wakeOverlayPosition: Int
+        get() = sp.getInt("wakeOverlayPosition", WAKE_OVERLAY_BOTTOM_RIGHT)
+            .takeIf { it in WAKE_OVERLAY_POSITIONS } ?: WAKE_OVERLAY_BOTTOM_RIGHT
+        set(v) = putI("wakeOverlayPosition", v.takeIf { it in WAKE_OVERLAY_POSITIONS } ?: WAKE_OVERLAY_BOTTOM_RIGHT)
+
     /** Kanał startowy (gdy nie wracamy do ostatniego). */
     var startBouquet: String
         get() = s("startBouquet")
@@ -712,6 +723,13 @@ class Prefs(ctx: Context) {
     }
 
     companion object {
+        val WAKE_ZAP_MONITOR_SECONDS = listOf(0, 15, 30, 60, 120, 300)
+        const val WAKE_OVERLAY_TOP_LEFT = 0
+        const val WAKE_OVERLAY_BOTTOM_LEFT = 1
+        const val WAKE_OVERLAY_TOP_RIGHT = 2
+        const val WAKE_OVERLAY_BOTTOM_RIGHT = 3
+        const val WAKE_OVERLAY_CENTER = 4
+        val WAKE_OVERLAY_POSITIONS = (WAKE_OVERLAY_TOP_LEFT..WAKE_OVERLAY_CENTER).toList()
         private val TIMESHIFT_WRITE_BATCHES = TimeshiftBuffer.WRITE_BATCH_OPTIONS.toSet()
         const val DEFAULT_FTP_DIR = "/media/hdd/e2stream"
         val UPDATE_MODES = listOf("off", "notify", "on")

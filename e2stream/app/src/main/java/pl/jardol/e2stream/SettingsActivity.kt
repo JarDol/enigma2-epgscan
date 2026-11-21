@@ -47,6 +47,7 @@ class SettingsActivity : Activity() {
     private var pendingWakeEnable = false
     private var wakePermissionFlow: String? = null
     private var fullScreenPermissionAsked = false
+    private var overlayPermissionAsked = false
     private val adapter = Adapter()
     private lateinit var items: List<Item>
     private lateinit var store: EpgStore
@@ -235,6 +236,41 @@ class SettingsActivity : Activity() {
             if (p.resumeLast) getString(R.string.settings_start_disabled) else p.startChannelName.ifBlank { getString(R.string.settings_first_channel) }
         }) { if (p.resumeLast) toast(getString(R.string.message_first_disable_resume_last_channel_on_startup)) else chooseStartChannel() },
         Item.Toggle(getString(R.string.setting_wake_tv_for_scheduled_switches_experimental), { p.wakeForZap }, { setWakeForZap(it) }),
+        Item.Action(getString(R.string.setting_wake_schedule_monitor), { wakeMonitorLabel(p.wakeZapMonitorSeconds) }) {
+            val seconds = Prefs.WAKE_ZAP_MONITOR_SECONDS
+            TvDialog.single(this, getString(R.string.setting_wake_schedule_monitor),
+                seconds.map { wakeMonitorLabel(it) }, seconds.indexOf(p.wakeZapMonitorSeconds).coerceAtLeast(0)) { selected ->
+                p.wakeZapMonitorSeconds = seconds[selected]
+                ZapWakeAlarms.sync(this)
+                markChanged("monit harmonogramu = ${seconds[selected]} s")
+                items = buildItems()
+                refresh()
+            }
+        },
+        Item.Action(getString(R.string.setting_wake_popup_position), { wakeOverlayPositionLabel(p.wakeOverlayPosition) }) {
+            val positions = Prefs.WAKE_OVERLAY_POSITIONS
+            TvDialog.single(this, getString(R.string.setting_wake_popup_position),
+                positions.map { wakeOverlayPositionLabel(it) }, positions.indexOf(p.wakeOverlayPosition).coerceAtLeast(0)) { selected ->
+                p.wakeOverlayPosition = positions[selected]
+                markChanged("położenie popupu harmonogramu = ${positions[selected]}")
+                items = buildItems()
+                refresh()
+            }
+        },
+        Item.Action(getString(R.string.setting_wake_overlay_permission), {
+            getString(if (ZapWakeAlarms.canDrawOverlays(this)) R.string.wake_allowed else R.string.wake_no_permission)
+        }) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !ZapWakeAlarms.canDrawOverlays(this)) {
+                try {
+                    wakePermissionFlow = "overlay-manual"
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")))
+                } catch (_: Exception) {
+                    wakePermissionFlow = null
+                    toast(getString(R.string.message_overlay_permission_not_granted))
+                }
+            }
+        },
         *(if (BuildConfig.WAKE_DIAGNOSTICS) arrayOf<Item>(Item.Action(getString(R.string.setting_wake_up_diagnostics), { getString(if (p.wakeForZap) R.string.settings_status_alarm else R.string.settings_enable_wake_first) }) {
             TvDialog.confirm(this, getString(R.string.message_wake_up_diagnostics), ZapWakeAlarms.diagnostics(this), listOf(
                 TvDialog.Btn(getString(R.string.message_60_s_test)) { toast(ZapWakeAlarms.scheduleTest(this)) },
@@ -451,6 +487,16 @@ class SettingsActivity : Activity() {
                 fullScreenPermissionAsked = true
                 continueWakeEnable()
             }
+            "overlay" -> {
+                wakePermissionFlow = null
+                overlayPermissionAsked = true
+                continueWakeEnable()
+            }
+            "overlay-manual" -> {
+                wakePermissionFlow = null
+                items = buildItems()
+                refresh()
+            }
         }
     }
 
@@ -464,6 +510,7 @@ class SettingsActivity : Activity() {
         }
         pendingWakeEnable = true
         fullScreenPermissionAsked = false
+        overlayPermissionAsked = false
         continueWakeEnable()
     }
 
@@ -496,11 +543,25 @@ class SettingsActivity : Activity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 741)
             return
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !ZapWakeAlarms.canDrawOverlays(this) && !overlayPermissionAsked) {
+            try {
+                wakePermissionFlow = "overlay"
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")))
+                return
+            } catch (_: Exception) {
+                wakePermissionFlow = null
+                overlayPermissionAsked = true
+            }
+        }
         pendingWakeEnable = false
         p.wakeForZap = true
         ZapWakeAlarms.sync(this)
         markChanged("Budź TV dla harmonogramu = włączone")
         toast(getString(R.string.message_scheduled_wake_up_enabled))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !ZapWakeAlarms.canDrawOverlays(this)) {
+            toast(getString(R.string.message_overlay_permission_not_granted))
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -523,6 +584,22 @@ class SettingsActivity : Activity() {
     }
 
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_LONG).show()
+
+    private fun wakeMonitorLabel(seconds: Int) = when (seconds) {
+        0 -> getString(R.string.settings_wake_monitor_off)
+        60 -> getString(R.string.settings_wake_monitor_minute, 1)
+        120 -> getString(R.string.settings_wake_monitor_minute, 2)
+        300 -> getString(R.string.settings_wake_monitor_minute, 5)
+        else -> getString(R.string.settings_wake_monitor_seconds, seconds)
+    }
+
+    private fun wakeOverlayPositionLabel(position: Int) = getString(when (position) {
+        Prefs.WAKE_OVERLAY_TOP_LEFT -> R.string.settings_wake_overlay_top_left
+        Prefs.WAKE_OVERLAY_BOTTOM_LEFT -> R.string.settings_wake_overlay_bottom_left
+        Prefs.WAKE_OVERLAY_TOP_RIGHT -> R.string.settings_wake_overlay_top_right
+        Prefs.WAKE_OVERLAY_CENTER -> R.string.settings_wake_overlay_center
+        else -> R.string.settings_wake_overlay_bottom_right
+    })
 
     private fun refresh() = adapter.notifyDataSetChanged()
 

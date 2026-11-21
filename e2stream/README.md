@@ -163,6 +163,102 @@ Korzystanie z pilota lub dotyku zeruje licznik, a otwarcie innego okna wstrzymuj
 
 Diagnostyka wybudzania (status i test alarmu) jest dostępna tylko w wersjach beta;
 ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji stabilnej.
+Po włączeniu tej opcji alarm systemowy może wybudzić urządzenie do 5 minut przed audycją.
+Ustawienie „Wybudzanie: monit przed harmonogramem” wybiera czas wyświetlenia popupu
+(domyślnie 30 s); przy aktywnym ekranie i zgodzie na wyświetlanie nad innymi aplikacjami
+popup pojawia się jako nakładka bez uruchamiania odtwarzacza. Pokazuje godziny audycji i licznik
+do przełączenia; „Przełącz teraz” uruchamia E2Stream od razu, „Nagraj na dekoderze” ustawia
+timer nagrania na Enigma2, a „Anuluj” pomija zdarzenie. Pozycję okna można wybrać w ustawieniu
+„Położenie popupu harmonogramu” (cztery rogi lub środek). Brak reakcji przełącza kanał o czasie
+audycji. Ustawienie 0 s wyłącza monit.
+Gdy ekran jest wygaszony, nakładka jest niedostępna lub jej dodanie się nie powiedzie,
+aplikacja przechodzi do bezpośredniego uruchomienia odtwarzacza z powiadomieniem awaryjnym.
+Przy dodatnim czasie ustawiany jest też alarm na początek audycji, aby ponowić próbę,
+jeśli aplikacja wróci w tło. Włączenie telewizora zależy od obsługi i ustawień HDMI-CEC;
+dostarczenie alarmu i wybudzenie nie są gwarantowane na wszystkich urządzeniach. Log
+podaje planowany i faktyczny czas alarmu.
+
+### ADB na Android TV / Google TV (opcjonalnie)
+
+Do zwykłego działania nie trzeba używać ADB. E2Stream prosi o wymagane zgody systemowe podczas
+włączania budzenia; zgodę na nakładkę można też otworzyć później w ustawieniu
+„Zgoda: wyświetlanie nad innymi aplikacjami”. Jeśli ekran ustawień telewizora ukrywa tę opcję,
+można spróbować nadać zgodę przez ADB.
+
+Nakładka pojawia się nad inną aplikacją tylko przy aktywnym ekranie i po przyznaniu
+`SYSTEM_ALERT_WINDOW`. Ta zgoda **nie** zezwala sama w sobie na uruchamianie aktywności z tła
+ani nie gwarantuje wybudzenia urządzenia. Gdy ekran jest wygaszony, aplikacja korzysta z alarmu
+i próbuje uruchomić odtwarzacz; pełnoekranowe powiadomienie jest ścieżką awaryjną.
+
+#### Połączenie
+
+Zainstaluj na komputerze Android SDK Platform-Tools i włącz opcje programisty na telewizorze
+(zwykle przez siedmiokrotne wybranie pozycji „Kompilacja” w ekranie „Informacje”).
+
+* **Android 11 i nowszy:** włącz „Debugowanie bezprzewodowe”, wybierz parowanie z kodem
+  i wykonaj polecenie z portem pokazanym na ekranie:
+
+  ```sh
+  adb pair ADRES_IP:PORT_PAROWANIA
+  adb connect ADRES_IP:PORT_DEBUGOWANIA
+  ```
+
+* **Starsze wersje lub urządzenia z osobnym przełącznikiem debugowania sieciowego:**
+
+  ```sh
+  adb connect ADRES_IP:5555
+  ```
+
+Potwierdź parowanie/debugowanie na ekranie TV. Port przy debugowaniu bezprzewodowym może się
+zmieniać; użyj numeru wyświetlonego w ustawieniach, a nie zakładaj portu `5555`.
+
+#### Zgody i ustawienia opcjonalne
+
+Uruchamiaj polecenia odpowiednie dla urządzenia. Nie każda wersja Androida lub nakładka producenta
+obsługuje wszystkie wymienione operacje:
+
+```sh
+# Nakładka monitora nad innymi aplikacjami
+adb shell appops set pl.jardol.e2stream SYSTEM_ALERT_WINDOW allow
+
+# Dokładne alarmy (Android 12+); ustawienie systemowe „Alarmy i przypomnienia” jest preferowane
+adb shell appops set pl.jardol.e2stream SCHEDULE_EXACT_ALARM allow
+
+# Pełnoekranowe powiadomienie awaryjne (głównie Android 14+)
+adb shell appops set pl.jardol.e2stream USE_FULL_SCREEN_INTENT allow
+
+# Opcjonalne wyjątki oszczędzania energii — mogą być niedostępne lub ignorowane przez producenta
+adb shell dumpsys deviceidle whitelist +pl.jardol.e2stream
+adb shell appops set pl.jardol.e2stream RUN_IN_BACKGROUND allow
+adb shell appops set pl.jardol.e2stream RUN_ANY_IN_BACKGROUND allow
+```
+
+Na Androidzie 13+ zezwól też na powiadomienia w pytaniu systemowym lub w ustawieniach aplikacji.
+Nie jest to zastępowane powyższymi poleceniami. Na Androidzie 14+ dostęp do pełnoekranowych
+powiadomień może wymagać osobnej zgody w ustawieniach; jest ona używana tylko jako awaryjny
+fallback, gdy system zablokuje uruchomienie odtwarzacza.
+
+W Androidzie 14+ niektóre kompilacje pokazują osobny stan `Uid mode` dla
+`USE_FULL_SCREEN_INTENT`. Sprawdź go poleceniem `adb shell cmd appops get --uid
+pl.jardol.e2stream USE_FULL_SCREEN_INTENT`. Tylko jeśli ten stan jest zablokowany, można
+zamiast ustawienia dla pakietu spróbować:
+
+```sh
+adb shell cmd appops set --uid pl.jardol.e2stream USE_FULL_SCREEN_INTENT allow
+```
+
+Nie ustawiaj jednocześnie trybu pakietu i UID dla tej samej operacji; zachowanie zależy od wersji
+systemu. Preferuj ekran dostępu specjalnego Androida, jeśli jest dostępny. `WAKE_LOCK` jest
+uprawnieniem normalnym zadeklarowanym przez aplikację i nie wymaga ręcznego nadawania przez ADB.
+
+Po zmianie otwórz ponownie E2Stream, aby aplikacja zsynchronizowała harmonogram. Stan nakładki
+można sprawdzić w E2Stream → Ustawienia → „Zgoda: wyświetlanie nad innymi aplikacjami”.
+Stan operacji można również odczytać poleceniem `adb shell appops get pl.jardol.e2stream`;
+format wyniku różni się między wersjami Androida.
+Połączenie można zakończyć poleceniem `adb disconnect`; samo wyłączenie debugowania nie cofa
+przyznanych zgód. Uprawnienia i whitelistę można cofnąć w ustawieniach Androida lub odpowiednimi
+poleceniami ADB. Żadna z tych zmian nie gwarantuje wybudzenia z głębokiego uśpienia ani włączenia
+telewizora przez HDMI-CEC — zależy to od urządzenia i jego ustawień zasilania.
 
 * adres dekodera, port OpenWebif (80), port streamingu (8001), login/hasło,
 * silnik odtwarzania: ExoPlayer (domyślnie) albo VLC – dla każdego odbiornika osobno; przy VLC wybór usuwania przeplotu i dekodowania sprzętowego/programowego,

@@ -20,6 +20,18 @@ import java.util.concurrent.TimeUnit
 internal fun timeshiftEarliestSeekWall(oldestWall: Long, now: Long): Long =
     minOf(oldestWall + 10_000, now)
 
+internal fun timeshiftRecoveryTarget(oldestWall: Long, now: Long): Long? =
+    timeshiftEarliestSeekWall(oldestWall, now).takeIf { it < now - 6_000 }
+
+internal fun isTimeshiftExpiredSegment(error: Throwable?): Boolean {
+    var cause = error
+    while (cause != null) {
+        if (cause.message?.contains("timeshift: fragment bufora już usunięty") == true) return true
+        cause = cause.cause
+    }
+    return false
+}
+
 internal fun timeshiftSeekTarget(base: Long, delta: Long, oldestWall: Long, now: Long): Long =
     maxOf(base + delta, timeshiftEarliestSeekWall(oldestWall, now))
 
@@ -311,8 +323,12 @@ class TimeshiftBuffer(
         out = FileOutputStream(f)
         segs += Seg(f, total, now)
         // okno: najwyżej maxMin pełnych minut (+ bieżąca); mało miejsca — wypadają najstarsze
-        while (segs.size > maxOf(2, maxMin + 1)) dropOldest()
-        while (segs.size > 2 && dir.usableSpace < RESERVE) { dropOldest(); shrunk = true }
+        val delete = ArrayList<File>()
+        while (segs.size > maxOf(2, maxMin + 1)) dropOldest(delete)
+        while (segs.size > 2 && dir.usableSpace < RESERVE) { dropOldest(delete); shrunk = true }
+        if (delete.isNotEmpty()) Thread({
+            delete.forEach { it.delete() }
+        }, "timeshift-usun").start()
     }
 
     private fun scheduleBatchFlush() {
@@ -564,7 +580,7 @@ class TimeshiftBuffer(
         out.toLongArray()
     }
 
-    private fun dropOldest() {
+    private fun dropOldest(delete: MutableList<File>) {
         val s = segs.removeAt(0)
         trimmed = true
         trimKeyframes(segs.firstOrNull()?.start ?: (s.start + s.len))
@@ -574,7 +590,7 @@ class TimeshiftBuffer(
             p.take(f, s.len)
             return
         }
-        Thread({ f.delete() }, "timeshift-usun").start()      // usuwanie dużego pliku nie wstrzymuje zapisu
+        delete += f
     }
 
     // ------------------------------------------------------------ nagrania lokalne (przypięte kawałki)
