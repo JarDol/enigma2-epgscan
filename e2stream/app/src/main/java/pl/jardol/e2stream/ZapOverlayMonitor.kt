@@ -165,8 +165,7 @@ internal object ZapOverlayMonitor {
             scheduleInfo.addView(countdown)
             root.addView(scheduleInfo)
 
-            val buttons = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
+            val buttons = AdaptiveButtons(context).apply {
                 gravity = Gravity.END
                 setPadding(0, dp(7), 0, 0)
             }
@@ -186,6 +185,8 @@ internal object ZapOverlayMonitor {
             buttons.addView(Button(context, null, 0, R.style.TvDialogButton).apply {
                 text = context.getString(R.string.wake_overlay_cancel)
                 isFocusable = true
+                minWidth = 0
+                minimumWidth = 0
                 setOnClickListener { cancel() }
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 marginStart = dp(8)
@@ -213,6 +214,19 @@ internal object ZapOverlayMonitor {
             switchButton.requestFocus()
             handler.post(tick)
             AppLog.i("wybudzanie: dodano nakładkę key=$key typ=$type focus=true")
+        }
+
+        internal class AdaptiveButtons(context: Context) : LinearLayout(context) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                orientation = HORIZONTAL
+                super.onMeasure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), heightMeasureSpec)
+                if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED &&
+                    measuredWidth > MeasureSpec.getSize(widthMeasureSpec)
+                ) {
+                    orientation = VERTICAL
+                }
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            }
         }
 
         fun remove() {
