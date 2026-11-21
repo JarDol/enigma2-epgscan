@@ -59,7 +59,7 @@
     <string name="epg_search_error">Search error: %1$s</string>
     <string name="epg_no_results">No results for “%1$s”</string>
     <string name="epg_results">Results: “%1$s” (%2$d)</string>
-    <string name="prompt_test_body">Android delivered RTC_WAKEUP and opened E2Stream without starting the player.\n\nIf you did not use the remote, the alarm can show a popup.\nTest ID: %1$s</string>
+    <string name="prompt_test_body">Android delivered RTC_WAKEUP and showed the popup without starting the player.\n\nIf you did not use the remote, the alarm can show a popup.\nTest ID: %1$s</string>
     <string name="prompt_channel">Channel</string>
     <string name="prompt_programme">Scheduled programme</string>
     <string name="prompt_switch_countdown">Switch (%1$s)</string>

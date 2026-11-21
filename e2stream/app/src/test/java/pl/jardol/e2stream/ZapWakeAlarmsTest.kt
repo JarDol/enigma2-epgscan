@@ -2,10 +2,10 @@ package pl.jardol.e2stream
 
 import android.app.AlarmManager
 import android.app.Application
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.os.Looper
+import android.provider.Settings
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -17,6 +17,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowSettings
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
@@ -30,6 +31,8 @@ class ZapWakeAlarmsTest {
         context.getSharedPreferences("zaptimers", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("zapwake", Context.MODE_PRIVATE).edit().clear().commit()
         AppState.foreground = false
+        ShadowSettings.setCanDrawOverlays(false)
+        ZapOverlayMonitor.dismissAll()
     }
 
     private fun timer(offset: Long = 120): ZapTimers.Timer {
@@ -67,11 +70,16 @@ class ZapWakeAlarmsTest {
         val expired = timer(-700)
         ZapTimers.add(context, expired)
         assertFalse(ZapTimers.completeSwitchIfPending(context, expired.key()))
+        val cancelled = timer(180)
+        ZapTimers.add(context, cancelled)
+        assertTrue(ZapTimers.completeIfPending(context, cancelled.key(), ZapTimers.SKIPPED))
+        assertFalse(ZapTimers.completeIfPending(context, cancelled.key(), ZapTimers.SKIPPED))
+        assertEquals(ZapTimers.SKIPPED, ZapTimers.history(context).first { it.timer.key() == cancelled.key() }.outcome)
     }
 
     @Test
     @Config(sdk = [34])
-    fun backgroundAlarmLaunchesScheduledPlayerEvenAfterPreviousProcessDied() {
+    fun alarmAtProgrammeStartLaunchesScheduledPlayerEvenAfterPreviousProcessDied() {
         Prefs(context).wakeForZap = true
         val t = timer(0)
         ZapTimers.add(context, t)
@@ -87,17 +95,12 @@ class ZapWakeAlarmsTest {
         assertEquals(PlayerActivity.ACTION_SCHEDULE_ZAP, launch.action)
         assertEquals(t.key(), launch.getStringExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY))
         assertEquals(t.ref, launch.getStringExtra(PlayerActivity.EXTRA_SCHEDULE_REF))
-        val notifications = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val fallback = shadowOf(notifications).getNotification(t.key().hashCode())
-        assertNotNull(fallback)
-        val fallbackIntent = shadowOf(fallback.fullScreenIntent).savedIntent
-        assertEquals(t.key(), fallbackIntent.getStringExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY))
-        assertEquals(t.ref, fallbackIntent.getStringExtra(PlayerActivity.EXTRA_SCHEDULE_REF))
         assertTrue(ZapTimers.list(context).any { it.key() == t.key() })
     }
 
     @Test
-    fun alarmAtMonitorTimeLaunchesPlayerBeforeProgrammeStart() {
+    @Config(sdk = [34])
+    fun alarmAtMonitorTimeWithoutOverlayPermissionStartsPlayer() {
         Prefs(context).wakeForZap = true
         Prefs(context).wakeZapMonitorSeconds = 30
         val t = timer(120)
@@ -112,7 +115,64 @@ class ZapWakeAlarmsTest {
         val launch = shadowOf(context).nextStartedActivity!!
         assertEquals(PlayerActivity.ACTION_SCHEDULE_ZAP, launch.action)
         assertEquals(t.key(), launch.getStringExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY))
+        assertEquals(t.ref, launch.getStringExtra(PlayerActivity.EXTRA_SCHEDULE_REF))
+        assertNull(shadowOf(context).nextStartedActivity)
         assertTrue(ZapWakeAlarms.monitorWasReceived(context, t.key()))
+    }
+
+    @Test
+    @Config(sdk = [34])
+    fun activeScreenWithOverlayPermissionShowsOverlayWithoutStartingPlayer() {
+        Prefs(context).wakeForZap = true
+        Prefs(context).wakeZapMonitorSeconds = 30
+        ShadowSettings.setCanDrawOverlays(true)
+        val t = timer(120)
+        ZapTimers.add(context, t)
+        ZapAlarmReceiver().onReceive(context, Intent().apply {
+            putExtra("timer_key", t.key())
+            putExtra("scheduled_at", System.currentTimeMillis())
+            putExtra("channel", t.channel)
+            putExtra("title", t.title)
+            putExtra("begin", t.begin)
+        })
+
+        assertTrue(Settings.canDrawOverlays(context))
+        assertTrue(ZapOverlayMonitor.isShowing(t.key()))
+        assertNull(shadowOf(context).nextStartedActivity)
+        ZapOverlayMonitor.dismissAll()
+    }
+
+    @Test
+    @Config(sdk = [34])
+    fun sleepingScreenLaunchesPlayerInsteadOfShowingOverlay() {
+        Prefs(context).wakeForZap = true
+        Prefs(context).wakeZapMonitorSeconds = 30
+        ShadowSettings.setCanDrawOverlays(true)
+        val power = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        shadowOf(power).setIsInteractive(false)
+        val t = timer(120)
+        ZapTimers.add(context, t)
+
+        ZapAlarmReceiver().onReceive(context, Intent().apply {
+            putExtra("timer_key", t.key())
+            putExtra("scheduled_at", System.currentTimeMillis())
+            putExtra("channel", t.channel)
+            putExtra("title", t.title)
+            putExtra("begin", t.begin)
+        })
+
+        val launch = shadowOf(context).nextStartedActivity!!
+        assertEquals(PlayerActivity.ACTION_SCHEDULE_ZAP, launch.action)
+        assertFalse(ZapOverlayMonitor.isShowing(t.key()))
+    }
+
+    @Test
+    @Config(sdk = [34])
+    fun consumedOverlayLaunchDoesNotAskPlayerToRevalidateRemovedTimer() {
+        val t = timer(120)
+        val intent = ZapWakeAlarms.scheduledPlayerIntent(context, t, timerAlreadyConsumed = true)
+        assertNull(intent.getStringExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY))
+        assertEquals(t.ref, intent.getStringExtra(PlayerActivity.EXTRA_SCHEDULE_REF))
     }
 
     @Test

@@ -32,6 +32,9 @@ object ZapWakeAlarms {
     fun canUseFullScreen(ctx: Context): Boolean = Build.VERSION.SDK_INT < 34 ||
         (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).canUseFullScreenIntent()
 
+    fun canDrawOverlays(ctx: Context): Boolean =
+        Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(ctx)
+
     fun sync(ctx: Context) {
         val app = ctx.applicationContext
         val alarm = app.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -150,6 +153,7 @@ object ZapWakeAlarms {
             appendLine(text.getString(R.string.wake_exact, text.getString(if (canScheduleExact(ctx)) R.string.wake_allowed else R.string.wake_no_permission)))
             appendLine(text.getString(R.string.wake_notifications, text.getString(if (notificationAllowed(ctx)) R.string.wake_allowed else R.string.wake_no_permission)))
             appendLine(text.getString(R.string.wake_fullscreen, text.getString(if (canUseFullScreen(ctx)) R.string.wake_fullscreen_allowed else R.string.wake_fullscreen_blocked)))
+            appendLine(text.getString(R.string.wake_overlay, text.getString(if (canDrawOverlays(ctx)) R.string.wake_allowed else R.string.wake_no_permission)))
             appendLine(text.getString(R.string.wake_monitor, monitorDescription(text, Prefs(ctx).wakeZapMonitorSeconds)))
             appendLine(text.getString(R.string.wake_pending, ZapTimers.list(ctx).size))
             if (next != null) append(text.getString(R.string.wake_next, next.channel, next.title, next.begin))
@@ -203,22 +207,36 @@ object ZapWakeAlarms {
         (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(key.hashCode())
     }
 
-    internal fun scheduledPlayerIntent(ctx: Context, timer: ZapTimers.Timer) =
+    internal fun scheduledPlayerIntent(
+        ctx: Context,
+        timer: ZapTimers.Timer,
+        timerAlreadyConsumed: Boolean = false,
+    ) =
         Intent(ctx, PlayerActivity::class.java).apply {
             action = PlayerActivity.ACTION_SCHEDULE_ZAP
             data = Uri.parse("e2stream://zap/${Uri.encode(timer.key())}")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY, timer.key())
+            if (!timerAlreadyConsumed) putExtra(PlayerActivity.EXTRA_WAKE_TIMER_KEY, timer.key())
             putExtra(PlayerActivity.EXTRA_SCHEDULE_REF, timer.ref)
         }
 
-    internal fun showNotification(ctx: Context, intent: Intent, key: String, channel: String, title: String, begin: Long, testId: String? = null) {
+    internal fun showNotification(
+        ctx: Context,
+        intent: Intent,
+        key: String,
+        channel: String,
+        title: String,
+        begin: Long,
+        testId: String? = null,
+        timerOverride: ZapTimers.Timer? = null,
+        timerAlreadyConsumed: Boolean = false,
+    ) {
         val manager = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(NotificationChannel(CHANNEL, AppLanguage.wrap(ctx).getString(R.string.wake_notification_channel), NotificationManager.IMPORTANCE_HIGH))
         }
-        val timer = if (testId == null) ZapTimers.list(ctx).firstOrNull { it.key() == key } else null
-        val launch = if (timer != null) scheduledPlayerIntent(ctx, timer) else Intent(ctx, ZapPromptActivity::class.java).apply {
+        val timer = timerOverride ?: if (testId == null) ZapTimers.list(ctx).firstOrNull { it.key() == key } else null
+        val launch = if (timer != null) scheduledPlayerIntent(ctx, timer, timerAlreadyConsumed) else Intent(ctx, ZapPromptActivity::class.java).apply {
             action = "pl.jardol.e2stream.OPEN_ZAP_ALARM"
             data = intent.data
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -260,6 +278,35 @@ object ZapWakeAlarms {
             AppLog.i("wybudzanie: notify SecurityException key=$key: $e")
         }
     }
+
+    internal fun launchPlayerOrNotify(
+        ctx: Context,
+        timer: ZapTimers.Timer,
+        source: Intent? = null,
+        timerAlreadyConsumed: Boolean = false,
+    ): Boolean {
+        ZapOverlayMonitor.dismiss(timer.key())
+        var started = false
+        try {
+            ctx.startActivity(scheduledPlayerIntent(ctx, timer, timerAlreadyConsumed))
+            started = true
+            AppLog.i("wybudzanie: uruchomiono PlayerActivity key=${timer.key()}")
+        } catch (e: SecurityException) {
+            AppLog.i("wybudzanie: start PlayerActivity odrzucony key=${timer.key()}: $e")
+        } catch (e: android.content.ActivityNotFoundException) {
+            AppLog.i("wybudzanie: brak PlayerActivity key=${timer.key()}: $e")
+        } catch (e: IllegalStateException) {
+            AppLog.i("wybudzanie: start PlayerActivity niedozwolony key=${timer.key()}: $e")
+        } catch (e: RuntimeException) {
+            AppLog.i("wybudzanie: błąd start PlayerActivity key=${timer.key()}: $e")
+        }
+        if (!started && notificationAllowed(ctx)) {
+            val alarm = source ?: alarmIntent(ctx, timer).putExtra(EXTRA_SCHEDULED_AT, System.currentTimeMillis())
+            showNotification(ctx, alarm, timer.key(), timer.channel, timer.title, timer.begin,
+                timerOverride = timer, timerAlreadyConsumed = timerAlreadyConsumed)
+        }
+        return started
+    }
 }
 
 class ZapAlarmReceiver : BroadcastReceiver() {
@@ -296,16 +343,24 @@ class ZapAlarmReceiver : BroadcastReceiver() {
             return
         }
         val finalAlarm = intent.getBooleanExtra("final_alarm", false)
-        if (!finalAlarm && prefs.wakeZapMonitorSeconds > 0 && timer.begin > now / 1000) {
-            ZapWakeAlarms.markMonitorReceived(context, key)
-        }
+        val showPrompt = !finalAlarm && prefs.wakeZapMonitorSeconds > 0 && timer.begin > now / 1000
+        if (showPrompt) ZapWakeAlarms.markMonitorReceived(context, key)
         if (ZapWakeAlarms.isForeground() && power.isInteractive) {
             Log.i("E2Stream", "Alarm pominięty: aplikacja jest na wierzchu")
             AppLog.i("wybudzanie: alarm pominięty appForeground=true interactive=true finalAlarm=$finalAlarm")
             return
         }
+        if (showPrompt && power.isInteractive && ZapWakeAlarms.canDrawOverlays(context)) {
+            if (ZapOverlayMonitor.show(context, timer)) {
+                AppLog.i("wybudzanie: nakładka aktywna key=$key; PlayerActivity uruchomi się po wyborze lub końcu odliczania")
+                return
+            }
+            AppLog.i("wybudzanie: nakładka niedostępna key=$key; uruchamiam PlayerActivity")
+        } else if (showPrompt) {
+            AppLog.i("wybudzanie: monit bez nakładki key=$key interactive=${power.isInteractive} overlayAllowed=${ZapWakeAlarms.canDrawOverlays(context)}")
+        }
         Log.i("E2Stream", "Alarm harmonogramu dotarł: $key")
-        AppLog.i("wybudzanie: alarm harmonogramu DOSTARCZONY key=$key")
+        AppLog.i("wybudzanie: alarm harmonogramu DOSTARCZONY key=$key showPrompt=$showPrompt finalAlarm=$finalAlarm")
         @Suppress("DEPRECATION")
         try {
             val wake = power.newWakeLock(
@@ -319,19 +374,7 @@ class ZapAlarmReceiver : BroadcastReceiver() {
         } catch (e: IllegalArgumentException) {
             AppLog.i("wybudzanie: wake lock nieobsługiwany: $e")
         }
-        ZapWakeAlarms.showNotification(context, intent, key,
-            intent.getStringExtra("channel") ?: "E2Stream",
-            intent.getStringExtra("title") ?: AppLanguage.wrap(context).getString(R.string.wake_scheduled_event),
-            intent.getLongExtra("begin", System.currentTimeMillis() / 1000))
-        AppLog.i("wybudzanie: próba bezpośredniego startu PlayerActivity key=$key overlayAllowed=${Settings.canDrawOverlays(context)}")
-        try {
-            context.startActivity(ZapWakeAlarms.scheduledPlayerIntent(context, timer))
-            AppLog.i("wybudzanie: żądanie startActivity wysłane key=$key (system może je zablokować)")
-        } catch (e: SecurityException) {
-            AppLog.i("wybudzanie: startActivity odrzucony key=$key: $e")
-        } catch (e: android.content.ActivityNotFoundException) {
-            AppLog.i("wybudzanie: brak PlayerActivity key=$key: $e")
-        }
+        ZapWakeAlarms.launchPlayerOrNotify(context, timer, intent)
     }
 }
 

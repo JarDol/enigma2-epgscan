@@ -117,10 +117,15 @@ object ZapTimers {
 
     @Synchronized
     fun completeSwitchIfPending(ctx: Context, key: String): Boolean {
+        return completeIfPending(ctx, key, SWITCHED)
+    }
+
+    @Synchronized
+    fun completeIfPending(ctx: Context, key: String, outcome: String): Boolean {
         val timers = list(ctx)
         val timer = timers.firstOrNull { it.key() == key } ?: return false
         val entries = history(ctx).toMutableList()
-        entries.add(0, History(timer, SWITCHED, System.currentTimeMillis() / 1000))
+        entries.add(0, History(timer, outcome, System.currentTimeMillis() / 1000))
         val saved = sp(ctx).edit()
             .putString("list", encodeTimers(timers.filter { it.key() != key }))
             .putString("history", encodeHistory(entries))
@@ -130,7 +135,7 @@ object ZapTimers {
             return false
         }
         ZapWakeAlarms.sync(ctx)
-        AppLog.i("harmonogram: ${timer.channel} — ${timer.title}: $SWITCHED")
+        AppLog.i("harmonogram: ${timer.channel} — ${timer.title}: $outcome")
         return true
     }
 

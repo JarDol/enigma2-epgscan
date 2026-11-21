@@ -5624,6 +5624,7 @@ class PlayerActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        ZapOverlayMonitor.dismissAll()
         if (intent.action == ACTION_SCHEDULE_ZAP) {
             val power = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
             AppLog.i("wybudzanie: PlayerActivity onResume interactive=${power.isInteractive} key=${intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)}")

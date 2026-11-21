@@ -47,6 +47,7 @@ class SettingsActivity : Activity() {
     private var pendingWakeEnable = false
     private var wakePermissionFlow: String? = null
     private var fullScreenPermissionAsked = false
+    private var overlayPermissionAsked = false
     private val adapter = Adapter()
     private lateinit var items: List<Item>
     private lateinit var store: EpgStore
@@ -244,6 +245,20 @@ class SettingsActivity : Activity() {
                 markChanged("monit harmonogramu = ${seconds[selected]} s")
                 items = buildItems()
                 refresh()
+            }
+        },
+        Item.Action(getString(R.string.setting_wake_overlay_permission), {
+            getString(if (ZapWakeAlarms.canDrawOverlays(this)) R.string.wake_allowed else R.string.wake_no_permission)
+        }) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !ZapWakeAlarms.canDrawOverlays(this)) {
+                try {
+                    wakePermissionFlow = "overlay-manual"
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")))
+                } catch (_: Exception) {
+                    wakePermissionFlow = null
+                    toast(getString(R.string.message_overlay_permission_not_granted))
+                }
             }
         },
         *(if (BuildConfig.WAKE_DIAGNOSTICS) arrayOf<Item>(Item.Action(getString(R.string.setting_wake_up_diagnostics), { getString(if (p.wakeForZap) R.string.settings_status_alarm else R.string.settings_enable_wake_first) }) {
@@ -462,6 +477,16 @@ class SettingsActivity : Activity() {
                 fullScreenPermissionAsked = true
                 continueWakeEnable()
             }
+            "overlay" -> {
+                wakePermissionFlow = null
+                overlayPermissionAsked = true
+                continueWakeEnable()
+            }
+            "overlay-manual" -> {
+                wakePermissionFlow = null
+                items = buildItems()
+                refresh()
+            }
         }
     }
 
@@ -475,6 +500,7 @@ class SettingsActivity : Activity() {
         }
         pendingWakeEnable = true
         fullScreenPermissionAsked = false
+        overlayPermissionAsked = false
         continueWakeEnable()
     }
 
@@ -507,11 +533,25 @@ class SettingsActivity : Activity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 741)
             return
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !ZapWakeAlarms.canDrawOverlays(this) && !overlayPermissionAsked) {
+            try {
+                wakePermissionFlow = "overlay"
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")))
+                return
+            } catch (_: Exception) {
+                wakePermissionFlow = null
+                overlayPermissionAsked = true
+            }
+        }
         pendingWakeEnable = false
         p.wakeForZap = true
         ZapWakeAlarms.sync(this)
         markChanged("Budź TV dla harmonogramu = włączone")
         toast(getString(R.string.message_scheduled_wake_up_enabled))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !ZapWakeAlarms.canDrawOverlays(this)) {
+            toast(getString(R.string.message_overlay_permission_not_granted))
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

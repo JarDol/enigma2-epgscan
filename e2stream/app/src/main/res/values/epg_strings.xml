@@ -59,7 +59,7 @@
     <string name="epg_search_error">Błąd wyszukiwania: %1$s</string>
     <string name="epg_no_results">Nic nie znaleziono: „%1$s”</string>
     <string name="epg_results">Wyniki: „%1$s” (%2$d)</string>
-    <string name="prompt_test_body">Android dostarczył RTC_WAKEUP i otworzył okno E2Stream bez uruchamiania playera.\n\nJeśli nie naciskałeś pilota, alarm może pokazać popup.\nId testu: %1$s</string>
+    <string name="prompt_test_body">Android dostarczył RTC_WAKEUP i pokazał popup bez uruchamiania playera.\n\nJeśli nie naciskałeś pilota, alarm może pokazać popup.\nId testu: %1$s</string>
     <string name="prompt_channel">Kanał</string>
     <string name="prompt_programme">Zaplanowana audycja</string>
     <string name="prompt_switch_countdown">Przełącz (%1$s)</string>

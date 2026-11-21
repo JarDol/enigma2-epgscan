@@ -163,15 +163,18 @@ Korzystanie z pilota lub dotyku zeruje licznik, a otwarcie innego okna wstrzymuj
 
 Diagnostyka wybudzania (status i test alarmu) jest dostępna tylko w wersjach beta;
 ustawienie budzenia TV dla harmonogramu pozostaje dostępne również w wersji stabilnej.
-Po włączeniu tej opcji alarm systemowy może wybudzić urządzenie do 5 minut przed audycją
-i otworzyć E2Stream. Ustawienie „Wybudzanie: monit przed harmonogramem” wybiera czas
-wyświetlenia popupu (domyślnie 30 s); odliczanie kończy się automatycznym przełączeniem,
-a 0 s wyłącza popup. Przy dodatnim czasie ustawiany jest też alarm na początek audycji,
-aby ponowić próbę, jeśli aplikacja wróci w tło. Alarm próbuje wybudzić urządzenie;
-awaryjnie wysyła powiadomienie.
-Uruchamianie w tle może wymagać zgody na wyświetlanie nad innymi aplikacjami, a włączenie
-telewizora zależy od obsługi i ustawień HDMI-CEC. Dostarczenie alarmu i wybudzenie nie są
-gwarantowane na wszystkich urządzeniach. Log podaje planowany i faktyczny czas alarmu.
+Po włączeniu tej opcji alarm systemowy może wybudzić urządzenie do 5 minut przed audycją.
+Ustawienie „Wybudzanie: monit przed harmonogramem” wybiera czas wyświetlenia popupu
+(domyślnie 30 s); przy aktywnym ekranie i zgodzie na wyświetlanie nad innymi aplikacjami
+popup pojawia się jako nakładka bez uruchamiania odtwarzacza. „Przełącz teraz” uruchamia
+E2Stream od razu, a brak reakcji przełącza kanał o czasie audycji; „Anuluj” pomija zdarzenie.
+Ustawienie 0 s wyłącza monit.
+Gdy ekran jest wygaszony, nakładka jest niedostępna lub jej dodanie się nie powiedzie,
+aplikacja przechodzi do bezpośredniego uruchomienia odtwarzacza z powiadomieniem awaryjnym.
+Przy dodatnim czasie ustawiany jest też alarm na początek audycji, aby ponowić próbę,
+jeśli aplikacja wróci w tło. Włączenie telewizora zależy od obsługi i ustawień HDMI-CEC;
+dostarczenie alarmu i wybudzenie nie są gwarantowane na wszystkich urządzeniach. Log
+podaje planowany i faktyczny czas alarmu.
 
 * adres dekodera, port OpenWebif (80), port streamingu (8001), login/hasło,
 * silnik odtwarzania: ExoPlayer (domyślnie) albo VLC – dla każdego odbiornika osobno; przy VLC wybór usuwania przeplotu i dekodowania sprzętowego/programowego,
