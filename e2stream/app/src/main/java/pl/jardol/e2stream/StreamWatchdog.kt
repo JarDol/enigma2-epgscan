@@ -40,6 +40,8 @@ class StreamWatchdog(
     private var startPos = -1L
     private var startFrames = -1L
     private var startLastPos = -1L
+    private var startCountersRef: DecoderCounters? = null
+    private var startRenderedBaseline = 0
     private var startProgressAt = 0L
     private var fastSince = 0L
     private val hist = ArrayDeque<LongArray>()
@@ -94,6 +96,8 @@ class StreamWatchdog(
         startAt = now
         everReady = false
         startPos = -1; startFrames = -1; startLastPos = -1
+        startCountersRef = player.videoDecoderCounters?.also { it.ensureUpdated() }
+        startRenderedBaseline = startCountersRef?.renderedOutputBufferCount ?: 0
         startProgressAt = now
     }
 
@@ -134,13 +138,23 @@ class StreamWatchdog(
         c?.ensureUpdated()
         val rendered = c?.renderedOutputBufferCount?.toLong() ?: 0L
         val f = if (c != null) rendered + c.skippedOutputBufferCount + c.droppedBufferCount else -1L
+        if (c !== startCountersRef) {
+            startCountersRef = c
+            startRenderedBaseline = c?.renderedOutputBufferCount ?: 0
+        } else if (c != null && c.renderedOutputBufferCount < startRenderedBaseline) {
+            startRenderedBaseline = c.renderedOutputBufferCount
+        }
         val pos = player.currentPosition
         if (st == Player.STATE_READY && startPos < 0) startPos = pos
-        if (rendered >= 25 || (startPos >= 0 && pos - startPos >= 3000)) {
+        val framesStarted = hasRenderedEnoughSinceStart(c?.renderedOutputBufferCount ?: 0, startRenderedBaseline)
+        val clockAdvanced = startPos >= 0 && pos - startPos >= 3000
+        if (framesStarted || clockAdvanced) {
             startPhase = false
-            AppLog.i("start kanału: obraz ruszył po ${now - startAt} ms")
+            if (framesStarted) AppLog.i("start kanału: obraz ruszył po ${now - startAt} ms")
+            else AppLog.i("start kanału: zegar odtwarzania ruszył po ${now - startAt} ms (bez potwierdzenia licznikiem klatek)")
             return false
         }
+
         if (f != startFrames || pos != startLastPos) {
             startFrames = f; startLastPos = pos; startProgressAt = now
         }
@@ -245,3 +259,6 @@ class StreamWatchdog(
         onStall(reason)
     }
 }
+
+internal fun hasRenderedEnoughSinceStart(rendered: Int, baseline: Int): Boolean =
+    rendered >= baseline && rendered - baseline >= 25

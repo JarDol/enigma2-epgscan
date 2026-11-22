@@ -879,7 +879,7 @@ class PlayerActivity : Activity() {
                 bufferSizeMs: Long,
                 elapsedSinceLastFeedMs: Long,
             ) {
-                AppLog.i("audio underrun (bufor $bufferSizeMs ms, od ostatnich danych $elapsedSinceLastFeedMs ms)")
+                AppLog.i("audio underrun (bufor ${audioUnderrunBufferLabel(bufferSizeMs)}, od ostatnich danych $elapsedSinceLastFeedMs ms)")
             }
         })
 
