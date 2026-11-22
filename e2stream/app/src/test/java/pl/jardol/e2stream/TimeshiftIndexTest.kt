@@ -1,14 +1,17 @@
 package pl.jardol.e2stream
 
 import android.app.Application
+import android.os.Looper
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
@@ -27,6 +30,103 @@ class TimeshiftIndexTest {
     private fun newBuffer(): TimeshiftBuffer {
         val dir = File(System.getProperty("java.io.tmpdir"), "tsidx-" + System.nanoTime()).also { it.mkdirs() }
         return TimeshiftBuffer(dir, 360).also { it.pcrPid = { 0x100 } }
+    }
+
+    private fun pcrOn(pid: Int) = pcr.copyOf().also {
+        it[1] = (pid shr 8).toByte()
+        it[2] = pid.toByte()
+    }
+
+    private fun analyzerWithPmt(pcrPid: Int, version: Int = 0): TsAnalyzer {
+        val analyzer = TsAnalyzer(0) {}.also { it.clean = false; it.reset(1) }
+        val section = pkt(
+            0x47, 0x50, 0x00, 0x10, 0, 0x02, 0xB0, 0x17, 0, 1, 0xC1 or (version shl 1), 0, 0,
+            0xE0 or (pcrPid shr 8), pcrPid and 0xff, 0xF0, 0,
+            0x1B, 0xE1, 0, 0xF0, 0, 0x04, 0xE1, 1, 0xF0, 0, 0, 0, 0, 0
+        )
+        analyzer.feed(pat.copyOf(), 0, pat.size)
+        analyzer.feed(section, 0, section.size)
+        return analyzer
+    }
+
+    @Test
+    fun missingPmtPcrUsesOnlyActualProgramStreams() {
+        val analyzer = analyzerWithPmt(0x1fff)
+        assertEquals(setOf(0x100, 0x101), analyzer.programPids)
+        for (pid in listOf(0x100, 0x101)) {
+            val b = newBuffer().also { it.useAnalyzer { analyzer } }
+            val other = pcrOn(0x102)
+            b.write(other, 0, other.size)
+            assertEquals(0L, b.total)
+            val own = pcrOn(pid)
+            b.write(own, 0, own.size)
+            assertEquals(188L, b.total)
+            assertArrayEquals(own, b.dir.listFiles()!!.single { it.extension == "ts" }.readBytes())
+            b.close()
+        }
+    }
+
+    @Test
+    fun missingPcrFallsBackAfterBoundedTimeButDeclaredPcrKeepsExistingWait() {
+        val b = newBuffer()
+        var pid = 0x1fff
+        b.pcrPid = { pid }
+        b.programPids = { setOf(0x100) }
+        val noPcr = key.copyOf()
+        b.write(noPcr, 0, noPcr.size)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1999))
+        b.write(noPcr, 0, noPcr.size)
+        assertEquals(0L, b.total)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(2))
+        b.write(noPcr, 0, noPcr.size)
+        assertEquals(188L, b.total)
+        b.close()
+
+        val normal = newBuffer()
+        pid = 0x120
+        normal.pcrPid = { pid }
+        normal.programPids = { setOf(0x100) }
+        normal.write(pcr, 0, pcr.size)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3))
+        normal.write(pcr, 0, pcr.size)
+        assertEquals(0L, normal.total)
+        val declared = pcrOn(pid)
+        normal.write(declared, 0, declared.size)
+        assertEquals(188L, normal.total)
+        normal.close()
+    }
+
+    @Test
+    fun analyzerResetClearsProgramPidsAndUnknownPmtStillWaits() {
+        val analyzer = analyzerWithPmt(0x1fff)
+        analyzer.reset(2)
+        assertEquals(-1, analyzer.pcrPid)
+        assertTrue(analyzer.programPids.isEmpty())
+        val b = newBuffer().also { it.useAnalyzer { analyzer } }
+        b.write(pcr, 0, pcr.size)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3))
+        b.write(pcr, 0, pcr.size)
+        assertEquals(0L, b.total)
+        b.close()
+    }
+
+    @Test
+    fun newDeclaredPcrCancelsMissingPcrDeadline() {
+        val b = newBuffer()
+        var declaredPid = 0x1fff
+        b.pcrPid = { declaredPid }
+        b.programPids = { setOf(0x100) }
+        b.write(key, 0, key.size)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1500))
+        declaredPid = 0x120
+        b.write(key, 0, key.size)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        b.write(key, 0, key.size)
+        assertEquals(0L, b.total)
+        val correctPcr = pcrOn(declaredPid)
+        b.write(correctPcr, 0, correctPcr.size)
+        assertEquals(188L, b.total)
+        b.close()
     }
 
     @Test

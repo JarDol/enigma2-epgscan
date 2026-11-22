@@ -73,6 +73,9 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     /** PID zegara PCR bieżącego programu (z PMT); -1 — jeszcze nieznany. */
     @Volatile var pcrPid = -1
         private set
+    /** PID-y strumieni bieżącego programu z ostatniego PMT. */
+    @Volatile var programPids: Set<Int> = emptySet()
+        private set
     private val pidSeen = IntArray(8192)
     private val lastDts = LongArray(8192) { -1 }
     private val lastStep = LongArray(8192)
@@ -206,6 +209,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         discMarked = 0
         lastPcrTicks = -1
         pcrPid = -1
+        programPids = emptySet()
         injectIdx = 0
         injectCc = 0
         lastInjectAt = 0
@@ -778,6 +782,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
             if (n == "H264" || n == "HEVC" || n == "MPEG2-V") videoPids.add(pid)
             if (n == "MPEG-A" || n == "AC3" || n == "EAC3" || n == "AAC" || n == "LATM") audioPids.add(pid)
         }
+        programPids = pidType.keys.filterTo(HashSet()) { it in 0x20 until 0x1fff }
         mainAudioPid = audioPids.minOrNull() ?: -1
         videoStream = videoPids.minOrNull()?.let { it to (pidType[it] ?: "") }
         if (pmtVersion >= 0) {

@@ -2729,7 +2729,7 @@ class PlayerActivity : Activity() {
         val cur = playList.getOrNull(playIndex)
         curAn.tee = { b, o, l -> curBuf.write(b, o, l) }
         curAn.onEit = bgEit(journal)
-        curBuf.pcrPid = { curAn.pcrPid }
+        curBuf.useAnalyzer { curAn }
         val c = BgChan(tsLiveUrl ?: "", cur?.name ?: "?", curBuf, curAn, curRec, journal, cur, playBouquet, playList)
         // odłożony jest tylko ostatni kanał — wcześniej odłożony (inny) przestaje być chroniony
         for (o in bgChans) o.parked = false
@@ -2915,7 +2915,7 @@ class PlayerActivity : Activity() {
                 // bieżący → w tle: analizator, bufor i dziennik należą odtąd do niego
                 curAn!!.tee = { b, o, l -> curBuf!!.write(b, o, l) }
                 curAn.onEit = bgEit(journal)
-                curBuf!!.pcrPid = { curAn.pcrPid }
+                curBuf!!.useAnalyzer { curAn }
                 curBuf.maxMin = if (pipSlot >= 0) pipBufLen() else bgBufLen()
                 val c = BgChan(tsLiveUrl ?: "", cur?.name ?: "?", curBuf, curAn, curRec!!, journal, cur, playBouquet, playList)
                 c.pip = pipSlot
@@ -2946,7 +2946,7 @@ class PlayerActivity : Activity() {
             analyzer = target.an
             mainAnalyzerHooks(target.an)
             target.an.clean = prefs.cleanTs
-            target.buf.pcrPid = { analyzer?.pcrPid ?: -1 }
+            target.buf.useAnalyzer { analyzer }
             target.buf.maxMin = mainBufMin()
             tsBuf = target.buf
             tsRec = target.rec; tsRecAn = target.an
@@ -2979,7 +2979,7 @@ class PlayerActivity : Activity() {
         an.pmtCachePut = { sid, b -> prefs.setPmtFor(sid, b) }
         an.clean = prefs.cleanTs
         an.reset(url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1)
-        buf.pcrPid = { an.pcrPid }
+        buf.useAnalyzer { an }
         an.tee = { b, o, l -> buf.write(b, o, l) }
         val j = ProgramJournal()
         an.onEit = bgEit(j)
@@ -3550,7 +3550,7 @@ class PlayerActivity : Activity() {
             // katalog nie zajęty przez kanały buforowane w tle
             val used = bgChans.map { it.buf.dir }.toSet()
             val slot = TimeshiftBuffer.slotDirs(dir).first { it !in used }
-            tsBuf = TimeshiftBuffer(slot, min, dir, prefs.tsWriteBatchBytes).also { it.pcrPid = { analyzer?.pcrPid ?: -1 } }
+            tsBuf = TimeshiftBuffer(slot, min, dir, prefs.tsWriteBatchBytes).also { it.useAnalyzer { analyzer } }
             AppLog.i("timeshift: $min min w ${slot.absolutePath} (wolne ${TimeshiftBuffer.gb(dir.usableSpace)})")
         } else {
             b.maxMin = min

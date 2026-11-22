@@ -29,6 +29,8 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 * Odświeżanie ekranu: bez zmian / zawsze 50 Hz / automatycznie wg treści.
 * Analizator strumienia TS: błędy CC, TEI, pakiety kodowane, utrata synchronizacji, skoki PCR,
   zmiany PMT, przerwy w napływie danych — w statystykach i w logu.
+* Bufor odtwarzania i timeshift: gdy PMT nie wskazuje PID zegara PCR, zapis szuka go w strumieniach
+  bieżącego programu; jeśli go nie znajdzie, po krótkim oczekiwaniu rozpoczyna zapis bez PCR.
 * Przy zawieszeniu zapis ostatnich sekund strumienia (`stall-*.ts`, bufor 16 MB) do analizy np. TSDuck; na urządzeniu najwyżej 3 zrzuty, po wysłaniu na dekoder kopia lokalna jest usuwana (na dekoderze sprząta je EPG Scan: Sprzątanie dysku → zrzuty starsze niż N dni).
 * Miejsce zapisu: pamięć urządzenia lub pendrive/karta (katalog `Android/data/pl.jardol.e2stream/files/`).
 * EPG pobierane codziennie wg harmonogramu (i na żądanie) z zapisem na urządzeniu; picony kanałów z dekodera (OpenWebif /picon/ lub FTP). Brakujące picony można zastąpić logo E2Stream; wyłączenie zastępowania zostawia puste miejsce, zachowując układ.

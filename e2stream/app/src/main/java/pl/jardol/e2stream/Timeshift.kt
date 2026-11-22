@@ -124,6 +124,7 @@ class TimeshiftBuffer(
             writerId = t.id
             writerName = t.name
             waitPcr = true                         // nowe połączenie — znów od pierwszego PCR
+            noPcrSince = -1
         }
         lastWriteAt = now
         return true
@@ -149,7 +150,7 @@ class TimeshiftBuffer(
         if (writerId != -1L) { staleId = writerId; staleUntil = SystemClock.elapsedRealtime() + 5000; staleLogged = false }
         writerId = -1L
         switches = 0; switchesLogged = 0; switchesReported = 0
-        waitPcr = true; skipped = 0; skippedPids.clear()
+        waitPcr = true; noPcrSince = -1; skipped = 0; skippedPids.clear()
         try { out?.close() } catch (_: Exception) {}
         out = null
         segs.clear()
@@ -191,8 +192,15 @@ class TimeshiftBuffer(
     private var waitPcr = true
     /** PID zegara programu (z PMT, analizator); PCR innych programów multipleksu się nie liczy. */
     @Volatile var pcrPid: () -> Int = { -1 }
+    @Volatile var programPids: () -> Set<Int> = { emptySet() }
+    private var noPcrSince = -1L
     private var skipped = 0L
     private val skippedPids = HashMap<Int, Int>()
+
+    fun useAnalyzer(analyzer: () -> TsAnalyzer?) {
+        pcrPid = { analyzer()?.pcrPid ?: -1 }
+        programPids = { analyzer()?.programPids ?: emptySet() }
+    }
 
     /** Czy pakiet od [o] ma trafić do bufora (false — pominięty, bo przed pierwszym PCR). */
     private fun admit(p: ByteArray, o: Int): Boolean {
@@ -201,16 +209,26 @@ class TimeshiftBuffer(
         val want = pcrPid()
         val pid0 = ((p[o + 1].toInt() and 0x1f) shl 8) or (p[o + 2].toInt() and 0xff)
         val hasPcr = !tei && (p[o + 3].toInt() and 0x20) != 0 && (p[o + 4].toInt() and 0xff) >= 7 && (p[o + 5].toInt() and 0x10) != 0
+        val noPcrInPmt = want == 0x1fff
+        if (noPcrInPmt && noPcrSince < 0) noPcrSince = SystemClock.elapsedRealtime()
+        if (!noPcrInPmt) noPcrSince = -1
         // PID zegara nieznany (brak PMT) po ~1 MB — dowolny PCR, żeby nie gubić początku strumienia
-        val pcr = hasPcr && (if (want >= 0) pid0 == want else skipped >= ANY_PCR_AFTER)
-        if (pcr || skipped >= SKIP_MAX) {
+        val pcr = hasPcr && when {
+            noPcrInPmt -> pid0 in programPids()
+            want >= 0 -> pid0 == want
+            else -> skipped >= ANY_PCR_AFTER
+        }
+        val timedOut = noPcrInPmt && SystemClock.elapsedRealtime() - noPcrSince >= NO_PCR_WAIT_MS
+        if (pcr || timedOut || skipped >= SKIP_MAX) {
             waitPcr = false
-            if (skipped > 0) {
+            if (skipped > 0 || noPcrInPmt) {
                 val pids = skippedPids.entries.sortedByDescending { it.value }.take(5).joinToString(", ") { "${it.key}×${it.value}" }
-                AppLog.i("timeshift: zapis od pierwszego pakietu z zegarem PCR (pid $want) — pominięto ${skipped / 1000} kB na początku strumienia (PID: $pids)" +
-                    if (!pcr) " — PCR nie znaleziony, zapis bez czekania" else "")
+                val source = if (pcr) "zegar PCR pid $pid0" else "PCR nie znaleziony"
+                val declared = if (noPcrInPmt) ", PMT bez PID PCR" else ""
+                AppLog.i("timeshift: zapis — $source$declared, pominięto ${skipped / 1000} kB na początku strumienia (PID: $pids)" +
+                    if (!pcr) " — zapis bez czekania" else "")
             }
-            skipped = 0; skippedPids.clear()
+            noPcrSince = -1; skipped = 0; skippedPids.clear()
             return true
         }
         skipped += 188
@@ -771,6 +789,7 @@ class TimeshiftBuffer(
         private const val SKIP_MAX = 8L * 1_000_000
         /** Po tylu pominiętych bajtach bez znanego PID-u zegara przyjmujemy PCR z dowolnego PID-u. */
         private const val ANY_PCR_AFTER = 1_000_000L
+        private const val NO_PCR_WAIT_MS = 2_000L
 
         /** Zapas wolnego miejsca, którego bufor nie rusza. */
         const val RESERVE = 400L * 1_000_000
