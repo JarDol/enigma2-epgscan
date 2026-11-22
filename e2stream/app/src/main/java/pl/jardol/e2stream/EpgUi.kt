@@ -341,7 +341,8 @@ class EpgUi(
     }
 
     private fun showActionResult(title: String, message: String, onClose: () -> Unit = {}) {
-        TvDialog.info(a, title, message, onClose)
+        onClose()
+        host.message(if (message.isBlank()) title else "$title\n$message")
     }
 
     private fun confirmAction(
