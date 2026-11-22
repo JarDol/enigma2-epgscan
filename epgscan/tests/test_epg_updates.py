@@ -105,6 +105,22 @@ class CoverageTests(unittest.TestCase):
 
 
 class PackTests(unittest.TestCase):
+	def test_pack_info_reports_current_picon_checksum(self):
+		with tempfile.TemporaryDirectory() as directory:
+			with open(os.path.join(directory, "pack.json"), "w") as f:
+				json.dump({"at": 100}, f)
+			picons = os.path.join(directory, "picons.zip")
+			with open(picons, "wb") as f:
+				f.write(b"first")
+			with patch.object(clientpack, "pack_dir", return_value=directory):
+				first = clientpack.info()
+				with open(picons, "wb") as f:
+					f.write(b"other")
+				second = clientpack.info()
+			self.assertEqual(first["picons_size"], second["picons_size"])
+			self.assertNotEqual(first["picons_sha256"], second["picons_sha256"])
+			self.assertEqual(second["picons_sha256"], hashlib.sha256(b"other").hexdigest())
+
 	def test_pack_metadata_contains_checksum_of_exported_file(self):
 		job = clientpack.PackJob.__new__(clientpack.PackJob)
 		job.chans = [("ref", "ref:", "channel")]

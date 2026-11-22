@@ -72,6 +72,14 @@ def info():
 			meta[k] = os.path.getsize(os.path.join(d, fn))
 		except Exception:
 			meta[k] = 0
+	if meta["picons_size"]:
+		digest = hashlib.sha256()
+		with open(os.path.join(d, "picons.zip"), "rb") as f:
+			for block in iter(lambda: f.read(65536), b""):
+				digest.update(block)
+		meta["picons_sha256"] = digest.hexdigest()
+	else:
+		meta["picons_sha256"] = ""
 	return meta
 
 

@@ -112,7 +112,10 @@ object EpgSync {
         if (at <= 0) return null
         if (info.optLong("epg_size") <= 0) throw java.io.IOException(ctx.getString(R.string.epg_pack_no_epg))
         val sha = info.optString("epg_sha256")
-        val identity = EpgUpdatePolicy.packIdentity(prefs.host, prefs.pluginPort, at, info.optLong("epg_size"), sha)
+        val piconsSize = info.optLong("picons_size")
+        val identity = EpgUpdatePolicy.packIdentity(
+            prefs.host, prefs.pluginPort, at, info.optLong("epg_size"), sha,
+            piconsSize, info.optString("picons_sha256"))
         if (!EpgUpdatePolicy.needsImport(identity, prefs.packIdentity, manual)) {
             prefs.packCheckAt = System.currentTimeMillis()
             return ctx.getString(R.string.epg_pack_unchanged, fmt(at))
