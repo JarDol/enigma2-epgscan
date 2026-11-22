@@ -162,7 +162,7 @@ jobs:
           $asset = Join-Path $env:RUNNER_TEMP "E2Stream-$env:VERSION$suffix.exe"
           Copy-Item $exe[0].FullName $asset
           $title = if ($env:STABLE -eq 'true') { "E2Stream Windows $env:VERSION" } else { "E2Stream Windows $env:VERSION — wersja testowa" }
-          $kind = if ($env:STABLE -eq 'true') { @() } else { @('--prerelease') }
+          [string[]]$kind = if ($env:STABLE -eq 'true') { @() } else { @('--prerelease') }
           gh release create $env:TAG $asset `
             --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA `
             --title $title `
