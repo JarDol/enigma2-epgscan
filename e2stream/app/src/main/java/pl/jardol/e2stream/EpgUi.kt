@@ -211,6 +211,7 @@ class EpgUi(
                         onBack = returnToSchedule,
                     ) {
                         host.zapTo(ref) { ok, result ->
+                            if (ok) dismissEpgDialogs()
                             showActionResult(
                                 a.getString(if (ok) R.string.epg_switched else R.string.epg_switch_failed),
                                 result,
@@ -292,6 +293,7 @@ class EpgUi(
         val conflicts = ZapTimers.list(a).filter { it.begin == timer.begin && it.key() != timer.key() }
         if (conflicts.isEmpty()) {
             ZapTimers.add(a, timer)
+            dismissEpgDialogs()
             showActionResult(a.getString(R.string.epg_added_schedule),
                 a.getString(R.string.epg_schedule_message, t(timer.begin), timer.channel, timer.title))
             return
@@ -302,6 +304,7 @@ class EpgUi(
             listOf(
                 TvDialog.Btn(a.getString(R.string.epg_replace)) {
                     ZapTimers.replaceAt(a, timer)
+                    dismissEpgDialogs()
                     showActionResult(a.getString(R.string.epg_replaced),
                         a.getString(R.string.epg_schedule_message, t(timer.begin), timer.channel, timer.title))
                 },
@@ -338,6 +341,11 @@ class EpgUi(
                 onResult?.invoke(r.first)
             }
         }
+    }
+
+    private fun dismissEpgDialogs() {
+        TvDialog.dismissAll()
+        multiDialog = null
     }
 
     private fun showActionResult(title: String, message: String, onClose: () -> Unit = {}) {
@@ -536,7 +544,9 @@ class EpgUi(
                 TvDialog.enableCarousel(this)
                 setOnItemClickListener { _, _, w, _ ->
                     val r = adapter.rows[w]
-                    if (r.ev != null) showEvent(r.ev, r.ch) else r.ch?.let { host.zapTo(it.ref) }
+                    if (r.ev != null) showEvent(r.ev, r.ch) else r.ch?.let { channel ->
+                        host.zapTo(channel.ref) { ok, _ -> if (ok) dismissEpgDialogs() }
+                    }
                 }
                 isLongClickable = true
                 setOnItemLongClickListener { _, _, _, _ ->
