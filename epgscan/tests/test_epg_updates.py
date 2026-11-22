@@ -105,6 +105,29 @@ class CoverageTests(unittest.TestCase):
 
 
 class PackTests(unittest.TestCase):
+	def test_picon_index_matches_service_names_after_normalization(self):
+		with tempfile.TemporaryDirectory() as directory:
+			names = {
+				"#vamos.png": b"vamos",
+				"01 bbc one.png": b"bbc",
+			}
+			for name, content in names.items():
+				with open(os.path.join(directory, name), "wb") as f:
+					f.write(content)
+			with patch.object(clientpack, "PICON_DIRS", [directory]):
+				idx = clientpack._picon_index()
+			self.assertEqual(clientpack._picon_for(idx, "", "#vamos"), os.path.join(directory, "#vamos.png"))
+			self.assertEqual(clientpack._picon_for(idx, "", "01 BBC One"), os.path.join(directory, "01 bbc one.png"))
+
+	def test_normalized_picon_name_is_preferred_over_alias(self):
+		with tempfile.TemporaryDirectory() as directory:
+			for name in ("#vamos.png", "vamos.png"):
+				with open(os.path.join(directory, name), "wb") as f:
+					f.write(name.encode("ascii"))
+			with patch.object(clientpack, "PICON_DIRS", [directory]):
+				idx = clientpack._picon_index()
+			self.assertEqual(clientpack._picon_for(idx, "", "#vamos"), os.path.join(directory, "vamos.png"))
+
 	def test_pack_info_reports_current_picon_checksum(self):
 		with tempfile.TemporaryDirectory() as directory:
 			with open(os.path.join(directory, "pack.json"), "w") as f:
@@ -129,7 +152,7 @@ class PackTests(unittest.TestCase):
 		job.t0 = 0
 		with tempfile.TemporaryDirectory() as directory:
 			with patch.object(clientpack, "pack_dir", return_value=directory), \
-					patch.object(clientpack, "_picon_index", return_value={}):
+					patch.object(clientpack, "_picon_index", return_value=({}, {})):
 				job.write()
 			with open(os.path.join(directory, "epg.json.gz"), "rb") as f:
 				checksum = hashlib.sha256(f.read()).hexdigest()

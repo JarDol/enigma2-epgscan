@@ -19,7 +19,7 @@ try:
 except Exception:
 	nimmanager = None
 
-VERSION = "2.19.3"
+VERSION = "2.19.4"
 LOG = "/tmp/epgscan.log"
 E2 = "/etc/enigma2"
 DATA_DIR = os.path.join(E2, "epgscan")          # wszystkie pliki wtyczki w pamieci wewnetrznej

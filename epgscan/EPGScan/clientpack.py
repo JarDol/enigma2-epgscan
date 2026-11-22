@@ -116,17 +116,30 @@ def _picon_index():
 		pass
 	dirs += PICON_DIRS
 	idx = {}
+	names = {}
+	name_aliases = {}
 	for d in dirs:
 		try:
 			for fn in os.listdir(d):
 				if fn.lower().endswith(".png"):
-					idx.setdefault(fn.lower(), os.path.join(d, fn))
+					path = os.path.join(d, fn)
+					idx.setdefault(fn.lower(), path)
+					key = _snp(os.path.splitext(fn)[0]) + ".png"
+					if key == ".png":
+						continue
+					if fn.lower() == key:
+						names.setdefault(key, path)
+					else:
+						name_aliases.setdefault(key, path)
 		except Exception:
 			continue
-	return idx
+	for key, path in name_aliases.items():
+		names.setdefault(key, path)
+	return idx, names
 
 
 def _picon_for(idx, ref, name):
+	files, names = idx
 	f = ref.rstrip(":").split(":")
 	cands = []
 	if len(f) >= 10:
@@ -135,12 +148,11 @@ def _picon_for(idx, ref, name):
 		b1 = list(base)
 		b1[2] = "1"
 		cands.append("_".join(b1))
-	cands.append(_snp(name))
 	for c in cands:
-		p = idx.get((c + ".png").lower())
+		p = files.get((c + ".png").lower())
 		if p:
 			return p
-	return None
+	return names.get(_snp(name) + ".png")
 
 
 class PackJob(object):
