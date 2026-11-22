@@ -61,10 +61,14 @@ class DesktopConfigTest {
             lircHost = "192.168.1.5",
             lircPort = 9000,
             lastPiconFetchDay = "2025-01-31",
+            piconPackIdentity = "receiver:8770/sha256:abc",
             tsMin = 90,
             tsDir = "E:\\bufor",
             tsStepSec = 15,
             tsStepMin = 5,
+            tsStepSecLong = 25,
+            tsStepUdSec = 90,
+            tsStepUdLongMin = 9,
             tsBackLive = true,
             windowMode = WindowMode.FULLSCREEN,
             tsBannerSec = 9,
@@ -91,6 +95,19 @@ class DesktopConfigTest {
             config.save(path)
 
             assertEquals(config, DesktopConfig.load(path))
+        } finally {
+            Files.deleteIfExists(path)
+            Files.deleteIfExists(directory)
+        }
+    }
+
+    @Test
+    fun migratesLegacyVerticalSeekStep() {
+        val directory = Files.createTempDirectory("e2stream-config-legacy")
+        val path = directory.resolve("settings.properties")
+        try {
+            Files.write(path, "tsStepMin=5\n".toByteArray())
+            assertEquals(300, DesktopConfig.load(path).tsStepUdSec)
         } finally {
             Files.deleteIfExists(path)
             Files.deleteIfExists(directory)

@@ -77,6 +77,9 @@ data class DesktopConfig(
     val tsDir: String = "",
     val tsStepSec: Int = 5,
     val tsStepMin: Int = 1,
+    val tsStepSecLong: Int = 10,
+    val tsStepUdSec: Int = 60,
+    val tsStepUdLongMin: Int = 3,
     val tsBackLive: Boolean = false,
     val windowMode: WindowMode = WindowMode.MAXIMIZED,
     val tsBannerSec: Int = 6,
@@ -211,6 +214,9 @@ data class DesktopConfig(
             setProperty("tsDir", tsDir)
             setProperty("tsStepSec", tsStepSec.toString())
             setProperty("tsStepMin", tsStepMin.toString())
+            setProperty("tsStepSecLong", tsStepSecLong.toString())
+            setProperty("tsStepUdSec", tsStepUdSec.toString())
+            setProperty("tsStepUdLongMin", tsStepUdLongMin.toString())
             setProperty("tsBackLive", tsBackLive.toString())
             setProperty("windowMode", windowMode.name)
             setProperty("tsBannerSec", tsBannerSec.toString())
@@ -367,6 +373,9 @@ data class DesktopConfig(
                 tsDir = string("tsDir", ""),
                 tsStepSec = int("tsStepSec", defaults.tsStepSec, 1..120),
                 tsStepMin = int("tsStepMin", defaults.tsStepMin, 1..30),
+                tsStepSecLong = int("tsStepSecLong", defaults.tsStepSecLong, 10..30),
+                tsStepUdSec = int("tsStepUdSec", int("tsStepMin", defaults.tsStepMin, 1..30) * 60, 30..1800),
+                tsStepUdLongMin = int("tsStepUdLongMin", defaults.tsStepUdLongMin, 3..15),
                 tsBackLive = bool("tsBackLive", defaults.tsBackLive),
                 windowMode = WindowMode.entries.firstOrNull { it.name == properties.getProperty("windowMode") }
                     ?: defaults.windowMode,

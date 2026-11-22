@@ -659,6 +659,10 @@ internal fun timeshiftTarget(target: Long, now: Long, oldestWall: Long, marginMs
 /** Odległość od końca bufora, poniżej której odtwarzanie traktujemy jako „na żywo”. */
 internal const val LIVE_MARGIN_MS = 6_000L
 
+internal fun timeshiftSeekStep(config: DesktopConfig, horizontal: Boolean, held: Boolean): Long =
+    if (horizontal) (if (held) config.tsStepSecLong else config.tsStepSec) * 1000L
+    else if (held) config.tsStepUdLongMin * 60_000L else config.tsStepUdSec * 1000L
+
 internal fun formatDuration(ms: Long): String {
     val seconds = (ms / 1000).coerceAtLeast(0)
     return if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60)

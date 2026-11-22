@@ -91,6 +91,15 @@ class TimeshiftTest {
     }
 
     @Test
+    fun usesSeparateShortAndHeldSeekSteps() {
+        val config = DesktopConfig(tsStepSec = 2, tsStepSecLong = 15, tsStepUdSec = 90, tsStepUdLongMin = 6)
+        assertEquals(2_000L, timeshiftSeekStep(config, horizontal = true, held = false))
+        assertEquals(15_000L, timeshiftSeekStep(config, horizontal = true, held = true))
+        assertEquals(90_000L, timeshiftSeekStep(config, horizontal = false, held = false))
+        assertEquals(360_000L, timeshiftSeekStep(config, horizontal = false, held = true))
+    }
+
+    @Test
     fun savesBufferFromChosenMomentToFile() {
         val dir = Files.createTempDirectory("e2stream-ts-test").toFile()
         var now = 0L

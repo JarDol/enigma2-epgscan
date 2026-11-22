@@ -74,6 +74,6 @@ internal fun playbackBarFor(
         start = clockAt(oldest, now),
         end = clockAt(now, now),
         progress = ((shown - oldest).toFloat() / span).coerceIn(0f, 1f),
-        hint = "◀ ▶ ±${config.tsStepSec} s   ▲ ▼ ±${config.tsStepMin} min   OK pauza   Stop — na żywo   Wstecz — ukryj",
+        hint = "◀ ▶ ±${config.tsStepSec}/${config.tsStepSecLong} s   ▲ ▼ ±${formatDuration(config.tsStepUdSec * 1000L)}/${config.tsStepUdLongMin} min   OK pauza   Stop — na żywo   Wstecz — ukryj",
     )
 }

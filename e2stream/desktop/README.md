@@ -36,7 +36,8 @@ Info shows the progress bar, Back/Stop returns to the list.
 `%LOCALAPPDATA%/E2Stream/timeshift`, 15–360 minutes, limited by free space) and
 plays it through a local server. Pause, REW/FF, the configurable ◀▶/▲▼ steps,
 Stop (back to live) and an optional Back-to-live action work as on Android; the
-timeshift bar shows the buffered range and delay.
+timeshift bar shows the buffered range and delay. Short and held arrow-key
+presses have separately configurable seek steps.
 The beginning of a buffer that has not yet been trimmed is available with a
 shorter safety margin. If the programme's PMT declares no PCR PID, buffering
 accepts a PCR on a programme stream or starts without one after a short wait.

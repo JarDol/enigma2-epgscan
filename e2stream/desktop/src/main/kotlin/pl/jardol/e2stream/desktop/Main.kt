@@ -3109,16 +3109,28 @@ fun main() {
                             config.copy(tsDir = it.trim())
                         }
                     },
-                    SettingItem.Action("Krok ◀ ▶", "${config.tsStepSec} s") {
-                        val steps = listOf(5, 10, 15, 30, 60)
-                        choose("Krok ◀ ▶ (sekundy)", steps.map { "$it s" }, steps.indexOf(config.tsStepSec)) {
+                    SettingItem.Action("Krok ◀ ▶ (krótkie)", "${config.tsStepSec} s") {
+                        val steps = (listOf(1, 2, 3, 4, 5) + config.tsStepSec).distinct().sorted()
+                        choose("Krok ◀ ▶ krótki (sekundy)", steps.map { "$it s" }, steps.indexOf(config.tsStepSec)) {
                             saveConfig(config.copy(tsStepSec = steps[it]), "Krok ◀ ▶: ${steps[it]} s.")
                         }
                     },
-                    SettingItem.Action("Krok ▲ ▼", "${config.tsStepMin} min") {
-                        val steps = listOf(1, 3, 5, 10, 15)
-                        choose("Krok ▲ ▼ (minuty)", steps.map { "$it min" }, steps.indexOf(config.tsStepMin)) {
-                            saveConfig(config.copy(tsStepMin = steps[it]), "Krok ▲ ▼: ${steps[it]} min.")
+                    SettingItem.Action("Krok ◀ ▶ (przytrzymanie)", "${config.tsStepSecLong} s") {
+                        val steps = listOf(10, 15, 20, 25, 30)
+                        choose("Krok ◀ ▶ długi (sekundy)", steps.map { "$it s" }, steps.indexOf(config.tsStepSecLong)) {
+                            saveConfig(config.copy(tsStepSecLong = steps[it]), "Krok ◀ ▶ długi: ${steps[it]} s.")
+                        }
+                    },
+                    SettingItem.Action("Krok ▲ ▼ (krótkie)", formatDuration(config.tsStepUdSec * 1000L)) {
+                        val steps = (listOf(30, 60, 90, 120) + config.tsStepUdSec).distinct().sorted()
+                        choose("Krok ▲ ▼ krótki", steps.map { formatDuration(it * 1000L) }, steps.indexOf(config.tsStepUdSec)) {
+                            saveConfig(config.copy(tsStepUdSec = steps[it]), "Krok ▲ ▼: ${formatDuration(steps[it] * 1000L)}.")
+                        }
+                    },
+                    SettingItem.Action("Krok ▲ ▼ (przytrzymanie)", "${config.tsStepUdLongMin} min") {
+                        val steps = listOf(3, 6, 9, 12, 15)
+                        choose("Krok ▲ ▼ długi (minuty)", steps.map { "$it min" }, steps.indexOf(config.tsStepUdLongMin)) {
+                            saveConfig(config.copy(tsStepUdLongMin = steps[it]), "Krok ▲ ▼ długi: ${steps[it]} min.")
                         }
                     },
                     SettingItem.Toggle("Wstecz wraca na żywo", config.tsBackLive) {
@@ -3845,7 +3857,7 @@ fun main() {
                 }
             }
 
-            fun handleVirtualKey(key: VirtualRemoteKey): Boolean {
+            fun handleVirtualKey(key: VirtualRemoteKey, held: Boolean = false): Boolean {
                 if (showExitConfirmation) {
                     handleExitConfirmation(key)
                     return true
@@ -3985,8 +3997,8 @@ fun main() {
                 }
                 val ts = timeshift
                 if (ts != null && session != null) {
-                    val stepMs = config.tsStepSec * 1000L
-                    val stepMinMs = config.tsStepMin * 60_000L
+                    val stepMs = timeshiftSeekStep(config, horizontal = true, held = held)
+                    val stepMinMs = timeshiftSeekStep(config, horizontal = false, held = held)
                     val barOpen = playbackBarVisible
                     val handled = when (key) {
                         VirtualRemoteKey.PLAY_PAUSE -> { togglePlaybackPause(); true }
@@ -4159,8 +4171,10 @@ fun main() {
             }
 
             DisposableEffect(desktopWindow) {
+                val heldKeys = mutableSetOf<Int>()
                 val dispatcher = java.awt.KeyEventDispatcher { event ->
                     val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+                    if (event.id == KeyEvent.KEY_RELEASED) heldKeys.remove(event.keyCode)
                     if (event.id == KeyEvent.KEY_RELEASED && okPress.isDown &&
                         UniversalRemoteMap.findKey(universalBindings, UniversalRemoteMap.keyId(event.keyCode)) == VirtualRemoteKey.OK
                     ) {
@@ -4174,6 +4188,7 @@ fun main() {
                     ) {
                         return@KeyEventDispatcher false
                     }
+                    val held = !heldKeys.add(event.keyCode)
                     inputMode.onKey()
                     val physicalId = UniversalRemoteMap.keyId(event.keyCode)
                     val virtualKey = UniversalRemoteMap.findKey(universalBindings, physicalId)
@@ -4206,7 +4221,7 @@ fun main() {
                         virtualKey == VirtualRemoteKey.OK && okPressed() -> true
                         else -> {
                             if (virtualKey != null) remoteDiagnostics.log { "source=keyboard key=$virtualKey" }
-                            val handled = virtualKey != null && handleVirtualKey(virtualKey)
+                            val handled = virtualKey != null && handleVirtualKey(virtualKey, held)
                             handled || !navigator.isVisible && !showMenu && !showChannelList && quickPick == null &&
                                 handleLegacyKey(event.keyCode)
                         }
@@ -4218,6 +4233,7 @@ fun main() {
             }
 
             DisposableEffect(desktopWindow) {
+                val heldHidKeys = mutableSetOf<String>()
                 val rawInput = if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) null else try {
                     RawHidInput(
                         isApplicationFocused = {
@@ -4238,6 +4254,7 @@ fun main() {
                                     remoteDiagnostics.log { "source=hid $label queueMs=$queueMs ignored=focus" }
                                     return@invokeLater
                                 }
+                                val held = !heldHidKeys.add(physicalId)
                                 inputMode.onKey()
                                 val button = captureButton
                                 if (button != null) {
@@ -4250,13 +4267,14 @@ fun main() {
                                         recordTest("Pilot HID", UniversalRemoteMap.label(physicalId), key)
                                         if (key == VirtualRemoteKey.BACK) handleVirtualKey(key)
                                     } else if (key != VirtualRemoteKey.OK || !okPressed()) {
-                                        key?.let(::handleVirtualKey)
+                                        key?.let { handleVirtualKey(it, held) }
                                     }
                                 }
                             }
                         },
                         onRelease = { physicalId ->
                             EventQueue.invokeLater {
+                                heldHidKeys.remove(physicalId)
                                 if (okPress.isDown &&
                                     UniversalRemoteMap.findKey(universalBindings, physicalId) == VirtualRemoteKey.OK
                                 ) okReleased()
@@ -4368,7 +4386,7 @@ fun main() {
                                 }
                                 key == null -> Unit
                                 key == VirtualRemoteKey.OK && okPressed(autoReleaseMs = 350) -> Unit
-                                event.repeat == 0 || (event.repeat >= 3 && key in repeatable) -> handleVirtualKey(key)
+                                event.repeat == 0 || (event.repeat >= 3 && key in repeatable) -> handleVirtualKey(key, event.repeat > 0)
                             }
                         }
                     },
