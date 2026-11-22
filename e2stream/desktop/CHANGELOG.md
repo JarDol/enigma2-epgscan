@@ -3,6 +3,10 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.7.1
+
+- Historia kanałów pokazuje bieżącą audycję z lokalnego EPG, wczytywaną w tle bez opóźniania otwarcia listy; oznaczenia oglądanego kanału i bukietu pozostają widoczne.
+
 ## 0.7.0
 
 - Pilot-klawiatura (np. G20S Pro): „Przejmuj klawisze systemowe” (Ustawienia → Pilot) — gdy E2Stream jest aktywny, klawisze, które Windows obsługuje sam (Home / przeglądarka, multimedia, Menu, klawisz Windows), trafiają tylko do E2Stream. Domyślnie tylko z pilota (urządzenia USB / Bluetooth) — klawiatura laptopa działa zwykle; do wyboru też ze wszystkich klawiatur albo wyłączone. W innych oknach wszystko po staremu. Decyzje (urządzenie, przejęty / do Windows) w logu
