@@ -17,8 +17,12 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
-internal fun timeshiftEarliestSeekWall(oldestWall: Long, now: Long): Long =
-    minOf(oldestWall + 10_000, now)
+internal fun timeshiftEarliestSeekWall(oldestWall: Long, now: Long, marginMs: Long = 10_000): Long =
+    minOf(oldestWall + marginMs, now)
+
+internal fun timeshiftSeekMargin(segmentCount: Int, maxMinutes: Int, freeBytes: Long, trimmed: Boolean): Long =
+    if (trimmed || segmentCount >= maxOf(2, maxMinutes + 1) ||
+        (segmentCount >= 2 && freeBytes < TimeshiftBuffer.RESERVE + 60_000_000L)) 10_000L else 1_000L
 
 internal fun timeshiftRecoveryTarget(oldestWall: Long, now: Long): Long? =
     timeshiftEarliestSeekWall(oldestWall, now).takeIf { it < now - 6_000 }
@@ -32,14 +36,14 @@ internal fun isTimeshiftExpiredSegment(error: Throwable?): Boolean {
     return false
 }
 
-internal fun timeshiftSeekTarget(base: Long, delta: Long, oldestWall: Long, now: Long): Long =
-    maxOf(base + delta, timeshiftEarliestSeekWall(oldestWall, now))
+internal fun timeshiftSeekTarget(base: Long, delta: Long, oldestWall: Long, now: Long, marginMs: Long = 10_000): Long =
+    maxOf(base + delta, timeshiftEarliestSeekWall(oldestWall, now, marginMs))
 
-internal fun timeshiftAvailableSpan(oldestWall: Long, now: Long): Long =
-    now - timeshiftEarliestSeekWall(oldestWall, now)
+internal fun timeshiftAvailableSpan(oldestWall: Long, now: Long, marginMs: Long = 10_000): Long =
+    now - timeshiftEarliestSeekWall(oldestWall, now, marginMs)
 
-internal fun timeshiftBufferProgress(shownWall: Long, oldestWall: Long, now: Long): Int {
-    val earliest = timeshiftEarliestSeekWall(oldestWall, now)
+internal fun timeshiftBufferProgress(shownWall: Long, oldestWall: Long, now: Long, marginMs: Long = 10_000): Int {
+    val earliest = timeshiftEarliestSeekWall(oldestWall, now, marginMs)
     val span = now - earliest
     return if (span == 0L) 1000 else ((shownWall - earliest).coerceIn(0, span) * 1000 / span).toInt()
 }
@@ -681,6 +685,9 @@ class TimeshiftBuffer(
 
     val oldestOffset: Long get() = synchronized(lock) { segs.firstOrNull()?.start ?: 0 }
     val oldestWall: Long get() = synchronized(lock) { segs.firstOrNull()?.wall ?: SystemClock.elapsedRealtime() }
+    fun seekMarginMs(): Long = synchronized(lock) {
+        timeshiftSeekMargin(segs.size, maxMin, dir.usableSpace, trimmed)
+    }
     /** Długość zapisanego okna (ms). */
     fun spanMs(): Long = SystemClock.elapsedRealtime() - oldestWall
 

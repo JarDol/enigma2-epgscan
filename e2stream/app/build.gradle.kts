@@ -11,8 +11,8 @@ android {
         applicationId = "pl.jardol.e2stream"
         minSdk = 23
         targetSdk = 35
-        versionCode = 269
-        versionName = "0.18.89"
+        versionCode = 270
+        versionName = "0.18.90"
         buildConfigField("boolean", "WAKE_DIAGNOSTICS", versionName!!.contains("-beta.").toString())
         // opcje testowe (np. Test EIT) tylko w betach
         buildConfigField("boolean", "BETA", versionName!!.contains("-beta.").toString())
