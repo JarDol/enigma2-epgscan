@@ -44,6 +44,7 @@ class TimeshiftTest {
             now = 60_000
             buffer.write(packets(2000, 2000), 0, 2000 * TimeshiftBuffer.PACKET)
             now = 120_000
+            assertEquals(1_000L, buffer.seekMarginMs())
 
             assertEquals(0L, buffer.offsetAt(-5_000))
             assertEquals(2000L * TimeshiftBuffer.PACKET, buffer.offsetAt(60_000))
@@ -69,6 +70,7 @@ class TimeshiftTest {
                 buffer.write(packets(10), 0, 10 * TimeshiftBuffer.PACKET)
             }
             assertTrue(buffer.trimmed)
+            assertEquals(10_000L, buffer.seekMarginMs())
             assertEquals(120_000L, buffer.oldestWall)
             assertEquals(-1, buffer.read(0, ByteArray(TimeshiftBuffer.PACKET), 0, TimeshiftBuffer.PACKET))
         } finally {
@@ -82,6 +84,8 @@ class TimeshiftTest {
         assertEquals(TimeshiftTarget.Live, timeshiftTarget(target = 98_000, now = 100_000, oldestWall = 0))
         assertEquals(TimeshiftTarget.At(50_000, false), timeshiftTarget(target = 50_000, now = 100_000, oldestWall = 0))
         assertEquals(TimeshiftTarget.At(30_000, true), timeshiftTarget(target = 10_000, now = 100_000, oldestWall = 20_000))
+        assertEquals(TimeshiftTarget.At(21_000, true), timeshiftTarget(target = 10_000, now = 100_000, oldestWall = 20_000, marginMs = 1_000))
+        assertEquals(TimeshiftTarget.Live, timeshiftTarget(target = 0, now = 25_000, oldestWall = 20_000))
         assertEquals("1:05", formatDuration(65_000))
         assertEquals("1:01:01", formatDuration(3_661_000))
     }

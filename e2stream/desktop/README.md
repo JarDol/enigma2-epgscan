@@ -37,6 +37,10 @@ Info shows the progress bar, Back/Stop returns to the list.
 plays it through a local server. Pause, REW/FF, the configurable ◀▶/▲▼ steps,
 Stop (back to live) and an optional Back-to-live action work as on Android; the
 timeshift bar shows the buffered range and delay.
+The beginning of a buffer that has not yet been trimmed is available with a
+shorter safety margin. If the programme's PMT declares no PCR PID, buffering
+accepts a PCR on a programme stream or starts without one after a short wait.
+Automatic update checks are deferred while a local recording is active.
 
 **Ogólne** also mirrors the Android options for menu entries (show/hide and
 order; Ustawienia and Wyłącz stay last), timeouts of the timeshift/recording

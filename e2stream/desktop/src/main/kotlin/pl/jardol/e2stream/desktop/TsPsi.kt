@@ -57,6 +57,8 @@ internal class TsStreamFixer(
     private var sectionPackets = ByteArrayOutputStream()
 
     private var waitPcr = waitForPcr
+    private var noPcrSince: Long? = null
+    private var programPids = emptySet<Int>()
     private var skipped = 0L
     private val skippedPids = HashMap<Int, Int>()
 
@@ -72,6 +74,7 @@ internal class TsStreamFixer(
     fun newConnection() {
         carryLength = 0
         waitPcr = waitForPcr
+        noPcrSince = null
         skipped = 0
         skippedPids.clear()
         patSeenAt = 0
@@ -183,6 +186,7 @@ internal class TsStreamFixer(
         val program = (u(section, 3) shl 8) or u(section, 4)
         if (sid > 0 && program != sid) return
         pcrPid = ((u(section, 8) and 0x1f) shl 8) or u(section, 9)
+        programPids = streamPids(section.copyOf(need))
         lastPmt = sectionPackets.toByteArray()
         if (!pmtSeen) {
             pmtSeen = true
@@ -205,6 +209,7 @@ internal class TsStreamFixer(
         val sectionBytes = cached ?: return
         if (pcrPid < 0 && sectionBytes.size >= 12 && u(sectionBytes, 0) == 0x02) {
             pcrPid = ((u(sectionBytes, 8) and 0x1f) shl 8) or u(sectionBytes, 9)
+            programPids = streamPids(sectionBytes)
         }
         val packets = injection ?: buildInjection(sectionBytes)?.also { injection = it } ?: return
         var i = 0
@@ -219,6 +224,20 @@ internal class TsStreamFixer(
         if (pmtInjected == 1 || pmtInjected % 20 == 0) {
             log("TS: brak PMT od dekodera ${now - patSeenAt} ms po PAT — wstawiam zapamiętany PMT (×$pmtInjected)")
         }
+    }
+
+    private fun streamPids(section: ByteArray): Set<Int> {
+        if (section.size < 16) return emptySet()
+        val end = minOf(3 + (((u(section, 1) and 0x0f) shl 8) or u(section, 2)) - 4, section.size - 4)
+        var index = 12 + (((u(section, 10) and 0x0f) shl 8) or u(section, 11))
+        val pids = mutableSetOf<Int>()
+        while (index + 5 <= end) {
+            val length = 5 + (((u(section, index + 3) and 0x0f) shl 8) or u(section, index + 4))
+            if (index + length > end) break
+            pids += ((u(section, index + 1) and 0x1f) shl 8) or u(section, index + 2)
+            index += length
+        }
+        return pids
     }
 
     /** Pakiety PMT z zapamiętanej sekcji; zostają tylko ścieżki, które dekoder faktycznie przysyła. */
@@ -270,8 +289,17 @@ internal class TsStreamFixer(
         val pid = ((b1 and 0x1f) shl 8) or u(p, o + 2)
         val hasPcr = (b1 and 0x80) == 0 && (u(p, o + 3) and 0x20) != 0 && u(p, o + 4) >= 7 && (u(p, o + 5) and 0x10) != 0
         val want = pcrPid
-        val pcr = hasPcr && (if (want >= 0) pid == want else skipped >= ANY_PCR_AFTER)
-        if (pcr || skipped >= SKIP_MAX) {
+        val noPcrInPmt = want == 0x1fff
+        val now = clock()
+        if (noPcrInPmt && noPcrSince == null) noPcrSince = now
+        if (!noPcrInPmt) noPcrSince = null
+        val pcr = hasPcr && when {
+            noPcrInPmt -> pid in programPids
+            want >= 0 -> pid == want
+            else -> skipped >= ANY_PCR_AFTER
+        }
+        val timedOut = noPcrInPmt && now - (noPcrSince ?: now) >= NO_PCR_WAIT_MS
+        if (pcr || timedOut || skipped >= SKIP_MAX) {
             waitPcr = false
             if (skipped > 0) {
                 val pids = skippedPids.entries.sortedByDescending { it.value }.take(5).joinToString(", ") { "${it.key}×${it.value}" }
@@ -281,6 +309,7 @@ internal class TsStreamFixer(
                 )
             }
             skipped = 0
+            noPcrSince = null
             skippedPids.clear()
             return true
         }
@@ -294,6 +323,7 @@ internal class TsStreamFixer(
         private const val SYNC = 0x47.toByte()
         const val INJECT_AFTER_MS = 300L
         const val ANY_PCR_AFTER = 1_000_000L
+        const val NO_PCR_WAIT_MS = 2_000L
         const val SKIP_MAX = 8_000_000L
 
         /** CRC32 MPEG-2 (sekcje PSI). */

@@ -128,6 +128,28 @@ class TsPsiTest {
     }
 
     @Test
+    fun missingPcrPidAcceptsOnlyProgramPcrOrTimesOut() {
+        var now = 1_000L
+        val missingPcr = withCrc(pmtSection().dropLast(4).toByteArray().apply {
+            this[8] = 0xff.toByte()
+            this[9] = 0xff.toByte()
+        })
+        fun fixer() = TsStreamFixer(sid, { null }, waitForPcr = true, clock = { now }, log = {})
+        val pat = TsStreamFixer.packetize(patSection(), 0)
+        val pmt = TsStreamFixer.packetize(missingPcr, pmtPid)
+        val first = fixer()
+        assertTrue(feedAll(first, pat, pmt, es(0x200, pcr = true)).isEmpty())
+        assertEquals(listOf(audioPid), pids(feedAll(first, es(audioPid, pcr = true))))
+
+        val second = fixer()
+        assertTrue(feedAll(second, pat, pmt, es(audioPid)).isEmpty())
+        now += TsStreamFixer.NO_PCR_WAIT_MS
+        assertEquals(listOf(audioPid), pids(feedAll(second, es(audioPid))))
+        second.newConnection()
+        assertTrue(feedAll(second, es(audioPid)).isEmpty())
+    }
+
+    @Test
     fun pmtBuiltFromLamedbPids() {
         val json = JSONObject().put("video", videoPid).put("vtype", 1)
             .put("audio", org.json.JSONArray().put(JSONObject().put("pid", audioPid).put("type", "mpeg"))).toString()

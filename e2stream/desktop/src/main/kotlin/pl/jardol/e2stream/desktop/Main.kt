@@ -1287,7 +1287,7 @@ fun main() {
                 val target = tsPendingTarget ?: return@LaunchedEffect
                 val ts = timeshift ?: return@LaunchedEffect
                 tsPendingTarget = null
-                when (val resolved = timeshiftTarget(target, monotonicMs(), ts.buffer.oldestWall)) {
+                when (val resolved = timeshiftTarget(target, monotonicMs(), ts.buffer.oldestWall, ts.buffer.seekMarginMs())) {
                     TimeshiftTarget.Live -> {
                         timeshiftPlay(resolved)
                         status = "Na żywo."
@@ -2226,12 +2226,20 @@ fun main() {
             }
             fun checkUpdate(manual: Boolean) {
                 if (updateBusy) return
+                if (!manual && activeRecording != null) {
+                    logInfo("aktualizacja automatyczna: wstrzymana na czas nagrywania")
+                    return
+                }
                 updateBusy = true
                 updateStatus = "sprawdzanie…"
                 val channel = config.updateChannel
                 scope.launch {
                     val result = withContext(Dispatchers.IO) { runCatching { Updater.newer(appVersion(), channel) } }
                     updateBusy = false
+                    if (!manual && activeRecording != null) {
+                        logInfo("aktualizacja automatyczna: wstrzymana na czas nagrywania")
+                        return@launch
+                    }
                     saveConfig(config.copy(lastUpdateCheck = System.currentTimeMillis()))
                     result.onFailure {
                         updateStatus = "błąd sprawdzania: ${it.message}"
@@ -2294,9 +2302,9 @@ fun main() {
                 }
             }
 
-            LaunchedEffect(Unit) {
+            LaunchedEffect(activeRecording) {
                 delay(20_000)
-                if (config.autoUpdate && System.currentTimeMillis() - config.lastUpdateCheck > 20 * 3_600_000L) {
+                if (activeRecording == null && config.autoUpdate && System.currentTimeMillis() - config.lastUpdateCheck > 20 * 3_600_000L) {
                     checkUpdate(manual = false)
                     checkVlc(manual = false)
                 }

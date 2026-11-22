@@ -253,6 +253,11 @@ internal class TimeshiftBuffer(
 
     val oldestWall: Long get() = synchronized(lock) { segments.firstOrNull()?.wall ?: clock() }
 
+    fun seekMarginMs(): Long = synchronized(lock) {
+        if (trimmed || segments.size >= maxOf(2, maxMin + 1) ||
+            (segments.size >= 2 && dir.usableSpace < reserveBytes + 60_000_000L)) 10_000L else 1_000L
+    }
+
     /** Długość zapisanego okna (ms). */
     fun spanMs(): Long = if (total == 0L) 0 else clock() - oldestWall
 
@@ -641,10 +646,14 @@ internal sealed interface TimeshiftTarget {
     data class At(val wall: Long, val clampedToOldest: Boolean) : TimeshiftTarget
 }
 
-internal fun timeshiftTarget(target: Long, now: Long, oldestWall: Long): TimeshiftTarget = when {
-    target >= now - LIVE_MARGIN_MS -> TimeshiftTarget.Live
-    target < oldestWall -> TimeshiftTarget.At(oldestWall + 10_000, clampedToOldest = true)
-    else -> TimeshiftTarget.At(target, clampedToOldest = false)
+internal fun timeshiftTarget(target: Long, now: Long, oldestWall: Long, marginMs: Long = 10_000): TimeshiftTarget {
+    val earliest = minOf(oldestWall + marginMs, now)
+    if (target >= now - LIVE_MARGIN_MS) return TimeshiftTarget.Live
+    if (target < earliest) {
+        return if (earliest >= now - LIVE_MARGIN_MS) TimeshiftTarget.Live
+        else TimeshiftTarget.At(earliest, clampedToOldest = true)
+    }
+    return TimeshiftTarget.At(target, clampedToOldest = false)
 }
 
 /** Odległość od końca bufora, poniżej której odtwarzanie traktujemy jako „na żywo”. */
