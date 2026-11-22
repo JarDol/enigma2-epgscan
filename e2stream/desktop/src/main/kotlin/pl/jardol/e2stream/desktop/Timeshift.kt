@@ -13,6 +13,7 @@ import java.net.Socket
 import java.net.URI
 import java.nio.file.Paths
 import java.util.Base64
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
 
@@ -36,6 +37,7 @@ internal class TimeshiftBuffer(
 
     private val segments = ArrayList<Segment>()
     private val lock = Object()
+    private var closed = false
     private var output: FileOutputStream? = null
     private var nextIndex = 0
     private val pending = ByteArray(PACKET)
@@ -49,7 +51,7 @@ internal class TimeshiftBuffer(
     @Volatile var trimmed = false
         private set
 
-    @Volatile private var session = newSession()
+    private val session = newSession()
 
     /** Nagranie z bufora: kawałki z zakresu są przenoszone do [dir] zamiast kasowania (bez kopiowania). */
     internal class Recording(
@@ -81,10 +83,11 @@ internal class TimeshiftBuffer(
 
     init {
         dir.mkdirs()
+        registerSession(dir, session)
         cleanupAsync(dir, session)
     }
 
-    private fun newSession() = "ts-" + java.lang.Long.toString(System.currentTimeMillis(), 36) + "-"
+    private fun newSession() = "ts-" + UUID.randomUUID().toString() + "-"
 
     /** Nowe połączenie ze strumieniem: niepełny pakiet z poprzedniego jest porzucany. */
     fun resync() = synchronized(lock) { pendingLength = 0 }
@@ -93,7 +96,7 @@ internal class TimeshiftBuffer(
     fun write(bytes: ByteArray, offset: Int, length: Int) {
         if (length <= 0) return
         synchronized(lock) {
-            if (failed != null) return
+            if (closed || failed != null) return
             try {
                 var position = offset
                 val end = offset + length
@@ -218,7 +221,7 @@ internal class TimeshiftBuffer(
      */
     fun startRecording(dir: File, fromWall: Long, untilWall: Long, maxBytes: Long, onFinished: (RecordingResult) -> Unit): Boolean =
         synchronized(lock) {
-            if (recording != null || segments.isEmpty() || failed != null) return false
+            if (closed || recording != null || segments.isEmpty() || failed != null) return false
             dir.mkdirs()
             recording = Recording(dir, fromWall, untilWall, maxBytes, onFinished)
             true
@@ -379,14 +382,16 @@ internal class TimeshiftBuffer(
 
     /** Koniec bufora: pliki skasowane w tle. */
     override fun close() = synchronized(lock) {
+        if (closed) return
+        closed = true
         if (recording != null) finishLocked("zmiana kanału albo wyjście")
         runCatching { output?.close() }
         output = null
         segments.clear()
         total = 0
         pendingLength = 0
-        session = newSession()
-        cleanupAsync(dir, session)
+        unregisterSession(dir, session)
+        cleanupAsync(dir)
         lock.notifyAll()
     }
 
@@ -399,6 +404,24 @@ internal class TimeshiftBuffer(
 
         /** Ostrożne oszacowanie: kanał HD do ~8 Mb/s = 60 MB na minutę. */
         const val MB_PER_MIN = 60L
+        private val sessionLock = Any()
+        private val activeSessions = HashMap<String, MutableSet<String>>()
+
+        private fun directoryKey(dir: File): String = dir.canonicalPath.let {
+            if (File.separatorChar == '\\') it.lowercase(java.util.Locale.ROOT) else it
+        }
+
+        private fun registerSession(dir: File, session: String) = synchronized(sessionLock) {
+            activeSessions.getOrPut(directoryKey(dir)) { mutableSetOf() }.add(session)
+        }
+
+        private fun unregisterSession(dir: File, session: String) = synchronized(sessionLock) {
+            val key = directoryKey(dir)
+            activeSessions[key]?.let {
+                it.remove(session)
+                if (it.isEmpty()) activeSessions.remove(key)
+            }
+        }
 
         val CHOICES = listOf(0, 15, 30, 60, 90, 120, 180, 240, 300, 360)
 
@@ -431,14 +454,19 @@ internal class TimeshiftBuffer(
             return if (usable <= 0) 0 else (usable / (MB_PER_MIN * 1_000_000)).toInt()
         }
 
-        /** Kasuje w tle pliki bufora poza bieżącą sesją [keep]. */
+        /** Kasuje w tle pliki nieaktywnych sesji w tym katalogu. */
         fun cleanupAsync(dir: File, keep: String? = null) {
             thread(name = "timeshift-sprzatanie", isDaemon = true) {
                 runCatching {
                     var count = 0
-                    dir.listFiles { file ->
-                        file.name.startsWith("ts-") && file.name.endsWith(".ts") && (keep == null || !file.name.startsWith(keep))
-                    }?.forEach { if (it.delete()) count++ }
+                    synchronized(sessionLock) {
+                        val active = activeSessions[directoryKey(dir)].orEmpty()
+                        dir.listFiles { file ->
+                            file.name.startsWith("ts-") && file.name.endsWith(".ts") &&
+                                (keep == null || !file.name.startsWith(keep)) &&
+                                active.none { file.name.startsWith(it) }
+                        }?.forEach { if (it.delete()) count++ }
+                    }
                     if (count > 0) AppLog.i("timeshift: usunięto $count plików bufora")
                 }
             }

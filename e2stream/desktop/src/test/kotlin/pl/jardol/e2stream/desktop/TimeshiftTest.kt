@@ -14,6 +14,40 @@ class TimeshiftTest {
     }
 
     @Test
+    fun concurrentBuffersKeepEachOthersFilesDuringCleanup() {
+        val dir = Files.createTempDirectory("e2stream-ts-shared").toFile()
+        val first = TimeshiftBuffer(dir, 30)
+        val second = TimeshiftBuffer(dir, 30)
+        try {
+            val data = packets(10)
+            first.write(data, 0, data.size)
+            val firstFile = dir.listFiles()!!.single { it.name.endsWith(".ts") }
+            second.write(data, 0, data.size)
+            val stale = dir.resolve("ts-stale-0.ts").apply { writeBytes(data) }
+            TimeshiftBuffer.cleanupAsync(dir)
+            val deadline = System.currentTimeMillis() + 5_000
+            while (stale.exists() && System.currentTimeMillis() < deadline) Thread.sleep(10)
+            assertTrue(!stale.exists())
+            assertEquals(2, dir.listFiles()?.count { it.name.endsWith(".ts") })
+            first.close()
+            val closeDeadline = System.currentTimeMillis() + 5_000
+            while (firstFile.exists() && System.currentTimeMillis() < closeDeadline) Thread.sleep(10)
+            assertTrue(!firstFile.exists())
+            second.write(data, 0, data.size)
+            val read = ByteArray(data.size)
+            assertEquals(data.size, second.read(0, read, 0, read.size))
+            assertEquals(data.size * 2L, second.total)
+            first.write(data, 0, data.size)
+            assertEquals(0L, first.total)
+        } finally {
+            first.close()
+            second.close()
+            dir.listFiles()?.forEach { it.delete() }
+            dir.delete()
+        }
+    }
+
+    @Test
     fun dropsLeadingGarbageAndKeepsWholePacketsAcrossWrites() {
         val dir = Files.createTempDirectory("e2stream-ts-test").toFile()
         var now = 1_000_000L
