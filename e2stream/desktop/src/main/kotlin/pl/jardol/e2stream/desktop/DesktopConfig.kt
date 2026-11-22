@@ -72,6 +72,7 @@ data class DesktopConfig(
     val lircHost: String = "127.0.0.1",
     val lircPort: Int = 8765,
     val lastPiconFetchDay: String = "",
+    val piconPackIdentity: String = "",
     val tsMin: Int = 0,
     val tsDir: String = "",
     val tsStepSec: Int = 5,
@@ -205,6 +206,7 @@ data class DesktopConfig(
             setProperty("lircHost", lircHost)
             setProperty("lircPort", lircPort.toString())
             setProperty("lastPiconFetchDay", lastPiconFetchDay)
+            setProperty("piconPackIdentity", piconPackIdentity)
             setProperty("tsMin", tsMin.toString())
             setProperty("tsDir", tsDir)
             setProperty("tsStepSec", tsStepSec.toString())
@@ -360,6 +362,7 @@ data class DesktopConfig(
                 lircHost = string("lircHost", defaults.lircHost).ifBlank { defaults.lircHost },
                 lircPort = int("lircPort", defaults.lircPort, 1..65535),
                 lastPiconFetchDay = string("lastPiconFetchDay", ""),
+                piconPackIdentity = string("piconPackIdentity", ""),
                 tsMin = int("tsMin", defaults.tsMin, 0..600),
                 tsDir = string("tsDir", ""),
                 tsStepSec = int("tsStepSec", defaults.tsStepSec, 1..120),

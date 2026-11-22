@@ -6,8 +6,10 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
+import java.security.MessageDigest
 import java.text.Normalizer
 import java.util.Base64
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipInputStream
 
@@ -16,6 +18,7 @@ import java.util.zip.ZipInputStream
  * paczka wtyczki EPG Scan, katalog picon z ustawień Enigmy2 (FTP), OpenWebif /picon/, typowe katalogi.
  */
 internal object Picons {
+    data class FetchResult(val count: Int, val packIdentity: String?)
     private val ftpDirs = listOf(
         "/usr/share/enigma2/picon", "/media/hdd/picon", "/media/usb/picon",
         "/media/mmc/picon", "/picon", "/data/picon",
@@ -71,13 +74,32 @@ internal object Picons {
     }
 
     /** Pobiera brakujące ikony dla [channels]; zwraca liczbę kanałów, które mają ikonę. */
-    fun fetch(config: DesktopConfig, channels: List<Channel>, progress: (String) -> Unit): Int {
+    fun fetch(config: DesktopConfig, channels: List<Channel>, usesPlugin: Boolean, progress: (String) -> Unit): FetchResult {
         val dir = dir()
         fun missing() = channels.filter { !File(dir, localName(it.ref)).exists() }
         var left = missing()
-        if (left.isNotEmpty()) {
-            pluginPack(config, progress)
+        var identity: String? = null
+        val info = if (usesPlugin) try {
+            DecoderClient(config).packInfo()
+        } catch (e: IOException) {
+            AppLog.i("ikony: nie udało się sprawdzić paczki: ${e.message}")
+            null
+        } else null
+        if (info?.optBoolean("building") == true) throw IOException("EPG Scan przygotowuje paczkę ikon")
+        val packIdentity = info?.let {
+            packIdentity(config.host, config.pluginPort, it.optLong("at"), it.optLong("picons_size"), it.optString("picons_sha256"))
+        }
+        if (packIdentity != null && (packIdentity != config.piconPackIdentity || left.isNotEmpty())) {
+            pluginPack(config, info.optString("picons_sha256"), progress)
+            identity = packIdentity
             left = missing()
+        } else if (packIdentity == null && left.isNotEmpty()) {
+            try {
+                pluginPack(config, "", progress)
+                left = missing()
+            } catch (e: IOException) {
+                AppLog.i("ikony: paczka EPG Scan niedostępna: ${e.message}")
+            }
         }
         if (left.isNotEmpty()) {
             val detected = detectDir(config)
@@ -91,36 +113,52 @@ internal object Picons {
         if (none.isNotEmpty()) {
             AppLog.i("ikony: brak dla ${none.size} kanałów: " + none.take(40).joinToString("; ") { it.name })
         }
-        return channels.size - none.size
+        return FetchResult(channels.size - none.size, identity)
     }
 
-    private fun pluginPack(config: DesktopConfig, progress: (String) -> Unit) {
+    internal fun packIdentity(host: String, port: Int, at: Long, size: Long, sha: String): String? {
+        if (size <= 0) return null
+        val content = if (sha.isNotBlank()) "sha256:${sha.lowercase(Locale.ROOT)}" else "legacy:$at:$size"
+        return "${host.trim().lowercase(Locale.ROOT)}:$port/$content"
+    }
+
+    private fun pluginPack(config: DesktopConfig, sha: String, progress: (String) -> Unit) {
+        val temp = File.createTempFile("e2stream-picons", ".zip")
         try {
             progress("Ikony: paczka wtyczki EPG Scan…")
-            val connection = URI("http://${hostForUrl(config.host)}:${config.pluginPort}/api/pack/picons.zip")
-                .toURL().openConnection() as HttpURLConnection
-            connection.connectTimeout = 3000
-            connection.readTimeout = 120_000
-            if (config.pluginToken.isNotBlank()) connection.setRequestProperty("X-E2S-Token", config.pluginToken)
-            try {
-                if (connection.responseCode != 200) throw IOException("HTTP ${connection.responseCode}")
-                var count = 0
-                ZipInputStream(connection.inputStream).use { zip ->
-                    while (true) {
-                        val entry = zip.nextEntry ?: break
-                        val name = File(entry.name).name
-                        if (entry.isDirectory || !name.endsWith(".png") || name.length > 120) continue
-                        File(dir(), name).outputStream().use { zip.copyTo(it) }
-                        count++
-                    }
-                }
-                AppLog.i("ikony: z paczki EPG Scan: $count")
-            } finally {
-                connection.disconnect()
-            }
-        } catch (e: Exception) {
-            AppLog.i("ikony: paczka EPG Scan niedostępna: ${e.message}")
+            if (!DecoderClient(config).packFile("picons.zip", temp)) throw IOException("Brak paczki ikon")
+            val count = importPack(temp, dir(), sha)
+            AppLog.i("ikony: z paczki EPG Scan: $count")
+        } finally {
+            temp.delete()
         }
+    }
+
+    internal fun importPack(pack: File, target: File, sha: String): Int {
+        if (sha.isNotBlank()) {
+            val digest = MessageDigest.getInstance("SHA-256")
+            pack.inputStream().buffered().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            val actual = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            if (!actual.equals(sha, ignoreCase = true)) throw IOException("Paczka ikon zmieniła się podczas pobierania lub jest uszkodzona")
+        }
+        var count = 0
+        ZipInputStream(pack.inputStream().buffered()).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                val name = File(entry.name).name
+                if (entry.isDirectory || !name.endsWith(".png") || name.length > 120) continue
+                File(target, name).outputStream().use { zip.copyTo(it) }
+                count++
+            }
+        }
+        return count
     }
 
     /** Katalog picon z /etc/enigma2/settings (np. config.usage.picon_dir=/media/hdd/picon). */

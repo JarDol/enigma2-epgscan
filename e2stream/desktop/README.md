@@ -99,7 +99,8 @@ taken from the EPG Scan pack (`picons.zip`), then from the decoder over FTP
 (configured directory or the one from `/etc/enigma2/settings`), then from
 OpenWebif. They are refreshed automatically once a day or at every start
 (**Aktualizacja z EPG Scan**) and can be redownloaded manually. Missing picons can
-show the "E2" placeholder. **Dekoder Enigma2** also holds the FTP user,
+show the "E2" placeholder. Changed EPG Scan picon packs replace existing icons
+after their advertised SHA-256 has been verified. **Dekoder Enigma2** also holds the FTP user,
 password and target directory (default `/media/hdd/e2stream`).
 
 **Logi i zrzuty** shows VLC playback statistics (resolution, codec, bitrate,

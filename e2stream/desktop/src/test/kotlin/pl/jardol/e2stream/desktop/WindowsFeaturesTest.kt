@@ -63,6 +63,43 @@ class WindowsFeaturesTest {
     }
 
     @Test
+    fun piconPackIdentityDetectsChangedHashesAndReceivers() {
+        val first = Picons.packIdentity(" receiver ", 8088, 1, 100, "ABC")
+        assertEquals(first, Picons.packIdentity("receiver", 8088, 2, 200, "abc"))
+        kotlin.test.assertNotEquals(first, Picons.packIdentity("receiver", 8088, 1, 100, "def"))
+        kotlin.test.assertNotEquals(first, Picons.packIdentity("other", 8088, 1, 100, "abc"))
+        kotlin.test.assertNotEquals(
+            Picons.packIdentity("receiver", 8088, 1, 100, ""),
+            Picons.packIdentity("receiver", 8088, 2, 100, ""),
+        )
+        assertNull(Picons.packIdentity("receiver", 8088, 1, 0, "abc"))
+    }
+
+    @Test
+    fun piconPackUpdatesExistingIconsOnlyAfterHashVerification() {
+        val dir = createTempDirectory("picon-pack").toFile()
+        val pack = dir.resolve("pack.zip")
+        val icon = dir.resolve("channel.png").apply { writeText("old") }
+        try {
+            java.util.zip.ZipOutputStream(pack.outputStream()).use {
+                it.putNextEntry(java.util.zip.ZipEntry(icon.name))
+                it.write("new".toByteArray())
+                it.closeEntry()
+            }
+            kotlin.test.assertFailsWith<java.io.IOException> { Picons.importPack(pack, dir, "bad-hash") }
+            assertEquals("old", icon.readText())
+            val sha = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(pack.readBytes()).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            assertEquals(1, Picons.importPack(pack, dir, sha))
+            assertEquals("new", icon.readText())
+        } finally {
+            icon.delete()
+            pack.delete()
+            dir.delete()
+        }
+    }
+
+    @Test
     fun powerButtonParsesLastTwoValuesRegardlessOfLanguage() {
         val polish = """
             Identyfikator GUID schematu zasilania: 381b4222-f694-41f0-9685-ff5bb260df2e  (Zrównoważony)

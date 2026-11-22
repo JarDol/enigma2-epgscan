@@ -863,12 +863,15 @@ fun main() {
                                 runCatching { DecoderClient(current).loadChannels(bouquet, currentCatalog.usesPlugin) }
                                     .getOrDefault(emptyList())
                             }.distinctBy { serviceKey(it.ref) }
-                            all.size to Picons.fetch(current, all) { piconStatus = it }
+                            all.size to Picons.fetch(current, all, currentCatalog.usesPlugin) { piconStatus = it }
                         }
-                        piconStatus = "ikony: ${result.second}/${result.first} kanałów"
+                        piconStatus = "ikony: ${result.second.count}/${result.first} kanałów"
                         piconVersion++
-                        saveConfig(config.copy(lastPiconFetchDay = LocalDate.now().toString()))
-                        if (manual) status = "Ikony kanałów: ${result.second} z ${result.first}."
+                        saveConfig(config.copy(
+                            lastPiconFetchDay = LocalDate.now().toString(),
+                            piconPackIdentity = result.second.packIdentity ?: config.piconPackIdentity,
+                        ))
+                        if (manual) status = "Ikony kanałów: ${result.second.count} z ${result.first}."
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
