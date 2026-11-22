@@ -73,6 +73,8 @@ private val clockFormat = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.s
 
 private fun time(seconds: Long): String = clockFormat.format(Instant.ofEpochSecond(seconds))
 
+internal data class PipSurface(val channel: String, val session: VlcSession)
+
 internal fun bouquetOffset(bouquets: List<Bouquet>, current: Bouquet?, offset: Int): Bouquet? {
     if (bouquets.isEmpty() || offset == 0) return null
     val currentIndex = bouquets.indexOfFirst { it.ref == current?.ref }
@@ -122,6 +124,10 @@ internal fun PlayerPage(
     recordingLabel: String? = null,
     /** Stan bufora na pasku kanału (np. „B 12:34”); null — bez bufora. */
     bufferInfo: (() -> String?)? = null,
+    pipWindows: List<PipSurface> = emptyList(),
+    onPipClick: () -> Unit = {},
+    seekPreview: VlcSession? = null,
+    seekPreviewLabel: String = "",
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     var statusVisible by remember { mutableStateOf(false) }
@@ -167,6 +173,38 @@ internal fun PlayerPage(
     ) {
         if (session != null) {
             VideoView(session, videoScaleMode, Modifier.fillMaxSize())
+        }
+        if (seekPreview != null && !barsHidden) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                VideoView(seekPreview, VideoScaleMode.FIT, Modifier.fillMaxSize())
+                Text(
+                    seekPreviewLabel,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 170.dp)
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    color = Color.White,
+                )
+            }
+        }
+        pipWindows.take(3).forEachIndexed { index, pip ->
+            val alignment = when (index) {
+                0 -> Alignment.TopEnd
+                1 -> Alignment.TopStart
+                else -> Alignment.CenterEnd
+            }
+            Box(
+                Modifier.align(alignment).padding(16.dp).width(240.dp).height(135.dp)
+                    .background(Color.Black).clickable { onPipClick() },
+            ) {
+                VideoView(pip.session, VideoScaleMode.FIT, Modifier.fillMaxSize())
+                Text(
+                    "${index + 1}  ${pip.channel}",
+                    modifier = Modifier.align(Alignment.BottomStart).background(Color.Black.copy(alpha = 0.7f)).padding(4.dp),
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         if (recordingLabel != null) {
             Text(
@@ -392,6 +430,8 @@ internal fun ChannelListDialog(
     recordings: Map<String, Recording> = emptyMap(),
     buffered: Set<String> = emptySet(),
     recordingChannels: Set<String> = emptySet(),
+    pipChannels: Set<String> = emptySet(),
+    pickingPip: Boolean = false,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     val listState = rememberLazyListState()
@@ -427,7 +467,7 @@ internal fun ChannelListDialog(
                             onClick = { bouquetMenuExpanded = true },
                             enabled = !busy && bouquets.size > 1,
                         ) {
-                            Text("Bukiet: ${bouquet?.name ?: "Kanały"}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${if (pickingPip) "PiP — " else ""}Bukiet: ${bouquet?.name ?: "Kanały"}", maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         DropdownMenu(
                             expanded = bouquetMenuExpanded,
@@ -508,7 +548,11 @@ internal fun ChannelListDialog(
                             Text(channel.number.toString(), modifier = Modifier.width(55.dp * fontScale), color = secondaryText, fontSize = 20.sp * fontScale)
                             Column(Modifier.weight(1f)) {
                                 val key = serviceKey(channel.ref)
-                                val badge = if (key in buffered) if (key in recordingChannels) "  ● B" else "  B" else ""
+                                val badge = when {
+                                    key in pipChannels -> if (key in recordingChannels) "  ● PiP" else "  PiP"
+                                    key in buffered -> if (key in recordingChannels) "  ● B" else "  B"
+                                    else -> ""
+                                }
                                 Text(channel.name + badge, color = primaryText, fontSize = 22.sp * fontScale, fontWeight = FontWeight.Bold, maxLines = 1)
                                 Text(event?.title ?: "Brak danych EPG", color = secondaryText, fontSize = 16.sp * fontScale, maxLines = 1)
                             }

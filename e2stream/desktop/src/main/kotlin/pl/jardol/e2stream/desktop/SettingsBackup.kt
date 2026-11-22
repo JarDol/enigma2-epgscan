@@ -65,6 +65,7 @@ internal object SettingsBackup {
     )
     private val bools = linkedMapOf(
         "resumeLast" to "resumeLast", "invertUpDown" to "invertUpDown", "tsBackLive" to "tsBackLive",
+        "pipEnabled" to "pipEnabled",
         "epgDaily" to "epgDaily", "picons" to "picons", "missingPiconLogo" to "missingPiconLogo",
         "showStats" to "showStats", "logFtp" to "logFtp", "hideInfoDialogs" to "hideInfoDialogs",
         "watchdog" to "watchdog", "channelSync" to "channelSync", "blockOnDisconnect" to "blockOnDisconnect",

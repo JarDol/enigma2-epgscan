@@ -1,11 +1,11 @@
 package pl.jardol.e2stream.desktop
 
 /**
- * Least recently parked buffers first. Recording buffers are never evicted by the capacity limit.
+ * Least recently parked buffers first. Protected buffers are never evicted by the capacity limit.
  * The owner closes returned buffers outside the UI thread.
  */
 internal class BackgroundBuffers<T>(
-    private val isRecording: (T) -> Boolean,
+    private val isProtected: (T) -> Boolean,
 ) {
     private val entries = LinkedHashMap<String, T>()
 
@@ -22,7 +22,7 @@ internal class BackgroundBuffers<T>(
     fun trim(limit: Int): List<T> {
         val removed = mutableListOf<T>()
         while (entries.size > limit.coerceIn(0, 3)) {
-            val victim = entries.entries.firstOrNull { !isRecording(it.value) } ?: break
+            val victim = entries.entries.firstOrNull { !isProtected(it.value) } ?: break
             entries.remove(victim.key)
             removed += victim.value
         }

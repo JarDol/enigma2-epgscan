@@ -12,6 +12,7 @@ internal enum class DesktopMenuItem(val label: String, val configurable: Boolean
     AUDIO_DELAY("Przesunięcie dźwięku"),
     CHANNEL_LIST("Lista kanałów"),
     HISTORY("Historia kanałów"),
+    PIP("Obraz w obrazie (PiP)"),
     RECORDINGS("Nagrania"),
     LOCAL_RECORDINGS("Nagrania lokalne"),
     EPG_CHANNEL("EPG kanału"),

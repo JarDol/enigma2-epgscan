@@ -46,6 +46,10 @@ class BackgroundStreamingTest {
             backgrounds.park("first", first, 1)
             second.close()
             val resumed = backgrounds.take("first")!!
+            resumed.urlAt(resumed.buffer.oldestWall)
+            val base = resumed.baseWall
+            resumed.secondaryUrlAt(resumed.buffer.oldestWall)
+            assertEquals(base, resumed.baseWall)
             val connection = URI(resumed.urlAt(resumed.buffer.oldestWall)).toURL().openConnection().apply {
                 connectTimeout = 2_000
                 readTimeout = 2_000

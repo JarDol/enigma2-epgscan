@@ -7,6 +7,15 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class TimeshiftTest {
+    @Test
+    fun recordingSeekAccumulatesPendingStepsAndRespectsBounds() {
+        assertEquals(40_000, recordingSeekTarget(10_000, 20_000, 20_000, 100_000))
+        assertEquals(0, recordingSeekTarget(10_000, null, -20_000, 100_000))
+        assertEquals(99_000, recordingSeekTarget(80_000, null, 30_000, 100_000))
+        assertEquals(0, recordingSeekTarget(0, null, 1_000, 500))
+        assertEquals(40_000, recordingSeekTarget(10_000, null, 30_000, -1))
+    }
+
     private fun packets(count: Int, first: Int = 0): ByteArray = ByteArray(count * TimeshiftBuffer.PACKET).also { bytes ->
         for (index in 0 until count) {
             bytes[index * TimeshiftBuffer.PACKET] = 0x47

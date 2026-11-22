@@ -27,6 +27,10 @@ internal fun recordingDetails(recording: Recording): String = listOfNotNull(
     recording.lengthSec.takeIf { it > 0 }?.let { formatDuration(it * 1000) },
 ).joinToString(" • ")
 
+internal fun recordingSeekTarget(position: Long, pending: Long?, delta: Long, length: Long): Long =
+    ((pending ?: position) + delta).coerceAtLeast(0)
+        .let { if (length > 0) it.coerceAtMost((length - 1000).coerceAtLeast(0)) else it }
+
 @Suppress("UNUSED_PARAMETER")
 internal fun playbackBarFor(
     visible: Boolean,
@@ -38,17 +42,19 @@ internal fun playbackBarFor(
     channelName: String?,
     config: DesktopConfig,
     programmes: List<RecProgramme> = emptyList(),
+    pendingRecordingTarget: Long? = null,
 ): PlaybackBar? {
     if (!visible || session == null) return null
     val paused = session.isPaused
     if (recording != null) {
-        val position = session.time().coerceAtLeast(0)
+        val position = (pendingRecordingTarget ?: session.time()).coerceAtLeast(0)
         val length = session.length().takeIf { it > 0 } ?: (recording.lengthSec * 1000)
         val indexed = programmes.size > 1
         val now = if (indexed) programmeAt(programmes, position)?.title?.let { "▶ $it" }.orEmpty() else ""
         return PlaybackBar(
             title = recording.title,
-            line = listOf(if (paused) "Pauza" else "", now, recordingDetails(recording)).filter(String::isNotBlank).joinToString(" • "),
+            line = listOf(if (pendingRecordingTarget != null) "Przewijanie" else if (paused) "Pauza" else "", now, recordingDetails(recording))
+                .filter(String::isNotBlank).joinToString(" • "),
             start = formatDuration(position),
             end = if (length > 0) formatDuration(length) else "--:--",
             progress = if (length > 0) (position.toFloat() / length).coerceIn(0f, 1f) else 0f,
@@ -63,8 +69,8 @@ internal fun playbackBarFor(
     val behind = now - shown
     val span = (now - oldest).coerceAtLeast(1)
     val state = when {
-        paused -> "Pauza • −${formatDuration(behind)}"
         pendingTarget != null -> "Przewijanie do ${clockAt(shown, now)} (−${formatDuration(behind)})"
+        paused -> "Pauza • −${formatDuration(behind)}"
         behind <= LIVE_MARGIN_MS -> "Na żywo"
         else -> "${clockAt(shown, now)} • −${formatDuration(behind)} za transmisją"
     }

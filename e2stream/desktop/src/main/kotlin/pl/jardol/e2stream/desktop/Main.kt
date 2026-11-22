@@ -203,9 +203,19 @@ fun main() {
             var recordingProgrammes by remember { mutableStateOf<List<RecProgramme>>(emptyList()) }
             val recPositions = remember { RecordingPositions() }
             var timeshift by remember { mutableStateOf<TimeshiftSession?>(null) }
-            val backgroundBuffers = remember { BackgroundBuffers<BackgroundTimeshift> { it.session.buffer.isRecording } }
+            val backgroundBuffers = remember { BackgroundBuffers<BackgroundTimeshift> { it.session.buffer.isRecording || it.pip != null } }
+            var pipWindows by remember { mutableStateOf<List<BackgroundTimeshift>>(emptyList()) }
+            var pipPicking by remember { mutableStateOf(false) }
+            var quickPick by remember { mutableStateOf<QuickPick?>(null) }
             var tsPendingTarget by remember { mutableStateOf<Long?>(null) }
             var tsPendingGeneration by remember { mutableIntStateOf(0) }
+            var recPendingTarget by remember { mutableStateOf<Long?>(null) }
+            var recPendingGeneration by remember { mutableIntStateOf(0) }
+            var seekPreviewPlayer by remember { mutableStateOf<VlcSession?>(null) }
+            var seekPreviewReady by remember { mutableStateOf(false) }
+            var seekPreviewLabel by remember { mutableStateOf("") }
+            var seekMainPlayer by remember { mutableStateOf<VlcSession?>(null) }
+            var seekMainWasPaused by remember { mutableStateOf(false) }
             var playbackBarVisible by remember { mutableStateOf(false) }
             var playbackBarGeneration by remember { mutableIntStateOf(0) }
             var playbackTick by remember { mutableIntStateOf(0) }
@@ -233,6 +243,7 @@ fun main() {
                 DesktopMenuItem.visible(config.menuOrder, config.menuHidden)
                     .filter { it != DesktopMenuItem.RECORD || (timeshift != null && playingRecording == null) }
                     .filter { it != DesktopMenuItem.STOP_RECORDING || activeRecordings.isNotEmpty() }
+                    .filter { it != DesktopMenuItem.PIP || config.pipEnabled }
                     .filter { it != DesktopMenuItem.HISTORY || config.history.length > 2 },
             )
             LaunchedEffect(config.appLanguage) { AppLanguage.apply(config.appLanguage) }
@@ -369,6 +380,7 @@ fun main() {
             LaunchedEffect(showChannelList, channelListSelected, selectedBouquet, config.channelListSec) {
                 if (showChannelList && config.channelListSec > 0) {
                     delay(config.channelListSec * 1000L)
+                    pipPicking = false
                     showChannelList = false
                 }
             }
@@ -496,6 +508,22 @@ fun main() {
             var eitJob by remember { mutableStateOf<Job?>(null) }
             val closingBuffers = remember { java.util.Collections.synchronizedSet(mutableSetOf<Thread>()) }
 
+            fun pauseForSeekPreview() {
+                if (!config.seekPreview || seekMainPlayer != null) return
+                val player = vlcSession ?: return
+                seekMainPlayer = player
+                seekMainWasPaused = player.isPaused
+                if (!seekMainWasPaused) player.pause()
+            }
+
+            fun finishSeekPreview(restore: Boolean = true) {
+                val player = seekMainPlayer
+                seekMainPlayer = null
+                if (restore && player != null && player === vlcSession && !seekMainWasPaused && player.isPaused) {
+                    player.resume()
+                }
+            }
+
             fun closeBuffer(session: TimeshiftSession) {
                 val closer = Thread({
                     try {
@@ -513,7 +541,22 @@ fun main() {
                 }
             }
 
+            fun backgroundLimit(): Int = minOf(3, config.bgCount + pipWindows.size)
+
+            fun closePipPlayer(background: BackgroundTimeshift) {
+                val player = background.pip ?: return
+                background.pip = null
+                pipWindows = pipWindows.filterNot { it === background }
+                runCatching { player.close() }.onFailure { AppLog.i("PiP: błąd zamykania VLC (${it.message})") }
+            }
+
+            fun closeBackground(background: BackgroundTimeshift) {
+                closePipPlayer(background)
+                closeBuffer(background.session)
+            }
+
             fun closeTimeshift(preserveRecording: Boolean = false) {
+                finishSeekPreview()
                 streamTap?.let { tap ->
                     streamTap = null
                     scope.launch(Dispatchers.IO) { runCatching { tap.close() } }
@@ -524,16 +567,16 @@ fun main() {
                 val channel = playingChannel
                 val active = channel?.let { activeRecordings[serviceKey(it.ref)] }
                 if (preserveRecording && ts != null && channel != null && ts.buffer.isRecording && active?.kind != "do-zmiany-kanalu") {
-                    backgroundBuffers.park(serviceKey(channel.ref), BackgroundTimeshift(channel, ts), 0).forEach { closeBuffer(it.session) }
+                    backgroundBuffers.park(serviceKey(channel.ref), BackgroundTimeshift(channel, ts), pipWindows.size).forEach(::closeBackground)
                 } else ts?.let(::closeBuffer)
-                val removed = if (preserveRecording) backgroundBuffers.trim(0) else backgroundBuffers.drain()
-                removed.forEach { closeBuffer(it.session) }
+                val removed = if (preserveRecording) backgroundBuffers.trim(pipWindows.size) else backgroundBuffers.drain()
+                removed.forEach(::closeBackground)
             }
 
             LaunchedEffect(Unit) {
                 while (true) {
                     delay(2_000)
-                    backgroundBuffers.trim(config.bgCount).forEach { closeBuffer(it.session) }
+                    backgroundBuffers.trim(backgroundLimit()).forEach(::closeBackground)
                     for ((key, background) in backgroundBuffers.snapshot()) {
                         val failure = background.session.buffer.failed
                         val lowSpace = withContext(Dispatchers.IO) {
@@ -542,7 +585,7 @@ fun main() {
                         if (failure != null || (lowSpace && !background.session.buffer.isRecording)) {
                             if (backgroundBuffers.snapshot().any { it.first == key && it.second === background }) {
                                 backgroundBuffers.take(key)
-                                closeBuffer(background.session)
+                                closeBackground(background)
                                 val reason = failure ?: "mało wolnego miejsca"
                                 status = "Zamknięto bufor ${background.channel.name}: $reason."
                                 AppLog.i("bufor w tle: ${background.channel.name} zamknięty ($reason)")
@@ -660,9 +703,11 @@ fun main() {
                 bannerNowNext = cur?.asNow() to next?.asNow()
             }
 
-            fun startChannel(channel: Channel) {
+            fun startChannel(channel: Channel, keepOldForPip: Boolean = false) {
                 saveRecordingPosition()
+                finishSeekPreview()
                 playingRecording = null
+                recPendingTarget = null
                 val client = DecoderClient(config)
                 val auth = TimeshiftSession.basicAuth(config)
                 val changedDecoder = listOfNotNull(playingChannel?.let { old -> timeshift?.let { BackgroundTimeshift(old, it) } }) +
@@ -679,17 +724,20 @@ fun main() {
                 val oldChannel = playingChannel
                 val targetKey = serviceKey(channel.ref)
                 val same = old?.takeIf { oldChannel != null && serviceKey(oldChannel.ref) == targetKey }
-                val resumed = same ?: backgroundBuffers.take(targetKey)?.session
+                val cached = if (same == null) backgroundBuffers.take(targetKey) else null
+                cached?.let(::closePipPlayer)
+                val resumed = same ?: cached?.session
                 timeshift = null
                 tsPendingTarget = null
                 if (old != null && old !== same) {
                     if (oldChannel != null && activeRecordings[serviceKey(oldChannel.ref)]?.kind == "do-zmiany-kanalu") {
                         scope.launch(Dispatchers.IO) { old.buffer.stopRecording("zmiana kanału") }
                     }
-                    if (oldChannel != null && config.tsMin > 0 && (config.bgCount > 0 || old.buffer.isRecording) && old.buffer.failed == null) {
+                    if (oldChannel != null && config.tsMin > 0 && (config.bgCount > 0 || keepOldForPip || old.buffer.isRecording) && old.buffer.failed == null) {
                         old.buffer.maxMin = if (config.bgBufMin < 0) config.tsMin else minOf(config.bgBufMin, config.tsMin)
-                        backgroundBuffers.park(serviceKey(oldChannel.ref), BackgroundTimeshift(oldChannel, old), config.bgCount)
-                            .forEach { closeBuffer(it.session) }
+                        val limit = minOf(3, backgroundLimit() + if (keepOldForPip) 1 else 0)
+                        backgroundBuffers.park(serviceKey(oldChannel.ref), BackgroundTimeshift(oldChannel, old), limit)
+                            .forEach(::closeBackground)
                     } else closeBuffer(old)
                 }
                 try {
@@ -756,11 +804,109 @@ fun main() {
                 }
             }
 
+            fun closePip(background: BackgroundTimeshift) {
+                closePipPlayer(background)
+                backgroundBuffers.trim(backgroundLimit()).forEach(::closeBackground)
+            }
+
+            fun addPipChannel(channel: Channel) {
+                if (!config.pipEnabled || config.tsMin <= 0 || (timeshift == null && playingRecording == null)) {
+                    status = "PiP wymaga włączonego timeshiftu i odtwarzania."
+                    return
+                }
+                val key = serviceKey(channel.ref)
+                if (playingChannel?.let { serviceKey(it.ref) } == key) {
+                    status = "Ten kanał jest już na głównym ekranie."
+                    return
+                }
+                if (pipWindows.size >= 3) {
+                    status = "Wszystkie okna PiP są zajęte."
+                    return
+                }
+                var background = backgroundBuffers.snapshot().firstOrNull { it.first == key }?.second
+                if (background?.pip != null) {
+                    status = "Kanał jest już w PiP."
+                    return
+                }
+                val created = background == null
+                if (created) {
+                    if (backgroundBuffers.snapshot().size >= 3) {
+                        val victim = backgroundBuffers.snapshot().firstOrNull { !it.second.session.buffer.isRecording && it.second.pip == null }
+                        if (victim == null) {
+                            status = "Brak wolnego bufora: pozostałe kanały nagrywają się lub są w PiP."
+                            return
+                        }
+                        backgroundBuffers.take(victim.first)?.let(::closeBackground)
+                    }
+                    try {
+                        val sid = serviceSid(channel.ref)
+                        val fixer = TsStreamFixer(
+                            sid = sid,
+                            cachedPmt = { PmtStore.pmtOrBuilt(sid) },
+                            onPmt = { section -> if (sid > 0) PmtStore.putPmt(sid, section) },
+                            waitForPcr = true,
+                        )
+                        val length = if (config.bgBufMin < 0 || config.bgCount == 0) config.tsMin else minOf(config.bgBufMin, config.tsMin)
+                        background = BackgroundTimeshift(
+                            channel,
+                            TimeshiftSession(
+                                TimeshiftBuffer(TimeshiftBuffer.dirFor(config), length),
+                                DecoderClient(config).streamUrl(channel),
+                                TimeshiftSession.basicAuth(config),
+                                fixer = fixer,
+                            ),
+                        )
+                    } catch (e: Exception) {
+                        status = "Nie można utworzyć bufora PiP: ${e.message}"
+                        return
+                    }
+                }
+                val target = background ?: return
+                var player: VlcSession? = null
+                try {
+                    lateinit var createdPlayer: VlcSession
+                    createdPlayer = VlcSession { error ->
+                        if (target.pip === createdPlayer) {
+                            status = "PiP ${channel.name}: $error"
+                            closePip(target)
+                        }
+                    }
+                    player = createdPlayer
+                    createdPlayer.frames.frameLimit = 480 to 270
+                    createdPlayer.setAudioLevel(0, true)
+                    target.pip = createdPlayer
+                    pipWindows = pipWindows + target
+                    if (created) backgroundBuffers.park(key, target, backgroundLimit()).forEach(::closeBackground)
+                    createdPlayer.startLabel = "PiP ${channel.name}"
+                    createdPlayer.play(target.session.secondaryUrlAt(monotonicMs() - 2_000), config.copy(vlcRender = "cpu", vlcHwMode = "off", vlcFullRes = false))
+                } catch (e: Exception) {
+                    if (target.pip != null) closePipPlayer(target) else player?.close()
+                    if (created) {
+                        backgroundBuffers.take(key)
+                        closeBuffer(target.session)
+                    }
+                    status = "Nie można uruchomić PiP: ${e.message}"
+                }
+            }
+
+            fun swapPip(background: BackgroundTimeshift) {
+                val previous = playingChannel
+                if (previous == null || playingRecording != null) {
+                    status = "Zamiana PiP jest dostępna podczas oglądania kanału."
+                    return
+                }
+                closePipPlayer(background)
+                startChannel(background.channel, keepOldForPip = true)
+                if (playingChannel?.let { serviceKey(it.ref) } == serviceKey(background.channel.ref)) addPipChannel(previous)
+            }
+
             val localRecordingServer = remember { LocalRecordingServer { LocalRecordings.root(config) } }
             DisposableEffect(Unit) { onDispose { localRecordingServer.close() } }
 
             fun playRecording(recording: Recording) {
                 saveRecordingPosition()
+                finishSeekPreview()
+                recPendingTarget = null
                 closeTimeshift(preserveRecording = true)
                 try {
                     val session = sessionOrNew()
@@ -786,6 +932,9 @@ fun main() {
 
             fun stopPlayback(message: String) {
                 saveRecordingPosition()
+                finishSeekPreview()
+                recPendingTarget = null
+                pipWindows.toList().forEach(::closePip)
                 closeTimeshift(preserveRecording = true)
                 showChannelList = false
                 vlcSession = null
@@ -922,7 +1071,7 @@ fun main() {
                         startFromSettings -> channels.firstOrNull { it.ref == config.startChannelRef } ?: channels.firstOrNull()
                         else -> channels.firstOrNull()
                     }
-                    target?.let(::startChannel)
+                    target?.let { startChannel(it) }
                 }
             }
 
@@ -1263,6 +1412,41 @@ fun main() {
                 showChannelList = true
             }
 
+            fun openPipMenu() {
+                if (!config.pipEnabled || config.tsMin <= 0 || (timeshift == null && playingRecording == null)) {
+                    status = "PiP wymaga włączonego timeshiftu i odtwarzania."
+                    return
+                }
+                val options = mutableListOf<Pair<String, () -> Unit>>()
+                pipWindows.forEachIndexed { index, background ->
+                    if (playingChannel != null && playingRecording == null) {
+                        options += "PiP ${index + 1}: ${background.channel.name} — zamień z głównym" to { swapPip(background) }
+                    }
+                    options += "PiP ${index + 1}: ${background.channel.name} — zamknij" to { closePip(background) }
+                }
+                if (pipWindows.size < 3) {
+                    backgroundBuffers.snapshot().map { it.second }.filter { it.pip == null }.forEach { background ->
+                        options += "Pokaż bufor: ${background.channel.name}" to { addPipChannel(background.channel) }
+                    }
+                    options += "Wybierz kanał z listy" to {
+                        pipPicking = true
+                        if (selectedBouquet == null || isRecordingsBouquet(selectedBouquet?.ref)) {
+                            val bouquet = visibleBouquets().firstOrNull()
+                            if (bouquet == null) {
+                                pipPicking = false
+                                status = "Brak bukietów kanałów."
+                            } else scope.launch {
+                                if (loadBouquetChannels(bouquet)) showChannelList = true else pipPicking = false
+                            }
+                        } else openChannelList()
+                    }
+                }
+                if (pipWindows.isNotEmpty()) options += "Zamknij wszystkie PiP" to {
+                    pipWindows.toList().forEach(::closePip)
+                }
+                quickPick = QuickPick("Obraz w obrazie", options.map { it.first }, 0) { options[it].second() }
+            }
+
             fun openRecordingsList(local: Boolean = false, select: String? = null) {
                 scope.launch {
                     if (local) loadLocalRecordings(select)
@@ -1277,6 +1461,16 @@ fun main() {
 
             fun activateListRow(row: Channel) {
                 val recording = recRows[row.ref]
+                if (pipPicking) {
+                    if (row.ref.startsWith(REC_PREFIX) || isRecordingsBouquet(selectedBouquet?.ref)) {
+                        status = "Do PiP wybierz kanał telewizyjny."
+                    } else {
+                        pipPicking = false
+                        showChannelList = false
+                        addPipChannel(row)
+                    }
+                    return
+                }
                 if (row.ref.startsWith(REC_PREFIX) && recording != null) {
                     if (recording.isDir) openRecordingDir(recording)
                     else {
@@ -1291,10 +1485,60 @@ fun main() {
 
             fun togglePlaybackPause() {
                 val session = vlcSession ?: return
+                tsPendingTarget = null
+                recPendingTarget = null
+                finishSeekPreview()
                 session.togglePause()
                 if (session.isPaused) saveRecordingPosition()
                 if (playingRecording != null || timeshift != null) showPlaybackBar()
                 status = if (session.isPaused) "Pauza." else "Odtwarzanie wznowione."
+            }
+
+            suspend fun previewSeek(url: String, startMs: Long, label: String, minimumDelay: Long, commit: () -> Unit) {
+                val started = monotonicMs()
+                var preview: VlcSession? = null
+                try {
+                    if (config.seekPreview) {
+                        try {
+                            delay(150)
+                            val player = VlcSession { error ->
+                                if (seekPreviewPlayer === preview) {
+                                    status = "Podgląd przewijania niedostępny: $error"
+                                }
+                            }
+                            preview = player
+                            player.frames.frameLimit = 480 to 270
+                            player.setAudioLevel(0, true)
+                            seekPreviewLabel = label
+                            seekPreviewReady = false
+                            seekPreviewPlayer = player
+                            player.startLabel = "podgląd przewijania"
+                            player.play(url, config.copy(vlcRender = "cpu", vlcHwMode = "off", vlcFullRes = false, keepLastFrame = false), startMs)
+                            while (player.frames.count.get() == 0L && monotonicMs() - started < 2_500) delay(50)
+                            if (player.frames.count.get() > 0) {
+                                player.pause()
+                                seekPreviewReady = true
+                                delay(700)
+                            } else {
+                                status = "Nie udało się uzyskać klatki podglądu przewijania."
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            AppLog.i("podgląd: błąd VLC (${e.message})")
+                            status = "Podgląd przewijania niedostępny: ${e.message}"
+                        }
+                    }
+                    val remaining = minimumDelay - (monotonicMs() - started)
+                    if (remaining > 0) delay(remaining)
+                    commit()
+                } finally {
+                    if (seekPreviewPlayer === preview) {
+                        seekPreviewPlayer = null
+                        seekPreviewReady = false
+                    }
+                    preview?.let { runCatching { it.close() }.onFailure { error -> AppLog.i("podgląd: błąd zamykania (${error.message})") } }
+                }
             }
 
             fun seekRecording(deltaMs: Long) {
@@ -1302,11 +1546,28 @@ fun main() {
                 val position = session.time()
                 if (position < 0) return
                 val length = session.length()
-                val target = (position + deltaMs).coerceAtLeast(0)
-                    .let { if (length > 0) it.coerceAtMost(length - 1000) else it }
-                session.seekTo(target)
-                if (session.isPaused) session.resume()
+                val target = recordingSeekTarget(position, recPendingTarget, deltaMs, length)
+                pauseForSeekPreview()
+                recPendingTarget = target
+                recPendingGeneration++
                 showPlaybackBar()
+            }
+
+            LaunchedEffect(recPendingGeneration, recPendingTarget, playingRecording) {
+                val target = recPendingTarget ?: return@LaunchedEffect
+                val recording = playingRecording ?: return@LaunchedEffect
+                val session = vlcSession ?: return@LaunchedEffect
+                val url = if (recording.path.startsWith(LOCAL_PREFIX)) localRecordingServer.url(recording)
+                else DecoderClient(config).recordingUrl(recording.path)
+                previewSeek(url, target, formatDuration(target), if (config.seekPreview) 700 else 0) {
+                    if (playingRecording == recording && vlcSession === session && recPendingTarget == target) {
+                        recPendingTarget = null
+                        val preservePause = seekMainPlayer === session && seekMainWasPaused
+                        session.seekTo(target)
+                        if (!preservePause && session.isPaused) session.resume()
+                        finishSeekPreview(restore = false)
+                    }
+                }
             }
 
             fun stopRecordingToList() {
@@ -1338,6 +1599,7 @@ fun main() {
             fun timeshiftGoLive() {
                 if (timeshift == null) return
                 tsPendingTarget = null
+                finishSeekPreview()
                 if (!timeshiftShifted()) {
                     status = "Już na żywo."
                     showPlaybackBar()
@@ -1361,25 +1623,34 @@ fun main() {
                     showPlaybackBar()
                     return
                 }
+                pauseForSeekPreview()
                 tsPendingTarget = (base + deltaMs).coerceAtMost(now)
                 tsPendingGeneration++
                 showPlaybackBar()
             }
 
-            LaunchedEffect(tsPendingGeneration) {
+            LaunchedEffect(tsPendingGeneration, tsPendingTarget, timeshift) {
                 if (tsPendingGeneration == 0) return@LaunchedEffect
-                delay(700)
                 val target = tsPendingTarget ?: return@LaunchedEffect
                 val ts = timeshift ?: return@LaunchedEffect
-                tsPendingTarget = null
-                when (val resolved = timeshiftTarget(target, monotonicMs(), ts.buffer.oldestWall, ts.buffer.seekMarginMs())) {
-                    TimeshiftTarget.Live -> {
-                        timeshiftPlay(resolved)
-                        status = "Na żywo."
-                    }
-                    is TimeshiftTarget.At -> {
-                        timeshiftPlay(resolved)
-                        if (resolved.clampedToOldest) status = "Początek bufora timeshiftu."
+                val resolved = timeshiftTarget(target, monotonicMs(), ts.buffer.oldestWall, ts.buffer.seekMarginMs())
+                val wall = when (resolved) {
+                    TimeshiftTarget.Live -> monotonicMs()
+                    is TimeshiftTarget.At -> resolved.wall
+                }
+                previewSeek(ts.secondaryUrlAt(wall), 0, "−${formatDuration((monotonicMs() - wall).coerceAtLeast(0))}", 700) {
+                    if (timeshift === ts && tsPendingTarget == target) {
+                        tsPendingTarget = null
+                        val session = vlcSession
+                        val preservePause = session != null && seekMainPlayer === session && seekMainWasPaused
+                        val finalTarget = timeshiftTarget(target, monotonicMs(), ts.buffer.oldestWall, ts.buffer.seekMarginMs())
+                        timeshiftPlay(finalTarget)
+                        if (preservePause) session?.pause()
+                        finishSeekPreview(restore = false)
+                        status = when (finalTarget) {
+                            TimeshiftTarget.Live -> "Na żywo."
+                            is TimeshiftTarget.At -> if (finalTarget.clampedToOldest) "Początek bufora timeshiftu." else status
+                        }
                     }
                 }
             }
@@ -1388,7 +1659,7 @@ fun main() {
                 if (playbackBarGeneration == 0) return@LaunchedEffect
                 playbackBarVisible = true
                 delay(config.tsBannerSec * 1000L)
-                while (vlcSession?.isPaused == true || tsPendingTarget != null) delay(500)
+                while (vlcSession?.isPaused == true || tsPendingTarget != null || recPendingTarget != null) delay(500)
                 playbackBarVisible = false
             }
 
@@ -1479,7 +1750,7 @@ fun main() {
                         watch.reset(now)
                     }
                     val time = session.time()
-                    if (!watch.check(now, time, session.isPaused || tsPendingTarget != null)) {
+                    if (!watch.check(now, time, session.isPaused || tsPendingTarget != null || recPendingTarget != null)) {
                         if (time > 0 && !session.isPaused) restartBackoff.playing(now)
                         continue
                     }
@@ -1559,7 +1830,6 @@ fun main() {
                 status = "$feature nie jest jeszcze dostępne w wersji Windows."
             }
 
-            var quickPick by remember { mutableStateOf<QuickPick?>(null) }
             // Blokada przy braku dekodera (ustawienie): okno do powrotu komunikacji.
             LaunchedEffect(decoderDown, config.blockOnDisconnect) {
                 if (!decoderDown) {
@@ -2320,7 +2590,9 @@ fun main() {
                         // Trwające nagranie lokalne i bufor zamykane przed instalacją (nagranie zapisane).
                         if (activeRecordings.isNotEmpty()) logInfo("aktualizacja: kończę nagrania lokalne przed instalacją")
                         recordingStartMutex.withLock {
-                            val toClose = listOfNotNull(timeshift) + backgroundBuffers.drain().map { it.session }
+                            val backgrounds = backgroundBuffers.drain()
+                            backgrounds.forEach(::closePipPlayer)
+                            val toClose = listOfNotNull(timeshift) + backgrounds.map { it.session }
                             timeshift = null
                             withContext(Dispatchers.IO) { toClose.forEach { it.close() } }
                         }
@@ -2798,6 +3070,7 @@ fun main() {
             fun runMenuItem(item: DesktopMenuItem) {
                 when (item) {
                     DesktopMenuItem.CHANNEL_LIST -> openChannelList()
+                    DesktopMenuItem.PIP -> openPipMenu()
                     DesktopMenuItem.RECORDINGS -> openRecordingsList()
                     DesktopMenuItem.ZAP_TIMERS -> openZapTimers()
                     DesktopMenuItem.DECODER_TIMERS -> openDecoderTimers()
@@ -3265,7 +3538,7 @@ fun main() {
                         choose("Bufory poprzednich kanałów", counts.map { if (it == 0) "wyłączone" else "$it" }, config.bgCount) {
                             val count = counts[it]
                             saveConfig(config.copy(bgCount = count), "Bufory poprzednich kanałów: $count.")
-                            backgroundBuffers.trim(count).forEach { old -> closeBuffer(old.session) }
+                            backgroundBuffers.trim(minOf(3, count + pipWindows.size)).forEach(::closeBackground)
                         }
                     },
                     SettingItem.Action("Długość buforów poprzednich kanałów", if (config.bgBufMin < 0) "jak timeshift" else "${config.bgBufMin} min") {
@@ -3276,6 +3549,13 @@ fun main() {
                             val max = if (minutes < 0) config.tsMin else minOf(minutes, config.tsMin)
                             backgroundBuffers.snapshot().forEach { (_, old) -> old.session.buffer.maxMin = max }
                         }
+                    },
+                    SettingItem.Toggle("PiP (eksperymentalne)", config.pipEnabled, "do trzech wyciszonych okien VLC") { enabled ->
+                        saveConfig(config.copy(pipEnabled = enabled))
+                        if (!enabled) pipWindows.toList().forEach(::closePip)
+                    },
+                    SettingItem.Toggle("Podgląd klatek przy przewijaniu", config.seekPreview, "timeshift i nagrania") {
+                        saveConfig(config.copy(seekPreview = it))
                     },
                     SettingItem.Action("Krok ◀ ▶ (krótkie)", "${config.tsStepSec} s") {
                         val steps = (listOf(1, 2, 3, 4, 5) + config.tsStepSec).distinct().sorted()
@@ -4113,12 +4393,13 @@ fun main() {
                         VirtualRemoteKey.LEFT -> bouquetOffset(bouquets, selectedBouquet, -1)?.let(::selectBouquet)
                         VirtualRemoteKey.RIGHT -> bouquetOffset(bouquets, selectedBouquet, 1)?.let(::selectBouquet)
                         VirtualRemoteKey.OK -> channels.getOrNull(channelListSelected)?.let(::activateListRow)
-                        VirtualRemoteKey.BACK -> if (selectedBouquet?.ref == REC_BOUQUET && recStack.isNotEmpty()) {
+                        VirtualRemoteKey.BACK -> if (selectedBouquet?.ref == REC_BOUQUET && recStack.isNotEmpty() && !pipPicking) {
                             openRecordingDir(Recording(REC_UP, ""))
                         } else {
+                            pipPicking = false
                             showChannelList = false
                         }
-                        VirtualRemoteKey.HOME -> showChannelList = false
+                        VirtualRemoteKey.HOME -> { pipPicking = false; showChannelList = false }
                         VirtualRemoteKey.INFO, VirtualRemoteKey.GUIDE -> channels.getOrNull(channelListSelected)
                             ?.takeUnless { it.ref.startsWith(REC_PREFIX) || isRecordingsBouquet(selectedBouquet?.ref) }
                             ?.let { showChannelEpg(it) }
@@ -4353,7 +4634,9 @@ fun main() {
             val currentTimeshift = rememberUpdatedState(timeshiftToClose)
             DisposableEffect(Unit) {
                 onDispose {
-                    val sessions = listOfNotNull(currentTimeshift.value) + backgroundBuffers.drain().map { it.session }
+                    val backgrounds = backgroundBuffers.drain()
+                    backgrounds.forEach(::closePipPlayer)
+                    val sessions = listOfNotNull(currentTimeshift.value) + backgrounds.map { it.session }
                     sessions.forEach { session ->
                         runCatching { session.close() }.onFailure { AppLog.i("timeshift: błąd zamykania (${it.message})") }
                     }
@@ -4608,6 +4891,7 @@ fun main() {
                 channelName = channel?.name,
                 config = config,
                 programmes = recordingProgrammes,
+                pendingRecordingTarget = recPendingTarget,
             )
             PlaybackHost(
                 settingsVisible = navigator.isVisible,
@@ -4638,6 +4922,12 @@ fun main() {
                         onBack = { stopPlayback("Odtwarzanie zatrzymane.") },
                         playback = playbackBar,
                         recordingLabel = activeRecordings.values.firstOrNull()?.title,
+                        pipWindows = pipWindows.mapNotNull { background ->
+                            background.pip?.let { PipSurface(background.channel.name, it) }
+                        },
+                        onPipClick = ::openPipMenu,
+                        seekPreview = seekPreviewPlayer.takeIf { seekPreviewReady },
+                        seekPreviewLabel = seekPreviewLabel,
                         bufferInfo = {
                             timeshift?.takeIf { playingRecording == null }?.let { ts ->
                                 val now = monotonicMs()
@@ -4687,7 +4977,7 @@ fun main() {
                     nowEvents = nowEvents,
                     busy = busy,
                     fontScale = config.uiListFont / 100f,
-                    onClose = { showChannelList = false },
+                    onClose = { pipPicking = false; showChannelList = false },
                     onSelectedChange = { channelListSelected = it },
                     onBouquetSelected = ::selectBouquet,
                     onPlay = ::activateListRow,
@@ -4697,6 +4987,8 @@ fun main() {
                     recordings = if (isRecordingsBouquet(selectedBouquet?.ref)) recRows else emptyMap(),
                     buffered = backgroundBuffers.snapshot().map { it.first }.toSet(),
                     recordingChannels = activeRecordings.keys,
+                    pipChannels = pipWindows.map { serviceKey(it.channel.ref) }.toSet(),
+                    pickingPip = pipPicking,
                 )
             }
             if (showMenu && !navigator.isVisible) {
@@ -4842,4 +5134,4 @@ internal data class ActiveRecording(
     val session: TimeshiftSession,
     val budgetBytes: Long,
 )
-internal data class BackgroundTimeshift(val channel: Channel, val session: TimeshiftSession)
+internal data class BackgroundTimeshift(val channel: Channel, val session: TimeshiftSession, var pip: VlcSession? = null)

@@ -22,6 +22,8 @@ class FrameSizeTest {
         assertEquals(3840 to 2160, VideoFrames.frameSize(3840, 2160, null))
         // mały ekran — nie mniej niż 1280×720
         assertEquals(1280 to 720, VideoFrames.frameSize(3840, 2160, 1024 to 600))
+        assertEquals(480 to 270, VideoFrames.fitFrameSize(3840, 2160, 480, 270))
+        assertEquals(320 to 180, VideoFrames.fitFrameSize(320, 180, 480, 270))
     }
 }
 

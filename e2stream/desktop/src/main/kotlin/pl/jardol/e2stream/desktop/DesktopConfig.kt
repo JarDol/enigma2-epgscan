@@ -77,6 +77,8 @@ data class DesktopConfig(
     val tsDir: String = "",
     val bgCount: Int = 0,
     val bgBufMin: Int = -1,
+    val pipEnabled: Boolean = false,
+    val seekPreview: Boolean = true,
     val tsStepSec: Int = 5,
     val tsStepMin: Int = 1,
     val tsStepSecLong: Int = 10,
@@ -215,6 +217,8 @@ data class DesktopConfig(
             setProperty("tsMin", tsMin.toString())
             setProperty("bgCount", bgCount.toString())
             setProperty("bgBufMin", bgBufMin.toString())
+            setProperty("pipEnabled", pipEnabled.toString())
+            setProperty("seekPreview", seekPreview.toString())
             setProperty("tsDir", tsDir)
             setProperty("tsStepSec", tsStepSec.toString())
             setProperty("tsStepMin", tsStepMin.toString())
@@ -376,6 +380,8 @@ data class DesktopConfig(
                 tsMin = int("tsMin", defaults.tsMin, 0..600),
                 bgCount = int("bgCount", if (int("bgBufMin", 0, -1..600) > 0) 2 else defaults.bgCount, 0..3),
                 bgBufMin = int("bgBufMin", defaults.bgBufMin, -1..600).let { if (it == 0) -1 else it },
+                pipEnabled = bool("pipEnabled", defaults.pipEnabled),
+                seekPreview = bool("seekPreview", defaults.seekPreview),
                 tsDir = string("tsDir", ""),
                 tsStepSec = int("tsStepSec", defaults.tsStepSec, 1..120),
                 tsStepMin = int("tsStepMin", defaults.tsStepMin, 1..30),

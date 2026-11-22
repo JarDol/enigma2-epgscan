@@ -52,6 +52,15 @@ If a recording segment cannot be moved, its original file is retained in the
 timeshift directory with a `.keep` marker and its path is recorded in the
 recording metadata for recovery.
 
+Experimental **PiP** can be enabled in playback settings. The PiP menu opens
+up to three muted VLC views from buffered channels or the channel list; a view
+can be closed or swapped with the main channel. PiP shares the channel's
+timeshift stream and limits its rendered frame size to 480×270.
+
+Frame previews while seeking timeshift or recordings use a separate muted VLC
+player, so the main playback position is not changed until the seek is applied.
+They can be disabled in playback settings if extra decoding is undesirable.
+
 **Ogólne** also mirrors the Android options for menu entries (show/hide and
 order; Ustawienia and Wyłącz stay last), timeouts of the timeshift/recording
 bar, action and confirmation windows, channel EPG and Multi EPG, information

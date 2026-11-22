@@ -709,7 +709,7 @@ internal class TimeshiftSession(
 
     /** Audycje widziane w czasie zapisu bufora (spis w nagraniach lokalnych). */
     val programmes = ProgrammeLog()
-    private var generation = 0
+    private val generation = java.util.concurrent.atomic.AtomicInteger()
 
     /** Chwila odbioru odpowiadająca początkowi bieżącego odtwarzania VLC. */
     var baseWall: Long = monotonicMs()
@@ -718,10 +718,12 @@ internal class TimeshiftSession(
     fun urlAt(wall: Long): String {
         val offset = buffer.offsetAt(wall)
         baseWall = if (buffer.total > 0) buffer.wallAt(offset) else monotonicMs()
-        return server.url(offset, ++generation)
+        return server.url(offset, generation.incrementAndGet())
     }
 
     fun liveUrl(): String = urlAt(monotonicMs())
+
+    fun secondaryUrlAt(wall: Long): String = server.url(buffer.offsetAt(wall), generation.incrementAndGet())
 
     /** Chwila widoczna na ekranie, gdy VLC odtworzył [playedMs] od początku bieżącego adresu. */
     fun shownWall(playedMs: Long): Long = baseWall + playedMs.coerceAtLeast(0)

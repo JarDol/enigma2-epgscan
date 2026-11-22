@@ -97,6 +97,7 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
 
     /** Pełna rozdzielczość klatek (true) albo zmniejszenie do rozmiaru ekranu (domyślnie — 4K na ekranie 1080p). */
     @Volatile var fullResolution = false
+    @Volatile var frameLimit: Pair<Int, Int>? = null
     /** Chwila ustalenia formatu klatek dla bieżącego odtwarzania (0 — jeszcze nie). */
     @Volatile var formatAtNs = 0L
     /** Pomiar startu: włącz [awaitingFirst] dopiero przy formacie nowego strumienia (nie liczyć klatek poprzedniego). */
@@ -117,7 +118,10 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
             if (onUhd != null && lockedWidth >= UHD_WIDTH) runCatching { onUhd?.invoke() }
             if (yuvMode) return yuvFormat(requestedWidth, requestedHeight)
             yuvState.value = null
-            val (outWidth, outHeight) = frameSize(lockedWidth, lockedHeight, if (fullResolution) null else screenPixels())
+            val limit = frameLimit
+            val (outWidth, outHeight) = if (limit != null) {
+                fitFrameSize(lockedWidth, lockedHeight, limit.first, limit.second)
+            } else frameSize(lockedWidth, lockedHeight, if (fullResolution) null else screenPixels())
             if (outWidth == width && outHeight == height && bitmaps.isNotEmpty() && !lastWasYuv) {
                 if (formatCalls == 2 || formatCalls % 500 == 0) AppLog.i("obraz: ponowne ustawienie formatu ($formatCalls×, VLC podał ${requestedWidth}x$requestedHeight)")
                 return BufferFormat("RV32", outWidth, outHeight, intArrayOf(outWidth * 4), intArrayOf(outHeight))
@@ -240,6 +244,11 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
             if (screen == null || width <= 0 || height <= 0) return width to height
             val maxW = maxOf(screen.first, 1280)
             val maxH = maxOf(screen.second, 720)
+            return fitFrameSize(width, height, maxW, maxH)
+        }
+
+        internal fun fitFrameSize(width: Int, height: Int, maxW: Int, maxH: Int): Pair<Int, Int> {
+            if (width <= 0 || height <= 0 || maxW <= 0 || maxH <= 0) return width to height
             val scale = minOf(1.0, maxW.toDouble() / width, maxH.toDouble() / height)
             if (scale >= 1.0) return width to height
             fun even(v: Double) = (Math.round(v / 2.0) * 2).toInt().coerceAtLeast(2)
@@ -263,7 +272,7 @@ class VlcSession(private val onError: (String) -> Unit) {
     private val vlcMessageTotal = java.util.concurrent.atomic.AtomicInteger()
     internal val frames = VideoFrames()
     private var paused = false
-    private var closed = false
+    @Volatile private var closed = false
 
     @Volatile private var volume = 100
     @Volatile private var muted = false
@@ -388,6 +397,7 @@ class VlcSession(private val onError: (String) -> Unit) {
     fun setVideoScale(mode: VideoScaleMode) = Unit
 
     /** Proporcje wyświetlania bieżącego obrazu (z pikselami niekwadratowymi SD); null, gdy nieznane. */
+    @Synchronized
     internal fun displayAspect(): Float? {
         if (closed) return null
         val track = runCatching { player.media().info().videoTracks().firstOrNull() }.getOrNull() ?: return null
@@ -583,6 +593,7 @@ class VlcSession(private val onError: (String) -> Unit) {
         )
     }
 
+    @Synchronized
     fun close() {
         if (closed) return
         closed = true
