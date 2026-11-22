@@ -5,8 +5,22 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import androidx.compose.ui.Alignment
 
 class DesktopNavigationTest {
+    @Test
+    fun pipPositionMatchesAndroidLayouts() {
+        assertEquals(Alignment.TopEnd to 0, pipPlacement(0, 0))
+        assertEquals(Alignment.TopStart to 0, pipPlacement(0, 1))
+        assertEquals(Alignment.TopEnd to 1, pipPlacement(0, 2))
+        assertEquals(Alignment.CenterEnd to 0, pipPlacement(2, 2))
+        assertEquals(Alignment.CenterStart to 0, pipPlacement(3, 2))
+        assertEquals(Alignment.TopStart to 2, pipPlacement(4, 2))
+        assertEquals(Alignment.TopEnd to 2, pipPlacement(5, 2))
+        assertEquals(Alignment.BottomStart to -2, pipPlacement(6, 2))
+        assertEquals(Alignment.BottomEnd to -2, pipPlacement(7, 2))
+    }
+
     @Test
     fun menuOpensOnSettingsAndActivatesSelectedItem() {
         val navigation = DesktopNavigation()

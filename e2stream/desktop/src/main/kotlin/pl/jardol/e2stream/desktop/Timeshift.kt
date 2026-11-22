@@ -12,12 +12,35 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URI
 import java.nio.file.Paths
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.nio.file.AtomicMoveNotSupportedException
 import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
 
 internal fun monotonicMs(): Long = System.nanoTime() / 1_000_000
+
+internal fun copyRecordingSegment(
+    source: File,
+    target: File,
+    copy: (File, File) -> Unit = { from, to -> from.copyTo(to, overwrite = true) },
+) {
+    if (target.exists()) throw IOException("Część nagrania już istnieje: ${target.name}")
+    val temporary = Files.createTempFile(target.parentFile.toPath(), ".e2stream-", ".part")
+    try {
+        copy(source, temporary.toFile())
+        if (Files.size(temporary) != source.length()) throw IOException("Niepełna kopia części nagrania")
+        try {
+            Files.move(temporary, target.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(temporary, target.toPath())
+        }
+    } finally {
+        Files.deleteIfExists(temporary)
+    }
+}
 
 /**
  * Bufor timeshiftu: strumień TS kanału zapisywany w kawałkach po 1 minucie (ts-<sesja>N.ts).
@@ -221,6 +244,7 @@ internal class TimeshiftBuffer(
         val target = File(rec.dir, "%05d.ts".format(rec.files))
         var moved = false
         for (attempt in 0 until 20) {
+            if (target.exists()) break
             if (segment.file.renameTo(target)) {
                 moved = true
                 break
@@ -229,8 +253,10 @@ internal class TimeshiftBuffer(
         }
         if (!moved) {
             moved = runCatching {
-                segment.file.copyTo(target, overwrite = true)
-                segment.file.delete()
+                copyRecordingSegment(segment.file, target)
+                if (!segment.file.delete() && segment.file.exists()) {
+                    AppLog.i("nagranie: nie udało się usunąć skopiowanego pliku ${segment.file.absolutePath}")
+                }
             }.isSuccess
         }
         if (!moved) {
@@ -651,12 +677,20 @@ internal class TimeshiftServer(
                     output.write(it)
                     output.flush()
                 }
-                var position = offset
+                var position: Long = offset
                 val bytes = ByteArray(TimeshiftBuffer.PACKET * 512)
                 while (!closed) {
                     if (!buffer.await(position, 12_000) { closed }) break
                     val count = buffer.read(position, bytes, 0, bytes.size)
-                    if (count < 0) break
+                    if (count < 0) {
+                        val oldest = buffer.oldestOffset()
+                        val next = if (oldest < 0) buffer.total else oldest
+                        if (next <= position) break
+                        AppLog.i("timeshift: odczytany zakres wygasł, wznawiam od dostępnych danych")
+                        position = next
+                        header()?.let { output.write(it); output.flush() }
+                        continue
+                    }
                     if (count > 0) {
                         output.write(bytes, 0, count)
                         output.flush()

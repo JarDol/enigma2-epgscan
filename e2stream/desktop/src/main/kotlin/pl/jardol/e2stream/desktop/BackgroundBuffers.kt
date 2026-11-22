@@ -13,8 +13,12 @@ internal class BackgroundBuffers<T>(
 
     fun take(key: String): T? = entries.remove(key)
 
+    fun canPark(value: T, removedKey: String? = null): Boolean =
+        !isProtected(value) || entries.count { it.key != removedKey && isProtected(it.value) } < 3
+
     fun park(key: String, value: T, limit: Int): List<T> {
         require(key !in entries)
+        check(canPark(value)) { "Brak wolnego miejsca na chroniony bufor" }
         entries[key] = value
         return trim(limit)
     }

@@ -3,6 +3,9 @@ package pl.jardol.e2stream.desktop
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class BackgroundBuffersTest {
     private data class Buffer(val name: String, var recording: Boolean = false, var pip: Boolean = false)
@@ -45,5 +48,19 @@ class BackgroundBuffersTest {
         assertEquals(listOf("pip" to pip), buffers.snapshot())
         pip.pip = false
         assertEquals(listOf(pip), buffers.trim(0))
+    }
+
+    @Test
+    fun protectedBuffersNeverExceedPhysicalCapacity() {
+        val buffers = BackgroundBuffers<Buffer> { it.recording || it.pip }
+        val recording = Buffer("recording", recording = true)
+        repeat(3) { buffers.park("pip$it", Buffer("pip$it", pip = true), 3) }
+        assertFalse(buffers.canPark(recording))
+        assertTrue(buffers.canPark(recording, removedKey = "pip1"))
+        assertFailsWith<IllegalStateException> { buffers.park("recording", recording, 3) }
+        assertEquals(3, buffers.snapshot().size)
+        buffers.take("pip1")
+        buffers.park("recording", recording, 3)
+        assertEquals(3, buffers.snapshot().size)
     }
 }

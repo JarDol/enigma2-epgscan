@@ -55,7 +55,10 @@ recording metadata for recovery.
 Experimental **PiP** can be enabled in playback settings. The PiP menu opens
 up to three muted VLC views from buffered channels or the channel list; a view
 can be closed or swapped with the main channel. PiP shares the channel's
-timeshift stream and limits its rendered frame size to 480×270.
+timeshift stream and limits its rendered frame size to 480×270. Position and
+the 1–5 second interval between frame captures can be changed in playback
+settings. If all three background slots protect recordings or PiP, switching
+away from a recording is blocked until a slot is freed.
 
 Frame previews while seeking timeshift or recordings use a separate muted VLC
 player, so the main playback position is not changed until the seek is applied.

@@ -20,6 +20,8 @@ class SettingsBackupTest {
             universalRemoteBindings = "OK=K:13",
             hiddenBouquets = setOf("b1", "b2"),
             appVolume = 80,
+            pipFrameMs = 3000,
+            pipPos = 7,
         )
         val backup = SettingsBackup.backup(source)
         val current = DesktopConfig(host = "192.168.1.30", tsDir = "C:\\ts")
@@ -31,6 +33,8 @@ class SettingsBackupTest {
         assertEquals("OK=K:13", restored.universalRemoteBindings)
         assertEquals(setOf("b1", "b2"), restored.hiddenBouquets)
         assertEquals(80, restored.appVolume)
+        assertEquals(3000, restored.pipFrameMs)
+        assertEquals(7, restored.pipPos)
         assertEquals("tajne", restored.password)
         assertTrue(restored.backupDecision)
     }

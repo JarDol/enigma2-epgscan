@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.ui.layout.onSizeChanged
@@ -75,6 +76,17 @@ private fun time(seconds: Long): String = clockFormat.format(Instant.ofEpochSeco
 
 internal data class PipSurface(val channel: String, val session: VlcSession)
 
+internal fun pipPlacement(position: Int, index: Int): Pair<Alignment, Int> = when (position) {
+    0 -> when (index) { 0 -> Alignment.TopEnd to 0; 1 -> Alignment.TopStart to 0; else -> Alignment.TopEnd to 1 }
+    1 -> when (index) { 0 -> Alignment.BottomEnd to 0; 1 -> Alignment.BottomStart to 0; else -> Alignment.BottomEnd to -1 }
+    2 -> when (index) { 0 -> Alignment.TopEnd to 0; 1 -> Alignment.BottomEnd to 0; else -> Alignment.CenterEnd to 0 }
+    3 -> when (index) { 0 -> Alignment.TopStart to 0; 1 -> Alignment.BottomStart to 0; else -> Alignment.CenterStart to 0 }
+    4 -> Alignment.TopStart to index
+    6 -> Alignment.BottomStart to -index
+    7 -> Alignment.BottomEnd to -index
+    else -> Alignment.TopEnd to index
+}
+
 internal fun bouquetOffset(bouquets: List<Bouquet>, current: Bouquet?, offset: Int): Bouquet? {
     if (bouquets.isEmpty() || offset == 0) return null
     val currentIndex = bouquets.indexOfFirst { it.ref == current?.ref }
@@ -125,6 +137,7 @@ internal fun PlayerPage(
     /** Stan bufora na pasku kanału (np. „B 12:34”); null — bez bufora. */
     bufferInfo: (() -> String?)? = null,
     pipWindows: List<PipSurface> = emptyList(),
+    pipPosition: Int = 5,
     onPipClick: () -> Unit = {},
     seekPreview: VlcSession? = null,
     seekPreviewLabel: String = "",
@@ -187,13 +200,9 @@ internal fun PlayerPage(
             }
         }
         pipWindows.take(3).forEachIndexed { index, pip ->
-            val alignment = when (index) {
-                0 -> Alignment.TopEnd
-                1 -> Alignment.TopStart
-                else -> Alignment.CenterEnd
-            }
+            val (alignment, offset) = pipPlacement(pipPosition, index)
             Box(
-                Modifier.align(alignment).padding(16.dp).width(240.dp).height(135.dp)
+                Modifier.align(alignment).offset(y = (offset * 151).dp).padding(16.dp).width(240.dp).height(135.dp)
                     .background(Color.Black).clickable { onPipClick() },
             ) {
                 VideoView(pip.session, VideoScaleMode.FIT, Modifier.fillMaxSize())

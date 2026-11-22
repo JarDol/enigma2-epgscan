@@ -555,22 +555,28 @@ fun main() {
                 closeBuffer(background.session)
             }
 
-            fun closeTimeshift(preserveRecording: Boolean = false) {
+            fun closeTimeshift(preserveRecording: Boolean = false): Boolean {
+                val ts = timeshift
+                val channel = playingChannel
+                val active = channel?.let { activeRecordings[serviceKey(it.ref)] }
+                val keep = preserveRecording && ts != null && channel != null && ts.buffer.isRecording && active?.kind != "do-zmiany-kanalu"
+                if (keep && !backgroundBuffers.canPark(BackgroundTimeshift(channel!!, ts!!))) {
+                    status = "Brak wolnego bufora: zamknij okno PiP lub zakończ inne nagranie."
+                    return false
+                }
                 finishSeekPreview()
                 streamTap?.let { tap ->
                     streamTap = null
                     scope.launch(Dispatchers.IO) { runCatching { tap.close() } }
                 }
-                val ts = timeshift
                 timeshift = null
                 tsPendingTarget = null
-                val channel = playingChannel
-                val active = channel?.let { activeRecordings[serviceKey(it.ref)] }
-                if (preserveRecording && ts != null && channel != null && ts.buffer.isRecording && active?.kind != "do-zmiany-kanalu") {
-                    backgroundBuffers.park(serviceKey(channel.ref), BackgroundTimeshift(channel, ts), pipWindows.size).forEach(::closeBackground)
+                if (keep) {
+                    backgroundBuffers.park(serviceKey(channel!!.ref), BackgroundTimeshift(channel, ts!!), pipWindows.size).forEach(::closeBackground)
                 } else ts?.let(::closeBuffer)
                 val removed = if (preserveRecording) backgroundBuffers.trim(pipWindows.size) else backgroundBuffers.drain()
                 removed.forEach(::closeBackground)
+                return true
             }
 
             LaunchedEffect(Unit) {
@@ -704,6 +710,32 @@ fun main() {
             }
 
             fun startChannel(channel: Channel, keepOldForPip: Boolean = false) {
+                val oldTs = timeshift
+                val oldPlaying = playingChannel
+                if (oldTs != null && oldPlaying != null && serviceKey(oldPlaying.ref) != serviceKey(channel.ref) &&
+                    oldTs.buffer.isRecording &&
+                    !backgroundBuffers.canPark(BackgroundTimeshift(oldPlaying, oldTs), removedKey = serviceKey(channel.ref))
+                ) {
+                    if (activeRecordings[serviceKey(oldPlaying.ref)]?.kind == "do-zmiany-kanalu") {
+                        status = "Kończenie nagrania przed zmianą kanału."
+                        scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) { oldTs.buffer.stopRecording("zmiana kanału") }
+                                if (timeshift === oldTs && playingChannel?.ref == oldPlaying.ref) {
+                                    startChannel(channel, keepOldForPip)
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                status = "Nie można zakończyć nagrania przed zmianą kanału: ${e.message}"
+                                AppLog.i(status)
+                            }
+                        }
+                    } else {
+                        status = "Brak wolnego bufora: zamknij okno PiP lub zakończ inne nagranie."
+                    }
+                    return
+                }
                 saveRecordingPosition()
                 finishSeekPreview()
                 playingRecording = null
@@ -867,8 +899,7 @@ fun main() {
                     lateinit var createdPlayer: VlcSession
                     createdPlayer = VlcSession { error ->
                         if (target.pip === createdPlayer) {
-                            status = "PiP ${channel.name}: $error"
-                            closePip(target)
+                            status = "PiP ${channel.name}: $error Ponawiam."
                         }
                     }
                     player = createdPlayer
@@ -878,7 +909,6 @@ fun main() {
                     pipWindows = pipWindows + target
                     if (created) backgroundBuffers.park(key, target, backgroundLimit()).forEach(::closeBackground)
                     createdPlayer.startLabel = "PiP ${channel.name}"
-                    createdPlayer.play(target.session.secondaryUrlAt(monotonicMs() - 2_000), config.copy(vlcRender = "cpu", vlcHwMode = "off", vlcFullRes = false))
                 } catch (e: Exception) {
                     if (target.pip != null) closePipPlayer(target) else player?.close()
                     if (created) {
@@ -886,6 +916,33 @@ fun main() {
                         closeBuffer(target.session)
                     }
                     status = "Nie można uruchomić PiP: ${e.message}"
+                }
+            }
+
+            LaunchedEffect(pipWindows, config.pipFrameMs) {
+                pipWindows.forEach { background ->
+                    val player = background.pip ?: return@forEach
+                    launch {
+                        while (background.pip === player) {
+                            try {
+                                val captured = player.capturePipFrame(
+                                    background.session.secondaryUrlAt(monotonicMs() - 2_000),
+                                    config.copy(vlcRender = "cpu", vlcHwMode = "off", vlcFullRes = false, keepLastFrame = true),
+                                ) { background.pip === player }
+                                if (background.pip !== player) break
+                                if (!captured) {
+                                    status = "PiP ${background.channel.name}: brak klatki, ponawiam."
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                status = "PiP ${background.channel.name}: ${e.message}"
+                                closePip(background)
+                                break
+                            }
+                            delay(config.pipFrameMs.toLong())
+                        }
+                    }
                 }
             }
 
@@ -904,10 +961,10 @@ fun main() {
             DisposableEffect(Unit) { onDispose { localRecordingServer.close() } }
 
             fun playRecording(recording: Recording) {
+                if (!closeTimeshift(preserveRecording = true)) return
                 saveRecordingPosition()
                 finishSeekPreview()
                 recPendingTarget = null
-                closeTimeshift(preserveRecording = true)
                 try {
                     val session = sessionOrNew()
                     val start = recPositions.get(recording.path)
@@ -935,7 +992,7 @@ fun main() {
                 finishSeekPreview()
                 recPendingTarget = null
                 pipWindows.toList().forEach(::closePip)
-                closeTimeshift(preserveRecording = true)
+                if (!closeTimeshift(preserveRecording = true)) return
                 showChannelList = false
                 vlcSession = null
                 playingChannel?.let { previousChannel = it }
@@ -3276,6 +3333,7 @@ fun main() {
                 )
             }
 
+            val pipPositions = listOf("góra", "dół", "prawa strona", "lewa strona", "lewy górny róg w dół", "prawy górny róg w dół", "lewy dolny róg w górę", "prawy dolny róg w górę")
             fun settingsItems(screen: SettingsScreen?): List<SettingItem> = when (screen) {
                 null -> emptyList()
                 SettingsScreen.SECTIONS -> SettingsScreen.sections.map { section ->
@@ -3553,6 +3611,15 @@ fun main() {
                     SettingItem.Toggle("PiP (eksperymentalne)", config.pipEnabled, "do trzech wyciszonych okien VLC") { enabled ->
                         saveConfig(config.copy(pipEnabled = enabled))
                         if (!enabled) pipWindows.toList().forEach(::closePip)
+                    },
+                    SettingItem.Action("PiP — odstęp między klatkami", "${config.pipFrameMs / 1000} s") {
+                        val intervals = listOf(1000, 2000, 3000, 5000)
+                        choose("PiP — odstęp między klatkami", intervals.map { "${it / 1000} s" }, intervals.indexOf(config.pipFrameMs).coerceAtLeast(0)) {
+                            saveConfig(config.copy(pipFrameMs = intervals[it]))
+                        }
+                    },
+                    SettingItem.Action("PiP — położenie okien", pipPositions[config.pipPos]) {
+                        choose("PiP — położenie okien", pipPositions, config.pipPos) { saveConfig(config.copy(pipPos = it)) }
                     },
                     SettingItem.Toggle("Podgląd klatek przy przewijaniu", config.seekPreview, "timeshift i nagrania") {
                         saveConfig(config.copy(seekPreview = it))
@@ -4925,6 +4992,7 @@ fun main() {
                         pipWindows = pipWindows.mapNotNull { background ->
                             background.pip?.let { PipSurface(background.channel.name, it) }
                         },
+                        pipPosition = config.pipPos,
                         onPipClick = ::openPipMenu,
                         seekPreview = seekPreviewPlayer.takeIf { seekPreviewReady },
                         seekPreviewLabel = seekPreviewLabel,

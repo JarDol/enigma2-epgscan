@@ -66,6 +66,8 @@ class DesktopConfigTest {
             bgCount = 3,
             bgBufMin = 15,
             pipEnabled = true,
+            pipFrameMs = 3000,
+            pipPos = 7,
             seekPreview = false,
             tsDir = "E:\\bufor",
             tsStepSec = 15,

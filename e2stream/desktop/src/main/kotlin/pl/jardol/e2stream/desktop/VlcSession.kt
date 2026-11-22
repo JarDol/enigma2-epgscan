@@ -11,6 +11,7 @@ import org.jetbrains.skia.ImageInfo
 import java.io.IOException
 import java.nio.ByteBuffer
 import javax.swing.SwingUtilities
+import kotlinx.coroutines.delay
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormat
@@ -528,6 +529,16 @@ class VlcSession(private val onError: (String) -> Unit) {
         val started = player.media().play(url, *options.toTypedArray())
         if (!started) throw IOException("VLC nie przyjął strumienia.")
         paused = false
+    }
+
+    internal suspend fun capturePipFrame(url: String, config: DesktopConfig, active: () -> Boolean): Boolean {
+        val previous = frames.count.get()
+        play(url, config)
+        val deadline = monotonicMs() + 2_500
+        while (active() && frames.count.get() == previous && monotonicMs() < deadline) delay(50)
+        if (!active()) return false
+        pause()
+        return frames.count.get() > previous
     }
 
     /** Zmiana przesunięcia dźwięku w trakcie odtwarzania (ms) — bez ponownego otwierania strumienia. */

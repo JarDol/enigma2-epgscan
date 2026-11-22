@@ -8,10 +8,39 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 class LocalRecordingsTest {
     private fun packets(count: Int): ByteArray = ByteArray(count * TimeshiftBuffer.PACKET).also { bytes ->
         for (index in 0 until count) bytes[index * TimeshiftBuffer.PACKET] = 0x47
+    }
+
+    @Test
+    fun failedOrIncompleteCopyNeverPublishesPartialRecordingSegment() {
+        val root = Files.createTempDirectory("e2stream-rec-copy").toFile()
+        try {
+            val source = File(root, "source.ts").apply { writeBytes(packets(4)) }
+            val target = File(root, "00000.ts")
+            assertFailsWith<java.io.IOException> {
+                copyRecordingSegment(source, target) { _, staged ->
+                    staged.writeBytes(byteArrayOf(1, 2))
+                    throw java.io.IOException("disk full")
+                }
+            }
+            assertFalse(target.exists())
+            assertTrue(source.exists())
+            assertTrue(root.listFiles()!!.none { it.name.endsWith(".part") })
+            assertFailsWith<java.io.IOException> {
+                copyRecordingSegment(source, target) { _, staged -> staged.writeBytes(byteArrayOf(1)) }
+            }
+            assertFalse(target.exists())
+            copyRecordingSegment(source, target)
+            assertTrue(source.readBytes().contentEquals(target.readBytes()))
+            assertFailsWith<java.io.IOException> { copyRecordingSegment(source, target) }
+            assertTrue(source.readBytes().contentEquals(target.readBytes()))
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     @Test

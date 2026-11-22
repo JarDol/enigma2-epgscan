@@ -7,6 +7,7 @@ import org.junit.Assume.assumeTrue
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 
 class NativeVlcPreviewTest {
     @Test
@@ -33,6 +34,11 @@ class NativeVlcPreviewTest {
             assertTrue(secondary.frames.count.get() > 0, "secondary VLC did not render: $diagnostics")
             val frame = assertNotNull(secondary.frames.frame.value)
             assertTrue(frame.width <= 480 && frame.height <= 270)
+            secondary.pause()
+            val before = secondary.frames.count.get()
+            assertTrue(runBlocking { secondary.capturePipFrame(url, config) { true } })
+            assertTrue(secondary.frames.count.get() > before, "secondary VLC did not render another preview")
+            assertTrue(secondary.isPaused)
             secondary.close()
             assertNotNull(main.frames.frame.value)
             assertTrue(errors.isEmpty(), errors.toString())
