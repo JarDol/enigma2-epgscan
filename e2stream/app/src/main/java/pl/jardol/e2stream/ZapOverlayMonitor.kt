@@ -165,33 +165,28 @@ internal object ZapOverlayMonitor {
             scheduleInfo.addView(countdown)
             root.addView(scheduleInfo)
 
-            val buttons = AdaptiveButtons(context).apply {
+            val buttons = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.END
                 setPadding(0, dp(7), 0, 0)
             }
-            switchButton = Button(context, null, 0, R.style.TvDialogButton).apply {
-                text = context.getString(R.string.wake_overlay_switch_now)
-                isFocusable = true
-                setOnClickListener { switch() }
+            fun compactButton(label: Int, onClick: () -> Unit) =
+                Button(context, null, 0, R.style.TvDialogButton).apply {
+                    text = context.getString(label)
+                    textSize = 16f
+                    isSingleLine = true
+                    isFocusable = true
+                    minWidth = 0
+                    minimumWidth = 0
+                    setPadding(dp(4), paddingTop, dp(4), paddingBottom)
+                    setOnClickListener { onClick() }
+                }
+            switchButton = compactButton(R.string.wake_overlay_switch_now) { switch() }.apply {
             }
-            buttons.addView(switchButton)
-            buttons.addView(Button(context, null, 0, R.style.TvDialogButton).apply {
-                text = context.getString(R.string.wake_overlay_record_decoder)
-                isFocusable = true
-                setOnClickListener { recordOnDecoder() }
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                marginStart = dp(8)
-            })
-            buttons.addView(Button(context, null, 0, R.style.TvDialogButton).apply {
-                text = context.getString(R.string.wake_overlay_cancel)
-                isFocusable = true
-                minWidth = 0
-                minimumWidth = 0
-                setOnClickListener { cancel() }
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                marginStart = dp(8)
-            })
-            root.addView(buttons)
+            buttons.addView(switchButton, compactButtonParams())
+            buttons.addView(compactButton(R.string.wake_overlay_record_decoder) { recordOnDecoder() }, compactButtonParams())
+            buttons.addView(compactButton(R.string.wake_overlay_cancel) { cancel() }, compactButtonParams())
+            root.addView(buttons, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
             @Suppress("DEPRECATION")
             val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -214,19 +209,6 @@ internal object ZapOverlayMonitor {
             switchButton.requestFocus()
             handler.post(tick)
             AppLog.i("wybudzanie: dodano nakładkę key=$key typ=$type focus=true")
-        }
-
-        internal class AdaptiveButtons(context: Context) : LinearLayout(context) {
-            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                orientation = HORIZONTAL
-                super.onMeasure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), heightMeasureSpec)
-                if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED &&
-                    measuredWidth > MeasureSpec.getSize(widthMeasureSpec)
-                ) {
-                    orientation = VERTICAL
-                }
-                super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-            }
         }
 
         fun remove() {
@@ -295,6 +277,12 @@ internal object ZapOverlayMonitor {
         }
 
         private fun dp(value: Int) = (value * context.resources.displayMetrics.density).toInt()
+
+        private fun compactButtonParams() =
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(3)
+                marginEnd = dp(3)
+            }
     }
 
     private class OverlayPanel(context: Context, private val onBack: () -> Unit) : LinearLayout(context) {
