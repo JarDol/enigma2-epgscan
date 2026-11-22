@@ -40,6 +40,9 @@ class TvDialogLayoutTest {
             val root = overlay.javaClass.getDeclaredField("root").apply { isAccessible = true }.get(overlay) as ViewGroup
             val buttons = root.getChildAt(root.childCount - 1) as LinearLayout
             assertEquals(3, buttons.childCount)
+            val labels = (0 until buttons.childCount).map { (buttons.getChildAt(it) as Button).text.toString() }
+            assertTrue(labels == listOf("Przełącz", "Dekoder", "Anuluj") ||
+                labels == listOf("Switch", "Receiver", "Cancel"))
 
             for (width in listOf(520, 390, 300, 520)) {
                 root.measure(
@@ -47,8 +50,8 @@ class TvDialogLayoutTest {
                     View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.AT_MOST),
                 )
                 root.layout(0, 0, root.measuredWidth, root.measuredHeight)
-                if (width == 520) assertEquals(LinearLayout.HORIZONTAL, buttons.orientation)
-                if (width == 300) assertEquals(LinearLayout.VERTICAL, buttons.orientation)
+                assertEquals(LinearLayout.HORIZONTAL, buttons.orientation)
+                assertEquals(root.width - root.paddingLeft - root.paddingRight, buttons.width)
                 for (i in 0 until buttons.childCount) {
                     val button = buttons.getChildAt(i) as Button
                     assertEquals("Button wraps at width $width: ${button.text}", 1, button.lineCount)

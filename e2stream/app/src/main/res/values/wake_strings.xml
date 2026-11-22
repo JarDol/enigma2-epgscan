@@ -14,8 +14,8 @@
     <string name="wake_fullscreen_blocked">zablokowany</string>
     <string name="wake_overlay_event_time">%1$s</string>
     <string name="wake_overlay_countdown">Przełączenie za: %1$s</string>
-    <string name="wake_overlay_switch_now">Przełącz teraz</string>
-    <string name="wake_overlay_record_decoder">Nagraj na dekoderze</string>
+    <string name="wake_overlay_switch_now">Przełącz</string>
+    <string name="wake_overlay_record_decoder">Dekoder</string>
     <string name="wake_overlay_cancel">Anuluj</string>
     <string name="wake_pending">Oczekujące wydarzenia: %1$d</string>
     <string name="wake_next">Najbliższy: %1$s — %2$s (%3$d)</string>
