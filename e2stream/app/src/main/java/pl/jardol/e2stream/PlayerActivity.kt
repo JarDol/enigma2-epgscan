@@ -67,18 +67,19 @@ class PlayerActivity : Activity() {
     private var decTimerSel = 0
     private var zapTimerSel = 0
 
-    private fun showDecoderTimers() {
-        showMessage(getString(R.string.message_loading_timers_from_receiver))
+    private fun showDecoderTimers(resultMessage: String? = null, resultFailed: Boolean = false) {
+        if (resultMessage == null) showMessage(getString(R.string.message_loading_timers_from_receiver))
         io.execute {
             val result = try { api.decoderTimers() to null } catch (e: Exception) { null to (e.message ?: e.toString()) }
             runOnUiThread {
                 val timers = result.first
                 if (timers == null) {
-                    showMessage(getString(R.string.player_timers_failed, result.second))
+                    val error = getString(R.string.player_timers_failed, result.second)
+                    showMessage(listOfNotNull(resultMessage, error).joinToString("\n"), force = true)
                     return@runOnUiThread
                 }
                 if (timers.isEmpty()) {
-                    showMessage(getString(R.string.message_no_timers_on_the_receiver))
+                    showMessage(listOfNotNull(resultMessage, getString(R.string.message_no_timers_on_the_receiver)).joinToString("\n"), force = resultFailed)
                     return@runOnUiThread
                 }
                 val now = System.currentTimeMillis() / 1000
@@ -107,6 +108,7 @@ class PlayerActivity : Activity() {
                     decTimerSel = selected
                     actions[selected]?.let { showDecoderTimer(it) }
                 }
+                if (resultMessage != null) showMessage(resultMessage, force = resultFailed)
             }
         }
     }
@@ -137,7 +139,7 @@ class PlayerActivity : Activity() {
                             } else {
                                 getString(R.string.player_timer_delete_failed) to "${timer.title}\n${result.second}"
                             }
-                            TvDialog.info(this@PlayerActivity, title, message) { showDecoderTimers() }
+                            showDecoderTimers("$title\n$message", resultFailed = !result.first)
                         }
                     }
                 }),
@@ -716,6 +718,8 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- odtwarzacz
 
+    private var startupLoadControl: StartupLoadControl? = null
+
     private fun buildPlayer() {
         if (player != null) return
         playbackRecovery.resetSession()
@@ -745,11 +749,11 @@ class PlayerActivity : Activity() {
         val minBuf = maxOf(start * 2, reserve + 5000, 10_000)
         val alloc = androidx.media3.exoplayer.upstream.DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
         allocator = alloc
-        val load = DefaultLoadControl.Builder()
+        val load = StartupLoadControl(DefaultLoadControl.Builder()
             .setAllocator(alloc)
             // Enigma2 wysyła dane paczkami (~0,5 MB) z przerwami do ~1,5 s (SD: nawet 3–4 s)
             .setBufferDurationsMs(minBuf, maxOf(minBuf, 20_000), start, reserve)
-            .build()
+            .build()).also { startupLoadControl = it }
         cushionTarget = reserve.toLong()
 
         val p = ExoPlayer.Builder(this, renderers)
@@ -875,7 +879,7 @@ class PlayerActivity : Activity() {
                 bufferSizeMs: Long,
                 elapsedSinceLastFeedMs: Long,
             ) {
-                AppLog.i("audio underrun (bufor $bufferSizeMs ms, od ostatnich danych $elapsedSinceLastFeedMs ms)")
+                AppLog.i("audio underrun (bufor ${audioUnderrunBufferLabel(bufferSizeMs)}, od ostatnich danych $elapsedSinceLastFeedMs ms)")
             }
         })
 
@@ -1193,6 +1197,7 @@ class PlayerActivity : Activity() {
     private fun startStream(url: String, startMs: Long = 0, availableAt: Long = 0) {
         if (safeMode) return
         val p = player ?: return
+        startupLoadControl?.cancel()
         currentUrl = url
         connectionProbeId++
         connectionProbePending = false
@@ -1257,6 +1262,7 @@ class PlayerActivity : Activity() {
             .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
             .build()
         if (startMs > 0) p.setMediaSource(buildSource(url), startMs) else p.setMediaSource(buildSource(url))
+        startupLoadControl?.begin(prefs.fastStart && !recMode)
         p.prepare()
         p.playWhenReady = true
         // tylko na żywo: nagranie czyta z dysku (inny przebieg startu)
@@ -2428,8 +2434,7 @@ class PlayerActivity : Activity() {
                         TvDialog.Btn(getString(R.string.message_delete)) {
                             ZapTimers.removeHistory(this, entry)
                             showZapTimers()
-                            TvDialog.info(this, getString(R.string.player_history_removed),
-                                "${entry.timer.channel}\n${entry.timer.title}")
+                            showMessage("${getString(R.string.player_history_removed)}\n${entry.timer.channel}\n${entry.timer.title}")
                         },
                     ), onBack = { showZapTimers() }, onTimeout = { showZapTimers() })
             },
@@ -2729,7 +2734,7 @@ class PlayerActivity : Activity() {
         val cur = playList.getOrNull(playIndex)
         curAn.tee = { b, o, l -> curBuf.write(b, o, l) }
         curAn.onEit = bgEit(journal)
-        curBuf.pcrPid = { curAn.pcrPid }
+        curBuf.useAnalyzer { curAn }
         val c = BgChan(tsLiveUrl ?: "", cur?.name ?: "?", curBuf, curAn, curRec, journal, cur, playBouquet, playList)
         // odłożony jest tylko ostatni kanał — wcześniej odłożony (inny) przestaje być chroniony
         for (o in bgChans) o.parked = false
@@ -2915,7 +2920,7 @@ class PlayerActivity : Activity() {
                 // bieżący → w tle: analizator, bufor i dziennik należą odtąd do niego
                 curAn!!.tee = { b, o, l -> curBuf!!.write(b, o, l) }
                 curAn.onEit = bgEit(journal)
-                curBuf!!.pcrPid = { curAn.pcrPid }
+                curBuf!!.useAnalyzer { curAn }
                 curBuf.maxMin = if (pipSlot >= 0) pipBufLen() else bgBufLen()
                 val c = BgChan(tsLiveUrl ?: "", cur?.name ?: "?", curBuf, curAn, curRec!!, journal, cur, playBouquet, playList)
                 c.pip = pipSlot
@@ -2946,7 +2951,7 @@ class PlayerActivity : Activity() {
             analyzer = target.an
             mainAnalyzerHooks(target.an)
             target.an.clean = prefs.cleanTs
-            target.buf.pcrPid = { analyzer?.pcrPid ?: -1 }
+            target.buf.useAnalyzer { analyzer }
             target.buf.maxMin = mainBufMin()
             tsBuf = target.buf
             tsRec = target.rec; tsRecAn = target.an
@@ -2979,7 +2984,7 @@ class PlayerActivity : Activity() {
         an.pmtCachePut = { sid, b -> prefs.setPmtFor(sid, b) }
         an.clean = prefs.cleanTs
         an.reset(url.substringAfterLast('/').split(":").getOrNull(3)?.toIntOrNull(16) ?: -1)
-        buf.pcrPid = { an.pcrPid }
+        buf.useAnalyzer { an }
         an.tee = { b, o, l -> buf.write(b, o, l) }
         val j = ProgramJournal()
         an.onEit = bgEit(j)
@@ -3488,6 +3493,7 @@ class PlayerActivity : Activity() {
         playerView.visibility = View.VISIBLE
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_AUDIO).build()
         p.setMediaSource(src)
+        startupLoadControl?.begin(prefs.fastStart && !reuse)
         p.prepare()
         p.playWhenReady = true
         // dane już na nośniku — bez fazy szybkiego startu strażnika (zbędny restart w pierwszych sekundach)
@@ -3550,7 +3556,7 @@ class PlayerActivity : Activity() {
             // katalog nie zajęty przez kanały buforowane w tle
             val used = bgChans.map { it.buf.dir }.toSet()
             val slot = TimeshiftBuffer.slotDirs(dir).first { it !in used }
-            tsBuf = TimeshiftBuffer(slot, min, dir, prefs.tsWriteBatchBytes).also { it.pcrPid = { analyzer?.pcrPid ?: -1 } }
+            tsBuf = TimeshiftBuffer(slot, min, dir, prefs.tsWriteBatchBytes).also { it.useAnalyzer { analyzer } }
             AppLog.i("timeshift: $min min w ${slot.absolutePath} (wolne ${TimeshiftBuffer.gb(dir.usableSpace)})")
         } else {
             b.maxMin = min
@@ -3650,8 +3656,8 @@ class PlayerActivity : Activity() {
         val b = tsBuf
         if (b == null) { showMessage(getString(R.string.message_timeshift_unavailable_usb_drive_unavailable_or_device_s)); return }
         b.failed?.let { showMessage(getString(R.string.player_ts_error, it)); return }
-        // bufor jeszcze nie zapisywany (opóźnienie / tryb ręczny) lub prawie pusty: pauza rusza od teraz, cofnięcie niemożliwe
-        val fresh = b.total < 2_000_000
+        // Bufor bez danych lub krótszy niż margines: pauza rusza od teraz, cofnięcie niemożliwe.
+        val fresh = b.total < 188 || b.spanMs() <= b.seekMarginMs()
         if (fresh && !pause) { showMessage(getString(R.string.message_timeshift_buffer_is_still_empty_nothing_to_rewind)); return }
         tsWriteFrom = 0
         val p = player ?: return
@@ -3660,7 +3666,7 @@ class PlayerActivity : Activity() {
         tsAudioPid = vlc?.selectedAudioTrackId() ?: selectedAudioPid()
         val now = SystemClock.elapsedRealtime()
         val target = if (fresh) now else
-            timeshiftSeekTarget(now - behind - 300, -backMs, b.oldestWall, now)
+            timeshiftSeekTarget(now - behind - 300, -backMs, b.oldestWall, now, b.seekMarginMs())
         AppLog.i("timeshift: zachowuję ścieżkę audio PID=${tsAudioPid ?: "auto"}")
         AppLog.i("timeshift: ${if (pause) "pauza" else "cofnięcie ${backMs / 1000} s"} (bufor ${b.spanMs() / 60000} min)")
         // strumień na żywo odtwarzacza zatrzymany — zapis przejmuje osobne połączenie
@@ -3681,11 +3687,16 @@ class PlayerActivity : Activity() {
     private fun tsPlayFrom(wall: Long, play: Boolean) {
         val b = tsBuf ?: return
         val p = player ?: return
+        startupLoadControl?.cancel()
         tsAudioSourceGen++
         val oldest = b.oldestWall
         val now = SystemClock.elapsedRealtime()
-        val target = maxOf(wall, timeshiftEarliestSeekWall(oldest, now)).coerceAtMost(now)
-        val off = b.offsetAt(target)
+        val margin = b.seekMarginMs()
+        val earliest = timeshiftEarliestSeekWall(oldest, now, margin)
+        val target = maxOf(wall, earliest).coerceAtMost(now)
+        val off = if (margin == 1_000L && target == earliest)
+            b.keyframeAt(target)?.first ?: b.oldestOffset
+        else b.offsetAt(target)
         tsBaseWall = b.wallAt(off)
         val sourceGen = tsAudioSourceGen
         AppLog.i("timeshift: seek ${wall}→${tsBaseWall} ms, zakres $oldest–$now")
@@ -3774,7 +3785,7 @@ class PlayerActivity : Activity() {
         bannerName.text = ch?.let { "${it.num}   ${it.name}" } ?: ""
         Picons.show(bannerIcon, this, ch?.ref.orEmpty(), prefs.picons, prefs.missingPiconLogo)
         val buffered = tsBuf?.takeIf { it.total > 0 }
-        val span = buffered?.let { timeshiftAvailableSpan(it.oldestWall, SystemClock.elapsedRealtime()) } ?: 0L
+        val span = buffered?.let { timeshiftAvailableSpan(it.oldestWall, SystemClock.elapsedRealtime(), it.seekMarginMs()) } ?: 0L
         refreshBannerTop()
         bannerNow.text = if (buffered != null) getString(R.string.player_ts_live_buffer, fmtMs(span)) else getString(R.string.player_ts_live_empty)
         bannerStart.text = ""
@@ -3798,7 +3809,7 @@ class PlayerActivity : Activity() {
         if (!tsMode) return
         val b = tsBuf ?: return
         val base = if (tsPending != 0L) tsPending else tsShownWall()
-        tsPending = timeshiftSeekTarget(base, delta, b.oldestWall, SystemClock.elapsedRealtime())
+        tsPending = timeshiftSeekTarget(base, delta, b.oldestWall, SystemClock.elapsedRealtime(), b.seekMarginMs())
         // podgląd: obraz zatrzymany, na ekranie klatka z miejsca na pasku
         if (pvStart()) { pvLastKey = SystemClock.elapsedRealtime(); seekPreview.requestBuffer(b, tsPending, (tsRecAn ?: analyzer)?.videoStream) }
         tsShowBanner(sticky = !pvPlaying())
@@ -3813,15 +3824,15 @@ class PlayerActivity : Activity() {
         tsPending = 0
         if (b == null || !tsMode || requested == 0L) return@Runnable
         val now = SystemClock.elapsedRealtime()
-        val earliest = timeshiftEarliestSeekWall(b.oldestWall, now)
+        val earliest = timeshiftEarliestSeekWall(b.oldestWall, now, b.seekMarginMs())
         val target = maxOf(requested, earliest)
         val play = pvPlaying()
         when {
-            target >= now - 6000 -> tsGoLive("przewinięte do końca")
             target == earliest -> {
                 showMessage(getString(R.string.player_ts_start, fmtMs(now - earliest)))
                 tsPlayFrom(earliest, play = play)
             }
+            target >= now - 6000 -> tsGoLive("przewinięte do końca")
             else -> tsPlayFrom(target, play = play)
         }
         pvFinish()
@@ -3935,18 +3946,19 @@ class PlayerActivity : Activity() {
     private fun tsUpdateBanner() {
         val b = tsBuf ?: return
         val now = SystemClock.elapsedRealtime()
-        if (tsPending != 0L) tsPending = maxOf(tsPending, timeshiftEarliestSeekWall(b.oldestWall, now))
+        val margin = b.seekMarginMs()
+        if (tsPending != 0L) tsPending = maxOf(tsPending, timeshiftEarliestSeekWall(b.oldestWall, now, margin))
         val shown = if (tsPending != 0L) tsPending else tsShownWall()
         val behind = (now - shown).coerceAtLeast(0)
         val oldest = b.oldestWall
-        val span = timeshiftAvailableSpan(oldest, now)
+        val span = timeshiftAvailableSpan(oldest, now, margin)
         val paused = !pvPlaying()
         refreshBannerTop()
         bannerNow.text = getString(R.string.player_ts_shifted_buffer,
             if (paused) "⏸" else "▶", fmtMs(behind), fmtMs(span))
         bannerStart.text = ""
         bannerEnd.text = getString(R.string.player_live_lower)
-        bannerProgress.progress = timeshiftBufferProgress(shown, oldest, now)
+        bannerProgress.progress = timeshiftBufferProgress(shown, oldest, now, margin)
         bannerNext.text = getString(R.string.player_ts_controls, "${prefs.tsStepSec}/${prefs.tsStepSecLong} s", "${Prefs.stepMinLabel(prefs.tsStepUdSec)}/${prefs.tsStepUdLongMin} min")
     }
 
@@ -4629,10 +4641,8 @@ class PlayerActivity : Activity() {
                     when (result) {
                         "ok" -> {
                             AppLog.i("nagranie lokalne: ${if (convert) "konwersja" else "eksport"} gotowy ${target.absolutePath}")
-                            TvDialog.confirm(this, getString(R.string.player_localrec_export_done_title),
-                                getString(if (convert) R.string.player_localrec_convert_done else R.string.player_localrec_export_done, target.absolutePath),
-                                listOf(TvDialog.Btn("OK")), timeoutSec = 0)
                             if (convert) reloadRecordings()
+                            showMessage("${getString(R.string.player_localrec_export_done_title)}\n${getString(if (convert) R.string.player_localrec_convert_done else R.string.player_localrec_export_done, target.absolutePath)}")
                         }
                         "cancel" -> {
                             AppLog.i("nagranie lokalne: ${if (convert) "konwersja przerwana" else "eksport anulowany"}")
@@ -4641,8 +4651,7 @@ class PlayerActivity : Activity() {
                         }
                         else -> {
                             AppLog.i("nagranie lokalne: eksport nieudany ($result)")
-                            TvDialog.confirm(this, getString(R.string.player_localrec_export), getString(R.string.player_localrec_export_failed, result),
-                                listOf(TvDialog.Btn("OK")), timeoutSec = 0)
+                            showMessage("${getString(R.string.player_localrec_export)}\n${getString(R.string.player_localrec_export_failed, result)}", force = true)
                         }
                     }
                 }
@@ -4689,10 +4698,9 @@ class PlayerActivity : Activity() {
             runOnUiThread {
                 if (result.first) {
                     recPos.edit().remove(recPosKey(r)).apply()
-                    TvDialog.info(this@PlayerActivity, getString(R.string.player_recording_removed), r.title) {
-                        reloadRecordings()
-                    }
-                } else TvDialog.info(this@PlayerActivity, getString(R.string.player_recording_remove_failed), result.second)
+                    reloadRecordings()
+                    showMessage("${getString(R.string.player_recording_removed)}\n${r.title}")
+                } else showMessage("${getString(R.string.player_recording_remove_failed)}\n${result.second}", force = true)
             }
         }
     }

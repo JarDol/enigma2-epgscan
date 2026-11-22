@@ -191,7 +191,7 @@ class EpgUi(
     // ------------------------------------------------------------ audycja
 
     fun showEvent(ev: EpgEvent, ch: Channel?, scheduledTimer: ZapTimers.Timer? = null, onReturn: () -> Unit = {},
-                  extraBtns: List<TvDialog.Btn> = emptyList()) {
+                  extraBtns: List<TvDialog.Btn> = emptyList(), fromSearch: Boolean = false) {
         // referencja w pełnej postaci z listy kanałów (z paczki EPG przychodzi skrócona: bez końcowego „:”)
         val ref = (ch?.ref?.takeIf { it.isNotBlank() } ?: ev.sref).let { if (it.count { c -> c == ':' } == 9) "$it:" else it }
         val name = ev.sname.ifBlank { ch?.name ?: "" }
@@ -227,7 +227,10 @@ class EpgUi(
                     a.getString(R.string.epg_record_question, name, ev.title, t(ev.begin), t(ev.end)),
                     a.getString(R.string.epg_record),
                     onBack = returnToSchedule,
-                ) { record(ref, ev, onInfoClose = returnToSchedule ?: {}) }
+                ) {
+                    record(ref, ev, onInfoClose = returnToSchedule ?: {},
+                        onSuccess = { if (fromSearch) dismissEpgDialogs() })
+                }
             }
             if (scheduledTimer != null) {
                 btns += TvDialog.Btn(a.getString(R.string.epg_remove_switch)) {
@@ -251,6 +254,7 @@ class EpgUi(
                         a.getString(R.string.epg_remove),
                     ) {
                         ZapTimers.remove(a, ZapTimers.Timer(ref, name, ev.title, ev.begin, ev.end, ev.id))
+                        if (fromSearch) dismissEpgDialogs()
                         showActionResult(a.getString(R.string.epg_switch_removed),
                             "${name.ifBlank { ref }}\n${ev.title}")
                     }
@@ -260,7 +264,7 @@ class EpgUi(
                         a.getString(R.string.epg_schedule_question, name, ev.title, t(ev.begin)),
                         a.getString(R.string.epg_add),
                     ) {
-                        scheduleZap(ZapTimers.Timer(ref, name.ifBlank { ref }, ev.title, ev.begin, ev.end, ev.id))
+                        scheduleZap(ZapTimers.Timer(ref, name.ifBlank { ref }, ev.title, ev.begin, ev.end, ev.id), fromSearch)
                     }
                 }
             }
@@ -289,7 +293,7 @@ class EpgUi(
         }
     }
 
-    private fun scheduleZap(timer: ZapTimers.Timer) {
+    private fun scheduleZap(timer: ZapTimers.Timer, fromSearch: Boolean) {
         val conflicts = ZapTimers.list(a).filter { it.begin == timer.begin && it.key() != timer.key() }
         if (conflicts.isEmpty()) {
             ZapTimers.add(a, timer)
@@ -310,17 +314,20 @@ class EpgUi(
                 },
                 TvDialog.Btn(a.getString(R.string.epg_keep)),
                 TvDialog.Btn(a.getString(R.string.epg_record_receiver)) {
-                    recordTimer(timer) { ok -> ZapTimers.mark(a, timer, if (ok) ZapTimers.RECORDED else ZapTimers.RECORD_FAILED) }
+                    recordTimer(timer, onSuccess = { if (fromSearch) dismissEpgDialogs() }) { ok ->
+                        ZapTimers.mark(a, timer, if (ok) ZapTimers.RECORDED else ZapTimers.RECORD_FAILED)
+                    }
                 },
             ))
     }
 
     fun recordTimer(
         timer: ZapTimers.Timer,
+        onSuccess: () -> Unit = {},
         onResult: ((Boolean) -> Unit)? = null,
     ) {
         record(timer.ref, EpgEvent(timer.eventId, timer.begin, timer.end - timer.begin,
-            timer.title, "", "", timer.ref, timer.channel), onResult)
+            timer.title, "", "", timer.ref, timer.channel), onResult, onSuccess = onSuccess)
     }
 
     private fun record(
@@ -328,11 +335,13 @@ class EpgUi(
         ev: EpgEvent,
         onResult: ((Boolean) -> Unit)? = null,
         onInfoClose: () -> Unit = {},
+        onSuccess: () -> Unit = {},
     ) {
         io.execute {
             val r = try { api.timerAdd(ref, ev) } catch (e: Exception) { false to (e.message ?: e.toString()) }
             AppLog.i("nagranie: ${ev.title} ${d(ev.begin)} ${t(ev.begin)} -> ${r.first} ${r.second}")
             a.runOnUiThread {
+                if (r.first) onSuccess()
                 showActionResult(
                     a.getString(if (r.first) R.string.epg_recording_set else R.string.epg_recording_failed),
                     "${ev.title}\n${r.second}".trim(),
@@ -622,7 +631,9 @@ class EpgUi(
                 val rows = list.map {
                     Row("${d(it.begin)}  ${t(it.begin)}", it.title, "${it.sname}   ${it.shortDesc}${progress(it)}", it, null)
                 }
-                bigList(a.getString(R.string.epg_results, q, rows.size), RowAdapter(rows)) { w -> showEvent(rows[w].ev!!, null) }
+                bigList(a.getString(R.string.epg_results, q, rows.size), RowAdapter(rows)) { w ->
+                    showEvent(rows[w].ev!!, null, fromSearch = true)
+                }
             }
         }
     }

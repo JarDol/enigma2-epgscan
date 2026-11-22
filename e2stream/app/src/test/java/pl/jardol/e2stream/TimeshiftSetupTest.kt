@@ -60,6 +60,32 @@ class TimeshiftSetupTest {
             .findViewWithTag<TextView>("dialog-message").text.toString()
 
     @Test
+    fun pcrFallbackIsConnectedForPlaybackBufferAndTimeshiftIndependently() {
+        prefs.tsDir = ""
+        prefs.tsInternalOk = true
+        val analyzer = TsAnalyzer(0) {}
+        TsAnalyzer::class.java.getDeclaredField("pcrPid").apply { isAccessible = true }.setInt(analyzer, 0x1fff)
+        TsAnalyzer::class.java.getDeclaredField("programPids").apply { isAccessible = true }.set(analyzer, setOf(0x100))
+        PlayerActivity::class.java.getDeclaredField("analyzer").apply { isAccessible = true }.set(activity, analyzer)
+        val field = PlayerActivity::class.java.getDeclaredField("tsBuf").apply { isAccessible = true }
+        val newChannel = PlayerActivity::class.java.getDeclaredMethod("tsNewChannel").apply { isAccessible = true }
+        val packet = ByteArray(188) { 0xff.toByte() }.apply {
+            this[0] = 0x47; this[1] = 0x01; this[2] = 0
+            this[3] = 0x30; this[4] = 7; this[5] = 0x10
+        }
+        for ((minutes, playback) in listOf(0 to true, 15 to false)) {
+            prefs.tsMin = minutes
+            prefs.bufPlay = playback
+            newChannel.invoke(activity)
+            val buffer = field.get(activity) as TimeshiftBuffer
+            buffer.write(packet, 0, packet.size)
+            assertEquals(188L, buffer.total)
+            buffer.close()
+            field.set(activity, null)
+        }
+    }
+
+    @Test
     fun storageGuardNotifiesAfterClosingBackgroundAndWarnsIfCurrentStillStalls() {
         val medium = activity.cacheDir.resolve("recording-medium")
         prefs.setTimeshiftStorage(medium.absolutePath, "Philips USB — Nagrania")

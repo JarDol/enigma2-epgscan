@@ -26,6 +26,25 @@ class TimeshiftNavigationTest {
     }
 
     @Test
+    fun unfilledBufferAllowsRewindNearItsBeginning() {
+        val oldest = 100_000L
+        val now = 120_000L
+        assertEquals(101_000L, timeshiftSeekTarget(115_000, -30_000, oldest, now, 1_000))
+        assertEquals(19_000L, timeshiftAvailableSpan(oldest, now, 1_000))
+        assertEquals(0, timeshiftBufferProgress(101_000, oldest, now, 1_000))
+        assertEquals(110_000L, timeshiftSeekTarget(115_000, -30_000, oldest, now, 10_000))
+    }
+
+    @Test
+    fun seekMarginProtectsSegmentsAtCapacityOrWhenSpaceIsLow() {
+        val ample = TimeshiftBuffer.RESERVE + 100_000_000L
+        assertEquals(1_000L, timeshiftSeekMargin(3, 10, ample, false))
+        assertEquals(10_000L, timeshiftSeekMargin(11, 10, ample, false))
+        assertEquals(10_000L, timeshiftSeekMargin(3, 10, TimeshiftBuffer.RESERVE, false))
+        assertEquals(10_000L, timeshiftSeekMargin(3, 10, ample, true))
+    }
+
+    @Test
     fun startMovesWithBufferAndNeverExceedsCurrentTime() {
         assertEquals(130_000L, timeshiftSeekTarget(110_000, -10_000, 120_000, 200_000))
         assertEquals(205_000L, timeshiftSeekTarget(200_000, -30_000, 200_000, 205_000))

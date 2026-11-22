@@ -15,23 +15,31 @@ class EpgUpdatePolicyTest {
     }
 
     @Test fun unchangedPackIsSkippedAutomaticallyButCanBeForced() {
-        val pack = EpgUpdatePolicy.packIdentity("decoder", 8770, 100, 1000, "abcd")
-        val rebuilt = EpgUpdatePolicy.packIdentity("decoder", 8770, 200, 2000, "abcd")
+        val pack = EpgUpdatePolicy.packIdentity("decoder", 8770, 100, 1000, "abcd", 500, "picon-sha")
+        val rebuilt = EpgUpdatePolicy.packIdentity("decoder", 8770, 200, 2000, "abcd", 500, "picon-sha")
         assertEquals(pack, rebuilt)
         assertFalse(EpgUpdatePolicy.needsImport(rebuilt, pack, false))
         assertTrue(EpgUpdatePolicy.needsImport(rebuilt, pack, true))
         assertTrue(EpgUpdatePolicy.needsImport(
-            EpgUpdatePolicy.packIdentity("decoder", 8770, 100, 1000, "ef01"), pack, false))
+            EpgUpdatePolicy.packIdentity("decoder", 8770, 100, 1000, "ef01", 500, "picon-sha"), pack, false))
         assertTrue(EpgUpdatePolicy.needsImport(
-            EpgUpdatePolicy.packIdentity("other", 8770, 100, 1000, "abcd"), pack, false))
+            EpgUpdatePolicy.packIdentity("decoder", 8770, 100, 1000, "abcd", 500, "new-picon-sha"), pack, false))
+        assertTrue(EpgUpdatePolicy.needsImport(
+            EpgUpdatePolicy.packIdentity("other", 8770, 100, 1000, "abcd", 500, "picon-sha"), pack, false))
     }
 
     @Test fun oldPluginUsesTimestampAndSize() {
-        val pack = EpgUpdatePolicy.packIdentity("decoder", 8770, 100, 1000, "")
+        val pack = EpgUpdatePolicy.packIdentity("decoder", 8770, 100, 1000, "", 500, "")
         assertFalse(EpgUpdatePolicy.needsImport(pack, pack, false))
         assertTrue(EpgUpdatePolicy.needsImport(
-            EpgUpdatePolicy.packIdentity("decoder", 8770, 101, 1000, ""), pack, false))
+            EpgUpdatePolicy.packIdentity("decoder", 8770, 101, 1000, "", 500, ""), pack, false))
         assertTrue(EpgUpdatePolicy.needsImport(
-            EpgUpdatePolicy.packIdentity("decoder", 8770, 100, 1001, ""), pack, false))
+            EpgUpdatePolicy.packIdentity("decoder", 8770, 100, 1001, "", 500, ""), pack, false))
+    }
+
+    @Test fun oldPluginDetectsPiconOnlyPackRebuilds() {
+        val pack = EpgUpdatePolicy.packIdentity("decoder", 8770, 100, 1000, "same-epg", 500, "")
+        val rebuilt = EpgUpdatePolicy.packIdentity("decoder", 8770, 101, 1000, "same-epg", 500, "")
+        assertTrue(EpgUpdatePolicy.needsImport(rebuilt, pack, false))
     }
 }
