@@ -18,6 +18,21 @@ object AppStorage {
     }
 
     private fun cacheDirs(ctx: Context) = listOfNotNull(ctx.cacheDir, ctx.externalCacheDir).distinct()
+    private fun isUpdateApk(file: File) = file.isFile && file.name.startsWith("e2stream-") &&
+        (file.name.endsWith(".apk") || file.name.endsWith(".apk.part"))
+
+    /** Po udanej aktualizacji usuwa APK-y po instalatorze; nie czeka na ponowne uruchomienie aplikacji. */
+    fun cleanupInstalledApks(ctx: Context): Long {
+        var freed = 0L
+        for (dir in cacheDirs(ctx)) {
+            for (file in dir.listFiles()?.filter { isUpdateApk(it) }.orEmpty()) {
+                val size = file.length()
+                if (file.delete()) freed += size
+                else AppLog.i("aktualizacja: nie można usunąć pobranego APK ${file.name}")
+            }
+        }
+        return freed
+    }
 
     /**
      * Przy starcie: usuwa pobrane pliki aktualizacji (e2stream-*.apk ~100 MB każdy — wcześniej zostawały po każdej
@@ -30,8 +45,7 @@ object AppStorage {
             for (f in d.walkBottomUp()) {
                 if (f == d || f == keepApk) continue
                 // pobrany APK: nie ten właśnie instalowany (ostatnie 10 min)
-                val apk = f.isFile && f.name.startsWith("e2stream-") && (f.name.endsWith(".apk") || f.name.endsWith(".apk.part")) &&
-                    now - f.lastModified() > 10 * 60_000L
+                val apk = isUpdateApk(f) && now - f.lastModified() > 10 * 60_000L
                 val old = now - f.lastModified() > DAY
                 if (f.isFile && (apk || old)) {
                     val n = f.length()

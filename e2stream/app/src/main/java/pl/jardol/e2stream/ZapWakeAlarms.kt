@@ -380,9 +380,19 @@ class ZapAlarmReceiver : BroadcastReceiver() {
 
 class ZapBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action == Intent.ACTION_BOOT_COMPLETED || intent?.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
-            AppLog.i("wybudzanie: odbiornik systemowy ${intent.action}")
-            ZapWakeAlarms.sync(context)
+        when (intent?.action) {
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                AppLog.i("wybudzanie: odbiornik systemowy ${intent.action}")
+                ZapWakeAlarms.sync(context)
+                if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+                    try {
+                        val freed = AppStorage.cleanupInstalledApks(context)
+                        AppLog.i("aktualizacja: po instalacji zwolniono ${AppStorage.mb(freed)} z pobranych APK")
+                    } catch (e: Exception) {
+                        AppLog.i("aktualizacja: nie udało się posprzątać APK po instalacji: $e")
+                    }
+                }
+            }
         }
     }
 }
