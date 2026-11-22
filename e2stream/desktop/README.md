@@ -90,6 +90,8 @@ Scan pack (daily or at every start) or, without the plugin, fetched from
 OpenWebif at the configured hour; other channels are loaded on demand.
 The channel History list shows the current programme from locally cached EPG
 alongside the watched-channel and bouquet labels, without waiting for the receiver.
+It also shows locally cached picons using the channel-list icon settings; icons
+are loaded asynchronously.
 
 **Audio:** the audio track (AUDIO key, menu or player button) is remembered per
 channel and receiver in `%APPDATA%/E2Stream/audio.properties` (matched by PID,

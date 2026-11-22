@@ -3031,6 +3031,9 @@ fun main() {
                     options = entries.map { it.name },
                     selected = 0,
                     tag = historyTag,
+                    iconChannels = entries.map { Channel(0, it.name, it.ref) },
+                    iconStyle = piconStyle(config),
+                    iconScale = config.uiListIcon / 100f,
                     subtitles = entries.map { entry ->
                         listOfNotNull(
                             "oglądany".takeIf { serviceKey(entry.ref) == current },
@@ -5094,6 +5097,7 @@ fun main() {
                     QuickPickDialog(
                         pick = pick,
                         colors = colorScheme,
+                        piconVersion = piconVersion,
                         onClose = {
                             quickPick = null
                             pick.onBack?.invoke()

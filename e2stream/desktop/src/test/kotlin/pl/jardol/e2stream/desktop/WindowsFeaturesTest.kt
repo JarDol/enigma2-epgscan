@@ -51,6 +51,8 @@ class WindowsFeaturesTest {
             selected = 1,
             subtitles = listOf("oglądany · Bukiet", "Bukiet"),
             tag = "history-new",
+            iconChannels = listOf(Channel(0, "TVP 1", "1:0:1:A:"), Channel(0, "TVP 2", "1:0:1:B:")),
+            iconStyle = PiconStyle.PICONS,
         ) {}
 
         assertSame(pick, updateHistoryProgrammes(pick, "history-old", listOf("Stara audycja")))
@@ -58,6 +60,8 @@ class WindowsFeaturesTest {
         val updated = updateHistoryProgrammes(pick, "history-new", listOf("Audycja", null))!!
         assertEquals(1, updated.selected)
         assertEquals(pick.subtitles, updated.subtitles)
+        assertEquals(pick.iconChannels, updated.iconChannels)
+        assertEquals(pick.iconStyle, updated.iconStyle)
         assertEquals(listOf("Audycja", null), updated.details)
         assertSame(pick.onSelect, updated.onSelect)
     }

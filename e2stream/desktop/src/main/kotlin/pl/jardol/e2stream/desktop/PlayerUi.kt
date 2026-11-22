@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
@@ -70,6 +71,8 @@ import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.SwingUtilities
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private val clockFormat = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
 
@@ -684,6 +687,9 @@ internal data class QuickPick(
     val fontScale: Float = 1f,
     /** OK nie zamyka okna (wyjście klawiszem Wstecz) — np. przesunięcie dźwięku, ścieżka dźwięku. */
     val keepOpen: Boolean = false,
+    val iconChannels: List<Channel> = emptyList(),
+    val iconStyle: PiconStyle = PiconStyle.OFF,
+    val iconScale: Float = 0.8f,
     val onSelect: (Int) -> Unit,
 )
 
@@ -717,12 +723,15 @@ internal fun VolumeOsd(
 internal fun QuickPickDialog(
     pick: QuickPick,
     colors: androidx.compose.material3.ColorScheme,
+    piconVersion: Int,
     onClose: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
     val scale = pick.fontScale.coerceIn(0.7f, 1.6f)
     val bodyHeight = if (pick.body.isNullOrBlank()) 0 else 260
-    val rowsHeight = ((pick.options.size * 54 + (pick.subtitles.count { it != null } + pick.details.count { it != null }) * 24 + pick.headers.size * 40) * scale).toInt() +
+    val iconHeight = if (pick.iconStyle != PiconStyle.OFF && pick.iconChannels.isNotEmpty()) 48 * pick.iconScale + 20 else 0f
+    val rowsHeight = (pick.options.size * maxOf(54 * scale, iconHeight) +
+        ((pick.subtitles.count { it != null } + pick.details.count { it != null }) * 24 + pick.headers.size * 40) * scale).toInt() +
         bodyHeight + if (pick.onHorizontal != null) 56 else 0
     val wide = pick.subtitles.isNotEmpty() || pick.details.isNotEmpty() || pick.headers.isNotEmpty() || bodyHeight > 0
     InWindowDialog(
@@ -773,18 +782,29 @@ internal fun QuickPickDialog(
                             item(key = index) {
                                 val isSelected = index == pick.selected
                                 val textColor = if (isSelected) colors.onPrimaryContainer else colors.onSurface
-                                Column(
+                                Row(
                                     Modifier.fillMaxWidth()
                                         .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
                                         .clickable { onSelect(index) }
                                         .padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text(option, color = textColor, fontSize = 20.sp * scale, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    pick.subtitles.getOrNull(index)?.let {
-                                                                            Text(it, color = textColor.copy(alpha = 0.75f), fontSize = 15.sp * scale, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    val iconChannel = pick.iconChannels.getOrNull(index)
+                                    if (iconChannel != null && pick.iconStyle != PiconStyle.OFF) {
+                                        val image by produceState<ImageBitmap?>(null, iconChannel, piconVersion) {
+                                            value = withContext(Dispatchers.IO) { Picons.image(iconChannel) }
+                                        }
+                                        ChannelIcon(image, pick.iconStyle == PiconStyle.WITH_LOGO, 80.dp * pick.iconScale, 48.dp * pick.iconScale)
+                                        androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
                                     }
-                                    pick.details.getOrNull(index)?.let {
-                                        Text(it, color = textColor.copy(alpha = 0.75f), fontSize = 15.sp * scale, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Column(Modifier.weight(1f)) {
+                                        Text(option, color = textColor, fontSize = 20.sp * scale, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        pick.subtitles.getOrNull(index)?.let {
+                                            Text(it, color = textColor.copy(alpha = 0.75f), fontSize = 15.sp * scale, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                        pick.details.getOrNull(index)?.let {
+                                            Text(it, color = textColor.copy(alpha = 0.75f), fontSize = 15.sp * scale, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
                                     }
                                 }
                             }
