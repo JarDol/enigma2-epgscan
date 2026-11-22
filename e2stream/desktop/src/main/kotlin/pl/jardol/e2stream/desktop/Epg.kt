@@ -351,3 +351,21 @@ internal fun epgDescription(event: EpgEvent): String {
 
 internal fun epgPreview(event: EpgEvent): String =
     event.shortDesc.ifBlank { event.longDesc }.trim().replace(Regex("\\s+"), " ")
+
+internal fun epgConfirmation(
+    title: String,
+    body: String,
+    label: String,
+    timeoutSec: Int,
+    fontScale: Float,
+    back: () -> Unit,
+    action: () -> Unit,
+): QuickPick = QuickPick(
+    title = title,
+    options = listOf(label, "Anuluj"),
+    selected = 0,
+    body = body,
+    onBack = back,
+    timeoutSec = timeoutSec,
+    fontScale = fontScale,
+) { choice -> if (choice == 0) action() else back() }

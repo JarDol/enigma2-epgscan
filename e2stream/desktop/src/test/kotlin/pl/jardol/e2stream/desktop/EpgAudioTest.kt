@@ -11,6 +11,20 @@ import kotlin.test.assertTrue
 
 class EpgAudioTest {
     @Test
+    fun epgConfirmationRunsActionOnlyWhenConfirmed() {
+        var actions = 0
+        var returns = 0
+        val pick = epgConfirmation("Przełączyć?", "Kanał", "Przełącz", 30, 1f, { returns++ }, { actions++ })
+        pick.onSelect(1)
+        assertEquals(0, actions)
+        assertEquals(1, returns)
+        pick.onBack?.invoke()
+        assertEquals(2, returns)
+        pick.onSelect(0)
+        assertEquals(1, actions)
+    }
+
+    @Test
     fun parsesEpgEventsSkippingEmptyTitlesAndNoneTexts() {
         val json = JSONObject(
             """

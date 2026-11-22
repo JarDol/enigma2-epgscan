@@ -1897,6 +1897,10 @@ fun main() {
                 showMultiEpgRef(bouquet, at, selectRef)
             fun openEpgSearch(initial: String = "") = openEpgSearchRef(initial)
 
+            fun confirmEpgAction(title: String, body: String, label: String, back: () -> Unit, action: () -> Unit) {
+                quickPick = epgConfirmation(title, body, label, config.confirmDialogSec, epgScale, back, action)
+            }
+
             fun showEvent(event: EpgEvent, channel: Channel, onBack: (() -> Unit)?) {
                 scope.launch {
                     val now = Instant.now().epochSecond
@@ -1906,8 +1910,14 @@ fun main() {
                     val actions = buildList<Pair<String, () -> Unit>> {
                         add(
                             (if (isCurrent) "Oglądaj" else "Przełącz na kanał") to {
-                                showChannelList = false
-                                if (!isCurrent) startChannel(channel)
+                                if (isCurrent) {
+                                    showChannelList = false
+                                } else {
+                                    confirmEpgAction("Przełączyć kanał?", channel.name, "Przełącz", reopen) {
+                                        showChannelList = false
+                                        startChannel(channel)
+                                    }
+                                }
                             },
                         )
                         if (event.end > now) add("Nagraj na dekoderze" to { recordEvent(event, channel, reopen) })
@@ -1915,14 +1925,28 @@ fun main() {
                             if (scheduled != null) {
                                 add(
                                     "Usuń przełączenie o ${EpgTime.clock(event.begin)}" to {
-                                        scope.launch {
-                                            withContext(Dispatchers.IO) { zapStore.remove(scheduled) }
-                                            status = "Usunięto przełączenie: ${event.title}."
+                                        confirmEpgAction(
+                                            "Usunąć przełączenie?",
+                                            "${channel.name} — ${event.title}\n${EpgTime.dayAndRange(event.begin, event.end)}",
+                                            "Usuń",
+                                            reopen,
+                                        ) {
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) { zapStore.remove(scheduled) }
+                                                status = "Usunięto przełączenie: ${event.title}."
+                                            }
                                         }
                                     },
                                 )
                             } else {
-                                add("Przełącz o ${EpgTime.clock(event.begin)}" to { scheduleZap(event, channel, reopen) })
+                                add("Przełącz o ${EpgTime.clock(event.begin)}" to {
+                                    confirmEpgAction(
+                                        "Zaplanować przełączenie?",
+                                        "${channel.name} — ${event.title}\n${EpgTime.dayAndRange(event.begin, event.end)}",
+                                        "Zaplanuj",
+                                        reopen,
+                                    ) { scheduleZap(event, channel, reopen) }
+                                })
                             }
                         }
                         if (onBack == null) add("EPG kanału" to { showChannelEpg(channel, event.id) })

@@ -60,7 +60,8 @@ navigation actions open channel EPG, Multi EPG (GUIDE; ◀ ▶ move the time by
 times, Menu picks another channel/bouquet or search, CH+/CH− page through the
 list, and OK opens the programme description with switch, scheduled switch and
 record-on-receiver actions (a scheduled switch at the same time asks whether to
-replace it). In the channel list INFO/GUIDE opens the selected channel's EPG.
+replace it). Switching channels and adding or removing scheduled switches
+require confirmation. In the channel list INFO/GUIDE opens the selected channel's EPG.
 EPG is cached per channel in `%APPDATA%/E2Stream/epg`: imported from the EPG
 Scan pack (daily or at every start) or, without the plugin, fetched from
 OpenWebif at the configured hour; other channels are loaded on demand.
