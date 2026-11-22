@@ -897,14 +897,13 @@ fun main() {
                 var player: VlcSession? = null
                 try {
                     lateinit var createdPlayer: VlcSession
-                    createdPlayer = VlcSession { error ->
+                    createdPlayer = VlcSession(audioEnabled = false, keyFramesOnly = true) { error ->
                         if (target.pip === createdPlayer) {
                             status = "PiP ${channel.name}: $error Ponawiam."
                         }
                     }
                     player = createdPlayer
                     createdPlayer.frames.frameLimit = 480 to 270
-                    createdPlayer.setAudioLevel(0, true)
                     target.pip = createdPlayer
                     pipWindows = pipWindows + target
                     if (created) backgroundBuffers.park(key, target, backgroundLimit()).forEach(::closeBackground)
@@ -925,13 +924,21 @@ fun main() {
                     launch {
                         while (background.pip === player) {
                             try {
-                                val captured = player.capturePipFrame(
+                                player.frames.displayIntervalMs = config.pipFrameMs.toLong()
+                                val before = player.frames.count.get()
+                                player.play(
                                     background.session.secondaryUrlAt(monotonicMs() - 2_000),
                                     config.copy(vlcRender = "cpu", vlcHwMode = "off", vlcFullRes = false, keepLastFrame = true),
-                                ) { background.pip === player }
-                                if (background.pip !== player) break
-                                if (!captured) {
-                                    status = "PiP ${background.channel.name}: brak klatki, ponawiam."
+                                )
+                                var lastFrame = before
+                                while (background.pip === player) {
+                                    delay(maxOf(10_000L, config.pipFrameMs.toLong() * 3))
+                                    val current = player.frames.count.get()
+                                    if (current == lastFrame) {
+                                        status = "PiP ${background.channel.name}: brak klatki, ponawiam."
+                                        break
+                                    }
+                                    lastFrame = current
                                 }
                             } catch (e: CancellationException) {
                                 throw e
@@ -940,7 +947,7 @@ fun main() {
                                 closePip(background)
                                 break
                             }
-                            delay(config.pipFrameMs.toLong())
+                            delay(1_000)
                         }
                     }
                 }
@@ -1558,14 +1565,13 @@ fun main() {
                     if (config.seekPreview) {
                         try {
                             delay(150)
-                            val player = VlcSession { error ->
+                            val player = VlcSession(audioEnabled = false) { error ->
                                 if (seekPreviewPlayer === preview) {
                                     status = "Podgląd przewijania niedostępny: $error"
                                 }
                             }
                             preview = player
                             player.frames.frameLimit = 480 to 270
-                            player.setAudioLevel(0, true)
                             seekPreviewLabel = label
                             seekPreviewReady = false
                             seekPreviewPlayer = player
@@ -3621,6 +3627,12 @@ fun main() {
                     SettingItem.Action("PiP — położenie okien", pipPositions[config.pipPos]) {
                         choose("PiP — położenie okien", pipPositions, config.pipPos) { saveConfig(config.copy(pipPos = it)) }
                     },
+                    SettingItem.Action("PiP — rozmiar okien", "${config.pipWidthPercent}% szerokości") {
+                        val sizes = listOf(20, 25, 33, 40, 50)
+                        choose("PiP — rozmiar okien", sizes.map { "$it% szerokości" }, sizes.indexOf(config.pipWidthPercent).coerceAtLeast(0)) {
+                            saveConfig(config.copy(pipWidthPercent = sizes[it]))
+                        }
+                    },
                     SettingItem.Toggle("Podgląd klatek przy przewijaniu", config.seekPreview, "timeshift i nagrania") {
                         saveConfig(config.copy(seekPreview = it))
                     },
@@ -4993,6 +5005,7 @@ fun main() {
                             background.pip?.let { PipSurface(background.channel.name, it) }
                         },
                         pipPosition = config.pipPos,
+                        pipWidthPercent = config.pipWidthPercent,
                         onPipClick = ::openPipMenu,
                         seekPreview = seekPreviewPlayer.takeIf { seekPreviewReady },
                         seekPreviewLabel = seekPreviewLabel,

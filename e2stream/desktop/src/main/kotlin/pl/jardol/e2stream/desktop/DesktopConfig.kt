@@ -80,6 +80,7 @@ data class DesktopConfig(
     val pipEnabled: Boolean = false,
     val pipFrameMs: Int = 1000,
     val pipPos: Int = 5,
+    val pipWidthPercent: Int = 33,
     val seekPreview: Boolean = true,
     val tsStepSec: Int = 5,
     val tsStepMin: Int = 1,
@@ -222,6 +223,7 @@ data class DesktopConfig(
             setProperty("pipEnabled", pipEnabled.toString())
             setProperty("pipFrameMs", pipFrameMs.toString())
             setProperty("pipPos", pipPos.toString())
+            setProperty("pipWidthPercent", pipWidthPercent.toString())
             setProperty("seekPreview", seekPreview.toString())
             setProperty("tsDir", tsDir)
             setProperty("tsStepSec", tsStepSec.toString())
@@ -387,6 +389,7 @@ data class DesktopConfig(
                 pipEnabled = bool("pipEnabled", defaults.pipEnabled),
                 pipFrameMs = int("pipFrameMs", defaults.pipFrameMs, 1000..5000),
                 pipPos = int("pipPos", defaults.pipPos, 0..7),
+                pipWidthPercent = int("pipWidthPercent", defaults.pipWidthPercent, 20..50),
                 seekPreview = bool("seekPreview", defaults.seekPreview),
                 tsDir = string("tsDir", ""),
                 tsStepSec = int("tsStepSec", defaults.tsStepSec, 1..120),

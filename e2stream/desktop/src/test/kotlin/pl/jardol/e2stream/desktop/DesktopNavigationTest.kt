@@ -6,6 +6,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 
 class DesktopNavigationTest {
     @Test
@@ -19,6 +20,17 @@ class DesktopNavigationTest {
         assertEquals(Alignment.TopEnd to 2, pipPlacement(5, 2))
         assertEquals(Alignment.BottomStart to -2, pipPlacement(6, 2))
         assertEquals(Alignment.BottomEnd to -2, pipPlacement(7, 2))
+    }
+
+    @Test
+    fun pipSizeFitsThreeWindowsAndKeepsSideBySideWindowsSeparate() {
+        val one = pipWindowWidth(1280.dp, 720.dp, 40, 5, 1)
+        val three = pipWindowWidth(1280.dp, 720.dp, 40, 5, 3)
+        val sideBySide = pipWindowWidth(1280.dp, 720.dp, 50, 0, 2)
+        assertTrue(one > 240.dp)
+        assertTrue(three < one)
+        assertTrue((three * (9f / 16f) + 32.dp) * 3 <= 720.dp)
+        assertTrue((sideBySide + 32.dp) * 2 <= 1280.dp)
     }
 
     @Test

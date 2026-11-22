@@ -19,6 +19,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
+internal fun validHidUsage(page: Short, usage: Short): Boolean = page != 0.toShort() && usage != 0.toShort()
+
 internal fun isForegroundApplication(): Boolean {
     if (!Platform.isWindows()) return true
     val foreground = User32.INSTANCE.GetForegroundWindow() ?: return false
@@ -244,7 +246,13 @@ internal class RawHidInput(
         val size = IntByReference(RAW_DEVICE_INFO_SIZE)
         if (RawInputApi.INSTANCE.GetRawInputDeviceInfo(device, RIDI_DEVICEINFO, info, size) == UINT_ERROR) return null
         if (info.getInt(4) != RIM_TYPEHID) return null
-        return info.getShort(20) to info.getShort(22)
+        val page = info.getShort(20)
+        val usage = info.getShort(22)
+        if (!validHidUsage(page, usage)) {
+            onDiagnostic("Pomijam urządzenie HID z nieprawidłowym identyfikatorem strony lub użycia.")
+            return null
+        }
+        return page to usage
     }
 
     private fun registerUsages(usages: Set<Pair<Short, Short>>) {

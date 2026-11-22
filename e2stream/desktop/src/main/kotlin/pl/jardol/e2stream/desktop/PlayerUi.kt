@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -87,6 +88,14 @@ internal fun pipPlacement(position: Int, index: Int): Pair<Alignment, Int> = whe
     else -> Alignment.TopEnd to index
 }
 
+internal fun pipWindowWidth(maxWidth: Dp, maxHeight: Dp, percent: Int, position: Int, windows: Int): Dp {
+    val count = windows.coerceIn(1, 3)
+    val rows = if (position in 0..1) if (count < 3) 1 else 2 else count
+    val maxRowWidth = if (position in 0..1 && count > 1) maxWidth / 2 - 32.dp else maxWidth - 32.dp
+    return minOf(maxWidth * (percent.coerceIn(20, 50) / 100f), maxRowWidth, (maxHeight / rows - 32.dp) * (16f / 9f))
+        .coerceAtLeast(1.dp)
+}
+
 internal fun bouquetOffset(bouquets: List<Bouquet>, current: Bouquet?, offset: Int): Bouquet? {
     if (bouquets.isEmpty() || offset == 0) return null
     val currentIndex = bouquets.indexOfFirst { it.ref == current?.ref }
@@ -138,6 +147,7 @@ internal fun PlayerPage(
     bufferInfo: (() -> String?)? = null,
     pipWindows: List<PipSurface> = emptyList(),
     pipPosition: Int = 5,
+    pipWidthPercent: Int = 33,
     onPipClick: () -> Unit = {},
     seekPreview: VlcSession? = null,
     seekPreviewLabel: String = "",
@@ -199,20 +209,24 @@ internal fun PlayerPage(
                 )
             }
         }
-        pipWindows.take(3).forEachIndexed { index, pip ->
-            val (alignment, offset) = pipPlacement(pipPosition, index)
-            Box(
-                Modifier.align(alignment).offset(y = (offset * 151).dp).padding(16.dp).width(240.dp).height(135.dp)
-                    .background(Color.Black).clickable { onPipClick() },
-            ) {
-                VideoView(pip.session, VideoScaleMode.FIT, Modifier.fillMaxSize())
-                Text(
-                    "${index + 1}  ${pip.channel}",
-                    modifier = Modifier.align(Alignment.BottomStart).background(Color.Black.copy(alpha = 0.7f)).padding(4.dp),
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        if (pipWindows.isNotEmpty()) BoxWithConstraints(Modifier.fillMaxSize()) {
+            val width = pipWindowWidth(maxWidth, maxHeight, pipWidthPercent, pipPosition, pipWindows.size)
+            val height = width * (9f / 16f)
+            pipWindows.take(3).forEachIndexed { index, pip ->
+                val (alignment, offset) = pipPlacement(pipPosition, index)
+                Box(
+                    Modifier.align(alignment).offset(y = (height + 32.dp) * offset).padding(16.dp).width(width).height(height)
+                        .background(Color.Black).clickable { onPipClick() },
+                ) {
+                    VideoView(pip.session, VideoScaleMode.FIT, Modifier.fillMaxSize())
+                    Text(
+                        "${index + 1}  ${pip.channel}",
+                        modifier = Modifier.align(Alignment.BottomStart).background(Color.Black.copy(alpha = 0.7f)).padding(4.dp),
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         if (recordingLabel != null) {

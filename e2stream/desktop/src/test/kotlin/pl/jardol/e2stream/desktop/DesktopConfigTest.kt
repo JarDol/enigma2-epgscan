@@ -68,6 +68,7 @@ class DesktopConfigTest {
             pipEnabled = true,
             pipFrameMs = 3000,
             pipPos = 7,
+            pipWidthPercent = 40,
             seekPreview = false,
             tsDir = "E:\\bufor",
             tsStepSec = 15,

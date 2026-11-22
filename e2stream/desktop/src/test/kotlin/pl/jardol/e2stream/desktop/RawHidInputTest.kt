@@ -3,11 +3,20 @@ package pl.jardol.e2stream.desktop
 import com.sun.jna.Native
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import java.lang.management.ManagementFactory
 import java.util.concurrent.atomic.AtomicReference
 
 class RawHidInputTest {
+    @Test
+    fun rejectsInvalidUsagesWithoutDroppingVendorPages() {
+        assertFalse(validHidUsage(0xff00.toShort(), 0))
+        assertFalse(validHidUsage(0, 1))
+        assertTrue(validHidUsage(0xff00.toShort(), 1))
+        assertTrue(validHidUsage(0x000c, 1))
+    }
+
     @Test
     fun rawInputDeviceStructureIsAccessibleToJna() {
         val device = RawHidInput.RawInputDevice()

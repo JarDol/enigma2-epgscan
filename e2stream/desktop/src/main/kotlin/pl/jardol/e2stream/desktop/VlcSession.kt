@@ -11,7 +11,6 @@ import org.jetbrains.skia.ImageInfo
 import java.io.IOException
 import java.nio.ByteBuffer
 import javax.swing.SwingUtilities
-import kotlinx.coroutines.delay
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormat
@@ -23,8 +22,9 @@ import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 import uk.co.caprica.vlcj.media.TrackType
 
-internal fun vlcMediaOptions(config: DesktopConfig): List<String> = buildList {
+internal fun vlcMediaOptions(config: DesktopConfig, audioEnabled: Boolean = true): List<String> = buildList {
     add(":network-caching=${config.bufferMs.coerceIn(250, 10_000)}")
+    if (!audioEnabled) add(":no-audio")
     add(
         // Obraz rysuje aplikacja (klatki w pamięci RAM): dekoder sprzętowy musi kopiować klatki z karty graficznej.
         // „Automatycznie” = programowo — D3D11VA bez okna VLC potrafi nie oddać żadnej klatki (sam dźwięk).
@@ -69,6 +69,17 @@ internal fun vlcDeinterlaceMode(value: String): DeinterlaceMode? = when (value) 
     else -> DeinterlaceMode.AUTO
 }
 
+internal class FramePacer {
+    private var lastMs: Long? = null
+
+    fun shouldPublish(nowMs: Long, intervalMs: Long): Boolean {
+        val last = lastMs
+        if (intervalMs > 0 && last != null && nowMs - last < intervalMs) return false
+        lastMs = nowMs
+        return true
+    }
+}
+
 /**
  * Klatki z VLC rysowane przez aplikację (zamiast osobnego okna systemowego VLC): dzięki temu paski, menu i okna
  * są warstwami w tym samym oknie co obraz. Format RV32 (BGRA), kopiowany do jednej z trzech bitmap Skia.
@@ -81,6 +92,8 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
     @Volatile private var height = 0
     /** Liczba odebranych klatek (do wykrycia braku obrazu). */
     val count = java.util.concurrent.atomic.AtomicLong()
+    @Volatile var displayIntervalMs = 0L
+    private val pacer = FramePacer()
     /** Pierwsza klatka po uruchomieniu odtwarzania (pomiar startu kanału); wątek VLC. */
     @Volatile var onFirstFrame: (() -> Unit)? = null
     @Volatile var awaitingFirst = false
@@ -148,6 +161,7 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
 
     override fun display(mediaPlayer: uk.co.caprica.vlcj.player.base.MediaPlayer, nativeBuffers: Array<out ByteBuffer>, bufferFormat: BufferFormat) {
         synchronized(this) {
+            if (!pacer.shouldPublish(monotonicMs(), displayIntervalMs)) return
             if (lastWasYuv) {
                 displayYuv(nativeBuffers)
                 return
@@ -265,7 +279,11 @@ internal class VideoFrames : BufferFormatCallback, RenderCallback {
     }
 }
 
-class VlcSession(private val onError: (String) -> Unit) {
+class VlcSession(
+    private val audioEnabled: Boolean = true,
+    private val keyFramesOnly: Boolean = false,
+    private val onError: (String) -> Unit,
+) {
     private val factory: MediaPlayerFactory
     private val player: EmbeddedMediaPlayer
     private var nativeLog: uk.co.caprica.vlcj.log.NativeLog? = null
@@ -293,11 +311,18 @@ class VlcSession(private val onError: (String) -> Unit) {
             AppLog.i("VLC: błąd w wywołaniu zwrotnym: $error")
         }
         // Jedna instancja libVLC na całe uruchomienie (wtyczki ładowane raz — przy starcie, w tle).
-        factory = VlcRuntime.factory()
+        val sharedFactory = VlcRuntime.factory()
+        factory = if (keyFramesOnly) {
+            MediaPlayerFactory(null as uk.co.caprica.vlcj.factory.discovery.NativeDiscovery?, "--avcodec-skip-frame=3", "--no-audio")
+        } else sharedFactory
         player = try {
             factory.mediaPlayers().newEmbeddedMediaPlayer()
         } catch (e: LinkageError) {
+            if (keyFramesOnly) factory.release()
             throw IllegalStateException("Nie można załadować bibliotek VLC. Sprawdź instalację VLC 64-bit.", e)
+        } catch (e: Exception) {
+            if (keyFramesOnly) factory.release()
+            throw e
         }
         player.videoSurface().set(factory.videoSurfaces().newVideoSurface(frames, frames, true))
         // Obraz 4K wykryty po formacie (nazwa kanału bez „4K”): jednorazowe wznowienie z lżejszym dekodowaniem.
@@ -339,12 +364,12 @@ class VlcSession(private val onError: (String) -> Unit) {
                 }
             }
             override fun playing(mediaPlayer: MediaPlayer) {
-                mediaPlayer.submit { applyAudioLevel() }
-                checkFrames()
+                if (audioEnabled) mediaPlayer.submit { applyAudioLevel() }
+                if (!keyFramesOnly) checkFrames()
                 SwingUtilities.invokeLater { if (!closed) onPlaying?.invoke() }
             }
             override fun elementaryStreamAdded(mediaPlayer: MediaPlayer, type: TrackType, id: Int) {
-                if (type == TrackType.AUDIO) mediaPlayer.submit { applyAudioLevel() }
+                if (audioEnabled && type == TrackType.AUDIO) mediaPlayer.submit { applyAudioLevel() }
             }
             override fun finished(mediaPlayer: MediaPlayer) {
                 SwingUtilities.invokeLater { if (!closed) onFinished?.invoke() }
@@ -359,7 +384,7 @@ class VlcSession(private val onError: (String) -> Unit) {
     fun setAudioLevel(volume: Int, muted: Boolean) {
         this.volume = volume.coerceIn(0, DesktopConfig.MAX_VOLUME)
         this.muted = muted
-        if (!closed) player.submit { applyAudioLevel() }
+        if (audioEnabled && !closed) player.submit { applyAudioLevel() }
     }
 
     private fun applyAudioLevel() {
@@ -503,7 +528,7 @@ class VlcSession(private val onError: (String) -> Unit) {
 
     fun play(url: String, config: DesktopConfig, startMs: Long = 0) {
         lightMode = config.lightDecode
-        val options = vlcMediaOptions(config).map { if (softwareFallback && it.startsWith(":avcodec-hw=")) ":avcodec-hw=none" else it } +
+        val options = vlcMediaOptions(config, audioEnabled).map { if (softwareFallback && it.startsWith(":avcodec-hw=")) ":avcodec-hw=none" else it } +
             (if (lightDecoding()) listOf(LIGHT_DECODE_OPTION) else emptyList()) +
             if (startMs > 0) listOf(":start-time=%.1f".format(java.util.Locale.US, startMs / 1000.0)) else emptyList()
         frames.yuvMode = config.vlcRender != "cpu" && YuvShader.available
@@ -529,16 +554,6 @@ class VlcSession(private val onError: (String) -> Unit) {
         val started = player.media().play(url, *options.toTypedArray())
         if (!started) throw IOException("VLC nie przyjął strumienia.")
         paused = false
-    }
-
-    internal suspend fun capturePipFrame(url: String, config: DesktopConfig, active: () -> Boolean): Boolean {
-        val previous = frames.count.get()
-        play(url, config)
-        val deadline = monotonicMs() + 2_500
-        while (active() && frames.count.get() == previous && monotonicMs() < deadline) delay(50)
-        if (!active()) return false
-        pause()
-        return frames.count.get() > previous
     }
 
     /** Zmiana przesunięcia dźwięku w trakcie odtwarzania (ms) — bez ponownego otwierania strumienia. */
@@ -611,7 +626,7 @@ class VlcSession(private val onError: (String) -> Unit) {
         runCatching { player.controls().stop() }
         player.release()
         runCatching { nativeLog?.release() }
-        // Fabryka (libVLC) zostaje — wspólna dla kolejnych sesji, zwalniana z końcem aplikacji.
+        if (keyFramesOnly) factory.release()
         frames.close()
     }
 

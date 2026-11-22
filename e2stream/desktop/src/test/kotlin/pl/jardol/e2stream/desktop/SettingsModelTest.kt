@@ -113,4 +113,23 @@ class SettingsModelTest {
         assertTrue(":audio-language=pl,en" in options)
         assertNull(vlcDeinterlaceMode("off"))
     }
+
+    @Test
+    fun secondaryPlaybackDoesNotEnableAudio() {
+        val main = vlcMediaOptions(DesktopConfig())
+        val pip = vlcMediaOptions(DesktopConfig(), audioEnabled = false)
+        val preview = vlcMediaOptions(DesktopConfig(), audioEnabled = false)
+        assertFalse(":no-audio" in main)
+        assertTrue(":no-audio" in pip)
+        assertTrue(":no-audio" in preview)
+    }
+
+    @Test
+    fun framePacerLimitsPublishedFramesButAllowsImmediateFirstFrame() {
+        val pacer = FramePacer()
+        assertTrue(pacer.shouldPublish(1_000, 2_000))
+        assertFalse(pacer.shouldPublish(2_999, 2_000))
+        assertTrue(pacer.shouldPublish(3_000, 2_000))
+        assertTrue(pacer.shouldPublish(3_001, 0))
+    }
 }
