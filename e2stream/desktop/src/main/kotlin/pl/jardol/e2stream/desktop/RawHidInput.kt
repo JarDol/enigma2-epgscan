@@ -15,6 +15,7 @@ import com.sun.jna.ptr.IntByReference
 import com.sun.jna.win32.StdCallLibrary
 import com.sun.jna.win32.W32APIOptions
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -91,6 +92,14 @@ internal class RawHidInput(
             )
         }
     }
+    // ---------- Klawisze systemowe pilota (Home/przeglądarka, multimedia, Menu, Windows) ----------
+
+    /** Ostatni klawisz z odczytu klawiatur: czy z urządzenia zewnętrznego (USB/Bluetooth) i kiedy. */
+    private data class KeySource(val external: Boolean, val device: String, val at: Long)
+    private val keyboardSources = ConcurrentHashMap<Int, KeySource>()
+    @Volatile private var lastConsumerExternal = KeySource(false, "", 0L)
+    private var systemDecisions = 0
+    private val heldSystemKeys = HashSet<Int>()
     private val thread = Thread(::runMessageLoop, "E2Stream-HID").apply {
         isDaemon = true
         start()
@@ -107,24 +116,14 @@ internal class RawHidInput(
         }
     }
 
-    // ---------- Klawisze systemowe pilota (Home/przeglądarka, multimedia, Menu, Windows) ----------
-
-    /** Ostatni klawisz z odczytu klawiatur: czy z urządzenia zewnętrznego (USB/Bluetooth) i kiedy. */
-    private data class KeySource(val external: Boolean, val device: String, val at: Long)
-    private val keyboardSources = HashMap<Int, KeySource>()
-    @Volatile private var lastConsumerExternal = KeySource(false, "", 0L)
-    private var systemDecisions = 0
-    private val heldSystemKeys = HashSet<Int>()
-
     /**
-     * Czy przejąć klawisz systemowy (Windows go nie dostanie). Źródło klawisza z odczytu urządzeń (Raw Input) —
-     * wiadomości czekające w kolejce są odczytywane przed decyzją. Klawiatura laptopa (bez VID) — zwykle do Windows.
+     * Czy przejąć klawisz systemowy (Windows go nie dostanie). Źródło pochodzi z ostatnich raportów Raw Input.
+     * Klawiatura laptopa (bez VID) — zwykle do Windows.
      */
     private fun takeSystemKey(vk: Int, down: Boolean): Boolean {
         val mode = systemKeyMode()
         if (mode == "off") return false
         if (!down) return heldSystemKeys.remove(vk)
-        pumpRawInput()
         val now = System.currentTimeMillis()
         val keyboard = keyboardSources[vk]?.takeIf { now - it.at <= SOURCE_WINDOW_MS }
         val consumer = lastConsumerExternal.takeIf { it.external && now - it.at <= SOURCE_WINDOW_MS && vk !in WINDOWS_KEYS }
@@ -157,23 +156,12 @@ internal class RawHidInput(
         return take
     }
 
-    private val pumpMessage = WinUser.MSG()
-
-    /** Odczyt czekających WM_INPUT (źródło klawisza) przed decyzją w haku klawiatury. */
-    private fun pumpRawInput() {
-        val target = window ?: return
-        var guard = 0
-        while (guard++ < 16 && User32.INSTANCE.PeekMessage(pumpMessage, target, WM_INPUT, WM_INPUT, PM_REMOVE)) {
-            User32.INSTANCE.DispatchMessage(pumpMessage)
-        }
-    }
-
     private fun isExternalDevice(path: String): Boolean =
         Regex("VID[_&]", RegexOption.IGNORE_CASE).containsMatchIn(path) && !path.contains("ACPI", ignoreCase = true)
 
     private fun runMessageLoop() {
         var registeredClass: String? = null
-        var keyboardHook: WinUser.HHOOK? = null
+        var keyboardHook: KeyboardHook? = null
         try {
             val className = "E2StreamRawInput${System.nanoTime()}"
             val module = Kernel32.INSTANCE.GetModuleHandle(null)
@@ -204,8 +192,7 @@ internal class RawHidInput(
             ) ?: throw IOException("Windows nie utworzył okna odbiornika HID (kod ${Kernel32.INSTANCE.GetLastError()}).")
             window = created
             registerConnectedDevices()
-            keyboardHook = User32.INSTANCE.SetWindowsHookEx(WH_KEYBOARD_LL, keyboardProc, module, 0)
-                ?: throw IOException("Windows nie uruchomił ochrony klawiszy przeglądarki (kod ${Kernel32.INSTANCE.GetLastError()}).")
+            keyboardHook = KeyboardHook(keyboardProc, onError)
             onDiagnostic("Odbiornik HID uruchomiony. Naciśnij przycisk pilota.")
             ready.countDown()
 
@@ -221,7 +208,7 @@ internal class RawHidInput(
             ready.countDown()
             if (!closed) onError(e.message ?: "Błąd odbiornika HID.")
         } finally {
-            keyboardHook?.let { User32.INSTANCE.UnhookWindowsHookEx(it) }
+            keyboardHook?.close()
             window?.let { if (User32.INSTANCE.IsWindow(it)) User32.INSTANCE.DestroyWindow(it) }
             window = null
             registeredClass?.let { User32.INSTANCE.UnregisterClass(it, Kernel32.INSTANCE.GetModuleHandle(null)) }
@@ -446,7 +433,6 @@ internal class RawHidInput(
 
     companion object {
         private const val WM_INPUT = 0x00FF
-        private const val WH_KEYBOARD_LL = 13
         private const val VK_BROWSER_BACK = 0xA6
         private const val VK_BROWSER_HOME = 0xAC
         private const val WM_INPUT_DEVICE_CHANGE = 0x00FE
@@ -462,7 +448,6 @@ internal class RawHidInput(
         private const val RIDI_DEVICEINFO = 0x2000000B
         private const val RIM_TYPEHID = 2
         private const val RIM_TYPEKEYBOARD = 1
-        private const val PM_REMOVE = 0x0001
         private const val LLKHF_INJECTED = 0x10
         private const val SOURCE_WINDOW_MS = 250L
         private const val MAX_DECISION_LOGS = 40
