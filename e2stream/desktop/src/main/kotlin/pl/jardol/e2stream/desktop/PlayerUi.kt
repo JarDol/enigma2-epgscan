@@ -592,6 +592,8 @@ internal data class QuickPick(
     val selected: Int,
     /** Opcjonalny drugi wiersz pod pozycją (np. godziny audycji). */
     val subtitles: List<String?> = emptyList(),
+    /** Opcjonalny dodatkowy wiersz pod opisem pozycji. */
+    val details: List<String?> = emptyList(),
     /** Nagłówki sekcji wstawiane przed pozycją o danym indeksie. */
     val headers: Map<Int, String> = emptyMap(),
     /** Czy okno zamyka się samo po „Czasie okien akcji”. */
@@ -649,9 +651,9 @@ internal fun QuickPickDialog(
 ) {
     val scale = pick.fontScale.coerceIn(0.7f, 1.6f)
     val bodyHeight = if (pick.body.isNullOrBlank()) 0 else 260
-    val rowsHeight = ((pick.options.size * 54 + pick.subtitles.count { it != null } * 24 + pick.headers.size * 40) * scale).toInt() +
+    val rowsHeight = ((pick.options.size * 54 + (pick.subtitles.count { it != null } + pick.details.count { it != null }) * 24 + pick.headers.size * 40) * scale).toInt() +
         bodyHeight + if (pick.onHorizontal != null) 56 else 0
-    val wide = pick.subtitles.isNotEmpty() || pick.headers.isNotEmpty() || bodyHeight > 0
+    val wide = pick.subtitles.isNotEmpty() || pick.details.isNotEmpty() || pick.headers.isNotEmpty() || bodyHeight > 0
     InWindowDialog(
         width = if (wide) (720 * scale).coerceAtLeast(640f).dp else 460.dp,
         height = (150 + rowsHeight).coerceAtMost(720).dp,
@@ -709,6 +711,9 @@ internal fun QuickPickDialog(
                                     Text(option, color = textColor, fontSize = 20.sp * scale, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     pick.subtitles.getOrNull(index)?.let {
                                                                             Text(it, color = textColor.copy(alpha = 0.75f), fontSize = 15.sp * scale, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    pick.details.getOrNull(index)?.let {
+                                        Text(it, color = textColor.copy(alpha = 0.75f), fontSize = 15.sp * scale, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }

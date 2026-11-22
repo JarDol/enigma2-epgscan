@@ -6,6 +6,12 @@ import org.json.JSONObject
 /** Kanał z historii oglądania (ze swoim bukietem — wybór przełącza na ten bukiet). */
 internal data class HistoryEntry(val ref: String, val name: String, val bouquet: String)
 
+internal fun historyProgramme(event: EpgEvent?): String? =
+    event?.takeIf { it.title.isNotBlank() }?.let { "${EpgTime.range(it.begin, it.end)}  ·  ${it.title}" }
+
+internal fun updateHistoryProgrammes(pick: QuickPick?, tag: String, programmes: List<String?>): QuickPick? =
+    if (pick?.tag == tag) pick.copy(details = programmes) else pick
+
 /** Historia oglądanych kanałów ze wszystkich bukietów: najnowszy pierwszy, bez powtórzeń, do [LIMIT]. */
 internal object ChannelHistory {
     const val LIMIT = 50

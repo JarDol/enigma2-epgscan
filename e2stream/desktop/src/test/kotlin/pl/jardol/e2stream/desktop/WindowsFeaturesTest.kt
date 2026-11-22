@@ -3,6 +3,8 @@ package pl.jardol.e2stream.desktop
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.io.path.createTempDirectory
 
 class WindowsFeaturesTest {
     @Test
@@ -17,6 +19,47 @@ class WindowsFeaturesTest {
         repeat(60) { json = ChannelHistory.push(json, HistoryEntry("1:0:1:$it:", "K$it", "b")) }
         assertEquals(ChannelHistory.LIMIT, ChannelHistory.parse(json).size)
         assertEquals(emptyList(), ChannelHistory.parse("nie json"))
+    }
+
+    @Test
+    fun historyShowsOnlyCurrentLocallyCachedProgramme() {
+        val dir = createTempDirectory("history-epg").toFile()
+        try {
+            val now = System.currentTimeMillis() / 1000
+            val event = EpgEvent(1, now - 60, 120, "Audycja", "", "", "1:0:1:A:", "")
+            val repo = EpgRepository(EpgStore(dir))
+            repo.store.write(event.sref, listOf(event))
+
+            assertEquals(
+                "${EpgTime.range(event.begin, event.end)}  ·  Audycja",
+                historyProgramme(repo.nowNext("1:0:1:a", now).first),
+            )
+            assertNull(historyProgramme(repo.nowNext(event.sref, event.end).first))
+            assertNull(historyProgramme(repo.nowNext("1:0:1:B:", now).first))
+            assertNull(historyProgramme(event.copy(title = " ")))
+        } finally {
+            dir.listFiles()?.forEach { it.delete() }
+            dir.delete()
+        }
+    }
+
+    @Test
+    fun historyProgrammeUpdatePreservesSelectionAndIgnoresOldWindows() {
+        val pick = QuickPick(
+            title = "Historia kanałów",
+            options = listOf("TVP 1", "TVP 2"),
+            selected = 1,
+            subtitles = listOf("oglądany · Bukiet", "Bukiet"),
+            tag = "history-new",
+        ) {}
+
+        assertSame(pick, updateHistoryProgrammes(pick, "history-old", listOf("Stara audycja")))
+        assertNull(updateHistoryProgrammes(null, "history-new", listOf("Audycja")))
+        val updated = updateHistoryProgrammes(pick, "history-new", listOf("Audycja", null))!!
+        assertEquals(1, updated.selected)
+        assertEquals(pick.subtitles, updated.subtitles)
+        assertEquals(listOf("Audycja", null), updated.details)
+        assertSame(pick.onSelect, updated.onSelect)
     }
 
     @Test

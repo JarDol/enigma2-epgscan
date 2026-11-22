@@ -2507,10 +2507,12 @@ fun main() {
                 }
                 val bouquetNames = catalog?.bouquets.orEmpty().associate { it.ref to it.name }
                 val current = playingChannel?.let { serviceKey(it.ref) }
+                val historyTag = "history-${java.util.UUID.randomUUID()}"
                 quickPick = QuickPick(
                     title = "Historia kanałów",
                     options = entries.map { it.name },
                     selected = 0,
+                    tag = historyTag,
                     subtitles = entries.map { entry ->
                         listOfNotNull(
                             "oglądany".takeIf { serviceKey(entry.ref) == current },
@@ -2526,6 +2528,13 @@ fun main() {
                             ?: Channel(0, entry.name, entry.ref)
                         startChannel(channel)
                     }
+                }
+                scope.launch {
+                    val programmes = withContext(Dispatchers.IO) {
+                        val now = Instant.now().epochSecond
+                        entries.map { entry -> historyProgramme(epgRepo.nowNext(entry.ref, now).first) }
+                    }
+                    quickPick = updateHistoryProgrammes(quickPick, historyTag, programmes)
                 }
             }
 
