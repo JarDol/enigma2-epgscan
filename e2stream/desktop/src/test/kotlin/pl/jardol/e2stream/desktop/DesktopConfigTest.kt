@@ -63,6 +63,8 @@ class DesktopConfigTest {
             lastPiconFetchDay = "2025-01-31",
             piconPackIdentity = "receiver:8770/sha256:abc",
             tsMin = 90,
+            bgCount = 3,
+            bgBufMin = 15,
             tsDir = "E:\\bufor",
             tsStepSec = 15,
             tsStepMin = 5,
@@ -112,6 +114,15 @@ class DesktopConfigTest {
             Files.deleteIfExists(path)
             Files.deleteIfExists(directory)
         }
+
+    }
+
+    @Test
+    fun migratesAndroidBackgroundBufferSetting() {
+        val properties = java.util.Properties().apply { setProperty("bgBufMin", "15") }
+        assertEquals(2, DesktopConfig.fromProperties(properties).bgCount)
+        properties.setProperty("bgCount", "0")
+        assertEquals(0, DesktopConfig.fromProperties(properties).bgCount)
     }
 
     @Test

@@ -390,6 +390,8 @@ internal fun ChannelListDialog(
     piconStyle: PiconStyle = PiconStyle.OFF,
     iconScale: Float = 0.8f,
     recordings: Map<String, Recording> = emptyMap(),
+    buffered: Set<String> = emptySet(),
+    recordingChannels: Set<String> = emptySet(),
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
     val listState = rememberLazyListState()
@@ -455,7 +457,7 @@ internal fun ChannelListDialog(
                 }
                 // Podpowiedź w osobnym wierszu — w jednym rzędzie ściskała przycisk bukietu do pionowego paska.
                 Text(
-                    if (recordings.isEmpty()) "← → bukiet   •   ↑ ↓ kanał   •   OK oglądaj   •   Wstecz zamknij"
+                    if (recordings.isEmpty()) "← → bukiet   •   ↑ ↓ kanał   •   OK oglądaj   •   Menu bufor   •   Wstecz zamknij"
                     else "← → bukiet   •   ↑ ↓ nagranie   •   OK otwórz/odtwórz   •   Wstecz katalog wyżej/zamknij",
                     color = secondary,
                     maxLines = 1,
@@ -505,7 +507,9 @@ internal fun ChannelListDialog(
                             }
                             Text(channel.number.toString(), modifier = Modifier.width(55.dp * fontScale), color = secondaryText, fontSize = 20.sp * fontScale)
                             Column(Modifier.weight(1f)) {
-                                Text(channel.name, color = primaryText, fontSize = 22.sp * fontScale, fontWeight = FontWeight.Bold, maxLines = 1)
+                                val key = serviceKey(channel.ref)
+                                val badge = if (key in buffered) if (key in recordingChannels) "  ● B" else "  B" else ""
+                                Text(channel.name + badge, color = primaryText, fontSize = 22.sp * fontScale, fontWeight = FontWeight.Bold, maxLines = 1)
                                 Text(event?.title ?: "Brak danych EPG", color = secondaryText, fontSize = 16.sp * fontScale, maxLines = 1)
                             }
                             if (event != null && event.end > event.begin) {

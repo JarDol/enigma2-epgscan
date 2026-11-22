@@ -11,6 +11,8 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
 
@@ -41,7 +43,7 @@ internal object LocalRecordings {
     fun newDir(config: DesktopConfig, channel: String, at: java.time.LocalDateTime): File {
         val stamp = at.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH.mm.ss"))
         val name = "$stamp ${channel.trim()}".replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").take(120).trim()
-        return File(root(config), name)
+        return File(root(config), "$name-${java.util.UUID.randomUUID()}")
     }
 
     fun parts(dir: File): List<File> =
@@ -51,11 +53,7 @@ internal object LocalRecordings {
         dir.mkdirs()
         val temp = File(dir, "$INFO.tmp")
         temp.writeText(info.toString(1), Charsets.UTF_8)
-        val target = File(dir, INFO)
-        if (!temp.renameTo(target)) {
-            target.delete()
-            temp.renameTo(target)
-        }
+        Files.move(temp.toPath(), File(dir, INFO).toPath(), StandardCopyOption.REPLACE_EXISTING)
     }
 
     fun readInfo(dir: File): JSONObject? = runCatching { JSONObject(File(dir, INFO).readText(Charsets.UTF_8)) }.getOrNull()
@@ -93,6 +91,15 @@ internal object LocalRecordings {
         val byShare = (total * MAX_SHARE).toLong() - used
         val byFree = root(config).usableSpace - TimeshiftBuffer.RESERVE
         return minOf(byShare, byFree)
+    }
+
+    fun recordingBudget(available: Long, reservations: List<Long>, limit: Int): Long {
+        val slots = limit.coerceIn(1, 3) - reservations.size
+        if (slots <= 0) return 0
+        val remaining = reservations.fold(available.coerceAtLeast(0)) { left, reserved ->
+            left - reserved.coerceIn(0, left)
+        }
+        return remaining / slots
     }
 
     fun delete(config: DesktopConfig, recording: Recording): Boolean {

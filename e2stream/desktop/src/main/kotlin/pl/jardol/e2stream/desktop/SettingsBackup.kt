@@ -49,7 +49,7 @@ internal object SettingsBackup {
         "bufferMs" to "bufferMs", "uiListFont" to "uiListFont", "uiListIcon" to "uiListIcon",
         "uiEpgFont" to "uiEpgFont", "uiBannerFont" to "uiBannerFont", "uiBannerIcon" to "uiBannerIcon",
         "bannerSec" to "bannerSec", "channelListSec" to "channelListSec", "pinMin" to "pinMin",
-        "tsMin" to "tsMin", "tsStepSec" to "tsStepSec", "tsStepMin" to "tsStepMin",
+        "tsMin" to "tsMin", "bgCount" to "bgCount", "bgBufMin" to "bgBufMin", "tsStepSec" to "tsStepSec", "tsStepMin" to "tsStepMin",
         "tsStepSecLong" to "tsStepSecLong", "tsStepUdSec" to "tsStepUdSec", "tsStepUdLongMin" to "tsStepUdLongMin",
         "tsBannerSec" to "tsBannerSec",
         "epgDays" to "epgDays", "confirmDialogSec" to "confirmDialogSec", "epgChannelSec" to "epgChannelSec",

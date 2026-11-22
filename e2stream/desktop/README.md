@@ -42,6 +42,15 @@ The beginning of a buffer that has not yet been trimmed is available with a
 shorter safety margin. If the programme's PMT declares no PCR PID, buffering
 accepts a PCR on a programme stream or starts without one after a short wait.
 Automatic update checks are deferred while a local recording is active.
+The timeshift settings can retain up to three previous channels, with a separate
+buffer length; returning to one reuses its buffer. Buffered channels are marked
+`B` in the channel list, where Menu offers recording from that buffer. Active
+recordings are protected from ordinary buffer eviction and deletion, and low
+disk space stops buffering before consuming the reserved free space. Multiple
+recordings share a conservative disk-space reservation.
+If a recording segment cannot be moved, its original file is retained in the
+timeshift directory with a `.keep` marker and its path is recorded in the
+recording metadata for recovery.
 
 **Ogólne** also mirrors the Android options for menu entries (show/hide and
 order; Ustawienia and Wyłącz stay last), timeouts of the timeshift/recording

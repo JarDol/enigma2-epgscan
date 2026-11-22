@@ -49,6 +49,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.mutableStateListOf
 import kotlinx.coroutines.launch
@@ -202,6 +203,7 @@ fun main() {
             var recordingProgrammes by remember { mutableStateOf<List<RecProgramme>>(emptyList()) }
             val recPositions = remember { RecordingPositions() }
             var timeshift by remember { mutableStateOf<TimeshiftSession?>(null) }
+            val backgroundBuffers = remember { BackgroundBuffers<BackgroundTimeshift> { it.session.buffer.isRecording } }
             var tsPendingTarget by remember { mutableStateOf<Long?>(null) }
             var tsPendingGeneration by remember { mutableIntStateOf(0) }
             var playbackBarVisible by remember { mutableStateOf(false) }
@@ -223,12 +225,14 @@ fun main() {
             var volumeOsdVisible by remember { mutableStateOf(false) }
             val volumeKeyIds = remember { AtomicReference<Set<String>>(emptySet()) }
             val systemKeysMode = remember { AtomicReference("remote") }
-            var activeRecording by remember { mutableStateOf<ActiveRecording?>(null) }
+            var activeRecordings by remember { mutableStateOf<Map<String, ActiveRecording>>(emptyMap()) }
+            var recordingStarts by remember { mutableIntStateOf(0) }
+            val recordingStartMutex = remember { kotlinx.coroutines.sync.Mutex() }
             val captureActive = remember { AtomicBoolean(false) }
             fun openMenu() = navigation.openMenu(
                 DesktopMenuItem.visible(config.menuOrder, config.menuHidden)
                     .filter { it != DesktopMenuItem.RECORD || (timeshift != null && playingRecording == null) }
-                    .filter { it != DesktopMenuItem.STOP_RECORDING || activeRecording != null }
+                    .filter { it != DesktopMenuItem.STOP_RECORDING || activeRecordings.isNotEmpty() }
                     .filter { it != DesktopMenuItem.HISTORY || config.history.length > 2 },
             )
             LaunchedEffect(config.appLanguage) { AppLanguage.apply(config.appLanguage) }
@@ -490,16 +494,62 @@ fun main() {
             var streamTap by remember { mutableStateOf<StreamTap?>(null) }
             var eitVersion by remember { mutableIntStateOf(0) }
             var eitJob by remember { mutableStateOf<Job?>(null) }
+            val closingBuffers = remember { java.util.Collections.synchronizedSet(mutableSetOf<Thread>()) }
 
-            fun closeTimeshift() {
+            fun closeBuffer(session: TimeshiftSession) {
+                val closer = Thread({
+                    try {
+                        runCatching { session.close() }.onFailure { AppLog.i("timeshift: błąd zamykania (${it.message})") }
+                    } finally {
+                        closingBuffers.remove(Thread.currentThread())
+                    }
+                }, "timeshift-zamknij").apply { isDaemon = true }
+                closingBuffers.add(closer)
+                try {
+                    closer.start()
+                } catch (e: Exception) {
+                    closingBuffers.remove(closer)
+                    throw e
+                }
+            }
+
+            fun closeTimeshift(preserveRecording: Boolean = false) {
                 streamTap?.let { tap ->
                     streamTap = null
                     scope.launch(Dispatchers.IO) { runCatching { tap.close() } }
                 }
-                val ts = timeshift ?: return
+                val ts = timeshift
                 timeshift = null
                 tsPendingTarget = null
-                scope.launch(Dispatchers.IO) { runCatching { ts.close() } }
+                val channel = playingChannel
+                val active = channel?.let { activeRecordings[serviceKey(it.ref)] }
+                if (preserveRecording && ts != null && channel != null && ts.buffer.isRecording && active?.kind != "do-zmiany-kanalu") {
+                    backgroundBuffers.park(serviceKey(channel.ref), BackgroundTimeshift(channel, ts), 0).forEach { closeBuffer(it.session) }
+                } else ts?.let(::closeBuffer)
+                val removed = if (preserveRecording) backgroundBuffers.trim(0) else backgroundBuffers.drain()
+                removed.forEach { closeBuffer(it.session) }
+            }
+
+            LaunchedEffect(Unit) {
+                while (true) {
+                    delay(2_000)
+                    backgroundBuffers.trim(config.bgCount).forEach { closeBuffer(it.session) }
+                    for ((key, background) in backgroundBuffers.snapshot()) {
+                        val failure = background.session.buffer.failed
+                        val lowSpace = withContext(Dispatchers.IO) {
+                            background.session.buffer.dir.usableSpace < TimeshiftBuffer.RESERVE + 100_000_000L
+                        }
+                        if (failure != null || (lowSpace && !background.session.buffer.isRecording)) {
+                            if (backgroundBuffers.snapshot().any { it.first == key && it.second === background }) {
+                                backgroundBuffers.take(key)
+                                closeBuffer(background.session)
+                                val reason = failure ?: "mało wolnego miejsca"
+                                status = "Zamknięto bufor ${background.channel.name}: $reason."
+                                AppLog.i("bufor w tle: ${background.channel.name} zamknięty ($reason)")
+                            }
+                        }
+                    }
+                }
             }
 
             fun saveRecordingPosition() {
@@ -613,10 +663,38 @@ fun main() {
             fun startChannel(channel: Channel) {
                 saveRecordingPosition()
                 playingRecording = null
-                closeTimeshift()
+                val client = DecoderClient(config)
+                val auth = TimeshiftSession.basicAuth(config)
+                val changedDecoder = listOfNotNull(playingChannel?.let { old -> timeshift?.let { BackgroundTimeshift(old, it) } }) +
+                    backgroundBuffers.snapshot().map { it.second }
+                if (changedDecoder.any { it.session.sourceUrl != client.streamUrl(it.channel) || it.session.authorization != auth }) {
+                    logInfo("timeshift: zmieniono dekoder — zamykam poprzednie bufory i zapisuję trwające nagrania")
+                    closeTimeshift()
+                }
+                streamTap?.let { tap ->
+                    streamTap = null
+                    scope.launch(Dispatchers.IO) { runCatching { tap.close() } }
+                }
+                val old = timeshift
+                val oldChannel = playingChannel
+                val targetKey = serviceKey(channel.ref)
+                val same = old?.takeIf { oldChannel != null && serviceKey(oldChannel.ref) == targetKey }
+                val resumed = same ?: backgroundBuffers.take(targetKey)?.session
+                timeshift = null
+                tsPendingTarget = null
+                if (old != null && old !== same) {
+                    if (oldChannel != null && activeRecordings[serviceKey(oldChannel.ref)]?.kind == "do-zmiany-kanalu") {
+                        scope.launch(Dispatchers.IO) { old.buffer.stopRecording("zmiana kanału") }
+                    }
+                    if (oldChannel != null && config.tsMin > 0 && (config.bgCount > 0 || old.buffer.isRecording) && old.buffer.failed == null) {
+                        old.buffer.maxMin = if (config.bgBufMin < 0) config.tsMin else minOf(config.bgBufMin, config.tsMin)
+                        backgroundBuffers.park(serviceKey(oldChannel.ref), BackgroundTimeshift(oldChannel, old), config.bgCount)
+                            .forEach { closeBuffer(it.session) }
+                    } else closeBuffer(old)
+                }
                 try {
                     val session = sessionOrNew()
-                    val url = DecoderClient(config).streamUrl(channel)
+                    val url = client.streamUrl(channel)
                     val sid = serviceSid(channel.ref)
                     val eit = if (!config.eitStream || sid <= 0) null else EitReader(sid) { now, next ->
                         EventQueue.invokeLater { onStreamEit(channel, now, next) }
@@ -628,7 +706,9 @@ fun main() {
                         onPmt = { section -> if (sid > 0 && PmtStore.putPmt(sid, section)) AppLog.i("TS: zapamiętano PMT kanału ${channel.name}") },
                         waitForPcr = waitForPcr,
                     )
-                    val ts = if (config.tsMin <= 0) null else runCatching {
+                    val ts = resumed?.takeIf { it.buffer.failed == null && config.tsMin > 0 }?.also {
+                        it.buffer.maxMin = config.tsMin
+                    } ?: if (config.tsMin <= 0) null else runCatching {
                         TimeshiftSession(
                             TimeshiftBuffer(TimeshiftBuffer.dirFor(config), config.tsMin),
                             url,
@@ -638,6 +718,7 @@ fun main() {
                         )
                     }.onFailure { AppLog.i("timeshift: nie udało się uruchomić (${it.message})") }.getOrNull()
                     timeshift = ts
+                    if (resumed != null && resumed !== ts) closeBuffer(resumed)
                     val tap = if (ts != null) null else runCatching {
                         StreamTap(url, TimeshiftSession.basicAuth(config), eit?.let { reader -> reader::feed }) { fixer(waitForPcr = false) }
                     }.onFailure { AppLog.i("strumień: tunel nie działa (${it.message})") }.getOrNull()
@@ -646,7 +727,7 @@ fun main() {
                     session.uhdHint = Regex("""(?i)\b(4k|uhd)\b""").containsMatchIn(channel.name)
                     session.startLabel = "kanał ${channel.name}"
                     session.play(ts?.liveUrl() ?: tap?.url ?: url, config)
-                    if (eit != null) scope.launch {
+                    if (eit != null && resumed == null) scope.launch {
                         delay(15_000)
                         if (playingChannel?.ref == channel.ref && eit.eitPackets == 0L) {
                             logInfo("EIT: dekoder nie wysyła EIT w strumieniu (Enigma2: Include EIT in http streams wyłączone?)")
@@ -669,7 +750,8 @@ fun main() {
                         ),
                     )
                 } catch (e: Exception) {
-                    closeTimeshift()
+                    if (resumed != null && resumed !== timeshift) closeBuffer(resumed)
+                    closeTimeshift(preserveRecording = true)
                     status = e.message ?: "Nie udało się uruchomić VLC."
                 }
             }
@@ -679,7 +761,7 @@ fun main() {
 
             fun playRecording(recording: Recording) {
                 saveRecordingPosition()
-                closeTimeshift()
+                closeTimeshift(preserveRecording = true)
                 try {
                     val session = sessionOrNew()
                     val start = recPositions.get(recording.path)
@@ -704,7 +786,7 @@ fun main() {
 
             fun stopPlayback(message: String) {
                 saveRecordingPosition()
-                closeTimeshift()
+                closeTimeshift(preserveRecording = true)
                 showChannelList = false
                 vlcSession = null
                 playingChannel?.let { previousChannel = it }
@@ -1325,7 +1407,7 @@ fun main() {
                     val failure = ts.buffer.failed
                     val channel = playingChannel
                     if (failure != null) {
-                        closeTimeshift()
+                        closeTimeshift(preserveRecording = true)
                         status = "Timeshift wyłączony: $failure"
                         if (channel != null) runCatching { session.startLabel = "wznowienie"; session.play(DecoderClient(config).streamUrl(channel), config) }
                         break
@@ -2236,8 +2318,12 @@ fun main() {
                         logInfo("aktualizacja: pobrano ${installer.name} — uruchamiam instalator")
                         updateStatus = "uruchamiam instalator ${release.version}…"
                         // Trwające nagranie lokalne i bufor zamykane przed instalacją (nagranie zapisane).
-                        if (activeRecording != null) logInfo("aktualizacja: kończę nagranie lokalne przed instalacją")
-                        withContext(Dispatchers.IO) { runCatching { timeshift?.close() } }
+                        if (activeRecordings.isNotEmpty()) logInfo("aktualizacja: kończę nagrania lokalne przed instalacją")
+                        recordingStartMutex.withLock {
+                            val toClose = listOfNotNull(timeshift) + backgroundBuffers.drain().map { it.session }
+                            timeshift = null
+                            withContext(Dispatchers.IO) { toClose.forEach { it.close() } }
+                        }
                         withContext(Dispatchers.IO) { Updater.launchInstaller(installer) }
                         delay(1500)
                         exitApplication()
@@ -2253,7 +2339,7 @@ fun main() {
             }
             fun checkUpdate(manual: Boolean) {
                 if (updateBusy) return
-                if (!manual && activeRecording != null) {
+                if (!manual && (activeRecordings.isNotEmpty() || recordingStarts > 0)) {
                     logInfo("aktualizacja automatyczna: wstrzymana na czas nagrywania")
                     return
                 }
@@ -2263,7 +2349,7 @@ fun main() {
                 scope.launch {
                     val result = withContext(Dispatchers.IO) { runCatching { Updater.newer(appVersion(), channel) } }
                     updateBusy = false
-                    if (!manual && activeRecording != null) {
+                    if (!manual && (activeRecordings.isNotEmpty() || recordingStarts > 0)) {
                         logInfo("aktualizacja automatyczna: wstrzymana na czas nagrywania")
                         return@launch
                     }
@@ -2329,9 +2415,9 @@ fun main() {
                 }
             }
 
-            LaunchedEffect(activeRecording) {
+            LaunchedEffect(activeRecordings, recordingStarts) {
                 delay(20_000)
-                if (activeRecording == null && config.autoUpdate && System.currentTimeMillis() - config.lastUpdateCheck > 20 * 3_600_000L) {
+                if (activeRecordings.isEmpty() && recordingStarts == 0 && config.autoUpdate && System.currentTimeMillis() - config.lastUpdateCheck > 20 * 3_600_000L) {
                     checkUpdate(manual = false)
                     checkVlc(manual = false)
                 }
@@ -2353,16 +2439,59 @@ fun main() {
                 }
             }
 
-            fun startLocalRecording(kind: String, fromWall: Long, untilWall: Long, title: String?, note: String?) {
-                val ts = timeshift ?: return
-                val channel = playingChannel ?: return
+            LaunchedEffect(Unit) {
+                while (true) {
+                    val entries = backgroundBuffers.snapshot()
+                    for ((key, background) in entries) {
+                        val event = withContext(Dispatchers.IO) {
+                            runCatching { epgRepo.nowNext(background.channel.ref).first }.getOrNull()
+                        }
+                        if (backgroundBuffers.snapshot().any { it.first == key && it.second === background }) {
+                            event?.let { background.session.programmes.add(it.title, epgDescription(it), it.begin, it.end) }
+                        }
+                    }
+                    delay(60_000)
+                }
+            }
+
+            fun startLocalRecording(ts: TimeshiftSession, channel: Channel, kind: String, fromWall: Long, untilWall: Long, title: String?, note: String?) {
                 if (ts.buffer.isRecording) {
                     status = "Nagrywanie już trwa."
                     return
                 }
-                val current = config
+                val current = config.copy(tsDir = ts.buffer.dir.absoluteFile.parentFile.path)
+                recordingStarts++
                 scope.launch {
-                    val allowed = withContext(Dispatchers.IO) { runCatching { LocalRecordings.allowedBytes(current) }.getOrDefault(0L) }
+                    try {
+                    recordingStartMutex.withLock {
+                    if (updateBusy) {
+                        status = "Nie można rozpocząć nagrania podczas aktualizacji."
+                        return@withLock
+                    }
+                    if (ts.buffer.isRecording || (timeshift !== ts && backgroundBuffers.snapshot().none { it.second.session === ts })) {
+                        status = "Nie można nagrać: bufor kanału nie jest już dostępny."
+                        return@withLock
+                    }
+                    val reservations = activeRecordings.values.toList()
+                    val root = LocalRecordings.root(current).canonicalFile
+                    if (reservations.any { it.dir.parentFile.canonicalFile != root }) {
+                        status = "Nie można nagrywać równocześnie do różnych katalogów bufora."
+                        return@withLock
+                    }
+                    val reservedBytes = reservations.map { it.budgetBytes }
+                    val available = try {
+                        withContext(Dispatchers.IO) { LocalRecordings.allowedBytes(current) }
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        status = "Nie można sprawdzić miejsca na nagrania: ${e.message}"
+                        return@withLock
+                    }
+                    val limit = maxOf(1, current.bgCount)
+                    val allowed = LocalRecordings.recordingBudget(available, reservedBytes, limit)
+                    if (reservations.size >= limit) {
+                        status = "Osiągnięto limit równoczesnych nagrań."
+                        return@withLock
+                    }
                     if (allowed <= 0) {
                         quickPick = QuickPick(
                             "Brak miejsca na nagrania",
@@ -2371,7 +2500,7 @@ fun main() {
                             body = "Nagrania zajmują już ${(LocalRecordings.MAX_SHARE * 100).toInt()}% pojemności dysku albo brakuje wolnego " +
                                 "miejsca. Usuń stare nagrania (lista kanałów → Nagrania lokalne → Menu → Usuń).",
                         ) {}
-                        return@launch
+                        return@withLock
                     }
                     val dir = LocalRecordings.newDir(current, channel.name, java.time.LocalDateTime.now())
                     val maxMs = current.recMaxH.coerceIn(1, 6) * 3_600_000L
@@ -2390,7 +2519,18 @@ fun main() {
                         .put("kind", kind)
                         .put("begin", epochOf(start))
                         .put("recording", true)
-                    withContext(Dispatchers.IO) { LocalRecordings.writeInfo(dir, info) }
+                    try {
+                        withContext(Dispatchers.IO) { LocalRecordings.writeInfo(dir, info) }
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        status = "Nie można zapisać informacji o nagraniu: ${e.message}"
+                        return@withLock
+                    }
+                    if (timeshift !== ts && backgroundBuffers.snapshot().none { it.second.session === ts }) {
+                        withContext(Dispatchers.IO) { dir.deleteRecursively() }
+                        status = "Nie można nagrać: bufor kanału nie jest już dostępny."
+                        return@withLock
+                    }
                     val ok = ts.buffer.startRecording(dir, start, until, allowed) { result ->
                         val done = JSONObject(info.toString())
                             .put("recording", false)
@@ -2398,6 +2538,7 @@ fun main() {
                             .put("durationMs", if (result.firstWall != Long.MAX_VALUE) result.endWall - result.firstWall else 0L)
                             .put("bytes", result.bytes)
                             .put("end", result.reason)
+                            .put("recoveryPaths", org.json.JSONArray(result.failedPaths))
                         // Spis audycji (jak na Androidzie): „bufor do teraz” i „do zmiany kanału” — tytuł z godzinami i audycjami
                         if (kind != "audycja" && result.firstWall != Long.MAX_VALUE) {
                             val beginMs = epochOf(result.firstWall)
@@ -2409,78 +2550,80 @@ fun main() {
                                     .put("programmes", programmesJson(programmes))
                             }
                         }
-                        runCatching { LocalRecordings.writeInfo(result.dir, done) }
+                        val infoError = runCatching { LocalRecordings.writeInfo(result.dir, done) }.exceptionOrNull()
                         EventQueue.invokeLater {
-                            if (activeRecording?.dir == result.dir) activeRecording = null
-                            if (result.files == 0) runCatching { result.dir.deleteRecursively() }
-                            status = if (result.files == 0) "✗ Nagranie puste — nic nie zapisano."
+                            val key = serviceKey(channel.ref)
+                            if (activeRecordings[key]?.dir == result.dir) activeRecordings = activeRecordings - key
+                            if (result.files == 0 && result.failedPaths.isEmpty()) runCatching { result.dir.deleteRecursively() }
+                            status = if (infoError != null) "✗ Nie zapisano informacji o nagraniu: ${infoError.message}"
+                            else if (result.failedPaths.isNotEmpty()) "✗ Nie przeniesiono ${result.failedPaths.size} części nagrania; zachowano je w ${ts.buffer.dir.path}."
+                            else if (result.files == 0) "✗ Nagranie puste — nic nie zapisano."
                             else "✓ Nagranie zapisane: ${title ?: channel.name}\n${result.bytes / 1_000_000} MB · ${result.reason}"
                         }
                     }
                     if (!ok) {
                         dir.deleteRecursively()
-                        status = "✗ Nie udało się rozpocząć nagrania\nbufor timeshiftu pusty?"
-                        return@launch
+                        status = "✗ Nie udało się rozpocząć nagrania: bufor jest pusty, zamknięty lub przekracza dostępne miejsce."
+                        return@withLock
                     }
-                    activeRecording = ActiveRecording(dir, title ?: channel.name, channel.ref)
+                    activeRecordings = activeRecordings + (serviceKey(channel.ref) to ActiveRecording(dir, title ?: channel.name, channel, kind, ts, allowed))
                     logInfo("nagranie: start ($kind) ${channel.name} — ${dir.name}")
                     status = "● Nagrywanie: ${title ?: channel.name}" + (note?.let { " — $it" } ?: "")
-                    if (kind == "bufor-do-teraz") ts.buffer.stopRecording("bufor do teraz")
+                    if (kind == "bufor-do-teraz") scope.launch(Dispatchers.IO) { ts.buffer.stopRecording("bufor do teraz") }
+                    }
+                    } finally {
+                        recordingStarts--
+                    }
                 }
             }
 
-            fun stopLocalRecording() {
-                val ts = timeshift
-                if (ts == null || !ts.buffer.isRecording) {
-                    activeRecording = null
-                    return
-                }
-                scope.launch(Dispatchers.IO) { ts.buffer.stopRecording("zatrzymane") }
+            fun stopLocalRecording(recording: ActiveRecording) {
+                scope.launch(Dispatchers.IO) { recording.session.buffer.stopRecording("zatrzymane") }
             }
 
             /** Menu nagrywania z bufora: audycja / bufor do teraz / cały bufor do zmiany kanału (albo zatrzymanie). */
-            fun pickRecording() {
-                val ts = timeshift
-                val channel = playingChannel
+            fun pickRecording(target: BackgroundTimeshift? = null, backgroundEvent: NowEvent? = null) {
+                val ts = target?.session ?: timeshift
+                val channel = target?.channel ?: playingChannel
                 if (ts == null || channel == null || playingRecording != null) {
                     status = "Nagrywanie działa przy włączonym timeshifcie — Ustawienia → Odtwarzanie i obraz → Timeshift."
                     return
                 }
                 if (ts.buffer.isRecording) {
-                    val active = activeRecording
+                    val active = activeRecordings[serviceKey(channel.ref)]
                     quickPick = QuickPick(
                         "Nagrywanie",
                         listOf("Zatrzymaj nagrywanie", "Nagrywaj dalej"),
                         0,
                         body = "● ${active?.title ?: channel.name}",
-                    ) { if (it == 0) stopLocalRecording() }
+                    ) { if (it == 0 && active != null) stopLocalRecording(active) }
                     return
                 }
                 val now = monotonicMs()
                 val span = ts.buffer.spanMs()
-                val event = bannerNowNext.first
+                val event = if (target == null) bannerNowNext.first else backgroundEvent
                 val options = mutableListOf<Pair<String, () -> Unit>>()
                 if (event != null && event.end > System.currentTimeMillis() / 1000) {
                     val beginWall = wallOf(event.begin)
                     val inBuffer = beginWall >= ts.buffer.oldestWall
                     options += "Audycja „${event.title}” (${EpgTime.range(event.begin, event.end)})" to {
                         startLocalRecording(
-                            "audycja", beginWall, wallOf(event.end), event.title,
+                            ts, channel, "audycja", beginWall, wallOf(event.end), event.title,
                             if (inBuffer) null else "początek audycji niedostępny w buforze — nagranie od najstarszego miejsca",
                         )
                     }
                 }
                 options += "Bufor do teraz (${formatDuration(span)})" to {
-                    startLocalRecording("bufor-do-teraz", ts.buffer.oldestWall, now, event?.title, null)
+                    startLocalRecording(ts, channel, "bufor-do-teraz", ts.buffer.oldestWall, now, event?.title, null)
                 }
-                options += "Cały bufor do zmiany kanału (najwyżej ${config.recMaxH} h)" to {
-                    startLocalRecording("do-zmiany-kanalu", ts.buffer.oldestWall, Long.MAX_VALUE, event?.title, null)
+                options += (if (target == null) "Cały bufor do zmiany kanału" else "Cały bufor do zamknięcia") + " (najwyżej ${config.recMaxH} h)" to {
+                    startLocalRecording(ts, channel, if (target == null) "do-zmiany-kanalu" else "do-zamkniecia-bufora", ts.buffer.oldestWall, Long.MAX_VALUE, event?.title, null)
                 }
                 quickPick = QuickPick(
                     "Nagraj z timeshiftu",
                     options.map { it.first },
                     0,
-                    body = "Nagrania lokalne: lista kanałów → bukiet „Nagrania lokalne”. Zmiana kanału albo wyjście kończy nagranie.",
+                    body = "Nagrania lokalne: lista kanałów → bukiet „Nagrania lokalne”.",
                 ) { index -> options[index].second() }
             }
 
@@ -2521,6 +2664,11 @@ fun main() {
                             body = recording.title,
                         ) { confirm ->
                             if (confirm == 0) scope.launch {
+                                val dir = LocalRecordings.dirOf(current, recording)
+                                if (activeRecordings.values.any { it.dir == dir }) {
+                                    status = "Nie można usunąć trwającego nagrania."
+                                    return@launch
+                                }
                                 if (playingRecording?.path == recording.path) stopPlayback("Nagranie usunięte.")
                                 val ok = withContext(Dispatchers.IO) { LocalRecordings.delete(current, recording) }
                                 status = if (ok) "Usunięto: ${recording.title}" else "Nie udało się usunąć nagrania."
@@ -2590,24 +2738,24 @@ fun main() {
 
             /** „Zatrzymaj nagrywanie…”: lista trwających nagrań, OK zatrzymuje od razu (okno zostaje z resztą). */
             fun openStopRecording() {
-                val recording = activeRecording
-                if (recording == null) {
+                val recordings = activeRecordings.values.toList()
+                if (recordings.isEmpty()) {
                     status = "Nic się nie nagrywa."
                     return
                 }
-                val channelName = playingChannel?.takeIf { it.ref == recording.channelRef }?.name
                 quickPick = QuickPick(
                     title = "Zatrzymaj nagrywanie",
-                    options = listOf(listOfNotNull(channelName, recording.title).joinToString(" · ")),
+                    options = recordings.map { "${it.channel.name} · ${it.title}" },
                     selected = 0,
-                    subtitles = listOf("OK — zatrzymaj i zapisz"),
-                ) { stopLocalRecording() }
+                    subtitles = recordings.map { "OK — zatrzymaj i zapisz" },
+                ) { index -> stopLocalRecording(recordings[index]) }
             }
 
             /** REC: nagraj z timeshiftu, w trakcie nagrania — zakończ. */
             fun recordKey() {
+                val active = playingChannel?.let { activeRecordings[serviceKey(it.ref)] }
                 when {
-                    activeRecording != null -> stopLocalRecording()
+                    active != null -> stopLocalRecording(active)
                     timeshift != null && playingRecording == null -> pickRecording()
                     else -> status = "Nagrywanie lokalne wymaga timeshiftu — Ustawienia → Odtwarzanie i obraz → Timeshift."
                 }
@@ -3101,12 +3249,32 @@ fun main() {
                                 saveConfig(config.copy(tsMin = minutes), if (minutes == 0) "Timeshift wyłączony." else "Timeshift: $minutes min.")
                                 if (minutes == 0) closeTimeshift()
                                 timeshift?.buffer?.maxMin = minutes
+                                backgroundBuffers.snapshot().forEach { (_, old) ->
+                                    old.session.buffer.maxMin = if (config.bgBufMin < 0) minutes else minOf(config.bgBufMin, minutes)
+                                }
                             }
                         }
                     },
                     SettingItem.Action("Katalog bufora", TimeshiftBuffer.dirFor(config).path) {
                         editText("Katalog bufora timeshiftu", config.tsDir, "pusty = ${TimeshiftBuffer.defaultDir().path}") {
                             config.copy(tsDir = it.trim())
+                        }
+                    },
+                    SettingItem.Action("Bufory poprzednich kanałów", if (config.bgCount == 0) "wyłączone" else "${config.bgCount}") {
+                        val counts = (0..3).toList()
+                        choose("Bufory poprzednich kanałów", counts.map { if (it == 0) "wyłączone" else "$it" }, config.bgCount) {
+                            val count = counts[it]
+                            saveConfig(config.copy(bgCount = count), "Bufory poprzednich kanałów: $count.")
+                            backgroundBuffers.trim(count).forEach { old -> closeBuffer(old.session) }
+                        }
+                    },
+                    SettingItem.Action("Długość buforów poprzednich kanałów", if (config.bgBufMin < 0) "jak timeshift" else "${config.bgBufMin} min") {
+                        val choices = (listOf(-1, 1, 5, 10, 15, 30, 60, 90, 120, 180, 240, 300, 360) + config.bgBufMin).distinct().sorted()
+                        choose("Długość buforów poprzednich kanałów", choices.map { if (it < 0) "jak timeshift" else "$it min" }, choices.indexOf(config.bgBufMin)) {
+                            val minutes = choices[it]
+                            saveConfig(config.copy(bgBufMin = minutes))
+                            val max = if (minutes < 0) config.tsMin else minOf(minutes, config.tsMin)
+                            backgroundBuffers.snapshot().forEach { (_, old) -> old.session.buffer.maxMin = max }
                         }
                     },
                     SettingItem.Action("Krok ◀ ▶ (krótkie)", "${config.tsStepSec} s") {
@@ -3961,8 +4129,27 @@ fun main() {
                             channelListSelected = (channelListSelected + 8).coerceAtMost(channels.lastIndex)
                         }
                         VirtualRemoteKey.MENU -> {
-                            val row = channels.getOrNull(channelListSelected)?.let { recRows[it.ref] }
+                            val selected = channels.getOrNull(channelListSelected)
+                            val row = selected?.let { recRows[it.ref] }
+                            val background = selected?.let { channel -> backgroundBuffers.snapshot().firstOrNull { it.first == serviceKey(channel.ref) }?.second }
                             if (selectedBouquet?.ref == LOCAL_REC_BOUQUET && row != null) localRecordingActions(row)
+                            else if (background != null) {
+                                quickPick = QuickPick("Bufor: ${background.channel.name}", listOf("Nagraj z bufora", "Menu główne"), 0) {
+                                    if (it == 0) scope.launch {
+                                        val event = withContext(Dispatchers.IO) {
+                                            try {
+                                                epgRepo.nowNext(background.channel.ref).first
+                                            } catch (e: Exception) {
+                                                AppLog.i("EPG: nie udało się odczytać audycji dla ${background.channel.name} (${e.message})")
+                                                null
+                                            }
+                                        }
+                                        if (backgroundBuffers.snapshot().any { it.second === background }) {
+                                            pickRecording(background, event?.let { e -> NowEvent(e.title, e.begin, e.end) })
+                                        } else status = "Bufor kanału nie jest już dostępny."
+                                    } else { showChannelList = false; openMenu() }
+                                }
+                            }
                             else {
                                 showChannelList = false
                                 openMenu()
@@ -4163,8 +4350,16 @@ fun main() {
                 onDispose { sessionToClose?.close() }
             }
             val timeshiftToClose = timeshift
-            DisposableEffect(timeshiftToClose) {
-                onDispose { timeshiftToClose?.let { ts -> runCatching { ts.close() } } }
+            val currentTimeshift = rememberUpdatedState(timeshiftToClose)
+            DisposableEffect(Unit) {
+                onDispose {
+                    val sessions = listOfNotNull(currentTimeshift.value) + backgroundBuffers.drain().map { it.session }
+                    sessions.forEach { session ->
+                        runCatching { session.close() }.onFailure { AppLog.i("timeshift: błąd zamykania (${it.message})") }
+                    }
+                    val pending = synchronized(closingBuffers) { closingBuffers.toList() }
+                    pending.forEach { it.join() }
+                }
             }
             LaunchedEffect(Unit) {
                 if (config.tsMin <= 0) TimeshiftBuffer.cleanupAsync(TimeshiftBuffer.dirFor(config))
@@ -4442,7 +4637,7 @@ fun main() {
                         onMenu = ::openMenu,
                         onBack = { stopPlayback("Odtwarzanie zatrzymane.") },
                         playback = playbackBar,
-                        recordingLabel = activeRecording?.title,
+                        recordingLabel = activeRecordings.values.firstOrNull()?.title,
                         bufferInfo = {
                             timeshift?.takeIf { playingRecording == null }?.let { ts ->
                                 val now = monotonicMs()
@@ -4500,6 +4695,8 @@ fun main() {
                     piconStyle = piconStyle(config),
                     iconScale = config.uiListIcon / 100f,
                     recordings = if (isRecordingsBouquet(selectedBouquet?.ref)) recRows else emptyMap(),
+                    buffered = backgroundBuffers.snapshot().map { it.first }.toSet(),
+                    recordingChannels = activeRecordings.keys,
                 )
             }
             if (showMenu && !navigator.isVisible) {
@@ -4637,4 +4834,12 @@ private fun belongsToApplication(window: AwtWindow?, mainWindow: AwtWindow): Boo
 }
 
 /** Trwające nagranie z bufora timeshiftu (do wskaźnika ● REC i zatrzymania). */
-internal data class ActiveRecording(val dir: java.io.File, val title: String, val channelRef: String)
+internal data class ActiveRecording(
+    val dir: java.io.File,
+    val title: String,
+    val channel: Channel,
+    val kind: String,
+    val session: TimeshiftSession,
+    val budgetBytes: Long,
+)
+internal data class BackgroundTimeshift(val channel: Channel, val session: TimeshiftSession)

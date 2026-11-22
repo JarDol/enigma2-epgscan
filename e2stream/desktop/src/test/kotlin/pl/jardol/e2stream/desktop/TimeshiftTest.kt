@@ -3,6 +3,7 @@ package pl.jardol.e2stream.desktop
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class TimeshiftTest {
@@ -10,6 +11,22 @@ class TimeshiftTest {
         for (index in 0 until count) {
             bytes[index * TimeshiftBuffer.PACKET] = 0x47
             bytes[index * TimeshiftBuffer.PACKET + 1] = (first + index).toByte()
+        }
+    }
+
+    @Test
+    fun refusesWritesWhenDiskReserveIsExhausted() {
+        val dir = Files.createTempDirectory("e2stream-ts-reserve").toFile()
+        val buffer = TimeshiftBuffer(dir, 30, reserveBytes = 1_000, freeBytes = { 999 })
+        try {
+            val data = packets(10)
+            buffer.write(data, 0, data.size)
+            assertNotNull(buffer.failed)
+            assertEquals(0L, buffer.total)
+        } finally {
+            buffer.close()
+            dir.listFiles()?.forEach { it.delete() }
+            dir.delete()
         }
     }
 

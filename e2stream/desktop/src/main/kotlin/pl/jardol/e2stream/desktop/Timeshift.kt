@@ -30,6 +30,7 @@ internal class TimeshiftBuffer(
     @Volatile var maxMin: Int,
     private val clock: () -> Long = ::monotonicMs,
     private val reserveBytes: Long = RESERVE,
+    private val freeBytes: () -> Long = { dir.usableSpace },
 ) : Closeable {
     private class Segment(val file: File, val start: Long, val wall: Long) {
         @Volatile var length = 0L
@@ -38,6 +39,7 @@ internal class TimeshiftBuffer(
     private val segments = ArrayList<Segment>()
     private val lock = Object()
     private var closed = false
+    private var lastSpaceCheck = Long.MIN_VALUE
     private var output: FileOutputStream? = null
     private var nextIndex = 0
     private val pending = ByteArray(PACKET)
@@ -66,6 +68,7 @@ internal class TimeshiftBuffer(
         var bytes = 0L
         var firstWall = Long.MAX_VALUE
         var lastWall = 0L
+        val failedPaths = mutableListOf<String>()
     }
 
     internal data class RecordingResult(
@@ -75,6 +78,7 @@ internal class TimeshiftBuffer(
         val firstWall: Long,
         val endWall: Long,
         val reason: String,
+        val failedPaths: List<String>,
     )
 
     @Volatile private var recording: Recording? = null
@@ -98,6 +102,11 @@ internal class TimeshiftBuffer(
         synchronized(lock) {
             if (closed || failed != null) return
             try {
+                val checkAt = clock()
+                if (reserveBytes > 0 && (lastSpaceCheck == Long.MIN_VALUE || checkAt - lastSpaceCheck >= 1_000)) {
+                    lastSpaceCheck = checkAt
+                    if (freeBytes() < reserveBytes) throw IOException("brak wolnego miejsca na dysku")
+                }
                 var position = offset
                 val end = offset + length
                 if (pendingLength > 0) {
@@ -130,6 +139,7 @@ internal class TimeshiftBuffer(
                     System.arraycopy(bytes, position, pending, 0, pendingLength)
                 }
             } catch (e: IOException) {
+                if (recording != null) finishLocked("błąd zapisu bufora")
                 failed = e.message ?: e.toString()
                 AppLog.i("timeshift: błąd zapisu — bufor wyłączony ($failed)")
             }
@@ -143,6 +153,13 @@ internal class TimeshiftBuffer(
             (position + 2 * PACKET >= end || bytes[position + 2 * PACKET] == SYNC)
 
     private fun writeRaw(bytes: ByteArray, offset: Int, length: Int) {
+        recording?.let { rec ->
+            val pending = recordingPendingBytes(rec.fromWall, rec.untilWall)
+            val remaining = (rec.maxBytes - rec.bytes).coerceAtLeast(0)
+            if (pending > remaining || length.toLong() > remaining - pending) {
+                finishLocked("osiągnięto limit miejsca na nagrania")
+            }
+        }
         val now = clock()
         val current = segments.lastOrNull()
         if (current == null || output == null || now - current.wall >= 60_000) rotate(now)
@@ -163,8 +180,9 @@ internal class TimeshiftBuffer(
         val file = File(dir, "$session${nextIndex++}.ts")
         output = FileOutputStream(file)
         segments += Segment(file, total, now)
+        if (recording != null) createRecoveryMarker(file)
         while (segments.size > maxOf(2, maxMin + 1)) dropOldest()
-        while (segments.size > 2 && dir.usableSpace < reserveBytes) dropOldest()
+        while (segments.size > 2 && freeBytes() < reserveBytes) dropOldest()
     }
 
     private fun dropOldest() {
@@ -175,7 +193,7 @@ internal class TimeshiftBuffer(
         if (rec != null && end > rec.fromWall && segment.wall < rec.untilWall) {
             moveToRecording(rec, segment, end)
         } else {
-            thread(name = "timeshift-usun", isDaemon = true) { segment.file.delete() }
+            deleteSegmentAsync(segment.file)
         }
     }
 
@@ -184,10 +202,20 @@ internal class TimeshiftBuffer(
         return segments.getOrNull(index + 1)?.wall ?: if (index >= 0) clock() else segment.wall + 60_000
     }
 
+    private fun recordingPendingBytes(fromWall: Long, untilWall: Long): Long {
+        val now = clock()
+        return segments.indices.sumOf { index ->
+            val segment = segments[index]
+            val end = segments.getOrNull(index + 1)?.wall ?: now
+            if (end >= fromWall && segment.wall < untilWall) segment.length else 0L
+        }
+    }
+
     /** Przeniesienie kawałka do katalogu nagrania (zmiana nazwy; przy otwartym odczycie — kilka prób, potem kopia). */
     private fun moveToRecording(rec: Recording, segment: Segment, end: Long) {
         if (segment.length <= 0) {
             segment.file.delete()
+            recoveryMarker(segment.file).delete()
             return
         }
         val target = File(rec.dir, "%05d.ts".format(rec.files))
@@ -206,9 +234,11 @@ internal class TimeshiftBuffer(
             }.isSuccess
         }
         if (!moved) {
-            AppLog.i("nagranie: nie udało się przenieść ${segment.file.name}")
+            rec.failedPaths += segment.file.absolutePath
+            AppLog.i("nagranie: nie udało się przenieść ${segment.file.absolutePath}; plik zachowany do odzyskania")
             return
         }
+        recoveryMarker(segment.file).delete()
         rec.files++
         rec.bytes += segment.length
         rec.firstWall = minOf(rec.firstWall, segment.wall)
@@ -221,8 +251,24 @@ internal class TimeshiftBuffer(
      */
     fun startRecording(dir: File, fromWall: Long, untilWall: Long, maxBytes: Long, onFinished: (RecordingResult) -> Unit): Boolean =
         synchronized(lock) {
-            if (closed || recording != null || segments.isEmpty() || failed != null) return false
-            dir.mkdirs()
+            if (closed || recording != null || segments.isEmpty() || failed != null ||
+                maxBytes <= 0 || recordingPendingBytes(fromWall, untilWall) > maxBytes
+            ) return false
+            if (!dir.isDirectory && !dir.mkdirs()) {
+                AppLog.i("nagranie: nie można utworzyć katalogu ${dir.absolutePath}")
+                return false
+            }
+            val marked = mutableListOf<File>()
+            try {
+                for (segment in segments) {
+                    createRecoveryMarker(segment.file)
+                    marked += recoveryMarker(segment.file)
+                }
+            } catch (e: IOException) {
+                marked.forEach { it.delete() }
+                AppLog.i("nagranie: nie można zabezpieczyć bufora (${e.message})")
+                return false
+            }
             recording = Recording(dir, fromWall, untilWall, maxBytes, onFinished)
             true
         }
@@ -243,14 +289,14 @@ internal class TimeshiftBuffer(
         for ((index, segment) in all.withIndex()) {
             val end = all.getOrNull(index + 1)?.wall ?: now
             if (end > rec.fromWall && segment.wall < rec.untilWall) moveToRecording(rec, segment, end)
-            else thread(name = "timeshift-usun", isDaemon = true) { segment.file.delete() }
+            else deleteSegmentAsync(segment.file)
         }
         segments.clear()
         trimmed = false
         recording = null
-        val result = RecordingResult(rec.dir, rec.files, rec.bytes, rec.firstWall, rec.lastWall, reason)
+        val result = RecordingResult(rec.dir, rec.files, rec.bytes, rec.firstWall, rec.lastWall, reason, rec.failedPaths.toList())
         AppLog.i("nagranie: koniec (${result.reason}) — ${result.files} kawałków, ${result.bytes / 1_000_000} MB")
-        thread(name = "nagranie-koniec", isDaemon = true) { runCatching { rec.onFinished(result) } }
+        runCatching { rec.onFinished(result) }.onFailure { AppLog.i("nagranie: błąd zapisu informacji (${it.message})") }
     }
 
 
@@ -407,6 +453,19 @@ internal class TimeshiftBuffer(
         private val sessionLock = Any()
         private val activeSessions = HashMap<String, MutableSet<String>>()
 
+        private fun recoveryMarker(file: File): File = File(file.path + ".keep")
+
+        private fun createRecoveryMarker(file: File) {
+            val marker = recoveryMarker(file)
+            if (!marker.exists() && !marker.createNewFile()) throw IOException("Nie można zabezpieczyć ${file.name}")
+        }
+
+        private fun deleteSegmentAsync(file: File) {
+            thread(name = "timeshift-usun", isDaemon = true) {
+                if (file.delete() || !file.exists()) recoveryMarker(file).delete()
+            }
+        }
+
         private fun directoryKey(dir: File): String = dir.canonicalPath.let {
             if (File.separatorChar == '\\') it.lowercase(java.util.Locale.ROOT) else it
         }
@@ -463,6 +522,7 @@ internal class TimeshiftBuffer(
                         val active = activeSessions[directoryKey(dir)].orEmpty()
                         dir.listFiles { file ->
                             file.name.startsWith("ts-") && file.name.endsWith(".ts") &&
+                                !recoveryMarker(file).exists() &&
                                 (keep == null || !file.name.startsWith(keep)) &&
                                 active.none { file.name.startsWith(it) }
                         }?.forEach { if (it.delete()) count++ }
@@ -627,14 +687,25 @@ internal class TimeshiftServer(
  */
 internal class TimeshiftSession(
     val buffer: TimeshiftBuffer,
-    sourceUrl: String,
-    authorization: String?,
+    val sourceUrl: String,
+    val authorization: String?,
     tap: ((ByteArray, Int, Int) -> Unit)? = null,
     /** Poprawki PAT/PMT/PCR strumienia; null — bez zmian. */
     val fixer: TsStreamFixer? = null,
 ) : Closeable {
-    private val recorder = TimeshiftRecorder(sourceUrl, authorization, buffer, tap, fixer)
-    private val server = TimeshiftServer(buffer) { fixer?.psiHeader() }
+    private val server = try {
+        TimeshiftServer(buffer) { fixer?.psiHeader() }
+    } catch (e: Exception) {
+        buffer.close()
+        throw e
+    }
+    private val recorder = try {
+        TimeshiftRecorder(sourceUrl, authorization, buffer, tap, fixer)
+    } catch (e: Exception) {
+        server.close()
+        buffer.close()
+        throw e
+    }
 
     /** Audycje widziane w czasie zapisu bufora (spis w nagraniach lokalnych). */
     val programmes = ProgrammeLog()
