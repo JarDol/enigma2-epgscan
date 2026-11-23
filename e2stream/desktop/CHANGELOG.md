@@ -3,6 +3,15 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.7.2
+
+- Bufory poprzednich kanałów i równoczesne nagrania: ochrona nagrań, kontrola limitów i wolnego miejsca, odzyskiwanie plików oraz kroki przewijania dla krótkiego i długiego naciśnięcia.
+- Eksperymentalny PiP dla buforowanych kanałów oraz podgląd klatek podczas przewijania; dodatkowe okna PiP są wyciszone.
+- Lista historii pokazuje picony; długie OK na liście kanałów i w historii otwiera opis audycji oraz dostępne opcje nagrywania.
+- Poprawiono przechwytywanie klawiszy systemowych pilota G20S Pro oraz Home i Wstecz podczas działania E2Stream.
+- Znany problem: głośność pilota Xiaomi może dodatkowo zmieniać głośność Windows.
+- Poprawiono uruchamianie bufora, odświeżanie piconów i potwierdzanie akcji EPG.
+
 ## 0.7.1
 
 - Historia kanałów pokazuje bieżącą audycję z lokalnego EPG, wczytywaną w tle bez opóźniania otwarcia listy; oznaczenia oglądanego kanału i bukietu pozostają widoczne.
