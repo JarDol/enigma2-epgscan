@@ -20,6 +20,12 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   sprawdza jego dostępność mniej więcej co 3 s i wznawia ten sam kanał po odzyskaniu połączenia.
   Podczas oglądania powtarzające się błędy VLC nie włączają trybu bezpiecznego; po sprawdzeniu
   dekodera można ponowić próbę lub otworzyć ustawienia.
+  ExoPlayer sprawdza też brak pierwszego obrazu mimo działającego zegara audio: po 8 s gotowości
+  wybranej ścieżki wideo bez potwierdzenia klatki próbuje raz na wejście w kanał odzyskać obraz
+  przez cofnięcie w istniejącym buforze (co najmniej 5 s, z uwzględnieniem ustawionego zapasu).
+  Pozostaje wtedy w timeshifcie; bufor, nagrania i kanały w tle nie są usuwane.
+  Bez odpowiedniej klatki kluczowej w buforze stosuje zwykłe wznowienie. Kontrola nie dotyczy radia,
+  nagrań ani ręcznego timeshiftu i działa również przy wyłączonej opcji przyspieszania startu.
 * Bukiety i kanały pobierane z OpenWebif (`/api/getservices`), EPG „teraz” (`/api/epgnow`).
 * Strumień: `http://DEKODER:8001/<referencja>` (opcjonalnie z logowaniem Basic).
 * Wyszukiwanie dekoderów przez mDNS i w sieci lokalnej (ustawienia → „Szukaj dekoderów w sieci”).

@@ -674,7 +674,7 @@ class SeekPreview(private val act: Activity, private val anchor: View) {
         if (video == null) return
         submit { r ->
             val (pos, _) = buf.keyframeAt(wall) ?: run {
-                AppLog.i("podgląd przewijania: brak klatki kluczowej dla ${System.currentTimeMillis() - wall} ms wstecz (bufor ${buf.total / 1_000_000} MB)")
+                AppLog.i("podgląd przewijania: brak klatki kluczowej dla ${SystemClock.elapsedRealtime() - wall} ms wstecz (bufor ${buf.total / 1_000_000} MB)")
                 return@submit
             }
             val avail = minOf(buf.total - pos, data.size.toLong()).toInt()

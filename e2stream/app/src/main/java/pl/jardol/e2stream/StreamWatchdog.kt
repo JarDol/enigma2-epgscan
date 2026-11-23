@@ -32,7 +32,9 @@ class StreamWatchdog(
     /** Zapas, przy którym ExoPlayer rusza na starcie / po niedoborze (setBufferDurationsMs). */
     private val startMs: Long = 0,
     private val reserveMs: Long = 0,
+    private val onMissingVideo: (() -> Unit)? = null,
 ) {
+    private val videoStart = VideoStartRecovery()
     // --- start kanału: od nowego strumienia do chwili, gdy obraz naprawdę idzie
     private var startPhase = false
     private var startAt = 0L
@@ -54,6 +56,7 @@ class StreamWatchdog(
 
     private var countersRef: DecoderCounters? = null
     private var lastFrames = -1L
+    private var lastRendered = -1
     private var lastFrameChange = 0L
     private var framesMoving = false
     private var lastPos = -1L
@@ -89,8 +92,9 @@ class StreamWatchdog(
      * Nowy strumień na żywo (zmiana kanału, wznowienie): [fast] — ustawienie „Przyspiesz start kanałów”;
      * do chwili, gdy obraz ruszy, działa dodatkowa reguła startu ([checkStart]).
      */
-    fun newStream(fast: Boolean) {
+    fun newStream(fast: Boolean, streamKey: String? = null) {
         reset()
+        videoStart.begin(streamKey)
         val now = SystemClock.elapsedRealtime()
         startPhase = fast
         startAt = now
@@ -102,7 +106,12 @@ class StreamWatchdog(
     }
 
     /** Odtwarzanie z bufora / nagrania — bez reguły startu kanału. */
-    fun endStart() { startPhase = false }
+    fun endStart() {
+        startPhase = false
+        videoStart.end()
+    }
+
+    fun onRenderedFirstFrame() { videoStart.renderedFrame() }
 
     fun stop() {
         running = false
@@ -113,6 +122,7 @@ class StreamWatchdog(
         val now = SystemClock.elapsedRealtime()
         countersRef = null
         lastFrames = -1
+        lastRendered = -1
         lastFrameChange = now
         framesMoving = false
         lastPos = -1
@@ -123,6 +133,7 @@ class StreamWatchdog(
         healthySince = 0
         healthyReported = false
         fastSince = 0
+        videoStart.resetWaiting()
     }
 
     /**
@@ -178,6 +189,7 @@ class StreamWatchdog(
         if (startPhase && checkStart(now)) return
         when (player.playbackState) {
             Player.STATE_BUFFERING -> {
+                videoStart.resetWaiting()
                 healthySince = 0
                 if (bufferingSince == 0L) bufferingSince = now
                 else if (now - bufferingSince > bufferingMs) {
@@ -194,6 +206,7 @@ class StreamWatchdog(
                 }
             }
             else -> {
+                videoStart.resetWaiting()
                 bufferingSince = 0
                 return
             }
@@ -204,11 +217,14 @@ class StreamWatchdog(
             countersRef = c
             hist.clear()
             lastFrames = -1
+            lastRendered = -1
             framesMoving = false
             lastFrameChange = now
         }
         if (c != null) {
             c.ensureUpdated()
+            if (lastRendered >= 0 && c.renderedOutputBufferCount > lastRendered) videoStart.renderedFrame()
+            lastRendered = c.renderedOutputBufferCount
             val f = c.renderedOutputBufferCount.toLong() + c.skippedOutputBufferCount + c.droppedBufferCount
             frames = c.renderedOutputBufferCount.toLong()
             dropped = c.droppedBufferCount
@@ -237,6 +253,11 @@ class StreamWatchdog(
         }
 
         val hasVideo = player.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)
+        if (onMissingVideo != null && videoStart.shouldRecover(now, hasVideo)) {
+            AppLog.i("start kanału: READY bez potwierdzenia obrazu przez 8 s")
+            onMissingVideo.invoke()
+            return
+        }
         val frameCheck = hasVideo && framesMoving
         mode = if (frameCheck) "klatki + zegar" else "zegar"
 
@@ -262,3 +283,35 @@ class StreamWatchdog(
 
 internal fun hasRenderedEnoughSinceStart(rendered: Int, baseline: Int): Boolean =
     rendered >= baseline && rendered - baseline >= 25
+
+internal class VideoStartRecovery {
+    private var streamKey: String? = null
+    private var attempted = false
+    private var armed = false
+    private var confirmed = false
+    private var readySince: Long? = null
+
+    fun begin(key: String?) {
+        if (key != streamKey) attempted = false
+        streamKey = key
+        armed = key != null
+        confirmed = false
+        resetWaiting()
+    }
+
+    fun renderedFrame() { confirmed = true }
+    fun resetWaiting() { readySince = null }
+    fun end() { armed = false; resetWaiting() }
+
+    fun shouldRecover(now: Long, readyVideo: Boolean): Boolean {
+        if (!armed || confirmed || attempted || !readyVideo) {
+            resetWaiting()
+            return false
+        }
+        val since = readySince ?: now.also { readySince = it }
+        if (now - since < 8000) return false
+        attempted = true
+        armed = false
+        return true
+    }
+}

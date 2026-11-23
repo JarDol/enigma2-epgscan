@@ -11,10 +11,15 @@ import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.TrackGroup
+import androidx.media3.common.Tracks
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.MediaSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -135,13 +140,14 @@ class PlayerRecoveryTest {
         }
     }
 
-    private fun fakePlayer(context: Context, onStop: () -> Unit, onSource: () -> Unit): ExoPlayer {
+    private fun fakePlayer(context: Context, onStop: () -> Unit, onSource: (MediaSource) -> Unit, tracks: Tracks = Tracks.EMPTY): ExoPlayer {
         val parameters = TrackSelectionParameters.Builder(context).build()
-        return Proxy.newProxyInstance(ExoPlayer::class.java.classLoader, arrayOf(ExoPlayer::class.java)) { _, method, _ ->
+        return Proxy.newProxyInstance(ExoPlayer::class.java.classLoader, arrayOf(ExoPlayer::class.java)) { _, method, args ->
             when (method.name) {
                 "getTrackSelectionParameters" -> parameters
+                "getCurrentTracks" -> tracks
                 "stop" -> { onStop(); null }
-                "setMediaSource" -> { onSource(); null }
+                "setMediaSource" -> { onSource(args!![0] as MediaSource); null }
                 else -> when (method.returnType) {
                     java.lang.Boolean.TYPE -> false
                     java.lang.Integer.TYPE -> 0
@@ -346,6 +352,101 @@ class PlayerRecoveryTest {
         assertEquals(0L, analyzer.bytes)
         AnalyzingDataSource(upstream) { analyzer }.read(packet, 0, packet.size)
         assertEquals(188L, analyzer.bytes)
+    }
+
+    @Test
+    fun missingVideoRecoveryReusesRecorderAndStartsAtEarlierKeyframeWithSameAudio() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("e2stream", Context.MODE_PRIVATE).edit().clear().commit()
+        val prefs = Prefs(context)
+        prefs.playbackAttempt = "unfinished / VLC"
+        prefs.channelSync = false
+        prefs.logFtp = false
+        prefs.bufferMs = 1000
+        prefs.rebufferMs = 2000
+        prefs.tsMin = 0
+        SyncManager.init(context)
+        val controller = Robolectric.buildActivity(PlayerActivity::class.java).setup()
+        val activity = controller.get()
+        ShadowDialog.getLatestDialog().dismiss()
+        val buffer = TimeshiftBuffer(File(context.cacheDir, "video-recovery-${System.nanoTime()}"), 5)
+        val recorder = TimeshiftRecorder("http://example.test/live", null, { null }, onFailure = {})
+        try {
+            val packets = ByteArray(188 * 2) { 0xff.toByte() }
+            val pcr = byteArrayOf(0x47, 0x41, 0, 0x30, 7, 0x10, 0, 0, 0, 0, 0, 0)
+            val key = byteArrayOf(0x47, 0x41, 0, 0x10, 0, 0, 1, 0xe0.toByte(), 0, 0, 0x80.toByte(), 0, 0, 0, 0, 1, 0x65)
+            pcr.copyInto(packets)
+            key.copyInto(packets, 188)
+            buffer.pcrPid = { 0x100 }
+            buffer.write(packets, 0, packets.size)
+            val keyframe = buffer.keyframeAt(Long.MAX_VALUE)!!
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(12))
+            buffer.write(packets, 0, packets.size)
+            val total = buffer.total
+            var sources = 0
+            var sourceUri: Uri? = null
+            val tracks = Tracks(listOf(Tracks.Group(
+                TrackGroup(Format.Builder().setId("15037/634").setSampleMimeType("audio/mpeg-L2").build()),
+                false, intArrayOf(C.FORMAT_HANDLED), booleanArrayOf(true),
+            )))
+            set(activity, "player", fakePlayer(activity, {}, {
+                sources++
+                sourceUri = it.mediaItem.localConfiguration?.uri
+            }, tracks))
+            set(activity, "safeMode", false)
+            set(activity, "currentUrl", "http://example.test/live")
+            set(activity, "tsLiveUrl", "http://example.test/live")
+            set(activity, "bufLive", true)
+            set(activity, "tsBuf", buffer)
+            set(activity, "tsRec", recorder)
+            call(activity, "recoverMissingVideo")
+            assertEquals(1, sources)
+            assertTrue(get<Boolean>(activity, "tsMode"))
+            assertTrue(get<Boolean>(activity, "tsShifted"))
+            assertEquals(keyframe.second, get<Long>(activity, "tsBaseWall"))
+            assertEquals(keyframe.first.toString(), sourceUri?.lastPathSegment)
+            assertEquals(634, get<Int>(activity, "tsAudioPid"))
+            assertTrue(buffer === get<TimeshiftBuffer>(activity, "tsBuf"))
+            assertTrue(recorder === get<TimeshiftRecorder>(activity, "tsRec"))
+            assertEquals(total, buffer.total)
+            assertFalse(get<Boolean>(activity, "restartPending"))
+        } finally {
+            controller.pause().stop().destroy()
+            recorder.stop()
+            buffer.close()
+        }
+    }
+
+    @Test
+    fun missingVideoWithoutBufferFallsBackButDoesNotRewindRecordingOrShiftedPlayback() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("e2stream", Context.MODE_PRIVATE).edit().clear().commit()
+        val prefs = Prefs(context)
+        prefs.playbackAttempt = "unfinished / VLC"
+        prefs.channelSync = false
+        prefs.logFtp = false
+        SyncManager.init(context)
+        val controller = Robolectric.buildActivity(PlayerActivity::class.java).setup()
+        val activity = controller.get()
+        ShadowDialog.getLatestDialog().dismiss()
+        try {
+            var sources = 0
+            set(activity, "player", fakePlayer(activity, {}, { sources++ }))
+            set(activity, "safeMode", false)
+            set(activity, "currentUrl", "http://example.test/live")
+            set(activity, "recMode", true)
+            call(activity, "recoverMissingVideo")
+            assertFalse(get<Boolean>(activity, "restartPending"))
+            set(activity, "recMode", false)
+            set(activity, "tsMode", true)
+            call(activity, "recoverMissingVideo")
+            assertFalse(get<Boolean>(activity, "restartPending"))
+            set(activity, "tsMode", false)
+            call(activity, "recoverMissingVideo")
+            assertTrue(get<Boolean>(activity, "restartPending"))
+            assertFalse(get<Boolean>(activity, "tsMode"))
+            assertEquals(0, sources)
+        } finally { controller.pause().stop().destroy() }
     }
 
     @Test

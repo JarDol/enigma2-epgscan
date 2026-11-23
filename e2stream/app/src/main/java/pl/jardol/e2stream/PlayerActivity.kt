@@ -803,6 +803,7 @@ class PlayerActivity : Activity() {
             }
 
             override fun onRenderedFirstFrame() {
+                watchdog?.onRenderedFirstFrame()
                 if (!tsMode) logFirstStreamFrame("ExoPlayer: pierwsza klatka")
                 markPlaybackHealthy()
             }
@@ -903,6 +904,7 @@ class PlayerActivity : Activity() {
                 dropRestart = prefs.dropRestart,
                 startMs = start.toLong(),
                 reserveMs = reserve.toLong(),
+                onMissingVideo = { recoverMissingVideo() },
             ).also { it.start() }
         }
         ui.removeCallbacks(statsTick)
@@ -1272,7 +1274,7 @@ class PlayerActivity : Activity() {
         p.prepare()
         p.playWhenReady = true
         // tylko na żywo: nagranie czyta z dysku (inny przebieg startu)
-        watchdog?.newStream(prefs.fastStart && !recMode)
+        watchdog?.newStream(prefs.fastStart && !recMode, if (recMode) null else url)
     }
 
     private fun logFirstStreamByte() {
@@ -1544,6 +1546,24 @@ class PlayerActivity : Activity() {
         AppLog.i("WZNOWIENIE za $d ms: $reason")
         pipHoldUntil = SystemClock.elapsedRealtime() + 8000
         ui.postDelayed(restartRunnable, d)
+    }
+
+    private fun recoverMissingVideo() {
+        if (safeMode || decoderUnavailable || encrypted || restartPending ||
+            recMode || tsMode || vlc != null || currentUrl == null) return
+        val b = tsBuf
+        val backMs = maxOf(5000L, prefs.bufferMs.toLong() + 1500, prefs.rebufferMs.toLong() + 1500)
+        val now = SystemClock.elapsedRealtime()
+        val keyframe = b?.keyframeAt(now - backMs)
+        if (b == null || b.failed != null || tsRec == null || tsLiveUrl != currentUrl || keyframe == null) {
+            AppLog.i("start kanału: brak bufora z klatką kluczową do odzyskania obrazu")
+            scheduleRestart("brak pierwszego obrazu")
+            return
+        }
+        AppLog.i("start kanału: jednorazowe odzyskanie obrazu przez cofnięcie o ${backMs} ms")
+        restarts++
+        lastRestartReason = "brak pierwszego obrazu — cofnięcie w buforze"
+        tsEnter(pause = false, backMs = backMs, recoveryKeyframe = keyframe)
     }
 
     private fun doRestart() {
@@ -3571,7 +3591,7 @@ class PlayerActivity : Activity() {
         p.prepare()
         p.playWhenReady = true
         // dane już na nośniku — bez fazy szybkiego startu strażnika (zbędny restart w pierwszych sekundach)
-        watchdog?.newStream(prefs.fastStart && !reuse)
+        watchdog?.newStream(prefs.fastStart && !reuse, url)
     }
 
     /** Nowy kanał (albo zmiana ustawień): bufor od zera, odtwarzanie na żywo. */
@@ -3721,9 +3741,9 @@ class PlayerActivity : Activity() {
         return false
     }
 
-    private fun tsEnter(pause: Boolean, backMs: Long) {
+    private fun tsEnter(pause: Boolean, backMs: Long, recoveryKeyframe: Pair<Long, Long>? = null) {
         val url = currentUrl
-        if (!tsConfigured()) return
+        if (recoveryKeyframe == null && !tsConfigured()) return
         if (recMode) { showMessage(getString(R.string.message_timeshift_is_unavailable_when_playing_a_recording)); return }
         if (url == null) { showMessage(getString(R.string.message_timeshift_no_channel_playing)); return }
         if (tsBuf == null) tsNewChannel()          // bufor mógł nie powstać (np. dysk podłączony po starcie)
@@ -3739,7 +3759,7 @@ class PlayerActivity : Activity() {
         val behind = if (vlc != null) prefs.bufferMs.toLong() else p.totalBufferedDuration
         tsAudioPid = vlc?.selectedAudioTrackId() ?: selectedAudioPid()
         val now = SystemClock.elapsedRealtime()
-        val target = if (fresh) now else
+        val target = recoveryKeyframe?.second ?: if (fresh) now else
             timeshiftSeekTarget(now - behind - 300, -backMs, b.oldestWall, now, b.seekMarginMs())
         AppLog.i("timeshift: zachowuję ścieżkę audio PID=${tsAudioPid ?: "auto"}")
         AppLog.i("timeshift: ${if (pause) "pauza" else "cofnięcie ${backMs / 1000} s"} (bufor ${b.spanMs() / 60000} min)")
@@ -3753,12 +3773,12 @@ class PlayerActivity : Activity() {
         if (!bufLive || tsRec == null) restartTimeshiftRecorder(url, streamGen)
         tsSetShifted(true)
         tsCtl = true
-        tsPlayFrom(target, play = !pause)
+        tsPlayFrom(target, play = !pause, keyframe = recoveryKeyframe)
         ui.removeCallbacks(shiftTick)
         ui.postDelayed(shiftTick, 1000)
     }
 
-    private fun tsPlayFrom(wall: Long, play: Boolean) {
+    private fun tsPlayFrom(wall: Long, play: Boolean, keyframe: Pair<Long, Long>? = null) {
         val b = tsBuf ?: return
         val p = player ?: return
         startupLoadControl?.cancel()
@@ -3768,10 +3788,10 @@ class PlayerActivity : Activity() {
         val margin = b.seekMarginMs()
         val earliest = timeshiftEarliestSeekWall(oldest, now, margin)
         val target = maxOf(wall, earliest).coerceAtMost(now)
-        val off = if (margin == 1_000L && target == earliest)
+        val off = keyframe?.first ?: if (margin == 1_000L && target == earliest)
             b.keyframeAt(target)?.first ?: b.oldestOffset
         else b.offsetAt(target)
-        tsBaseWall = b.wallAt(off)
+        tsBaseWall = keyframe?.second ?: b.wallAt(off)
         val sourceGen = tsAudioSourceGen
         AppLog.i("timeshift: seek ${wall}→${tsBaseWall} ms, zakres $oldest–$now")
         val hdr = analyzer?.psiHeader()
