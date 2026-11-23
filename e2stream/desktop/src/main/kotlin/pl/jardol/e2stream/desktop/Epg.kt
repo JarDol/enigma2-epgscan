@@ -338,6 +338,9 @@ internal object EpgTime {
 }
 
 /** Opis audycji do okna szczegółów: krótki i długi bez powtórzeń. */
+internal fun currentOrNextEpgEvent(events: List<EpgEvent>, now: Long): EpgEvent? =
+    events.firstOrNull { it.begin <= now && it.end > now } ?: events.firstOrNull { it.begin > now }
+
 internal fun epgDescription(event: EpgEvent): String {
     val short = event.shortDesc.trim()
     val long = event.longDesc.trim()

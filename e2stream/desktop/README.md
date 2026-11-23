@@ -91,7 +91,8 @@ OpenWebif at the configured hour; other channels are loaded on demand.
 The channel History list shows the current programme from locally cached EPG
 alongside the watched-channel and bouquet labels, without waiting for the receiver.
 It also shows locally cached picons using the channel-list icon settings; icons
-are loaded asynchronously.
+are loaded asynchronously. Holding OK on a channel in the list or History opens
+its current (or next) EPG event; buffered channels also offer local recording.
 
 **Audio:** the audio track (AUDIO key, menu or player button) is remembered per
 channel and receiver in `%APPDATA%/E2Stream/audio.properties` (matched by PID,

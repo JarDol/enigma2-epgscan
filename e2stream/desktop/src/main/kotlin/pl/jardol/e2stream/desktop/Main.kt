@@ -2316,12 +2316,21 @@ fun main() {
                 quickPick = epgConfirmation(title, body, label, config.confirmDialogSec, epgScale, back, action)
             }
 
-            fun showEvent(event: EpgEvent, channel: Channel, onBack: (() -> Unit)?) {
+            fun showEvent(
+                event: EpgEvent,
+                channel: Channel,
+                onBack: (() -> Unit)?,
+                extraActions: List<Pair<String, () -> Unit>> = emptyList(),
+                isStillRelevant: () -> Boolean = { true },
+                includeChannelEpg: Boolean = false,
+                onPlay: (() -> Unit)? = null,
+            ) {
                 scope.launch {
                     val now = Instant.now().epochSecond
                     val scheduled = withContext(Dispatchers.IO) { zapStore.list().firstOrNull { it.key == ZapTimer(channel.ref, "", "", event.begin, 0).key } }
+                    if (!isStillRelevant()) return@launch
                     val isCurrent = playingChannel?.let { serviceKey(it.ref) == serviceKey(channel.ref) } == true
-                    val reopen = { showEvent(event, channel, onBack) }
+                    val reopen = { showEvent(event, channel, onBack, extraActions, includeChannelEpg = includeChannelEpg, onPlay = onPlay) }
                     val actions = buildList<Pair<String, () -> Unit>> {
                         add(
                             (if (isCurrent) "Oglądaj" else "Przełącz na kanał") to {
@@ -2330,7 +2339,7 @@ fun main() {
                                 } else {
                                     confirmEpgAction("Przełączyć kanał?", channel.name, "Przełącz", reopen) {
                                         showChannelList = false
-                                        startChannel(channel)
+                                        if (onPlay != null) onPlay() else startChannel(channel)
                                     }
                                 }
                             },
@@ -2364,7 +2373,8 @@ fun main() {
                                 })
                             }
                         }
-                        if (onBack == null) add("EPG kanału" to { showChannelEpg(channel, event.id) })
+                        addAll(extraActions)
+                        if (onBack == null || includeChannelEpg) add("EPG kanału" to { showChannelEpg(channel, event.id) })
                     }
                     val header = EpgTime.dayAndRange(event.begin, event.end) +
                         (EpgTime.progress(event, now)?.let { "  •  $it" } ?: "") +
@@ -2453,7 +2463,7 @@ fun main() {
                         tag = "epg-search",
                     ) { index ->
                         val event = list[index]
-                        showEvent(event, epgChannelFor(event.sref, event.sname)) { runEpgSearch(query) }
+                        showEvent(event, epgChannelFor(event.sref, event.sname), onBack = { runEpgSearch(query) })
                     }
                 }
             }
@@ -2522,7 +2532,7 @@ fun main() {
                                 if (target != null) quickPick = pick.copy(selected = target)
                             }
                         },
-                    ) { index -> showEvent(list[index], channel) { showChannelEpg(channel, list[index].id) } }
+                    ) { index -> showEvent(list[index], channel, onBack = { showChannelEpg(channel, list[index].id) }) }
                 }
             }
 
@@ -2603,7 +2613,7 @@ fun main() {
                         },
                     ) { index ->
                         val (channel, running, _) = rows[index]
-                        if (running != null) showEvent(running, channel) { showMultiEpg(target, time, channel.ref) }
+                        if (running != null) showEvent(running, channel, onBack = { showMultiEpg(target, time, channel.ref) })
                         else showChannelEpg(channel)
                     }
                 }
@@ -2936,7 +2946,7 @@ fun main() {
                 }
                 val now = monotonicMs()
                 val span = ts.buffer.spanMs()
-                val event = if (target == null) bannerNowNext.first else backgroundEvent
+                val event = if (target == null) backgroundEvent ?: bannerNowNext.first else backgroundEvent
                 val options = mutableListOf<Pair<String, () -> Unit>>()
                 if (event != null && event.end > System.currentTimeMillis() / 1000) {
                     val beginWall = wallOf(event.begin)
@@ -3016,6 +3026,56 @@ fun main() {
 
             // ---------- Historia, bukiety, nagrania, log — akcje klawiszy i menu ----------
 
+            fun showListChannelEvent(
+                channel: Channel,
+                onBack: (() -> Unit)?,
+                onPlay: (() -> Unit)? = null,
+                isStillRelevant: () -> Boolean,
+            ) {
+                scope.launch {
+                    val events = loadEpg(channel)
+                    if (!isStillRelevant()) return@launch
+                    val now = Instant.now().epochSecond
+                    val current = events?.firstOrNull { it.begin <= now && it.end > now }
+                    val event = events?.let { currentOrNextEpgEvent(it, now) }
+                    val key = serviceKey(channel.ref)
+                    val background = backgroundBuffers.snapshot().firstOrNull { it.first == key }?.second
+                    val mainBuffer = timeshift?.takeIf {
+                        playingRecording == null && playingChannel?.let { playing -> serviceKey(playing.ref) == key } == true
+                    }
+                    val buffer = background?.session ?: mainBuffer
+                    val extraActions = if (buffer == null) emptyList() else {
+                        val active = activeRecordings[key]?.takeIf { it.session === buffer }
+                        val action: () -> Unit = {
+                            val stillAvailable = if (background != null) {
+                                backgroundBuffers.snapshot().any { it.first == key && it.second === background }
+                            } else timeshift === buffer && playingChannel?.let { serviceKey(it.ref) == key } == true
+                            if (!stillAvailable) {
+                                status = "Bufor kanału nie jest już dostępny."
+                            } else if (active != null && activeRecordings[key] === active) {
+                                stopLocalRecording(active)
+                            } else {
+                                pickRecording(background, current?.let { NowEvent(it.title, it.begin, it.end) })
+                            }
+                        }
+                        listOf((if (active != null) "Zatrzymaj nagrywanie" else "Nagraj z bufora") to action)
+                    }
+                    if (event != null) {
+                        showEvent(event, channel, onBack, extraActions, isStillRelevant, includeChannelEpg = true, onPlay = onPlay)
+                    } else if (extraActions.isNotEmpty()) {
+                        quickPick = QuickPick(
+                            title = channel.name,
+                            options = extraActions.map { it.first },
+                            selected = 0,
+                            body = if (events == null) status else "Brak EPG dla kanału ${channel.name}.",
+                            onBack = onBack,
+                        ) { extraActions[it].second() }
+                    } else if (events != null) {
+                        status = "Brak EPG dla kanału ${channel.name}."
+                    }
+                }
+            }
+
             /** Okno „Historia”: ostatnio oglądane kanały ze wszystkich bukietów; wybór przełącza też bukiet. */
             fun openHistory() {
                 val entries = ChannelHistory.parse(config.history)
@@ -3026,6 +3086,15 @@ fun main() {
                 val bouquetNames = catalog?.bouquets.orEmpty().associate { it.ref to it.name }
                 val current = playingChannel?.let { serviceKey(it.ref) }
                 val historyTag = "history-${java.util.UUID.randomUUID()}"
+                fun playHistory(entry: HistoryEntry) {
+                    val bouquet = catalog?.bouquets?.firstOrNull { it.ref == entry.bouquet }
+                    scope.launch {
+                        if (bouquet != null && selectedBouquet?.ref != bouquet.ref && !loadBouquetChannels(bouquet)) return@launch
+                        val channel = channels.firstOrNull { serviceKey(it.ref) == serviceKey(entry.ref) }
+                            ?: Channel(0, entry.name, entry.ref)
+                        startChannel(channel)
+                    }
+                }
                 quickPick = QuickPick(
                     title = "Historia kanałów",
                     options = entries.map { it.name },
@@ -3034,6 +3103,15 @@ fun main() {
                     iconChannels = entries.map { Channel(0, it.name, it.ref) },
                     iconStyle = piconStyle(config),
                     iconScale = config.uiListIcon / 100f,
+                    onLongSelect = { index ->
+                        val pick = quickPick
+                        val entry = entries.getOrNull(index)
+                        if (pick?.tag == historyTag && entry != null) {
+                            showListChannelEvent(Channel(0, entry.name, entry.ref), { quickPick = pick }, { playHistory(entry) }) {
+                                quickPick?.tag == historyTag && quickPick?.selected == index
+                            }
+                        }
+                    },
                     subtitles = entries.map { entry ->
                         listOfNotNull(
                             "oglądany".takeIf { serviceKey(entry.ref) == current },
@@ -3041,14 +3119,7 @@ fun main() {
                         ).joinToString(" · ").ifBlank { null }
                     },
                 ) { index ->
-                    val entry = entries[index]
-                    val bouquet = catalog?.bouquets?.firstOrNull { it.ref == entry.bouquet }
-                    scope.launch {
-                        if (bouquet != null && selectedBouquet?.ref != bouquet.ref) loadBouquetChannels(bouquet)
-                        val channel = channels.firstOrNull { serviceKey(it.ref) == serviceKey(entry.ref) }
-                            ?: Channel(0, entry.name, entry.ref)
-                        startChannel(channel)
-                    }
+                    playHistory(entries[index])
                 }
                 scope.launch {
                     val programmes = withContext(Dispatchers.IO) {
@@ -4631,16 +4702,36 @@ fun main() {
             val okPress = remember { OkPress() }
             var okLongJob by remember { mutableStateOf<Job?>(null) }
             var okReleaseJob by remember { mutableStateOf<Job?>(null) }
-            /** Długie OK ma znaczenie tylko podczas oglądania, bez otwartych okien. */
-            fun okHoldContext(): Boolean =
-                !showExitConfirmation && captureButton == null && !navigator.isVisible && !showMenu &&
-                    quickPick == null && !showChannelList && numberBuffer.isEmpty()
+            fun okHoldContext(): OkPressContext? {
+                if (showExitConfirmation || captureButton != null || navigator.isVisible || showMenu) return null
+                val pick = quickPick
+                if (pick != null) {
+                    if (pick.onLongSelect == null) return null
+                    return OkPressContext("quick-pick", pick.tag ?: pick.title, pick.selected)
+                }
+                if (showChannelList) {
+                    val channel = channels.getOrNull(channelListSelected) ?: return null
+                    if (channel.ref.startsWith(REC_PREFIX) || isRecordingsBouquet(selectedBouquet?.ref)) return null
+                    return OkPressContext("channel:${selectedBouquet?.ref.orEmpty()}", channel.ref, channelListSelected)
+                }
+                return if (numberBuffer.isEmpty()) OkPressContext("playback") else null
+            }
             fun okReleased() {
                 okReleaseJob?.cancel()
                 okLongJob?.cancel()
-                if (okPress.up()) {
+                if (okPress.up(okHoldContext())) {
                     lastVirtualKey = null
                     handleVirtualKey(VirtualRemoteKey.OK)
+                }
+            }
+            fun longOkForContext(context: OkPressContext) {
+                when {
+                    context.surface == "quick-pick" -> quickPick?.let { it.onLongSelect?.invoke(it.selected) }
+                    context.surface.startsWith("channel:") -> {
+                        val channel = channels.getOrNull(channelListSelected) ?: return
+                        showListChannelEvent(channel, null) { okHoldContext() == context }
+                    }
+                    else -> longOk()
                 }
             }
             /**
@@ -4648,12 +4739,16 @@ fun main() {
              * (WinLIRC podaje tylko powtórzenia) — brak kolejnego powtórzenia w tym czasie oznacza puszczenie.
              */
             fun okPressed(autoReleaseMs: Long = 0): Boolean {
-                if (!okPress.isDown && !okHoldContext()) return false
-                if (okPress.down(System.currentTimeMillis())) {
+                val context = okHoldContext()
+                if (!okPress.isDown && context == null) return false
+                if (okPress.down(System.currentTimeMillis(), context)) {
                     okLongJob?.cancel()
                     okLongJob = scope.launch {
                         delay(OK_LONG_MS)
-                        if (okPress.longDue(System.currentTimeMillis()) && okHoldContext()) longOk()
+                        val currentContext = okHoldContext()
+                        if (currentContext != null && okPress.longDue(System.currentTimeMillis(), currentContext)) {
+                            longOkForContext(currentContext)
+                        }
                     }
                 }
                 if (autoReleaseMs > 0) {

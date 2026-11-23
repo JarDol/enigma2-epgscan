@@ -690,6 +690,7 @@ internal data class QuickPick(
     val iconChannels: List<Channel> = emptyList(),
     val iconStyle: PiconStyle = PiconStyle.OFF,
     val iconScale: Float = 0.8f,
+    val onLongSelect: ((Int) -> Unit)? = null,
     val onSelect: (Int) -> Unit,
 )
 

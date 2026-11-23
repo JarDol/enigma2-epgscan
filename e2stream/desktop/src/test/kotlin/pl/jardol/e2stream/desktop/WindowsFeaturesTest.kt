@@ -44,6 +44,17 @@ class WindowsFeaturesTest {
     }
 
     @Test
+    fun longOkEventPrefersCurrentAndFallsBackToNext() {
+        val past = EpgEvent(1, 100, 50, "Past", "", "", "ref", "")
+        val current = past.copy(id = 2, begin = 150, duration = 50, title = "Current")
+        val next = past.copy(id = 3, begin = 200, duration = 50, title = "Next")
+        val events = listOf(past, current, next)
+        assertEquals(current, currentOrNextEpgEvent(events, 175))
+        assertEquals(next, currentOrNextEpgEvent(listOf(past, next), 175))
+        assertNull(currentOrNextEpgEvent(events, 250))
+    }
+
+    @Test
     fun historyProgrammeUpdatePreservesSelectionAndIgnoresOldWindows() {
         val pick = QuickPick(
             title = "Historia kanałów",
