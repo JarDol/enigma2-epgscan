@@ -1,6 +1,7 @@
 package pl.jardol.e2stream.desktop
 
 import com.sun.jna.Native
+import com.sun.jna.Pointer
 import com.sun.jna.platform.win32.User32
 import com.sun.jna.platform.win32.WinDef
 import com.sun.jna.platform.win32.WinUser
@@ -131,6 +132,50 @@ class RawHidInputTest {
         }
         assertNotNull(listener.get(), failure.get()?.toString())
         assertEquals(null, failure.get())
+    }
+
+    @Test
+    fun keyboardPowerMappingDoesNotActivateInBackground() {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        val activated = CountDownLatch(1)
+        val delivered = CountDownLatch(1)
+        val errors = AtomicReference("")
+        val guard = KeyboardHook(WinUser.LowLevelKeyboardProc { code, wParam, data ->
+            if (code >= 0 && data.vkCode == 0x87) {
+                if (wParam.toInt() == 0x100) delivered.countDown()
+                WinDef.LRESULT(1)
+            } else User32.INSTANCE.CallNextHookEx(null, code, wParam, WinDef.LPARAM(Pointer.nativeValue(data.pointer)))
+        }) { errors.set(it) }
+        val key = UniversalRemoteMap.keyId(0x87)
+        val listener = RawHidInput(
+            isApplicationFocused = { false },
+            isForeground = { false },
+            onKey = { _, _ -> },
+            onError = { errors.set(it) },
+            onDiagnostic = {},
+            suppressBrowserKeys = { false },
+            isPowerKey = { id ->
+                UniversalRemoteMap.isPowerOrActivationKey(id, false, setOf(key), setOf(key), true, emptySet())
+            },
+            onPower = { activated.countDown() },
+        )
+        try {
+            for (flags in listOf(0, 2)) {
+                val input = WinUser.INPUT().apply {
+                    type = WinDef.DWORD(WinUser.INPUT.INPUT_KEYBOARD.toLong())
+                    input.setType(WinUser.KEYBDINPUT::class.java)
+                    input.ki.wVk = WinDef.WORD(0x87)
+                    input.ki.dwFlags = WinDef.DWORD(flags.toLong())
+                }
+                assertEquals(1, User32.INSTANCE.SendInput(WinDef.DWORD(1), arrayOf(input), input.size()).toInt())
+            }
+            assertTrue(delivered.await(3, TimeUnit.SECONDS), "Key did not reach the guard")
+            assertFalse(activated.await(500, TimeUnit.MILLISECONDS), "Keyboard key activated E2Stream")
+            assertEquals("", errors.get())
+        } finally {
+            listener.close()
+            guard.close()
+        }
     }
 
     @Test

@@ -189,9 +189,13 @@ key or a button on a connected HID remote. HID reports are handled only while
 an E2Stream window is focused; they are not translated into system-wide
 keystrokes. Test with the specific remote because HID report formats vary by
 device. Power can be mapped like any other button. While E2Stream is running,
-the assigned Power key is monitored globally: it activates the app if another
-window is active, or asks to close E2Stream if it is already active. Mapping a
-keyboard key as Power makes that key global, even in other applications. No
+the assigned HID or IR Power button is monitored globally: it activates the app
+if another window is active, or asks to close E2Stream if it is already active.
+Keyboard keys, including remotes that send ordinary keyboard keys, work only
+while E2Stream is active. When activation by any remote button is enabled,
+IR buttons and HID reports from a collection with at least one mapped button
+can bring the window forward; unrelated HID devices cannot. Map a button from
+each HID collection used by a remote to enable activation from that collection. No
 separate background service is installed, so Power cannot start E2Stream after
 the app has closed. In the confirmation window, remote OK closes the app and
 Back cancels; Enter and Escape work on a keyboard. A second launch also signals
@@ -203,7 +207,8 @@ Odbieraj klawisze z WinLIRC / LIRC** and set the host and port (default
 `127.0.0.1:8765`, the WinLIRC default). WinLIRC must be running. Received
 buttons appear in **Test pilota** and can be mapped like other keys. A button
 mapped to Power works even when E2Stream is in the background; other buttons
-are handled only while an E2Stream window is active. The client reconnects
+can activate the window when the option described above is enabled, and are
+handled normally while an E2Stream window is active. The client reconnects
 every 5 seconds if WinLIRC is unavailable.
 Newly connected HID devices are registered as needed without repeatedly
 re-registering usages already monitored by the receiver.

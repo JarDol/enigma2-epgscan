@@ -3,6 +3,8 @@ package pl.jardol.e2stream.desktop
 import java.awt.event.KeyEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class UniversalRemoteTest {
     @Test
@@ -59,5 +61,30 @@ class UniversalRemoteTest {
         assertEquals(setOf(id), moved[VirtualRemoteKey.ACTIVATE])
         assertEquals(emptySet(), moved[VirtualRemoteKey.POWER])
         assertEquals("Pilot HID · 20", UniversalRemoteMap.label(id))
+    }
+
+    @Test
+    fun backgroundActivationAcceptsOnlyConfiguredHidCollectionsAndIr() {
+        val mapped = UniversalRemoteMap.hidId("remote", byteArrayOf(1))
+        val anotherButton = UniversalRemoteMap.hidId("remote", byteArrayOf(2))
+        val keyboardHid = UniversalRemoteMap.hidId("keyboard", byteArrayOf(2))
+        val bindings = UniversalRemoteMap.assign(UniversalRemoteMap.defaults, VirtualRemoteKey.OK, mapped)
+        val devices = UniversalRemoteMap.configuredHidDevices(bindings)
+        assertTrue(UniversalRemoteMap.activatesFromBackground(anotherButton, emptySet(), true, devices))
+        assertFalse(UniversalRemoteMap.activatesFromBackground(keyboardHid, emptySet(), true, devices))
+        assertFalse(UniversalRemoteMap.activatesFromBackground(anotherButton, emptySet(), false, devices))
+        assertTrue(UniversalRemoteMap.activatesFromBackground(keyboardHid, setOf(keyboardHid), false, devices))
+        assertTrue(UniversalRemoteMap.activatesFromBackground("L:remote:OK", emptySet(), true, devices))
+        assertFalse(UniversalRemoteMap.activatesFromBackground("L:remote:OK", emptySet(), false, devices))
+    }
+
+    @Test
+    fun keyboardCannotActivateInBackgroundEvenWhenExplicitlyAssigned() {
+        val keyboardKey = UniversalRemoteMap.keyId(KeyEvent.VK_S)
+        assertFalse(UniversalRemoteMap.activatesFromBackground(keyboardKey, setOf(keyboardKey), true, emptySet()))
+        assertFalse(UniversalRemoteMap.isPowerOrActivationKey(keyboardKey, false, setOf(keyboardKey), setOf(keyboardKey), true, emptySet()))
+        assertTrue(UniversalRemoteMap.isPowerOrActivationKey(keyboardKey, true, setOf(keyboardKey), emptySet(), true, emptySet()))
+        val hid = UniversalRemoteMap.hidId("remote", byteArrayOf(1))
+        assertTrue(UniversalRemoteMap.isPowerOrActivationKey(hid, false, setOf(hid), emptySet(), false, emptySet()))
     }
 }

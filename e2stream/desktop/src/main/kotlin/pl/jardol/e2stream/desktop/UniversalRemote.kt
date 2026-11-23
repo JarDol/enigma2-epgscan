@@ -102,6 +102,33 @@ object UniversalRemoteMap {
         return "H:$device:$bytes"
     }
 
+    fun configuredHidDevices(bindings: Map<VirtualRemoteKey, Set<String>>): Set<String> =
+        bindings.values.flatten().filter { it.startsWith("H:") }.map { it.substringBeforeLast(':') }.toSet()
+
+    fun activatesFromBackground(
+        id: String,
+        activateKeys: Set<String>,
+        activateAnyRemoteKey: Boolean,
+        hidDevices: Set<String>,
+    ): Boolean {
+        if (id.startsWith("K:")) return false
+        if (id in activateKeys) return true
+        return activateAnyRemoteKey && (
+            id.startsWith("L:") || id.startsWith("H:") && id.substringBeforeLast(':') in hidDevices
+        )
+    }
+
+    fun isPowerOrActivationKey(
+        id: String,
+        foreground: Boolean,
+        powerKeys: Set<String>,
+        activateKeys: Set<String>,
+        activateAnyRemoteKey: Boolean,
+        hidDevices: Set<String>,
+    ): Boolean =
+        id in powerKeys && (!id.startsWith("K:") || foreground) ||
+            !foreground && activatesFromBackground(id, activateKeys, activateAnyRemoteKey, hidDevices)
+
     fun label(id: String): String = when {
         id.startsWith("K:") -> id.substringAfter(':').toIntOrNull()?.let(RemoteKeyMap::keyName) ?: id
         id.startsWith("H:") -> "Pilot HID · " + id.substringAfterLast(':').chunked(2).dropLastWhile { it == "00" }

@@ -178,10 +178,12 @@ fun main() {
             val suppressBrowserKeys = remember { AtomicBoolean(false) }
             val globalPowerKeys = remember { AtomicReference<Set<String>>(emptySet()) }
             val globalActivateKeys = remember { AtomicReference<Set<String>>(emptySet()) }
+            val configuredHidDevices = remember { AtomicReference<Set<String>>(emptySet()) }
             val activateAnyKey = remember { AtomicBoolean(true) }
-            /** Klawisz przywołujący okno z tła: przypisany do „Aktywuj okno” albo dowolny klawisz pilota HID / IR. */
             fun activatesFromBackground(id: String): Boolean =
-                id in globalActivateKeys.get() || (activateAnyKey.get() && (id.startsWith("H:") || id.startsWith("L:")))
+                UniversalRemoteMap.activatesFromBackground(
+                    id, globalActivateKeys.get(), activateAnyKey.get(), configuredHidDevices.get(),
+                )
             val powerDialogOpen = remember { AtomicBoolean(false) }
             var showExitConfirmation by remember { mutableStateOf(false) }
             val bindings = remember { RemoteKeyMap.defaults + RemoteKeyMap.parse(config.remoteBindings) }
@@ -256,6 +258,7 @@ fun main() {
                 )
                 globalPowerKeys.set(if (captureButton == null) universalBindings[VirtualRemoteKey.POWER].orEmpty() else emptySet())
                 globalActivateKeys.set(if (captureButton == null) universalBindings[VirtualRemoteKey.ACTIVATE].orEmpty() else emptySet())
+                configuredHidDevices.set(UniversalRemoteMap.configuredHidDevices(universalBindings))
                 activateAnyKey.set(captureButton == null && config.activateAnyRemoteKey)
                 captureActive.set(captureButton != null)
                 systemKeysMode.set(config.systemKeys)
@@ -3373,7 +3376,7 @@ fun main() {
                 val summary = assigned.joinToString(", ") { UniversalRemoteMap.label(it) }.ifEmpty { "— brak —" }
                 return SettingItem.Action(
                     key.label,
-                    if (key == VirtualRemoteKey.POWER) "działa globalnie • $summary" else summary,
+                    if (key == VirtualRemoteKey.POWER) "pilot HID / IR działa globalnie • $summary" else summary,
                 ) {
                     val options = listOf("Dodaj klawisz (naciśnij go na pilocie)") +
                         assigned.map { "Usuń: ${UniversalRemoteMap.label(it)}" }
@@ -4095,12 +4098,12 @@ fun main() {
                     SettingItem.Toggle(
                         "Aktywuj okno dowolnym klawiszem pilota",
                         config.activateAnyRemoteKey,
-                        "gdy E2Stream jest w tle, pierwsze naciśnięcie klawisza pilota HID / IR przywołuje okno; potem klawisze działają zwykle",
+                        "w tle klawisz pilota IR lub przypisanego urządzenia HID przywołuje okno; klawiatura działa tylko w aktywnym oknie",
                     ) { saveConfig(config.copy(activateAnyRemoteKey = it)) },
                     (remoteKeyItem(VirtualRemoteKey.ACTIVATE) as SettingItem.Action).let { item ->
                         SettingItem.Action(
                             "Aktywuj okno klawiszem",
-                            "dodatkowe klawisze (np. klawiatury albo pilota-klawiatury); nie zmienia ich zwykłej funkcji • ${item.summary}",
+                            "dodatkowe przyciski pilota HID / IR; nie zmienia ich zwykłej funkcji • ${item.summary}",
                             item.onClick,
                         )
                     },
@@ -4988,7 +4991,12 @@ fun main() {
                         onDiagnostic = hidDiagnosticDispatcher::submit,
                         suppressBrowserKeys = { suppressBrowserKeys.get() },
                         // „Aktywuj okno” działa globalnie tylko w tle; na wierzchu klawisz ma zwykłe znaczenie.
-                        isPowerKey = { it in globalPowerKeys.get() || (!isForegroundApplication() && activatesFromBackground(it)) },
+                        isPowerKey = {
+                            UniversalRemoteMap.isPowerOrActivationKey(
+                                it, isForegroundApplication(), globalPowerKeys.get(), globalActivateKeys.get(),
+                                activateAnyKey.get(), configuredHidDevices.get(),
+                            )
+                        },
                         onPower = { id -> if (id in globalPowerKeys.get()) currentRequestPower.value() else requestActivate() },
                         interceptKey = intercept@{ physicalId, down ->
                             val volumeKey = physicalId in setOf("K:173", "K:174", "K:175")

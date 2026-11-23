@@ -126,7 +126,7 @@ data class DesktopConfig(
     val lastUpdateCheck: Long = 0,
     /** Najdłuższe nagranie z timeshiftu (godziny, 1–6). */
     val recMaxH: Int = 3,
-    /** Gdy E2Stream jest w tle, dowolny klawisz pilota HID / IR przywołuje okno (pierwsze naciśnięcie). */
+    /** W tle klawisz przypisanego urządzenia HID lub pilota IR przywołuje okno. */
     val activateAnyRemoteKey: Boolean = true,
     /** Synchronizacja ustawień i danych kanałów z dekoderem (wtyczka EPG Scan), jak w Androidzie. */
     val channelSync: Boolean = true,
