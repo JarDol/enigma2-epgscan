@@ -26,6 +26,7 @@ class DesktopConfigTest {
             audioLang = "pl,en",
             uiListFont = 120,
             uiBannerFont = 80,
+            showRecordingIndicator = false,
             hiddenBouquets = setOf("1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.radio.tv\""),
             resumeLast = false,
             lastBouquetRef = "last-bouquet",

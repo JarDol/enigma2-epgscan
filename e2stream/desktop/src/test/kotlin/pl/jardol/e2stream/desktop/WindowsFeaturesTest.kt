@@ -22,6 +22,33 @@ class WindowsFeaturesTest {
     }
 
     @Test
+    fun historyPrioritizesBuffersThenPipAndRetainsViewingOrder() {
+        val entries = listOf(
+            HistoryEntry("1:0:1:A:", "Oglądany", "b1"),
+            HistoryEntry("1:0:1:C:", "Stary", "b2"),
+            HistoryEntry("1:0:1:B:", "Buforowany", "b1"),
+            HistoryEntry("1:0:1:D:", "PiP wcześniej", "b3"),
+        )
+        val result = ChannelHistory.addPip(
+            ChannelHistory.encode(entries),
+            HistoryEntry("1:0:1:d", "PiP", "b4"),
+        )
+        val history = ChannelHistory.parse(result)
+        assertEquals(listOf("Oglądany", "Stary", "Buforowany", "PiP"), history.map { it.name })
+        assertEquals("b4", history.last().bouquet)
+        val pip = setOf(serviceKey(history.last().ref))
+        val buffered = setOf(serviceKey(entries[0].ref), serviceKey(entries[2].ref))
+        assertEquals(listOf("Oglądany", "Buforowany", "PiP", "Stary"),
+            ChannelHistory.ordered(history, buffered, pip).map { it.name })
+        assertEquals(listOf("Oglądany", "PiP", "Stary", "Buforowany"),
+            ChannelHistory.ordered(history, setOf(serviceKey(entries[0].ref)), pip).map { it.name })
+        assertEquals(listOf("Oglądany", "Stary", "Buforowany", "PiP"),
+            ChannelHistory.ordered(history, emptySet(), emptySet()).map { it.name })
+        val added = ChannelHistory.parse(ChannelHistory.addPip(result, HistoryEntry("1:0:1:E:", "Nowy PiP", "b1")))
+        assertEquals("Nowy PiP", added.last().name)
+    }
+
+    @Test
     fun historyShowsOnlyCurrentLocallyCachedProgramme() {
         val dir = createTempDirectory("history-epg").toFile()
         try {
@@ -136,13 +163,26 @@ class WindowsFeaturesTest {
     fun bufferBannerShowsSpanAndDelay() {
         assertEquals("B 12:34", bufferBannerText(754_000, 500))
         assertEquals("B 12:34 · −1:05", bufferBannerText(754_000, 65_000))
+        assertEquals("B 12:34 · tło 2/3", bufferBannerText(754_000, 500, 2, 3))
+        assertEquals("B 12:34 · tło 2/3 (nagr. 1)", bufferBannerText(754_000, 500, 2, 3, 1))
+        assertEquals("tło 2/3 (nagr. 2)", bufferBannerText(null, 0, 2, 3, 2))
+        assertNull(bufferBannerText(null, 0))
     }
 
     @Test
     fun channelPlaybackBadgesPrioritizePictureInPictureAndMarkRecording() {
-        assertEquals("  B", channelPlaybackBadge(buffered = true, pip = false))
-        assertEquals("  PiP", channelPlaybackBadge(buffered = true, pip = true))
-        assertEquals("  ● PiP", channelPlaybackBadge(buffered = true, pip = true, recording = true))
-        assertEquals("", channelPlaybackBadge(buffered = false, pip = false))
+        assertEquals("B", channelPlaybackBadge(buffered = true, pipNumber = null)?.text)
+        assertEquals("PiP 2", channelPlaybackBadge(buffered = true, pipNumber = 2)?.text)
+        assertEquals("● PiP 2", channelPlaybackBadge(buffered = true, pipNumber = 2, recording = true)?.text)
+        assertEquals(null, channelPlaybackBadge(buffered = false, pipNumber = null))
+    }
+
+    @Test
+    fun channelPipActionFollowsCurrentState() {
+        assertEquals(ChannelPipAction.ADD, channelPipAction(enabled = true, current = false, inPip = false))
+        assertEquals(ChannelPipAction.CLOSE, channelPipAction(enabled = true, current = false, inPip = true))
+        assertEquals(ChannelPipAction.CLOSE, channelPipAction(enabled = false, current = false, inPip = true))
+        assertNull(channelPipAction(enabled = true, current = true, inPip = false))
+        assertNull(channelPipAction(enabled = false, current = false, inPip = false))
     }
 }

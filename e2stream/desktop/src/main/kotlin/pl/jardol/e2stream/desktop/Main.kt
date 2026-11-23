@@ -164,6 +164,10 @@ fun main() {
             var showMenu by navigation::showMenu
             var channelListSelected by remember { mutableIntStateOf(0) }
             var captureButton by remember { mutableStateOf<VirtualRemoteKey?>(null) }
+            var captureActivation by remember { mutableStateOf(false) }
+            val captureActivationInput = remember { AtomicBoolean(false) }
+            val activationBindings = remember { AtomicReference<Set<Set<String>>>(emptySet()) }
+            val activationTracker = remember { ActivationKeyTracker() }
             var hidDiagnostic by remember { mutableStateOf("Oczekiwanie na uruchomienie odbiornika HID.") }
             var lircState by remember { mutableStateOf("wyłączony") }
             var piconsBusy by remember { mutableStateOf(false) }
@@ -216,7 +220,8 @@ fun main() {
                     playingChannel?.let { add(serviceKey(it.ref)) }
                 }
             }
-            fun pipChannelKeys(): Set<String> = pipWindows.mapTo(linkedSetOf()) { serviceKey(it.channel.ref) }
+            fun pipChannelNumbers(): Map<String, Int> =
+                pipWindows.mapIndexed { index, background -> serviceKey(background.channel.ref) to index + 1 }.toMap()
             var pipPicking by remember { mutableStateOf(false) }
             var quickPick by remember { mutableStateOf<QuickPick?>(null) }
             var tsPendingTarget by remember { mutableStateOf<Long?>(null) }
@@ -271,6 +276,7 @@ fun main() {
                 configuredHidDevices.set(UniversalRemoteMap.configuredHidDevices(universalBindings))
                 activateAnyKey.set(captureButton == null && config.activateAnyRemoteKey)
                 captureActive.set(captureButton != null)
+                captureActivationInput.set(captureActivation)
                 systemKeysMode.set(config.systemKeys)
                 volumeKeyIds.set(
                     if (!config.volumeKeysApp) emptySet()
@@ -283,6 +289,17 @@ fun main() {
                         .filterKeys { key -> universalBindings[key].orEmpty().any { it.startsWith("H:") } }
                         .values.toSet(),
                 )
+            }
+            LaunchedEffect(config.activationKeys) {
+                try {
+                    activationBindings.set(ActivationKeys.parse(config.activationKeys))
+                } catch (e: IllegalArgumentException) {
+                    activationBindings.set(emptySet())
+                    status = "Nieprawidłowa konfiguracja aktywacji okna: ${e.message}"
+                } catch (e: org.json.JSONException) {
+                    activationBindings.set(emptySet())
+                    status = "Nieprawidłowa konfiguracja aktywacji okna: ${e.message}"
+                }
             }
 
             DisposableEffect(vlcSession != null) {
@@ -430,6 +447,15 @@ fun main() {
                     delay(10_000)
                     captureButton = null
                     status = "Nie naciśnięto klawisza — przypisywanie anulowane."
+                }
+            }
+            LaunchedEffect(captureActivation) {
+                if (captureActivation) {
+                    delay(10_000)
+                    captureActivation = false
+                    captureActivationInput.set(false)
+                    activationTracker.resetCapture()
+                    status = "Nie naciśnięto przycisku — przypisywanie anulowane."
                 }
             }
 
@@ -749,7 +775,7 @@ fun main() {
                 bannerNowNext = cur?.asNow() to next?.asNow()
             }
 
-            fun startChannel(channel: Channel, keepOldForPip: Boolean = false) {
+            fun startChannel(channel: Channel, keepOldForPip: Boolean = false, onStarted: (() -> Unit)? = null) {
                 val oldTs = timeshift
                 val oldPlaying = playingChannel
                 if (oldTs != null && oldPlaying != null && serviceKey(oldPlaying.ref) != serviceKey(channel.ref) &&
@@ -762,7 +788,7 @@ fun main() {
                             try {
                                 withContext(Dispatchers.IO) { oldTs.buffer.stopRecording("zmiana kanału") }
                                 if (timeshift === oldTs && playingChannel?.ref == oldPlaying.ref) {
-                                    startChannel(channel, keepOldForPip)
+                                    startChannel(channel, keepOldForPip, onStarted)
                                 }
                             } catch (e: CancellationException) {
                                 throw e
@@ -869,6 +895,7 @@ fun main() {
                             ),
                         ),
                     )
+                    onStarted?.invoke()
                 } catch (e: Exception) {
                     if (resumed != null && resumed !== timeshift) closeBuffer(resumed)
                     closeTimeshift(preserveRecording = true)
@@ -881,7 +908,7 @@ fun main() {
                 backgroundBuffers.trim(backgroundLimit()).forEach(::closeBackground)
             }
 
-            fun addPipChannel(channel: Channel) {
+            fun addPipChannel(channel: Channel, position: Int? = null, bouquetRef: String? = null) {
                 if (!config.pipEnabled || config.tsMin <= 0 || (timeshift == null && playingRecording == null)) {
                     status = "PiP wymaga włączonego timeshiftu i odtwarzania."
                     return
@@ -945,9 +972,18 @@ fun main() {
                     player = createdPlayer
                     createdPlayer.frames.frameLimit = 480 to 270
                     target.pip = createdPlayer
-                    pipWindows = pipWindows + target
+                    pipWindows = pipWindows.toMutableList().apply {
+                        add((position ?: size).coerceIn(0, size), target)
+                    }
                     if (created) backgroundBuffers.park(key, target, backgroundLimit()).forEach(::closeBackground)
                     createdPlayer.startLabel = "PiP ${channel.name}"
+                    val previousEntry = ChannelHistory.parse(config.history).firstOrNull { serviceKey(it.ref) == key }
+                    val bouquet = bouquetRef?.takeIf { it.isNotBlank() && !isRecordingsBouquet(it) }
+                        ?: if (created) selectedBouquet?.ref?.takeIf { !isRecordingsBouquet(it) } else previousEntry?.bouquet
+                    saveConfig(config.copy(history = ChannelHistory.addPip(
+                        config.history,
+                        HistoryEntry(channel.ref, channel.name, bouquet ?: previousEntry?.bouquet ?: config.lastBouquetRef),
+                    )))
                 } catch (e: Exception) {
                     if (target.pip != null) closePipPlayer(target) else player?.close()
                     if (created) {
@@ -999,9 +1035,17 @@ fun main() {
                     status = "Zamiana PiP jest dostępna podczas oglądania kanału."
                     return
                 }
-                closePipPlayer(background)
-                startChannel(background.channel, keepOldForPip = true)
-                if (playingChannel?.let { serviceKey(it.ref) } == serviceKey(background.channel.ref)) addPipChannel(previous)
+                val position = pipWindows.indexOf(background)
+                if (position < 0) return
+                startChannel(background.channel, keepOldForPip = true) {
+                    addPipChannel(previous, position)
+                }
+            }
+
+            fun selectChannel(channel: Channel) {
+                val pip = pipWindows.firstOrNull { serviceKey(it.channel.ref) == serviceKey(channel.ref) }
+                if (pip != null && playingChannel != null && playingRecording == null) swapPip(pip)
+                else startChannel(channel)
             }
 
             val localRecordingServer = remember { LocalRecordingServer { LocalRecordings.root(config) } }
@@ -1052,7 +1096,7 @@ fun main() {
             fun restartPlayback() {
                 val channel = playingChannel ?: return
                 vlcSession = null
-                startChannel(channel)
+                selectChannel(channel)
             }
 
             suspend fun loadRecordings(dir: String, select: String? = null): Boolean {
@@ -1175,7 +1219,7 @@ fun main() {
                         startFromSettings -> channels.firstOrNull { it.ref == config.startChannelRef } ?: channels.firstOrNull()
                         else -> channels.firstOrNull()
                     }
-                    target?.let { startChannel(it) }
+                    target?.let { selectChannel(it) }
                 }
             }
 
@@ -1498,7 +1542,7 @@ fun main() {
                 val current = list.indexOfFirst { it.ref == anchor.ref }
                 if (current < 0 || list.isEmpty()) return false
                 val next = (current + offset).mod(list.size)
-                startChannel(list[next])
+                selectChannel(list[next])
                 return true
             }
 
@@ -1583,7 +1627,7 @@ fun main() {
                     }
                 } else {
                     showChannelList = false
-                    startChannel(row)
+                    selectChannel(row)
                 }
             }
 
@@ -1888,7 +1932,7 @@ fun main() {
                         val channel = playingChannel
                         when {
                             recording != null -> playRecording(recording)
-                            channel != null -> startChannel(channel)
+                            channel != null -> selectChannel(channel)
                         }
                     }
                 }
@@ -1926,7 +1970,7 @@ fun main() {
 
             fun recall() {
                 val previous = previousChannel
-                if (previous == null) status = "Brak poprzedniego kanału." else startChannel(previous)
+                if (previous == null) status = "Brak poprzedniego kanału." else selectChannel(previous)
             }
 
             fun unavailable(feature: String) {
@@ -2089,7 +2133,7 @@ fun main() {
                 scope.launch { withContext(Dispatchers.IO) { zapStore.complete(timer, ZapOutcome.SWITCHED) } }
                 val channel = channels.firstOrNull { serviceKey(it.ref) == serviceKey(timer.ref) } ?: Channel(0, timer.channel, timer.ref)
                 showChannelList = false
-                startChannel(channel)
+                selectChannel(channel)
                 status = "Przełączono wg harmonogramu: ${timer.channel} — ${timer.title}"
             }
 
@@ -2379,7 +2423,7 @@ fun main() {
                                 } else {
                                     confirmEpgAction("Przełączyć kanał?", channel.name, "Przełącz", reopen) {
                                         showChannelList = false
-                                        if (onPlay != null) onPlay() else startChannel(channel)
+                                        if (onPlay != null) onPlay() else selectChannel(channel)
                                     }
                                 }
                             },
@@ -3070,6 +3114,7 @@ fun main() {
                 channel: Channel,
                 onBack: (() -> Unit)?,
                 onPlay: (() -> Unit)? = null,
+                historyBouquet: String? = null,
                 isStillRelevant: () -> Boolean,
             ) {
                 scope.launch {
@@ -3084,7 +3129,7 @@ fun main() {
                         playingRecording == null && playingChannel?.let { playing -> serviceKey(playing.ref) == key } == true
                     }
                     val buffer = background?.session ?: mainBuffer
-                    val extraActions = if (buffer == null) emptyList() else {
+                    val extraActions = (if (buffer == null) emptyList() else {
                         val active = activeRecordings[key]?.takeIf { it.session === buffer }
                         val action: () -> Unit = {
                             val stillAvailable = if (background != null) {
@@ -3099,7 +3144,25 @@ fun main() {
                             }
                         }
                         listOf((if (active != null) "Zatrzymaj nagrywanie" else "Nagraj z bufora") to action)
-                    }
+                    }) + listOfNotNull(
+                        channelPipAction(
+                            config.pipEnabled,
+                            playingRecording == null && playingChannel?.let { serviceKey(it.ref) == key } == true,
+                            pipWindows.any { serviceKey(it.channel.ref) == key },
+                        )?.let { action ->
+                            (if (action == ChannelPipAction.ADD) "PiP Dodaj" else "PiP Zamknij") to {
+                                val pip = pipWindows.firstOrNull { serviceKey(it.channel.ref) == key }
+                                if (action == ChannelPipAction.CLOSE) {
+                                    if (pip == null) status = "Kanał nie jest już w PiP." else closePip(pip)
+                                } else {
+                                    if (pip != null) status = "Kanał jest już w PiP."
+                                    else addPipChannel(channel, bouquetRef = historyBouquet)
+                                }
+                                onBack?.invoke()
+                                Unit
+                            }
+                        },
+                    )
                     if (event != null) {
                         showEvent(event, channel, onBack, extraActions, isStillRelevant, includeChannelEpg = true, onPlay = onPlay)
                     } else if (extraActions.isNotEmpty()) {
@@ -3117,16 +3180,16 @@ fun main() {
             }
 
             /** Okno „Historia”: ostatnio oglądane kanały ze wszystkich bukietów; wybór przełącza też bukiet. */
-            fun openHistory() {
-                val entries = ChannelHistory.parse(config.history)
+            fun openHistory(selectedRef: String? = null) {
+                val buffered = bufferedChannelKeys()
+                val pip = pipChannelNumbers()
+                var entries = ChannelHistory.ordered(ChannelHistory.parse(config.history), buffered, pip.keys)
                 if (entries.isEmpty()) {
                     status = "Historia kanałów jest pusta."
                     return
                 }
                 val bouquetNames = catalog?.bouquets.orEmpty().associate { it.ref to it.name }
                 val current = playingChannel?.let { serviceKey(it.ref) }
-                val buffered = bufferedChannelKeys()
-                val pip = pipChannelKeys()
                 val historyTag = "history-${java.util.UUID.randomUUID()}"
                 fun playHistory(entry: HistoryEntry) {
                     val bouquet = catalog?.bouquets?.firstOrNull { it.ref == entry.bouquet }
@@ -3134,23 +3197,31 @@ fun main() {
                         if (bouquet != null && selectedBouquet?.ref != bouquet.ref && !loadBouquetChannels(bouquet)) return@launch
                         val channel = channels.firstOrNull { serviceKey(it.ref) == serviceKey(entry.ref) }
                             ?: Channel(0, entry.name, entry.ref)
-                        startChannel(channel)
+                        selectChannel(channel)
                     }
                 }
                 quickPick = QuickPick(
                     title = "Historia kanałów",
                     options = entries.map { it.name },
-                    selected = 0,
+                    selected = entries.indexOfFirst { serviceKey(it.ref) == selectedRef?.let(::serviceKey) }
+                        .coerceAtLeast(0),
                     tag = historyTag,
                     translucentBackground = true,
                     iconChannels = entries.map { Channel(0, it.name, it.ref) },
                     iconStyle = piconStyle(config),
                     iconScale = config.uiListIcon / 100f,
+                    badges = entries.map { entry ->
+                        val key = serviceKey(entry.ref)
+                        channelPlaybackBadge(key in buffered, pip[key], key in activeRecordings)
+                    },
                     onLongSelect = { index ->
                         val pick = quickPick
                         val entry = entries.getOrNull(index)
                         if (pick?.tag == historyTag && entry != null) {
-                            showListChannelEvent(Channel(0, entry.name, entry.ref), { quickPick = pick }, { playHistory(entry) }) {
+                            showListChannelEvent(
+                                Channel(0, entry.name, entry.ref), { openHistory(entry.ref) },
+                                { playHistory(entry) }, historyBouquet = entry.bouquet,
+                            ) {
                                 quickPick?.tag == historyTag && quickPick?.selected == index
                             }
                         }
@@ -3159,21 +3230,53 @@ fun main() {
                         listOfNotNull(
                             "oglądany".takeIf { serviceKey(entry.ref) == current },
                             bouquetNames[entry.bouquet],
-                            channelPlaybackBadge(
-                                buffered = serviceKey(entry.ref) in buffered,
-                                pip = serviceKey(entry.ref) in pip,
-                            ).trim().ifBlank { null },
                         ).joinToString(" · ").ifBlank { null }
                     },
                 ) { index ->
                     playHistory(entries[index])
                 }
                 scope.launch {
+                    val loadedEntries = entries.toList()
                     val programmes = withContext(Dispatchers.IO) {
                         val now = Instant.now().epochSecond
-                        entries.map { entry -> historyProgramme(epgRepo.nowNext(entry.ref, now).first) }
+                        loadedEntries.map { entry -> historyProgramme(epgRepo.nowNext(entry.ref, now).first) }
                     }
-                    quickPick = updateHistoryProgrammes(quickPick, historyTag, programmes)
+                    val byKey = loadedEntries.mapIndexed { index, entry -> serviceKey(entry.ref) to programmes[index] }.toMap()
+                    quickPick = updateHistoryProgrammes(quickPick, historyTag, entries.map { byKey[serviceKey(it.ref)] })
+                }
+                scope.launch {
+                    while (quickPick?.tag == historyTag) {
+                        delay(500)
+                        val pick = quickPick?.takeIf { it.tag == historyTag } ?: break
+                        val liveBuffered = bufferedChannelKeys()
+                        val livePip = pipChannelNumbers()
+                        val liveEntries = ChannelHistory.ordered(ChannelHistory.parse(config.history), liveBuffered, livePip.keys)
+                        if (liveEntries.isEmpty()) break
+                        val selectedKey = entries.getOrNull(pick.selected)?.let { serviceKey(it.ref) }
+                        val details = entries.mapIndexed { index, entry ->
+                            serviceKey(entry.ref) to pick.details.getOrNull(index)
+                        }.toMap()
+                        val liveCurrent = playingChannel?.let { serviceKey(it.ref) }
+                        val updated = pick.copy(
+                            options = liveEntries.map { it.name },
+                            selected = liveEntries.indexOfFirst { serviceKey(it.ref) == selectedKey }
+                                .takeIf { it >= 0 } ?: pick.selected.coerceIn(liveEntries.indices),
+                            iconChannels = liveEntries.map { Channel(0, it.name, it.ref) },
+                            badges = liveEntries.map { entry ->
+                                val key = serviceKey(entry.ref)
+                                channelPlaybackBadge(key in liveBuffered, livePip[key], key in activeRecordings)
+                            },
+                            subtitles = liveEntries.map { entry ->
+                                listOfNotNull(
+                                    "oglądany".takeIf { serviceKey(entry.ref) == liveCurrent },
+                                    bouquetNames[entry.bouquet],
+                                ).joinToString(" · ").ifBlank { null }
+                            },
+                            details = if (pick.details.isEmpty()) emptyList() else liveEntries.map { details[serviceKey(it.ref)] },
+                        )
+                        entries = liveEntries
+                        if (updated != pick) quickPick = updated
+                    }
                 }
             }
 
@@ -3857,6 +3960,9 @@ fun main() {
                     SettingItem.Header("Pasek kanału"),
                     percentItem("Czcionka paska kanału", config.uiBannerFont) { config.copy(uiBannerFont = it) },
                     percentItem("Ikona na pasku kanału", config.uiBannerIcon) { config.copy(uiBannerIcon = it) },
+                    SettingItem.Toggle("Wskaźnik nagrywania ● REC na obrazie", config.showRecordingIndicator) {
+                        saveConfig(config.copy(showRecordingIndicator = it))
+                    },
                 )
                 SettingsScreen.EPG -> listOf(
                     SettingItem.Header("EPG"),
@@ -4143,6 +4249,28 @@ fun main() {
                             "dodatkowe przyciski pilota HID / IR; nie zmienia ich zwykłej funkcji • ${item.summary}",
                             item.onClick,
                         )
+                    },
+                    SettingItem.Action(
+                        "Aktywacja klawiaturą lub myszą",
+                        activationBindings.get().joinToString(", ") { ActivationKeys.label(it) }.ifEmpty { "— brak —" },
+                    ) {
+                        val assigned = activationBindings.get().sortedBy { ActivationKeys.label(it) }
+                        choose(
+                            "Aktywacja klawiaturą lub myszą",
+                            listOf("Dodaj przycisk lub kombinację") + assigned.map { "Usuń: ${ActivationKeys.label(it)}" },
+                            0,
+                        ) { index ->
+                            if (index == 0) {
+                                activationTracker.resetCapture()
+                                captureActivation = true
+                                captureActivationInput.set(true)
+                                status = "Naciśnij i puść przycisk lub kombinację."
+                            } else {
+                                val updated = activationBindings.get().filterNot { it == assigned[index - 1] }.toSet()
+                                activationBindings.set(updated)
+                                saveConfig(config.copy(activationKeys = ActivationKeys.encode(updated)), "Usunięto aktywację okna.")
+                            }
+                        }
                     },
                     SettingItem.Action(
                         "Przejmuj klawisze systemowe",
@@ -4443,7 +4571,7 @@ fun main() {
                 if (number == null) return
                 val list = playList.ifEmpty { channels.filterNot { it.ref.startsWith(REC_PREFIX) } }
                 val target = list.firstOrNull { it.number == number }
-                if (target != null) startChannel(target) else status = "Brak kanału o numerze $number w bieżącym bukiecie."
+                if (target != null) selectChannel(target) else status = "Brak kanału o numerze $number w bieżącym bukiecie."
             }
             fun digit(value: Int) {
                 if (numberBuffer.length >= 4) numberBuffer = ""
@@ -4766,6 +4894,13 @@ fun main() {
             fun okReleased() {
                 okReleaseJob?.cancel()
                 okLongJob?.cancel()
+                if (!isForegroundApplication() || !belongsToApplication(
+                        KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow, desktopWindow,
+                    )
+                ) {
+                    okPress.cancel()
+                    return
+                }
                 if (okPress.up(okHoldContext())) {
                     lastVirtualKey = null
                     handleVirtualKey(VirtualRemoteKey.OK)
@@ -4793,7 +4928,10 @@ fun main() {
                     okLongJob = scope.launch {
                         delay(OK_LONG_MS)
                         val currentContext = okHoldContext()
-                        if (currentContext != null && okPress.longDue(System.currentTimeMillis(), currentContext)) {
+                        if (isForegroundApplication() && belongsToApplication(
+                                KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow, desktopWindow,
+                            ) && currentContext != null && okPress.longDue(System.currentTimeMillis(), currentContext)
+                        ) {
                             longOkForContext(currentContext)
                         }
                     }
@@ -4877,6 +5015,9 @@ fun main() {
                 val dispatcher = java.awt.KeyEventDispatcher { event ->
                     val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
                     if (event.id == KeyEvent.KEY_RELEASED) heldKeys.remove(event.keyCode)
+                    if (captureActivation && isForegroundApplication() && belongsToApplication(focusedWindow, desktopWindow)) {
+                        return@KeyEventDispatcher true
+                    }
                     if (event.id == KeyEvent.KEY_RELEASED && okPress.isDown &&
                         UniversalRemoteMap.findKey(universalBindings, UniversalRemoteMap.keyId(event.keyCode)) == VirtualRemoteKey.OK
                     ) {
@@ -4886,7 +5027,8 @@ fun main() {
                     if (!belongsToApplication(focusedWindow, desktopWindow) ||
                         !isForegroundApplication() ||
                         event.id != KeyEvent.KEY_PRESSED ||
-                        event.keyCode == KeyEvent.VK_UNDEFINED
+                        event.keyCode == KeyEvent.VK_UNDEFINED ||
+                        !unmodifiedShortcut(event.modifiersEx)
                     ) {
                         return@KeyEventDispatcher false
                     }
@@ -4931,7 +5073,19 @@ fun main() {
                 }
                 val manager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
                 manager.addKeyEventDispatcher(dispatcher)
-                onDispose { manager.removeKeyEventDispatcher(dispatcher) }
+                val focusListener = java.beans.PropertyChangeListener {
+                    if (!belongsToApplication(manager.focusedWindow, desktopWindow)) {
+                        heldKeys.clear()
+                        okReleaseJob?.cancel()
+                        okLongJob?.cancel()
+                        okPress.cancel()
+                    }
+                }
+                manager.addPropertyChangeListener("focusedWindow", focusListener)
+                onDispose {
+                    manager.removeKeyEventDispatcher(dispatcher)
+                    manager.removePropertyChangeListener("focusedWindow", focusListener)
+                }
             }
 
             DisposableEffect(desktopWindow) {
@@ -5026,20 +5180,25 @@ fun main() {
                             }
                         },
                         onDiagnostic = hidDiagnosticDispatcher::submit,
-                        suppressBrowserKeys = { suppressBrowserKeys.get() },
+                        suppressBrowserKeys = { !captureActivationInput.get() && suppressBrowserKeys.get() },
                         // „Aktywuj okno” działa globalnie tylko w tle; na wierzchu klawisz ma zwykłe znaczenie.
                         isPowerKey = {
-                            UniversalRemoteMap.isPowerOrActivationKey(
+                            !captureActivationInput.get() && UniversalRemoteMap.isPowerOrActivationKey(
                                 it, isForegroundApplication(), globalPowerKeys.get(), globalActivateKeys.get(),
                                 activateAnyKey.get(), configuredHidDevices.get(),
                             )
                         },
                         onPower = { id -> if (id in globalPowerKeys.get()) currentRequestPower.value() else requestActivate() },
                         interceptKey = intercept@{ physicalId, down ->
+                            if (captureActivationInput.get()) return@intercept false
                             val volumeKey = physicalId in setOf("K:173", "K:174", "K:175")
                             val swallow = (captureActive.get() && volumeKey) || physicalId in volumeKeyIds.get()
                             if (!swallow) return@intercept false
                             if (down) EventQueue.invokeLater {
+                                if (!isForegroundApplication() || !belongsToApplication(
+                                        KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow, desktopWindow,
+                                    )
+                                ) return@invokeLater
                                 inputMode.onKey()
                                 val label = UniversalRemoteMap.label(physicalId)
                                 val key = UniversalRemoteMap.findKey(universalBindings, physicalId)
@@ -5054,9 +5213,41 @@ fun main() {
                             }
                             true
                         },
-                        systemKeyMode = { systemKeysMode.get() },
+                        systemKeyMode = { if (captureActivationInput.get()) "off" else systemKeysMode.get() },
+                        onActivationInput = { keyboard, code, down ->
+                            val capturing = captureActivationInput.get() && isForegroundApplication()
+                            val chord = activationTracker.update(keyboard, code, down, capturing)
+                            if (chord != null && capturing && captureActivationInput.compareAndSet(true, false)) {
+                                EventQueue.invokeLater {
+                                    if (captureActivation) {
+                                        captureActivation = false
+                                        if (!ActivationKeys.valid(chord)) {
+                                            status = "Nieprawidłowa kombinacja aktywacji okna (maksymalnie 8 przycisków)."
+                                        } else {
+                                            choose("Aktywacja okna: ${ActivationKeys.label(chord)}",
+                                                listOf("Zapisz", "Anuluj"), 1) { selection ->
+                                                if (selection == 0) {
+                                                    val updated = activationBindings.get() + setOf(chord)
+                                                    activationBindings.set(updated)
+                                                    saveConfig(config.copy(activationKeys = ActivationKeys.encode(updated)),
+                                                        "Aktywacja okna: ${ActivationKeys.label(chord)}.")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else if (shouldActivateFromInput(
+                                    chord, activationBindings.get(), isForegroundApplication(),
+                                    captureActivationInput.get() || capturing,
+                                )
+                            ) requestActivate()
+                        },
                         onSystemKey = { physicalId ->
                             EventQueue.invokeLater {
+                                if (!isForegroundApplication() || !belongsToApplication(
+                                        KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow, desktopWindow,
+                                    )
+                                ) return@invokeLater
                                 inputMode.onKey()
                                 val label = UniversalRemoteMap.label(physicalId)
                                 val key = UniversalRemoteMap.findKey(universalBindings, physicalId)
@@ -5189,7 +5380,9 @@ fun main() {
                         onMenu = ::openMenu,
                         onBack = { stopPlayback("Odtwarzanie zatrzymane.") },
                         playback = playbackBar,
-                        recordingLabel = activeRecordings.values.firstOrNull()?.title,
+                        recordingLabel = playingChannel?.takeIf { playingRecording == null }
+                            ?.let { activeRecordings[serviceKey(it.ref)]?.title },
+                        showRecordingIndicator = config.showRecordingIndicator,
                         pipWindows = pipWindows.mapNotNull { background ->
                             background.pip?.let { PipSurface(background.channel.name, it) }
                         },
@@ -5199,11 +5392,17 @@ fun main() {
                         seekPreview = seekPreviewPlayer.takeIf { seekPreviewReady },
                         seekPreviewLabel = seekPreviewLabel,
                         bufferInfo = {
-                            timeshift?.takeIf { playingRecording == null }?.let { ts ->
+                            val backgrounds = backgroundBuffers.snapshot()
+                            val ts = timeshift?.takeIf { playingRecording == null }
+                            val behind = ts?.let {
                                 val now = monotonicMs()
-                                val shown = vlcSession?.let { runCatching { ts.shownWall(it.time()) }.getOrNull() } ?: now
-                                bufferBannerText(ts.buffer.spanMs(), (now - shown).coerceAtLeast(0))
-                            }
+                                val shown = vlcSession?.let { session -> runCatching { it.shownWall(session.time()) }.getOrNull() } ?: now
+                                (now - shown).coerceAtLeast(0)
+                            } ?: 0L
+                            if (playingRecording == null) bufferBannerText(
+                                ts?.buffer?.spanMs(), behind, backgrounds.size, config.bgCount,
+                                backgrounds.count { it.first in activeRecordings },
+                            ) else null
                         },
                         onTogglePause = ::togglePlaybackPause,
                         onSeek = when {
@@ -5228,9 +5427,13 @@ fun main() {
                         items = settingsItems(navigator.screen),
                         colors = colorScheme,
                         status = status,
-                        captureLabel = captureButton?.label,
+                        captureLabel = captureButton?.label ?: if (captureActivation) "aktywacja okna" else null,
+                        captureMouse = captureActivation,
                         onCancelCapture = {
                             captureButton = null
+                            captureActivation = false
+                            captureActivationInput.set(false)
+                            activationTracker.resetCapture()
                             status = "Przypisywanie anulowane."
                         },
                         onWindow = { settingsWindow = it },
@@ -5257,7 +5460,7 @@ fun main() {
                     recordings = if (isRecordingsBouquet(selectedBouquet?.ref)) recRows else emptyMap(),
                     buffered = bufferedChannelKeys(),
                     recordingChannels = activeRecordings.keys,
-                    pipChannels = pipChannelKeys(),
+                    pipChannels = pipChannelNumbers(),
                     pickingPip = pipPicking,
                 )
             }

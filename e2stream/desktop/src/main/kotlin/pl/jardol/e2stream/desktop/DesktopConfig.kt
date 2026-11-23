@@ -37,6 +37,7 @@ data class DesktopConfig(
     val audioSync: Boolean = true,
     val uiListFont: Int = 100,
     val uiBannerFont: Int = 100,
+    val showRecordingIndicator: Boolean = true,
     val hiddenBouquets: Set<String> = emptySet(),
     val resumeLast: Boolean = true,
     val lastBouquetRef: String = "",
@@ -128,6 +129,8 @@ data class DesktopConfig(
     val recMaxH: Int = 3,
     /** W tle klawisz przypisanego urządzenia HID lub pilota IR przywołuje okno. */
     val activateAnyRemoteKey: Boolean = true,
+    /** Jawnie skonfigurowane kombinacje klawiatury i myszy aktywujące okno. */
+    val activationKeys: String = "[]",
     /** Synchronizacja ustawień i danych kanałów z dekoderem (wtyczka EPG Scan), jak w Androidzie. */
     val channelSync: Boolean = true,
     /** Nazwa tego komputera w profilach na dekoderze (pusta = nazwa komputera). */
@@ -181,6 +184,7 @@ data class DesktopConfig(
             setProperty("audioSync", audioSync.toString())
             setProperty("uiListFont", uiListFont.toString())
             setProperty("uiBannerFont", uiBannerFont.toString())
+            setProperty("showRecordingIndicator", showRecordingIndicator.toString())
             setProperty("hiddenBouquets", JSONArray(hiddenBouquets.sorted()).toString())
             setProperty("resumeLast", resumeLast.toString())
             setProperty("lastBouquetRef", lastBouquetRef)
@@ -262,6 +266,7 @@ data class DesktopConfig(
             setProperty("lastUpdateCheck", lastUpdateCheck.toString())
             setProperty("recMaxH", recMaxH.toString())
             setProperty("activateAnyRemoteKey", activateAnyRemoteKey.toString())
+            setProperty("activationKeys", activationKeys)
             setProperty("channelSync", channelSync.toString())
             setProperty("deviceName", deviceName)
             setProperty("discoverySubnet", discoverySubnet)
@@ -345,6 +350,7 @@ data class DesktopConfig(
                 audioSync = bool("audioSync", defaults.audioSync),
                 uiListFont = int("uiListFont", defaults.uiListFont, 50..140),
                 uiBannerFont = int("uiBannerFont", defaults.uiBannerFont, 50..140),
+                showRecordingIndicator = bool("showRecordingIndicator", defaults.showRecordingIndicator),
                 hiddenBouquets = parseSet(properties.getProperty("hiddenBouquets")),
                 resumeLast = bool("resumeLast", defaults.resumeLast),
                 lastBouquetRef = string("lastBouquetRef", ""),
@@ -432,6 +438,7 @@ data class DesktopConfig(
                 lastUpdateCheck = properties.getProperty("lastUpdateCheck")?.toLongOrNull() ?: 0,
                 recMaxH = int("recMaxH", defaults.recMaxH, 1..6),
                 activateAnyRemoteKey = bool("activateAnyRemoteKey", defaults.activateAnyRemoteKey),
+                activationKeys = string("activationKeys", defaults.activationKeys),
                 channelSync = bool("channelSync", defaults.channelSync),
                 deviceName = string("deviceName", ""),
                 discoverySubnet = string("discoverySubnet", ""),

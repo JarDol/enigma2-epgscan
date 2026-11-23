@@ -1,10 +1,23 @@
 package pl.jardol.e2stream.desktop
 
 import java.awt.event.KeyEvent
+import java.awt.event.InputEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class RemoteKeyMapTest {
+    @Test
+    fun modifiersDoNotTriggerSingleKeyShortcuts() {
+        assertTrue(unmodifiedShortcut(0))
+        assertFalse(unmodifiedShortcut(InputEvent.SHIFT_DOWN_MASK))
+        assertFalse(unmodifiedShortcut(InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK))
+        assertFalse(unmodifiedShortcut(InputEvent.ALT_DOWN_MASK))
+        assertFalse(unmodifiedShortcut(InputEvent.META_DOWN_MASK))
+        assertFalse(unmodifiedShortcut(InputEvent.ALT_GRAPH_DOWN_MASK))
+    }
+
     @Test
     fun encodedBindingsRoundTripAndInvalidEntriesAreIgnored() {
         val encoded = RemoteKeyMap.encode(

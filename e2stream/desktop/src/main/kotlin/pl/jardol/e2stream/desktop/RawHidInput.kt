@@ -48,6 +48,7 @@ internal class RawHidInput(
     /** Przejęty klawisz systemowy z klawiatury pilota (Windows go nie dostał) — do obsługi w programie. */
     private val onSystemKey: (physicalId: String) -> Unit = {},
     private val isForeground: () -> Boolean = ::isForegroundApplication,
+    private val onActivationInput: (keyboard: Boolean, code: Int, down: Boolean) -> Unit = { _, _, _ -> },
 ) : AutoCloseable {
     private val ready = CountDownLatch(1)
     private val failure = AtomicReference<Throwable?>()
@@ -63,6 +64,9 @@ internal class RawHidInput(
     private val windowProc = WinUser.WindowProc(::windowProc)
     private val keyboardProc = WinUser.LowLevelKeyboardProc { code, wParam, data ->
         val message = wParam.toInt()
+        if (code >= 0 && data.flags and LLKHF_INJECTED == 0 &&
+            message in setOf(WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP)
+        ) onActivationInput(true, data.vkCode, message == WM_KEYDOWN || message == WM_SYSKEYDOWN)
         val physicalId = UniversalRemoteMap.keyId(data.vkCode)
         val isPower = code >= 0 && isPowerKey(physicalId)
         if (code >= 0 && (message == WM_KEYUP || message == WM_SYSKEYUP)) {
@@ -92,6 +96,20 @@ internal class RawHidInput(
                 WinDef.LPARAM(Pointer.nativeValue(data.pointer)),
             )
         }
+    }
+    private val mouseProc = WinUser.LowLevelMouseProc { code, wParam, data ->
+        if (code >= 0 && data.flags and 1 == 0) {
+            val message = wParam.toInt()
+            val button = when (message) {
+                0x0201, 0x0202 -> 1
+                0x0204, 0x0205 -> 2
+                0x0207, 0x0208 -> 3
+                0x020B, 0x020C -> if (data.mouseData ushr 16 == 1) 4 else 5
+                else -> 0
+            }
+            if (button != 0) onActivationInput(false, button, message in setOf(0x0201, 0x0204, 0x0207, 0x020B))
+        }
+        User32.INSTANCE.CallNextHookEx(null, code, wParam, WinDef.LPARAM(Pointer.nativeValue(data.pointer)))
     }
     // ---------- Klawisze systemowe pilota (Home/przeglądarka, multimedia, Menu, Windows) ----------
 
@@ -193,7 +211,7 @@ internal class RawHidInput(
             ) ?: throw IOException("Windows nie utworzył okna odbiornika HID (kod ${Kernel32.INSTANCE.GetLastError()}).")
             window = created
             registerConnectedDevices()
-            keyboardHook = KeyboardHook(keyboardProc, onError)
+            keyboardHook = KeyboardHook(keyboardProc, mouseProc, onError)
             onDiagnostic("Odbiornik HID uruchomiony. Naciśnij przycisk pilota.")
             ready.countDown()
 

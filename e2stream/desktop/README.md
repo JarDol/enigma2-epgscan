@@ -60,6 +60,12 @@ size to 480×270. Position, window size and the 1–5 second interval between
 displayed frames can be changed in playback settings; the source's keyframe
 interval can make updates slower. If all three background slots protect recordings or PiP, switching
 away from a recording is blocked until a slot is freed.
+Selecting a PiP channel swaps it with the main channel in the same PiP window.
+History prioritizes buffered channels, then PiP channels, followed by the
+remaining channels in viewing order; priorities update when buffers change.
+The channel banner shows background buffers and their recordings as `tło n/m
+(nagr. k)`. The separate `● REC` overlay can be hidden in appearance settings;
+recording indicators in the banner and channel lists remain visible.
 
 Frame previews while seeking timeshift or recordings use a separate muted VLC
 player, so the main playback position is not changed until the seek is applied.
@@ -93,6 +99,8 @@ alongside the watched-channel and bouquet labels, without waiting for the receiv
 It also shows locally cached picons using the channel-list icon settings; icons
 are loaded asynchronously. Holding OK on a channel in the list or History opens
 its current (or next) EPG event; buffered channels also offer local recording.
+When PiP is enabled, the same menu can add a different channel to PiP or close
+its existing PiP window, including when no EPG is available.
 
 **Audio:** the audio track (AUDIO key, menu or player button) is remembered per
 channel and receiver in `%APPDATA%/E2Stream/audio.properties` (matched by PID,
@@ -192,9 +200,15 @@ device. Power can be mapped like any other button. While E2Stream is running,
 the assigned HID or IR Power button is monitored globally: it activates the app
 if another window is active, or asks to close E2Stream if it is already active.
 Keyboard keys, including remotes that send ordinary keyboard keys, work only
-while E2Stream is active. When activation by any remote button is enabled,
+while E2Stream is active, except for explicitly configured activation inputs.
+In **Pilot i klawiatura → Aktywacja klawiaturą lub myszą**, add a single key,
+mouse button or combination, release it and confirm the assignment. These
+inputs bring a running E2Stream window forward without suppressing the event
+in the other application. When activation by any remote button is enabled,
 IR buttons and HID reports from a collection with at least one mapped button
-can bring the window forward; unrelated HID devices cannot. Map a button from
+can bring the window forward; unrelated HID collections cannot. A keyboard or
+mouse can also expose HID collections, so map only collections belonging to
+the intended remote. Map a button from
 each HID collection used by a remote to enable activation from that collection. No
 separate background service is installed, so Power cannot start E2Stream after
 the app has closed. In the confirmation window, remote OK closes the app and

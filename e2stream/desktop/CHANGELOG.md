@@ -3,6 +3,15 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.7.7
+
+- Aktywacja okna przez skonfigurowane klawisze, kombinacje i przyciski myszy; klawiatura nie steruje aplikacją w tle.
+- Kolorowe oznaczenia buforów, PiP i nagrywania oraz informacje o buforach na pasku kanału; opcja ukrycia dużego wskaźnika nagrywania.
+- Historia porządkuje bufory i okna PiP oraz umożliwia zamianę kanału PiP z głównym. Długie OK na liście kanałów i w historii oferuje dodanie lub zamknięcie PiP.
+- Komunikaty wyświetlane są u góry pośrodku.
+- Znany problem: pasek timeshiftu może nie zamknąć się po przewinięciu; wznowienie odtwarzania i przycisk Wróć mogą pomóc.
+- Znany problem: głośność pilota Xiaomi może dodatkowo zmieniać głośność Windows.
+
 ## 0.7.6
 
 - Długie OK otwiera menu w EPG kanału i Multi EPG.

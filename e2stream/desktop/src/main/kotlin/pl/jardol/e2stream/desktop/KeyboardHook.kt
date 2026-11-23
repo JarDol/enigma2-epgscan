@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 internal class KeyboardHook(
     private val callback: WinUser.LowLevelKeyboardProc,
+    private val mouseCallback: WinUser.LowLevelMouseProc? = null,
     private val onError: (String) -> Unit,
 ) : AutoCloseable {
     private val ready = CountDownLatch(1)
@@ -35,6 +36,7 @@ internal class KeyboardHook(
 
     private fun run() {
         var hook: WinUser.HHOOK? = null
+        var mouseHook: WinUser.HHOOK? = null
         try {
             val message = WinUser.MSG()
             User32.INSTANCE.PeekMessage(message, null, 0, 0, 0)
@@ -42,6 +44,10 @@ internal class KeyboardHook(
             if (closed) return
             hook = User32.INSTANCE.SetWindowsHookEx(WH_KEYBOARD_LL, callback, Kernel32.INSTANCE.GetModuleHandle(null), 0)
                 ?: throw IOException("Windows nie uruchomił ochrony klawiszy (kod ${Kernel32.INSTANCE.GetLastError()}).")
+            if (mouseCallback != null) {
+                mouseHook = User32.INSTANCE.SetWindowsHookEx(WH_MOUSE_LL, mouseCallback, Kernel32.INSTANCE.GetModuleHandle(null), 0)
+                    ?: throw IOException("Windows nie uruchomił obsługi myszy (kod ${Kernel32.INSTANCE.GetLastError()}).")
+            }
             ready.countDown()
             while (!closed) {
                 val result = User32.INSTANCE.GetMessage(message, null, 0, 0)
@@ -55,6 +61,7 @@ internal class KeyboardHook(
             failure.set(e)
             if (ready.count > 0) ready.countDown() else if (!closed) onError(e.message ?: "Błąd obsługi klawiszy.")
         } finally {
+            mouseHook?.let { User32.INSTANCE.UnhookWindowsHookEx(it) }
             hook?.let { User32.INSTANCE.UnhookWindowsHookEx(it) }
             ready.countDown()
         }
@@ -75,6 +82,7 @@ internal class KeyboardHook(
 
     private companion object {
         const val WH_KEYBOARD_LL = 13
+        const val WH_MOUSE_LL = 14
         const val WM_QUIT = 0x0012
     }
 }

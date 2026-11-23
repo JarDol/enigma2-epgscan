@@ -9,12 +9,20 @@ internal data class HistoryEntry(val ref: String, val name: String, val bouquet:
 internal fun historyProgramme(event: EpgEvent?): String? =
     event?.takeIf { it.title.isNotBlank() }?.let { "${EpgTime.range(it.begin, it.end)}  ·  ${it.title}" }
 
-internal fun channelPlaybackBadge(buffered: Boolean, pip: Boolean, recording: Boolean = false): String =
-    when {
-        pip -> if (recording) "  ● PiP" else "  PiP"
-        buffered -> if (recording) "  ● B" else "  B"
-        else -> ""
-    }
+internal data class PlaybackBadge(val pipNumber: Int? = null, val recording: Boolean = false) {
+    val text: String get() = "${if (recording) "● " else ""}${pipNumber?.let { "PiP $it" } ?: "B"}"
+}
+
+internal fun channelPlaybackBadge(buffered: Boolean, pipNumber: Int?, recording: Boolean = false): PlaybackBadge? =
+    if (buffered || pipNumber != null) PlaybackBadge(pipNumber, recording) else null
+
+internal enum class ChannelPipAction { ADD, CLOSE }
+
+internal fun channelPipAction(enabled: Boolean, current: Boolean, inPip: Boolean): ChannelPipAction? = when {
+    inPip -> ChannelPipAction.CLOSE
+    enabled && !current -> ChannelPipAction.ADD
+    else -> null
+}
 
 internal fun updateHistoryProgrammes(pick: QuickPick?, tag: String, programmes: List<String?>): QuickPick? =
     if (pick?.tag == tag) pick.copy(details = programmes) else pick
@@ -42,4 +50,25 @@ internal object ChannelHistory {
         val rest = parse(json).filterNot { serviceKey(it.ref) == key }
         return encode((listOf(entry) + rest).take(LIMIT))
     }
+
+    fun addPip(json: String, entry: HistoryEntry): String {
+        val key = serviceKey(entry.ref)
+        val entries = parse(json)
+        val index = entries.indexOfFirst { serviceKey(it.ref) == key }
+        return if (index >= 0) {
+            encode(entries.mapIndexed { i, previous -> if (i == index) entry else previous })
+        } else {
+            encode(entries.take(LIMIT - 1) + entry)
+        }
+    }
+
+    fun ordered(entries: List<HistoryEntry>, buffered: Set<String>, pip: Set<String>): List<HistoryEntry> =
+        entries.sortedBy { entry ->
+            val key = serviceKey(entry.ref)
+            when {
+                key in pip -> 1
+                key in buffered -> 0
+                else -> 2
+            }
+        }
 }

@@ -82,6 +82,7 @@ internal fun SettingsWindow(
     colors: ColorScheme,
     status: String,
     captureLabel: String?,
+    captureMouse: Boolean = false,
     onCancelCapture: () -> Unit,
     onWindow: (java.awt.Window?) -> Unit,
     testContent: @Composable () -> Unit,
@@ -101,7 +102,7 @@ internal fun SettingsWindow(
                     SettingsBody(navigator, items, status, testContent)
                     navigator.choice?.let { ChoiceOverlay(navigator, it) }
                     navigator.editor?.let { EditorOverlay(navigator, it) }
-                    if (captureLabel != null) CaptureOverlay(captureLabel, onCancelCapture)
+                    if (captureLabel != null) CaptureOverlay(captureLabel, captureMouse, onCancelCapture)
                 }
             }
         }
@@ -357,7 +358,7 @@ private fun EditorOverlay(navigator: SettingsNavigator, editor: SettingsEditor) 
 }
 
 @Composable
-private fun CaptureOverlay(label: String, onCancel: () -> Unit) {
+private fun CaptureOverlay(label: String, captureMouse: Boolean, onCancel: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     OverlayScrim {
         Column(
@@ -365,9 +366,13 @@ private fun CaptureOverlay(label: String, onCancel: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("Przypisz: $label", style = MaterialTheme.typography.titleLarge, color = colors.primary)
-            Text("Naciśnij teraz klawisz pilota lub klawiatury.", fontSize = 19.sp)
+            Text(
+                if (captureMouse) "Naciśnij i puść przycisk lub kombinację klawiatury i myszy."
+                else "Naciśnij teraz klawisz pilota lub klawiatury.",
+                fontSize = 19.sp,
+            )
             Text("Bez naciśnięcia okno zamknie się po 10 sekundach.", color = colors.onSurfaceVariant)
-            OutlinedButton(onClick = onCancel) { Text("Anuluj") }
+            if (!captureMouse) OutlinedButton(onClick = onCancel) { Text("Anuluj") }
         }
     }
 }

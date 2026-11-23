@@ -146,6 +146,7 @@ internal fun PlayerPage(
     barsHidden: Boolean = false,
     /** Trwające nagranie z timeshiftu — czerwony wskaźnik ● REC. */
     recordingLabel: String? = null,
+    showRecordingIndicator: Boolean = true,
     /** Stan bufora na pasku kanału (np. „B 12:34”); null — bez bufora. */
     bufferInfo: (() -> String?)? = null,
     pipWindows: List<PipSurface> = emptyList(),
@@ -232,7 +233,7 @@ internal fun PlayerPage(
                 }
             }
         }
-        if (recordingLabel != null) {
+        if (recordingLabel != null && showRecordingIndicator) {
             Text(
                 "● REC",
                 modifier = Modifier.align(Alignment.TopEnd).padding(24.dp)
@@ -251,8 +252,21 @@ internal fun PlayerPage(
                 )
             }
         }
+        if (!barsHidden && session != null && statusVisible) {
+            Text(
+                status,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp)
+                    .fillMaxWidth(0.7f)
+                    .background(colors.surface.copy(alpha = 0.92f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                color = colors.onSurface,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (!barsHidden &&
-            ((channel != null && bannerVisible) || controlsVisible || statusVisible || stats != null || playback != null)
+            ((channel != null && bannerVisible) || controlsVisible || stats != null || playback != null)
         ) {
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.BottomCenter) {
             Column(
@@ -301,9 +315,6 @@ internal fun PlayerPage(
                     )
                 }
                 stats?.let { Text(it, color = secondary, fontSize = 13.sp, maxLines = 1) }
-                if (statusVisible && !controlsVisible) {
-                    Text(status, color = secondary, maxLines = 2)
-                }
                 if (controlsVisible) Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -325,7 +336,6 @@ internal fun PlayerPage(
                     OutlinedButton(onClick = onAudio, enabled = session != null) { Text("Audio") }
                     OutlinedButton(onClick = onMenu) { Text("Menu") }
                     OutlinedButton(onClick = onBack, enabled = session != null) { Text("Zatrzymaj") }
-                    Text(status, modifier = Modifier.padding(top = 12.dp), color = secondary, maxLines = 1)
                 }
             }
             }
@@ -340,8 +350,17 @@ internal fun bannerClock(): String = java.time.LocalTime.now().format(bannerCloc
 /**
  * Stan bufora na pasku kanału: „B 12:34” (długość bufora timeshiftu), przy oglądaniu z opóźnieniem „B 12:34 · −1:05”.
  */
-internal fun bufferBannerText(spanMs: Long, behindMs: Long): String =
-    "B ${formatDuration(spanMs)}" + if (behindMs >= 2000) " · −${formatDuration(behindMs)}" else ""
+internal fun bufferBannerText(
+    spanMs: Long?, behindMs: Long, background: Int = 0, limit: Int = 0, backgroundRecordings: Int = 0,
+): String? {
+    val current = spanMs?.let {
+        "B ${formatDuration(it)}" + if (behindMs >= 2000) " · −${formatDuration(behindMs)}" else ""
+    }
+    val others = if (limit > 0 && (background > 0 || current != null)) {
+        "tło $background/$limit" + if (backgroundRecordings > 0) " (nagr. $backgroundRecordings)" else ""
+    } else null
+    return listOfNotNull(current, others).joinToString(" · ").ifEmpty { null }
+}
 
 /** Pasek kanału jak w Androidzie: ikona kanału z zegarem pod spodem, nazwa i stan bufora, bieżąca audycja z postępem i następna. */
 @Composable
@@ -456,7 +475,7 @@ internal fun ChannelListDialog(
     recordings: Map<String, Recording> = emptyMap(),
     buffered: Set<String> = emptySet(),
     recordingChannels: Set<String> = emptySet(),
-    pipChannels: Set<String> = emptySet(),
+    pipChannels: Map<String, Int> = emptyMap(),
     pickingPip: Boolean = false,
 ) {
     var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
@@ -574,12 +593,12 @@ internal fun ChannelListDialog(
                             Text(channel.number.toString(), modifier = Modifier.width(55.dp * fontScale), color = secondaryText, fontSize = 20.sp * fontScale)
                             Column(Modifier.weight(1f)) {
                                 val key = serviceKey(channel.ref)
-                                val badge = channelPlaybackBadge(
-                                    buffered = key in buffered,
-                                    pip = key in pipChannels,
-                                    recording = key in recordingChannels,
-                                )
-                                Text(channel.name + badge, color = primaryText, fontSize = 22.sp * fontScale, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(channel.name, modifier = Modifier.weight(1f, fill = false), color = primaryText, fontSize = 22.sp * fontScale, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    channelPlaybackBadge(key in buffered, pipChannels[key], key in recordingChannels)?.let {
+                                        PlaybackBadgeView(it, fontScale)
+                                    }
+                                }
                                 Text(event?.title ?: "Brak danych EPG", color = secondaryText, fontSize = 16.sp * fontScale, maxLines = 1)
                             }
                             if (event != null && event.end > event.begin) {
@@ -659,6 +678,20 @@ internal fun formatStats(current: PlaybackStats, previous: PlaybackStats?): Stri
         append("  •  utracony dźwięk: ${current.audioLost}")
     }
 }
+@Composable
+private fun PlaybackBadgeView(badge: PlaybackBadge, scale: Float) {
+    Text(
+        badge.text,
+        modifier = Modifier.padding(start = 8.dp)
+            .background(if (badge.recording) Color(0xFFC62828) else Color(0xFF1565C0), RoundedCornerShape(3.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+        color = Color.White,
+        fontWeight = FontWeight.Bold,
+        fontSize = 16.sp * scale,
+        maxLines = 1,
+    )
+}
+
 /** Krótka lista wyboru w osobnym oknie — widoczna także nad obrazem VLC. */
 internal data class QuickPick(
     val title: String,
@@ -690,6 +723,7 @@ internal data class QuickPick(
     val iconChannels: List<Channel> = emptyList(),
     val iconStyle: PiconStyle = PiconStyle.OFF,
     val iconScale: Float = 0.8f,
+    val badges: List<PlaybackBadge?> = emptyList(),
     val onLongSelect: ((Int) -> Unit)? = null,
     /** Przezroczyste tło jak na pasku kanału — dla list nakładanych na obraz. */
     val translucentBackground: Boolean = false,
@@ -809,7 +843,10 @@ internal fun QuickPickDialog(
                                         androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
                                     }
                                     Column(Modifier.weight(1f)) {
-                                        Text(option, color = textColor, fontSize = 20.sp * scale, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(option, modifier = Modifier.weight(1f, fill = false), color = textColor, fontSize = 20.sp * scale, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                            pick.badges.getOrNull(index)?.let { PlaybackBadgeView(it, scale) }
+                                        }
                                         pick.subtitles.getOrNull(index)?.let {
                                             Text(it, color = textColor.copy(alpha = 0.75f), fontSize = 15.sp * scale, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }

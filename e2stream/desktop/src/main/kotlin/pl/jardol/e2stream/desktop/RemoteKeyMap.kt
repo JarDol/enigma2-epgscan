@@ -1,6 +1,11 @@
 package pl.jardol.e2stream.desktop
 
 import java.awt.event.KeyEvent
+import java.awt.event.InputEvent
+
+internal fun unmodifiedShortcut(modifiers: Int): Boolean =
+    modifiers and (InputEvent.SHIFT_DOWN_MASK or InputEvent.CTRL_DOWN_MASK or
+        InputEvent.ALT_DOWN_MASK or InputEvent.META_DOWN_MASK or InputEvent.ALT_GRAPH_DOWN_MASK) == 0
 
 enum class RemoteAction(val label: String) {
     NONE("Brak akcji"),
