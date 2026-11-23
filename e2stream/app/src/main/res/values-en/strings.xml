@@ -35,7 +35,7 @@
     <string name="subtitle_none">No subtitle tracks available</string>
     <string name="subtitle_select_failed">Could not select subtitle track</string>
     <string name="subtitle_track">Track %1$d</string>
-    <string name="pip_add_channel">PiP Add</string>
+    <string name="pip_add_channel">PiP</string>
     <string name="pip_close_channel">PiP Close</string>
     <string name="pip_no_longer_open">Channel is no longer in PiP</string>
     <string name="pip_disabled">Enable PiP in settings</string>
@@ -134,8 +134,8 @@
     <string name="player_bgrec_stop">Stop saving from buffer</string>
     <string name="player_localrec_reason_buffer_closed">channel buffer closed</string>
     <string name="action_history_list">Channel list — history</string>
-    <string name="player_bg_close">Close buffer</string>
-    <string name="player_bgrec_menu">Record buffer…</string>
+    <string name="player_bg_close">Buffer Stop</string>
+    <string name="player_bgrec_menu">Buffer REC</string>
     <string name="player_bgrec_title">Record buffer: %1$s</string>
     <string name="player_bg_menu">Buffered channels</string>
     <string name="player_bg_span">%1$s in buffer</string>

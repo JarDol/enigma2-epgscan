@@ -49,7 +49,9 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 * Opcjonalnie EIT „teraz/następne” ze strumienia (Ustawienia → EPG i picony kanałów → *EIT ze strumienia*): włączenie jest możliwe tylko, gdy Enigma2 wysyła EIT w strumieniu (*Include EIT in http streams*; sprawdza to wtyczka EPG Scan 2.19.1+). Zmiana programu nadawcy (inny tytuł lub przesunięte godziny bieżącej/następnej audycji) trafia do logu i — przy *Podmieniaj EPG po odebraniu EIT* — do EPG aplikacji do następnej aktualizacji z dekodera; bez podmiany dane z EIT są pokazywane tylko w pamięci, do końca audycji. Do sprawdzenia służy (tylko w wersjach beta) *Test EIT: EPG tylko ze strumienia* (usuwa EPG aplikacji i wyłącza pobieranie z dekodera, także bieżącą audycję listy kanałów) oraz linia EIT w statystykach odtwarzania.
 * EPG kanału, multi-EPG bukietu i wyszukiwanie w EPG; z audycji: przełącz na kanał, zaplanuj przełączenie lub nagraj na dekoderze.
 * Długie OK w EPG kanału i Multi-EPG otwiera wybór kanału/bukietu, a wyszukiwanie jest na końcu menu.
-* W opisie EPG „Oglądaj” dla aktualnie oglądanego kanału zamyka opis bez ponownego strojenia. Wybór innego kanału („Przełącz na kanał”), także dla bieżącej audycji, wymaga potwierdzenia.
+* W opisie EPG „Oglądaj” dla aktualnie oglądanego kanału zamyka opis bez ponownego strojenia. Wybór innego kanału („Przełącz”), także dla bieżącej audycji, wymaga potwierdzenia.
+  Akcje są w jednym rzędzie, a przy większej czcionce lub węższym oknie automatycznie zawijają się do kolejnych rzędów.
+  Krótsze podpisy „Dekoder REC”, „Bufor Stop”, „Bufor REC” i „PiP” nie zmieniają działania przycisków.
 * EPG bieżącego kanału ma przyciski Audio, Napisy i PiP. Listy audio i napisów otwarte z EPG zamykają się po ustawionym czasie bezczynności EPG wydarzenia (0 wyłącza zamykanie). Lista napisów ukrywa telegazetę, ale zachowuje napisy teletekstowe i DVB.
 * Akcje „Przełącz o…”, „Nagraj na dekoderze” i „Usuń przełączenie” wymagają potwierdzenia przed wykonaniem; WSTECZ anuluje. Po wykonaniu pokazywany jest wynik.
   Po udanym działaniu z wyników wyszukiwania lista wyników zamyka się, a komunikat pojawia się na pasku odtwarzacza.

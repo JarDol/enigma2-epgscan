@@ -103,6 +103,56 @@ object TvDialog {
 
     private fun dp(ctx: Context, v: Int) = (v * ctx.resources.displayMetrics.density).toInt()
 
+    private class WrappingButtonBar(ctx: Context) : ViewGroup(ctx) {
+        private class Row(val buttons: List<View>, val width: Int, val height: Int)
+        private val rows = mutableListOf<Row>()
+        private val gap = dp(ctx, 10)
+
+        override fun onMeasure(w: Int, h: Int) {
+            val available = (MeasureSpec.getSize(w) - paddingLeft - paddingRight).coerceAtLeast(0)
+            rows.clear()
+            var buttons = mutableListOf<View>()
+            var width = 0
+            var height = 0
+            for (i in 0 until childCount) {
+                val child = getChildAt(i)
+                if (child.visibility == GONE) continue
+                child.measure(MeasureSpec.makeMeasureSpec(available, MeasureSpec.AT_MOST),
+                    MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+                if (buttons.isNotEmpty() && width + gap + child.measuredWidth > available) {
+                    rows += Row(buttons, width, height)
+                    buttons = mutableListOf()
+                    width = 0
+                    height = 0
+                }
+                if (buttons.isNotEmpty()) width += gap
+                buttons += child
+                width += child.measuredWidth
+                height = maxOf(height, child.measuredHeight)
+            }
+            if (buttons.isNotEmpty()) rows += Row(buttons, width, height)
+            setMeasuredDimension(
+                resolveSize((rows.maxOfOrNull { it.width } ?: 0) + paddingLeft + paddingRight, w),
+                resolveSize(rows.sumOf { it.height } + gap * (rows.size - 1).coerceAtLeast(0) + paddingTop + paddingBottom, h),
+            )
+        }
+
+        override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+            val rtl = layoutDirection == LAYOUT_DIRECTION_RTL
+            var y = paddingTop
+            for (row in rows) {
+                var x = if (rtl) paddingLeft + row.width else width - paddingRight - row.width
+                for (child in row.buttons) {
+                    val left = if (rtl) x - child.measuredWidth else x
+                    val top = y + (row.height - child.measuredHeight) / 2
+                    child.layout(left, top, left + child.measuredWidth, top + child.measuredHeight)
+                    x += (child.measuredWidth + gap) * if (rtl) -1 else 1
+                }
+                y += row.height + gap
+            }
+        }
+    }
+
     /**
      * Panel: tytuł i podpowiedź u góry, treść z [content], opcjonalnie przyciski na dole.
      * [onBack] — WSTECZ (domyślnie tylko zamknięcie); przy [cancelable] = false WSTECZ nic nie robi.
@@ -115,6 +165,7 @@ object TvDialog {
         hintBelowTitle: Boolean = false,
         /** Drugi rząd przycisków pod pierwszym (np. zapis bufora kanału w tle). */
         chips2: List<Btn> = emptyList(),
+        wrapChips: Boolean = false,
         content: (ctx: Context, dlg: Dialog) -> View,
     ): Dialog {
         val dlg = if (timeoutSec > 0) TimedDialog(a, timeoutSec) { onTimeout?.invoke() } else Dialog(a, R.style.TvDialog)
@@ -149,47 +200,52 @@ object TvDialog {
         root.addView(body, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         var first: Button? = null
-        if (chips.isNotEmpty()) {
+        fun button(b: Btn, tag: String, style: Int = R.style.TvDialogButton): Button =
+            Button(ctx, null, 0, style).apply {
+                text = b.label
+                this.tag = tag
+                isFocusable = true
+                setOnClickListener {
+                    if (b.closeOnClick) dlg.dismiss()
+                    b.onClick()
+                }
+                if (first == null) first = this
+            }
+        if (wrapChips && (chips.isNotEmpty() || chips2.isNotEmpty())) {
+            val bar = WrappingButtonBar(ctx).apply { setPadding(0, dp(ctx, 12), 0, 0) }
+            val actions = chips.mapIndexed { i, b -> "chip_$i" to b } +
+                chips2.mapIndexed { i, b -> "chip2_$i" to b }
+            for ((tag, action) in actions) {
+                bar.addView(button(action, tag, R.style.TvDialogActionButton),
+                    ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            }
+            root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        if (!wrapChips && chips.isNotEmpty()) {
             val bar = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.END
                 setPadding(0, dp(ctx, 12), 0, 0)
             }
             for ((index, b) in chips.withIndex()) {
-                val btn = Button(ctx, null, 0, R.style.TvDialogButton)
-                btn.text = b.label
-                btn.tag = "chip_$index"
-                btn.isFocusable = true
-                btn.setOnClickListener {
-                    if (b.closeOnClick) dlg.dismiss()
-                    b.onClick()
-                }
+                val btn = button(b, "chip_$index")
                 val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 lp.marginStart = dp(ctx, 10)
                 bar.addView(btn, lp)
-                if (first == null) first = btn
             }
             root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        if (chips2.isNotEmpty()) {
+        if (!wrapChips && chips2.isNotEmpty()) {
             val bar = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.END
                 setPadding(0, dp(ctx, 8), 0, 0)
             }
             for ((index, b) in chips2.withIndex()) {
-                val btn = Button(ctx, null, 0, R.style.TvDialogButton)
-                btn.text = b.label
-                btn.tag = "chip2_$index"
-                btn.isFocusable = true
-                btn.setOnClickListener {
-                    if (b.closeOnClick) dlg.dismiss()
-                    b.onClick()
-                }
+                val btn = button(b, "chip2_$index")
                 val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 lp.marginStart = dp(ctx, 10)
                 bar.addView(btn, lp)
-                if (first == null) first = btn
             }
             root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }

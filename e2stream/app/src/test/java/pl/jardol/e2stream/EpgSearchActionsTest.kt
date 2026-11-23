@@ -151,10 +151,10 @@ class EpgSearchActionsTest {
         val channel = Channel(1, "Kanał", "1:0:1:FFE:456:789:0:0:0:0:")
         epg.showCurrentEvent(channel) { event ->
             assertNull(event)
-            listOf(TvDialog.Btn("PiP Dodaj") { clicked = true })
+            listOf(TvDialog.Btn(activity.getString(R.string.pip_add_channel)) { clicked = true })
         }
         drain()
-        clickButton("PiP Dodaj")
+        clickButton(activity.getString(R.string.pip_add_channel))
         assertTrue(clicked)
     }
 
@@ -166,12 +166,16 @@ class EpgSearchActionsTest {
         var clicked = false
         epg.showCurrentEvent(channel) { event ->
             assertNotNull(event)
-            listOf(TvDialog.Btn("PiP Dodaj") { clicked = true })
+            listOf(TvDialog.Btn(activity.getString(R.string.pip_add_channel)) { clicked = true })
         }
         drain()
         val dialog = TvDialog.top()!!
-        assertNotNull(dialog.window!!.decorView.findViewWithTag<View>("chip_1"))
-        clickButton("PiP Dodaj")
+        val recording = dialog.window!!.decorView.findViewWithTag<View>("chip_1")
+        val pip = dialog.window!!.decorView.findViewWithTag<View>("chip2_0")
+        assertNotNull(recording)
+        assertNotNull(pip)
+        assertSame(recording.parent, pip.parent)
+        clickButton(activity.getString(R.string.pip_add_channel))
         assertTrue(clicked)
     }
 

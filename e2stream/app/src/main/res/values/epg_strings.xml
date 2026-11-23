@@ -9,13 +9,13 @@
     <string name="epg_remaining">\u0020\u0020•\u0020\u0020zostało %1$d min</string>
     <string name="epg_until">do</string>
     <string name="epg_watch">Oglądaj</string>
-    <string name="epg_switch_channel">Przełącz na kanał</string>
+    <string name="epg_switch_channel">Przełącz</string>
     <string name="epg_confirm_switch">Potwierdź przełączenie</string>
     <string name="epg_switch_question">Przełączyć na kanał %1$s?</string>
     <string name="epg_switch">Przełącz</string>
     <string name="epg_switched">Przełączono na kanał</string>
     <string name="epg_switch_failed">Nie udało się przełączyć</string>
-    <string name="epg_record_receiver">Nagraj na dekoderze</string>
+    <string name="epg_record_receiver">Dekoder REC</string>
     <string name="epg_confirm_record">Potwierdź nagranie</string>
     <string name="epg_record_question">Dodać do nagrań dekodera?\n\n%1$s — %2$s\n%3$s–%4$s</string>
     <string name="epg_record">Nagraj</string>

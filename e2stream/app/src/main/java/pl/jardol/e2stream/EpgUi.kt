@@ -273,7 +273,7 @@ class EpgUi(
         // nagłówek jak wiersz listy kanałów (ikona, kanał, tytuł, czas, postęp), niżej opis, akcje na dole
         TvDialog.panel(a, null, a.getString(R.string.epg_hint_actions), btns, widthFrac = 0.8f,
             onBack = returnToSchedule, focusChip = true, timeoutSec = Prefs(a).actionDialogSec,
-            onTimeout = returnToSchedule, chips2 = extraBtns) { ctx, _ ->
+            onTimeout = returnToSchedule, chips2 = extraBtns, wrapChips = true) { ctx, _ ->
             EventCard.content(ctx, ev, ref, name, EventCard.body(ev).ifEmpty { a.getString(R.string.epg_no_description) })
         }
     }
@@ -387,7 +387,7 @@ class EpgUi(
     // ------------------------------------------------------------ EPG wydarzenia
 
     /** Od razu opis bieżącej audycji kanału. */
-    /** [extra] — dodatkowy rząd przycisków (dostaje bieżącą audycję albo null, gdy EPG brak). */
+    /** [extra] — dodatkowe przyciski (dostaje bieżącą audycję albo null, gdy EPG brak). */
     fun showCurrentEvent(ch: Channel? = host.current(), extra: ((EpgEvent?) -> List<TvDialog.Btn>)? = null) {
         if (ch == null) return
         io.execute {

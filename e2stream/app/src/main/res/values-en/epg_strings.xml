@@ -9,13 +9,13 @@
     <string name="epg_remaining">\u0020\u0020•\u0020\u0020%1$d min remaining</string>
     <string name="epg_until">until</string>
     <string name="epg_watch">Watch</string>
-    <string name="epg_switch_channel">Switch channel</string>
+    <string name="epg_switch_channel">Switch</string>
     <string name="epg_confirm_switch">Confirm switch</string>
     <string name="epg_switch_question">Switch to %1$s?</string>
     <string name="epg_switch">Switch</string>
     <string name="epg_switched">Switched channel</string>
     <string name="epg_switch_failed">Could not switch channel</string>
-    <string name="epg_record_receiver">Record on receiver</string>
+    <string name="epg_record_receiver">Receiver REC</string>
     <string name="epg_confirm_record">Confirm recording</string>
     <string name="epg_record_question">Add to receiver recordings?\n\n%1$s — %2$s\n%3$s–%4$s</string>
     <string name="epg_record">Record</string>

@@ -4312,7 +4312,7 @@ class PlayerActivity : Activity() {
         }
     }
 
-    /** Długie OK na liście przy kanale z buforem w tle: „Zakończ bufor” i „Nagraj bufor…” (albo „Zakończ zapis”). */
+    /** Długie OK przy kanale z buforem w tle: „Bufor Stop” i „Bufor REC” (albo „Zakończ zapis”). */
     private fun bgRecButtons(bg: BgChan, c: Channel, ev: EpgEvent?): List<TvDialog.Btn> = listOf(
         TvDialog.Btn(getString(R.string.player_bg_close)) { bgCloseAsk(bg) },
         bg.lrec?.let { r ->

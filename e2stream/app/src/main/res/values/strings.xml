@@ -36,7 +36,7 @@
     <string name="subtitle_none">Brak dostępnych ścieżek napisów</string>
     <string name="subtitle_select_failed">Nie udało się wybrać ścieżki napisów</string>
     <string name="subtitle_track">Ścieżka %1$d</string>
-    <string name="pip_add_channel">PiP Dodaj</string>
+    <string name="pip_add_channel">PiP</string>
     <string name="pip_close_channel">PiP Zamknij</string>
     <string name="pip_no_longer_open">Kanał nie jest już w PiP</string>
     <string name="pip_disabled">Włącz PiP w ustawieniach</string>
@@ -135,8 +135,8 @@
     <string name="player_bgrec_stop">Zakończ zapis z bufora</string>
     <string name="player_localrec_reason_buffer_closed">zamknięto bufor kanału</string>
     <string name="action_history_list">Lista kanałów — historia</string>
-    <string name="player_bg_close">Zakończ bufor</string>
-    <string name="player_bgrec_menu">Nagraj bufor…</string>
+    <string name="player_bg_close">Bufor Stop</string>
+    <string name="player_bgrec_menu">Bufor REC</string>
     <string name="player_bgrec_title">Nagraj bufor: %1$s</string>
     <string name="player_bg_menu">Buforowane kanały</string>
     <string name="player_bg_span">w buforze %1$s</string>

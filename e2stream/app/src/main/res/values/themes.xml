@@ -39,6 +39,10 @@
         <item name="android:layout_marginStart">6dp</item>
     </style>
 
+    <style name="TvDialogActionButton" parent="TvDialogButton">
+        <item name="android:minWidth">88dp</item>
+    </style>
+
     <style name="TvList" parent="android:Widget.Material.ListView">
         <item name="android:listSelector">@drawable/list_selector</item>
         <item name="android:drawSelectorOnTop">false</item>
