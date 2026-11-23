@@ -26,6 +26,9 @@
     <string name="menu_epg_search">Search EPG</string>
     <string name="menu_audio_track">Audio track…</string>
     <string name="epg_audio">Audio</string>
+    <string name="audio_original">Original</string>
+    <string name="audio_unknown_track">Track</string>
+    <string name="audio_description">Audio description</string>
     <string name="epg_subtitles">Subtitles</string>
     <string name="epg_pip">PiP</string>
     <string name="subtitle_off">Off</string>

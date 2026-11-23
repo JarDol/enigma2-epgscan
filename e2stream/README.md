@@ -44,7 +44,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 * EPG kanału, multi-EPG bukietu i wyszukiwanie w EPG; z audycji: przełącz na kanał, zaplanuj przełączenie lub nagraj na dekoderze.
 * Długie OK w EPG kanału i Multi-EPG otwiera wybór kanału/bukietu, a wyszukiwanie jest na końcu menu.
 * W opisie EPG „Oglądaj” dla aktualnie oglądanego kanału zamyka opis bez ponownego strojenia. Wybór innego kanału („Przełącz na kanał”), także dla bieżącej audycji, wymaga potwierdzenia.
-* EPG bieżącego kanału ma przyciski Audio, Napisy i PiP. Wybór napisów działa dla dostępnych ścieżek ExoPlayera i VLC; brak ścieżek jest sygnalizowany komunikatem.
+* EPG bieżącego kanału ma przyciski Audio, Napisy i PiP. Listy audio i napisów otwarte z EPG zamykają się po ustawionym czasie bezczynności EPG wydarzenia (0 wyłącza zamykanie). Lista napisów ukrywa telegazetę, ale zachowuje napisy teletekstowe i DVB.
 * Akcje „Przełącz o…”, „Nagraj na dekoderze” i „Usuń przełączenie” wymagają potwierdzenia przed wykonaniem; WSTECZ anuluje. Po wykonaniu pokazywany jest wynik.
   Po udanym działaniu z wyników wyszukiwania lista wyników zamyka się, a komunikat pojawia się na pasku odtwarzacza.
 * Okna akcji i potwierdzenia domyślnie zamykają się po 30 sekundach; okna informacyjne po 15 sekundach. Czas każdego rodzaju ustawia się osobno w ustawieniach Ogólne (0 = bez zamykania); okna informacyjne można też wyłączyć.
@@ -61,6 +61,8 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 ## Ścieżki audio
 
 Wybór z menu „Ścieżka dźwięku” jest zapamiętywany osobno dla kanału i odbiornika, a następnie synchronizowany w profilu tego urządzenia. Przy kolejnym odtwarzaniu aplikacja próbuje najpierw dopasować zapisany identyfikator ścieżki. Jeśli dekoder nadał jej inny identyfikator, dopasowanie odbywa się po języku i kodeku.
+
+Lista pokazuje nazwę języka, opis ścieżki oraz kodek i liczbę kanałów, jeśli udostępnia je strumień i silnik odtwarzania. PID pozostaje używany do zapamiętania wyboru, ale nie jest wyświetlany.
 
 Na kanale na żywo aplikacja sprawdza wybór przez dwie sekundy od pojawienia się dostępnych ścieżek, bez opóźniania odtwarzania. Jeśli zapamiętana ścieżka się nie pojawi, próbuje użyć preferowanego języka; ręczny wybór przerywa sprawdzanie. Automatyczny wybór nie nadpisuje zapamiętanej preferencji, a szczegóły wyboru trafiają do logu.
 

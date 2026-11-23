@@ -160,7 +160,7 @@ class VlcEngine(
     private val onEvent: (String) -> Unit,
     private val onFailure: (String) -> Unit,
 ) {
-    data class AudioTrack(val id: Int, val name: String, val language: String, val codec: String, val channels: Int)
+    data class AudioTrack(val id: Int, val description: String, val language: String, val codec: String, val channels: Int)
 
     private val ui = Handler(Looper.getMainLooper())
     private var lib: LibVLC? = null
@@ -278,12 +278,10 @@ class VlcEngine(
             .filter { it.id >= 0 }
             .map { track ->
                 val meta = metadata[track.id]
-                val language = meta?.language
-                    ?: track.name?.substringAfterLast('[')?.substringBefore(']')?.takeIf { it.isNotBlank() }
-                val name = AudioTrackLabels.label(language, meta?.codec, meta?.channels ?: 0)
-                    .takeIf { it != "?" }
-                    ?: "Ścieżka ${track.id}"
-                AudioTrack(track.id, name, AudioTrackLabels.languageCode(language), meta?.codec.orEmpty(), meta?.channels ?: 0)
+                val description = track.name.orEmpty().ifBlank { meta?.description.orEmpty() }
+                val language = meta?.language?.takeIf { it.isNotBlank() }
+                    ?: AudioTrackLabels.languageFromDescription(description)
+                AudioTrack(track.id, description, AudioTrackLabels.languageCode(language), meta?.codec.orEmpty(), meta?.channels ?: 0)
             }
     } catch (e: Exception) {
         AppLog.i("VLC: nie można pobrać ścieżek audio: ${e.message}")

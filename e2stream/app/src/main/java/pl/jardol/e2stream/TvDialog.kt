@@ -322,8 +322,9 @@ object TvDialog {
         a: Activity, title: String, items: List<Item>, selected: Int = -1,
         hint: String = a.getString(R.string.dialog_select_hint), widthFrac: Float = 0.55f,
         onCancel: () -> Unit = {}, wrap: Boolean = false,
-        onLongPick: ((Int) -> Boolean)? = null, stacked: Boolean = false, keepOpen: Boolean = false, onPick: (Int) -> Unit,
-    ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel) { ctx, dlg ->
+        onLongPick: ((Int) -> Boolean)? = null, stacked: Boolean = false, keepOpen: Boolean = false,
+        timeoutSec: Int = 0, onPick: (Int) -> Unit,
+    ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel, timeoutSec = timeoutSec) { ctx, dlg ->
         listView(ctx, items, selected, stacked).apply {
             if (wrap) enableCarousel(this) { items.indexOfFirst { !it.header } to items.indexOfLast { !it.header } }
             setOnItemClickListener { _, _, w, _ ->
@@ -351,10 +352,11 @@ object TvDialog {
      * Lista jednokrotnego wyboru, która zostaje otwarta: OK wybiera (zmiana działa od razu, znacznik przechodzi),
      * wyjście tylko WSTECZ. [onPick] zwraca pozycję do zaznaczenia (-1 — bez zmiany znacznika).
      */
-    fun singleLive(a: Activity, title: String, labels: List<String>, selected: Int, onCancel: () -> Unit = {}, onPick: (Int) -> Int): Dialog {
+    fun singleLive(a: Activity, title: String, labels: List<String>, selected: Int, onCancel: () -> Unit = {},
+                   timeoutSec: Int = 0, onPick: (Int) -> Int): Dialog {
         val items = labels.mapIndexed { i, l -> Item(l, mark = if (i == selected) 3 else 0) }
         var lvRef: ListView? = null
-        val d = list(a, title, items, selected, onCancel = onCancel, keepOpen = true) { w ->
+        val d = list(a, title, items, selected, onCancel = onCancel, keepOpen = true, timeoutSec = timeoutSec) { w ->
             val m = onPick(w)
             if (m >= 0) {
                 items.forEachIndexed { i, it -> it.mark = if (i == m) 3 else 0 }

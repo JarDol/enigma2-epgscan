@@ -27,6 +27,9 @@
     <string name="menu_epg_search">Szukaj w EPG</string>
     <string name="menu_audio_track">Ścieżka dźwięku…</string>
     <string name="epg_audio">Audio</string>
+    <string name="audio_original">Oryginalna</string>
+    <string name="audio_unknown_track">Ścieżka</string>
+    <string name="audio_description">Audiodeskrypcja</string>
     <string name="epg_subtitles">Napisy</string>
     <string name="epg_pip">PiP</string>
     <string name="subtitle_off">Wyłączone</string>

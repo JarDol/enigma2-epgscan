@@ -5983,7 +5983,7 @@ class PlayerActivity : Activity() {
     private fun showCurrentEvent() {
         epg.showCurrentEvent { _ ->
             listOf(
-                TvDialog.Btn(getString(R.string.epg_audio)) { showAudioDialog() },
+                TvDialog.Btn(getString(R.string.epg_audio)) { showAudioDialog(timeoutSec = prefs.actionDialogSec) },
                 TvDialog.Btn(getString(R.string.epg_subtitles)) { showSubtitleDialog() },
                 TvDialog.Btn(getString(R.string.epg_pip)) {
                     if (Features.PIP && prefs.pipEnabled) showPipMenu()
@@ -5996,10 +5996,12 @@ class PlayerActivity : Activity() {
     private fun showSubtitleDialog() {
         if (prefs.engine == "vlc" && !tsMode && !recMode) {
             val engine = vlc
-            val tracks = engine?.subtitleTracks().orEmpty()
+            val tracks = engine?.subtitleTracks().orEmpty().filterNot { it.first >= 0 && SubtitleTracks.isTeletextPage(it.second) }
             if (tracks.isEmpty()) { showMessage(getString(R.string.subtitle_none)); return }
             val selected = tracks.indexOfFirst { it.first == engine?.selectedSubtitleTrackId() }
-            TvDialog.singleLive(this, getString(R.string.epg_subtitles), tracks.map { it.second }, selected) { which ->
+            TvDialog.singleLive(this, getString(R.string.epg_subtitles),
+                tracks.map { if (it.first < 0) getString(R.string.subtitle_off) else it.second },
+                selected, timeoutSec = prefs.actionDialogSec) { which ->
                 if (engine?.selectSubtitleTrack(tracks[which].first) == true) which
                 else { showMessage(getString(R.string.subtitle_select_failed)); -1 }
             }
@@ -6007,7 +6009,9 @@ class PlayerActivity : Activity() {
         }
         val p = player ?: run { showMessage(getString(R.string.subtitle_none)); return }
         val tracks = p.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
-            .flatMap { group -> (0 until group.length).filter { group.isTrackSupported(it) }.map { group to it } }
+            .flatMap { group -> (0 until group.length).filter {
+                group.isTrackSupported(it) && !SubtitleTracks.isTeletextPage(group.getTrackFormat(it).label)
+            }.map { group to it } }
         if (tracks.isEmpty()) { showMessage(getString(R.string.subtitle_none)); return }
         val labels = listOf(getString(R.string.subtitle_off)) + tracks.map { (group, index) ->
             val format = group.getTrackFormat(index)
@@ -6016,7 +6020,7 @@ class PlayerActivity : Activity() {
         }
         val disabled = p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
         val selected = if (disabled) 0 else tracks.indexOfFirst { (group, index) -> group.isTrackSelected(index) } + 1
-        TvDialog.singleLive(this, getString(R.string.epg_subtitles), labels, selected) { which ->
+        TvDialog.singleLive(this, getString(R.string.epg_subtitles), labels, selected, timeoutSec = prefs.actionDialogSec) { which ->
             val params = p.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, which == 0)
             if (which > 0) {
@@ -6042,24 +6046,29 @@ class PlayerActivity : Activity() {
         return out
     }
 
-    private fun audioLabel(f: Format): String =
-        AudioTrackLabels.label(f.language, f.sampleMimeType, f.channelCount)
+    private fun audioLabel(language: String?, codec: String?, channels: Int, description: String?, describesVideo: Boolean = false): String =
+        AudioTrackLabels.displayLabel(language, codec, channels, description,
+            Locale.forLanguageTag(AppLanguage.selected(this)), getString(R.string.audio_original),
+            getString(R.string.audio_unknown_track), getString(R.string.audio_description), describesVideo)
 
-    private fun showAudioDialog(vlcAttempt: Int = 0) {
+    private fun audioLabel(f: Format): String = audioLabel(f.language, f.sampleMimeType, f.channelCount, f.label,
+        f.roleFlags and C.ROLE_FLAG_DESCRIBES_VIDEO != 0)
+
+    private fun showAudioDialog(vlcAttempt: Int = 0, timeoutSec: Int = 0) {
         if (prefs.engine == "vlc" && !tsMode && !recMode) {
             val engine = vlc
             val tracks = engine?.audioTracks().orEmpty()
             if (tracks.isEmpty()) {
                 if (vlcAttempt < 12) {
-                    ui.postDelayed({ showAudioDialog(vlcAttempt + 1) }, 250)
+                    ui.postDelayed({ showAudioDialog(vlcAttempt + 1, timeoutSec) }, 250)
                 } else {
                     showMessage(getString(R.string.message_no_audio_tracks))
                 }
                 return
             }
-            val labels = tracks.map { it.name }
+            val labels = tracks.map { audioLabel(it.language, it.codec, it.channels, it.description) }
             val selected = tracks.indexOfFirst { it.id == engine?.selectedAudioTrackId() }
-            TvDialog.singleLive(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels, selected) { which ->
+            TvDialog.singleLive(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels, selected, timeoutSec = timeoutSec) { which ->
                 val track = tracks.getOrNull(which)
                 val previous = engine?.selectedAudioTrackId()
                 ui.removeCallbacks(audioCheck)
@@ -6067,7 +6076,7 @@ class PlayerActivity : Activity() {
                 if (track != null && (previous == track.id || engine?.selectAudioTrack(track.id) == true)) {
                     playList.getOrNull(playIndex)?.let { ch ->
                         prefs.setAudioFor(ch.ref, "${track.id}|${track.language}|${track.codec}")
-                        AppLog.i("wybrano audio dla ${ch.name}: ${track.name} (ID ${track.id}, poprzedni $previous, VLC)")
+                        AppLog.i("wybrano audio dla ${ch.name}: ${labels[which]} (ID ${track.id}, poprzedni $previous, VLC)")
                     }
                     which
                 } else {
@@ -6083,7 +6092,7 @@ class PlayerActivity : Activity() {
         }
         val labels = tracks.map { audioLabel(it.format) }.toTypedArray()
         val sel = tracks.indexOfFirst { it.group.isTrackSelected(it.index) }
-        TvDialog.singleLive(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels.toList(), sel) { which ->
+        TvDialog.singleLive(this, getString(R.string.message_audio_track_remembered_for_this_channel), labels.toList(), sel, timeoutSec = timeoutSec) { which ->
             selectAudio(tracks[which], remember = true)
             which
         }

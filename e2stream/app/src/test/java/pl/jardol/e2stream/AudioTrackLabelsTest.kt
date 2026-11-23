@@ -2,6 +2,7 @@ package pl.jardol.e2stream
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.util.Locale
 
 class AudioTrackLabelsTest {
     @Test
@@ -25,5 +26,26 @@ class AudioTrackLabelsTest {
     fun formatsAudioTrackLabelsConsistently() {
         assertEquals("pl MPEG 2ch", AudioTrackLabels.label("Polish", "mpga", 2))
         assertEquals("pl MPEG 2ch", AudioTrackLabels.label("pl", "audio/mpeg-L2", 2))
+    }
+
+    @Test
+    fun showsLanguageDescriptionAndCodecWithoutPid() {
+        fun label(language: String?, description: String?, role: Boolean = false) =
+            AudioTrackLabels.displayLabel(language, "mpga", 2, description, Locale("pl"),
+                "Oryginalna", "Ścieżka", "Audiodeskrypcja", role)
+        assertEquals("Polski  •  MPEG 2ch", label("pl", "Track 1 - [Polish]"))
+        assertEquals("Oryginalna  •  MPEG 2ch", label("ory", null))
+        assertEquals("Polski  •  Audio description for the visually impaired  •  MPEG 2ch",
+            label("pl", "Audio description for the visually impaired - [Polish]"))
+        assertEquals("Polski  •  Audiodeskrypcja  •  MPEG 2ch", label("pl", null, true))
+        assertEquals("Polski  •  MPEG 2ch", label(null, "Track 1 - [Polish]"))
+    }
+
+    @Test
+    fun unknownTrackUsesLocalizedFallbackAndEnglishLanguageNames() {
+        assertEquals("Track", AudioTrackLabels.displayLabel(null, null, 0, null,
+            Locale.ENGLISH, "Original", "Track", "Audio description"))
+        assertEquals("Polish", AudioTrackLabels.displayLabel("pl", null, 0, null,
+            Locale.ENGLISH, "Original", "Track", "Audio description"))
     }
 }
