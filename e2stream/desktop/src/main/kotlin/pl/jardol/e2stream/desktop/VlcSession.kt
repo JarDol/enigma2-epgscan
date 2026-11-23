@@ -57,6 +57,8 @@ internal data class PlaybackStats(
     val audioLost: Int,
 )
 
+internal data class SubtitleTrack(val id: Int, val name: String)
+
 /** null wyłącza usuwanie przeplotu. */
 internal fun vlcDeinterlaceMode(value: String): DeinterlaceMode? = when (value) {
     "off" -> null
@@ -418,6 +420,20 @@ class VlcSession(
     internal fun selectedAudioTrack(): Int = if (closed) -1 else player.audio().track()
 
     internal fun selectAudioTrack(id: Int): Boolean = !closed && player.audio().setTrack(id) == 0
+
+    internal fun subtitleTracks(): List<SubtitleTrack> {
+        if (closed) return emptyList()
+        return player.subpictures().trackDescriptions().orEmpty().filter { it.id() >= 0 }.map { description ->
+            SubtitleTrack(
+                description.id(),
+                fixMojibake(description.description().orEmpty().trim()).ifBlank { "Ścieżka ${description.id()}" },
+            )
+        }
+    }
+
+    internal fun selectedSubtitleTrack(): Int = if (closed) -1 else player.subpictures().track()
+
+    internal fun selectSubtitleTrack(id: Int): Boolean = !closed && player.subpictures().setTrack(id) == id
 
     /** Skalowanie rysuje aplikacja (VideoView); tu tylko zapamiętane dla zgodności wywołań. */
     fun setVideoScale(mode: VideoScaleMode) = Unit

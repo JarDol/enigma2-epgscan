@@ -680,6 +680,8 @@ fun main() {
             }
 
             var audioApplyJob by remember { mutableStateOf<Job?>(null) }
+            val subtitleChoices = remember { mutableMapOf<String, Int>() }
+            var subtitleApplyJob by remember { mutableStateOf<Job?>(null) }
             /**
              * Zapamiętana dla kanału ścieżka dźwięku, a bez niej — pierwsza w preferowanym języku (jak w Androidzie);
              * ścieżki pojawiają się chwilę po starcie, więc kilka prób.
@@ -718,11 +720,35 @@ fun main() {
                 }
             }
 
+            fun applySelectedSubtitle() {
+                subtitleApplyJob?.cancel()
+                val channel = playingChannel ?: return
+                if (playingRecording != null) return
+                val key = serviceKey(channel.ref)
+                val selected = subtitleChoices[key] ?: return
+                subtitleApplyJob = scope.launch {
+                    repeat(20) {
+                        val session = vlcSession ?: return@launch
+                        if (playingRecording != null || playingChannel?.let { serviceKey(it.ref) } != key ||
+                            subtitleChoices[key] != selected
+                        ) return@launch
+                        if (selected == -1 || session.subtitleTracks().any { it.id == selected }) {
+                            if (session.selectedSubtitleTrack() != selected && !session.selectSubtitleTrack(selected)) {
+                                AppLog.i("napisy: VLC nie przełączył ścieżki $selected dla ${channel.name}")
+                            }
+                            return@launch
+                        }
+                        delay(250)
+                    }
+                    AppLog.i("napisy: ścieżka $selected nie jest dostępna dla ${channel.name}")
+                }
+            }
+
             fun sessionOrNew(): VlcSession {
                 VlcRuntime.preferInternal = config.vlcInternal
                 val session = vlcSession ?: VlcSession { status = it }.also { vlcSession = it }
                 session.onFinished = { finishedHandler.get()?.invoke() }
-                session.onPlaying = { applySavedAudio() }
+                session.onPlaying = { applySavedAudio(); applySelectedSubtitle() }
                 session.setVideoScale(config.videoScaleMode)
                 session.setAudioLevel(config.appVolume, config.appMuted)
                 return session
@@ -1560,9 +1586,10 @@ fun main() {
                 showChannelList = true
             }
 
-            fun openPipMenu() {
+            fun openPipMenu(onBack: (() -> Unit)? = null) {
                 if (!config.pipEnabled || config.tsMin <= 0 || (timeshift == null && playingRecording == null)) {
                     status = "PiP wymaga włączonego timeshiftu i odtwarzania."
+                    onBack?.invoke()
                     return
                 }
                 val options = mutableListOf<Pair<String, () -> Unit>>()
@@ -1592,7 +1619,7 @@ fun main() {
                 if (pipWindows.isNotEmpty()) options += "Zamknij wszystkie PiP" to {
                     pipWindows.toList().forEach(::closePip)
                 }
-                quickPick = QuickPick("Obraz w obrazie", options.map { it.first }, 0) { options[it].second() }
+                quickPick = QuickPick("Obraz w obrazie", options.map { it.first }, 0, onBack = onBack) { options[it].second() }
             }
 
             fun openRecordingsList(local: Boolean = false, select: String? = null) {
@@ -2216,15 +2243,17 @@ fun main() {
              * Wybór ścieżki dźwięku. Z ustawień ([inSettings]) — jako wybór w oknie ustawień, więc „Wróć”
              * wraca do listy ustawień; z odtwarzacza — jako osobne okno.
              */
-            fun showAudioPick(inSettings: Boolean = false) {
+            fun showAudioPick(inSettings: Boolean = false, onBack: (() -> Unit)? = null) {
                 val session = vlcSession
                 if (session == null) {
                     status = "Nic nie jest odtwarzane."
+                    onBack?.invoke()
                     return
                 }
                 val tracks = session.audioTracks()
                 if (tracks.isEmpty()) {
                     status = "Strumień nie podał jeszcze ścieżek dźwięku — spróbuj za chwilę."
+                    onBack?.invoke()
                     return
                 }
                 val channel = playingChannel.takeIf { playingRecording == null }
@@ -2256,11 +2285,55 @@ fun main() {
                     selected = selected,
                     subtitles = tracks.map { if (it.id == current) "odtwarzana" else null },
                     keepOpen = true,
+                    onBack = onBack,
                 ) { index ->
                     onSelect(index)
                     // okno zostaje (wyjście Wstecz) — znacznik „odtwarzana” przy wybranej ścieżce
                     quickPick = quickPick?.let { pick ->
                         pick.copy(selected = index, subtitles = tracks.indices.map { if (it == index) "odtwarzana" else null })
+                    }
+                }
+            }
+
+            fun showSubtitlePick(onBack: (() -> Unit)? = null) {
+                val session = vlcSession
+                val channel = playingChannel.takeIf { playingRecording == null }
+                if (session == null || channel == null) {
+                    status = "Nie odtwarzasz żadnego kanału."
+                    onBack?.invoke()
+                    return
+                }
+                val tracks = session.subtitleTracks()
+                if (tracks.isEmpty()) {
+                    status = "Brak dostępnych ścieżek napisów."
+                    onBack?.invoke()
+                    return
+                }
+                val choices = listOf(SubtitleTrack(-1, "Wyłączone")) + tracks
+                val selected = choices.indexOfFirst { it.id == session.selectedSubtitleTrack() }.coerceAtLeast(0)
+                quickPick = QuickPick(
+                    title = "Napisy",
+                    options = choices.map { it.name },
+                    selected = selected,
+                    subtitles = choices.indices.map { if (it == selected) "wybrane" else null },
+                    keepOpen = true,
+                    onBack = onBack,
+                ) { index ->
+                    val choice = choices[index]
+                    subtitleApplyJob?.cancel()
+                    if (vlcSession !== session || playingRecording != null ||
+                        playingChannel?.let { serviceKey(it.ref) } != serviceKey(channel.ref)
+                    ) {
+                        status = "Kanał zmienił się — otwórz wybór napisów ponownie."
+                    } else if (!session.selectSubtitleTrack(choice.id)) {
+                        status = "VLC nie przełączył napisów."
+                    } else {
+                        subtitleChoices[serviceKey(channel.ref)] = choice.id
+                        status = "Napisy: ${choice.name}."
+                        quickPick = quickPick?.copy(
+                            selected = index,
+                            subtitles = choices.indices.map { if (it == index) "wybrane" else null },
+                        )
                     }
                 }
             }
@@ -2408,13 +2481,17 @@ fun main() {
                 isStillRelevant: () -> Boolean = { true },
                 includeChannelEpg: Boolean = false,
                 onPlay: (() -> Unit)? = null,
+                playbackActions: Boolean = false,
             ) {
                 scope.launch {
                     val now = Instant.now().epochSecond
                     val scheduled = withContext(Dispatchers.IO) { zapStore.list().firstOrNull { it.key == ZapTimer(channel.ref, "", "", event.begin, 0).key } }
                     if (!isStillRelevant()) return@launch
                     val isCurrent = playingChannel?.let { serviceKey(it.ref) == serviceKey(channel.ref) } == true
-                    val reopen = { showEvent(event, channel, onBack, extraActions, includeChannelEpg = includeChannelEpg, onPlay = onPlay) }
+                    val reopen = {
+                        showEvent(event, channel, onBack, extraActions, includeChannelEpg = includeChannelEpg,
+                            onPlay = onPlay, playbackActions = playbackActions)
+                    }
                     val actions = buildList<Pair<String, () -> Unit>> {
                         add(
                             (if (isCurrent) "Oglądaj" else "Przełącz na kanał") to {
@@ -2458,6 +2535,11 @@ fun main() {
                             }
                         }
                         addAll(extraActions)
+                        if (playbackActions && isCurrent && playingRecording == null) {
+                            add("Audio" to { showAudioPick(onBack = reopen) })
+                            add("Napisy" to { showSubtitlePick(onBack = reopen) })
+                            add("PiP" to { openPipMenu(onBack = reopen) })
+                        }
                         if (onBack == null || includeChannelEpg) add("EPG kanału" to { showChannelEpg(channel, event.id) })
                     }
                     val header = EpgTime.dayAndRange(event.begin, event.end) +
@@ -2484,7 +2566,8 @@ fun main() {
                     val events = loadEpg(channel) ?: return@launch
                     val now = Instant.now().epochSecond
                     val event = events.firstOrNull { it.begin <= now && it.end > now } ?: events.firstOrNull { it.end > now }
-                    if (event == null) status = "Brak EPG dla kanału ${channel.name}." else showEvent(event, channel, null)
+                    if (event == null) status = "Brak EPG dla kanału ${channel.name}."
+                    else showEvent(event, channel, null, playbackActions = true)
                 }
             }
 

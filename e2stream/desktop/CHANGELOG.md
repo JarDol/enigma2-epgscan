@@ -3,6 +3,12 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.7.8
+
+- Opis bieżącej audycji oferuje wybór dźwięku i napisów oraz menu PiP. Wybraną ścieżkę napisów aplikacja przywraca po przewijaniu timeshiftu podczas bieżącej sesji.
+- Znany problem: pasek timeshiftu może nie zamknąć się po przewinięciu; wznowienie odtwarzania i przycisk Wróć mogą pomóc.
+- Znany problem: głośność pilota Xiaomi może dodatkowo zmieniać głośność Windows.
+
 ## 0.7.7
 
 - Aktywacja okna przez skonfigurowane klawisze, kombinacje i przyciski myszy; klawiatura nie steruje aplikacją w tle.

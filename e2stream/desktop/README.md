@@ -101,6 +101,9 @@ are loaded asynchronously. Holding OK on a channel in the list or History opens
 its current (or next) EPG event; buffered channels also offer local recording.
 When PiP is enabled, the same menu can add a different channel to PiP or close
 its existing PiP window, including when no EPG is available.
+The current-channel programme description also offers Audio, Napisy (subtitle
+track or off) and PiP. A chosen subtitle track is restored for that channel
+after a timeshift seek during the current app session.
 
 **Audio:** the audio track (AUDIO key, menu or player button) is remembered per
 channel and receiver in `%APPDATA%/E2Stream/audio.properties` (matched by PID,

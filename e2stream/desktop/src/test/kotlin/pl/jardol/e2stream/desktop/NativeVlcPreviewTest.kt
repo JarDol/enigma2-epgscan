@@ -11,6 +11,46 @@ import kotlin.test.assertEquals
 
 class NativeVlcPreviewTest {
     @Test
+    fun subtitleTrackCanBeSelectedAndRendered() {
+        assumeTrue(System.getenv("E2STREAM_TEST_VLC") == "1")
+        val source = System.getenv("E2STREAM_TEST_SUBTITLE")
+        assumeTrue(!source.isNullOrBlank() && java.io.File(source).isFile)
+        VlcRuntime.preferInternal = false
+        val errors = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        val session = VlcSession { errors.add(it) }
+        try {
+            val url = java.net.URI("file", "", java.io.File(source!!).toURI().path, null).toASCIIString()
+            session.play(url, DesktopConfig(vlcRender = "cpu", vlcHwMode = "off", vlcDeint = "off"))
+            val readyDeadline = System.currentTimeMillis() + 10_000
+            while ((session.frames.count.get() == 0L || session.subtitleTracks().isEmpty()) &&
+                System.currentTimeMillis() < readyDeadline
+            ) Thread.sleep(100)
+            val track = session.subtitleTracks().first()
+            assertTrue(session.selectSubtitleTrack(-1))
+            Thread.sleep(500)
+            fun pixels(): IntArray? = session.frames.frame.value?.let { frame ->
+                IntArray(frame.width * frame.height).also { frame.readPixels(it) }
+            }
+            val withoutSubtitle = assertNotNull(pixels())
+            assertTrue(session.selectSubtitleTrack(track.id))
+            assertEquals(track.id, session.selectedSubtitleTrack())
+            val deadline = System.currentTimeMillis() + 7_000
+            var changed = false
+            while (!changed && System.currentTimeMillis() < deadline) {
+                Thread.sleep(100)
+                val frame = pixels()
+                changed = frame != null && !frame.contentEquals(withoutSubtitle)
+            }
+            assertTrue(changed, "VLC did not render the subtitle on the video frame: $errors")
+            assertTrue(session.selectSubtitleTrack(-1))
+            assertEquals(-1, session.selectedSubtitleTrack())
+            assertTrue(errors.isEmpty(), errors.toString())
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
     fun silentKeyframePlayerKeepsMainAudioAndDecodesFewerFrames() {
         assumeTrue(System.getenv("E2STREAM_TEST_VLC") == "1")
         val source = System.getenv("E2STREAM_TEST_TS")
