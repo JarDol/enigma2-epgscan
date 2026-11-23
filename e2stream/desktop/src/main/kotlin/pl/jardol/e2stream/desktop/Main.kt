@@ -2,6 +2,7 @@ package pl.jardol.e2stream.desktop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -207,6 +209,14 @@ fun main() {
             var timeshift by remember { mutableStateOf<TimeshiftSession?>(null) }
             val backgroundBuffers = remember { BackgroundBuffers<BackgroundTimeshift> { it.session.buffer.isRecording || it.pip != null } }
             var pipWindows by remember { mutableStateOf<List<BackgroundTimeshift>>(emptyList()) }
+            val screenAwake = remember { WindowsDisplayAwake() }
+            fun bufferedChannelKeys(): Set<String> = buildSet {
+                backgroundBuffers.snapshot().forEach { add(it.first) }
+                if (timeshift != null && playingRecording == null) {
+                    playingChannel?.let { add(serviceKey(it.ref)) }
+                }
+            }
+            fun pipChannelKeys(): Set<String> = pipWindows.mapTo(linkedSetOf()) { serviceKey(it.channel.ref) }
             var pipPicking by remember { mutableStateOf(false) }
             var quickPick by remember { mutableStateOf<QuickPick?>(null) }
             var tsPendingTarget by remember { mutableStateOf<Long?>(null) }
@@ -273,6 +283,26 @@ fun main() {
                         .filterKeys { key -> universalBindings[key].orEmpty().any { it.startsWith("H:") } }
                         .values.toSet(),
                 )
+            }
+
+            DisposableEffect(vlcSession != null) {
+                val keepDisplayAwake = vlcSession != null
+                try {
+                    screenAwake.setAwake(keepDisplayAwake)
+                } catch (e: java.io.IOException) {
+                    val message = "Nie udało się zapobiec wygaszeniu ekranu: ${e.message}"
+                    AppLog.i(message)
+                    status = message
+                }
+                onDispose {
+                    if (keepDisplayAwake) {
+                        try {
+                            screenAwake.setAwake(false)
+                        } catch (e: java.io.IOException) {
+                            AppLog.i("Nie udało się przywrócić wygaszania ekranu: ${e.message}")
+                        }
+                    }
+                }
             }
 
             fun recordTest(source: String, physical: String, key: VirtualRemoteKey?) {
@@ -2526,9 +2556,9 @@ fun main() {
                             listOfNotNull(
                                 EpgTime.range(event.begin, event.end),
                                 EpgTime.progress(event, now),
-                                epgPreview(event).takeIf { it.isNotBlank() },
                             ).joinToString("  •  ")
                         },
+                        details = list.map { epgPreview(it).takeIf(String::isNotBlank) },
                         headers = dayStarts.associateWith { EpgTime.day(list[it].begin).uppercase() },
                         timeoutSec = config.epgChannelSec,
                         tag = "epg-channel",
@@ -2587,12 +2617,8 @@ fun main() {
                         title = "Multi EPG: ${target.name} — ${EpgTime.day(time)} ${EpgTime.clock(time)}",
                         options = rows.map { (channel, running, _) -> "${channel.number}  ${channel.name}:  ${running?.title ?: "—"}" },
                         selected = list.indexOfFirst { it.ref == wanted }.coerceAtLeast(0),
-                        subtitles = rows.map { (_, running, next) ->
-                            listOfNotNull(
-                                running?.let { EpgTime.range(it.begin, it.end) },
-                                next?.let { "następnie ${EpgTime.clock(it.begin)} ${it.title}" },
-                            ).joinToString("  •  ").ifBlank { null }
-                        },
+                        subtitles = rows.map { (_, running, _) -> running?.let { EpgTime.range(it.begin, it.end) } },
+                        details = rows.map { (_, _, next) -> next?.let { "następnie ${EpgTime.clock(it.begin)} ${it.title}" } },
                         timeoutSec = config.epgMultiSec,
                         tag = "multi-epg",
                         fontScale = epgScale,
@@ -3095,6 +3121,8 @@ fun main() {
                 }
                 val bouquetNames = catalog?.bouquets.orEmpty().associate { it.ref to it.name }
                 val current = playingChannel?.let { serviceKey(it.ref) }
+                val buffered = bufferedChannelKeys()
+                val pip = pipChannelKeys()
                 val historyTag = "history-${java.util.UUID.randomUUID()}"
                 fun playHistory(entry: HistoryEntry) {
                     val bouquet = catalog?.bouquets?.firstOrNull { it.ref == entry.bouquet }
@@ -3110,6 +3138,7 @@ fun main() {
                     options = entries.map { it.name },
                     selected = 0,
                     tag = historyTag,
+                    translucentBackground = true,
                     iconChannels = entries.map { Channel(0, it.name, it.ref) },
                     iconStyle = piconStyle(config),
                     iconScale = config.uiListIcon / 100f,
@@ -3126,6 +3155,10 @@ fun main() {
                         listOfNotNull(
                             "oglądany".takeIf { serviceKey(entry.ref) == current },
                             bouquetNames[entry.bouquet],
+                            channelPlaybackBadge(
+                                buffered = serviceKey(entry.ref) in buffered,
+                                pip = serviceKey(entry.ref) in pip,
+                            ).trim().ifBlank { null },
                         ).joinToString(" · ").ifBlank { null }
                     },
                 ) { index ->
@@ -5218,9 +5251,9 @@ fun main() {
                     piconStyle = piconStyle(config),
                     iconScale = config.uiListIcon / 100f,
                     recordings = if (isRecordingsBouquet(selectedBouquet?.ref)) recRows else emptyMap(),
-                    buffered = backgroundBuffers.snapshot().map { it.first }.toSet(),
+                    buffered = bufferedChannelKeys(),
                     recordingChannels = activeRecordings.keys,
-                    pipChannels = pipWindows.map { serviceKey(it.channel.ref) }.toSet(),
+                    pipChannels = pipChannelKeys(),
                     pickingPip = pipPicking,
                 )
             }
@@ -5314,6 +5347,7 @@ fun main() {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun MenuDialog(
     items: List<DesktopMenuItem>,
     selected: Int,
@@ -5321,7 +5355,7 @@ private fun MenuDialog(
     onClose: () -> Unit,
     onSelect: (DesktopMenuItem) -> Unit,
 ) {
-    InWindowDialog(width = 460.dp, height = (150 + items.size * 54).dp, onDismiss = onClose) {
+    InWindowDialog(width = 460.dp, height = menuDialogHeightDp(items.size).dp, onDismiss = onClose) {
         MaterialTheme(colorScheme = colors) {
             Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
                 Column(
@@ -5334,9 +5368,13 @@ private fun MenuDialog(
                     }
                     items.forEachIndexed { index, item ->
                         val isSelected = index == selected
+                        val bringIntoView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                        LaunchedEffect(isSelected) {
+                            if (isSelected) bringIntoView.bringIntoView()
+                        }
                         Text(
                             tr(item.label),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)
                                 .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
                                 .clickable { onSelect(item) }
                                 .padding(horizontal = 16.dp, vertical = 10.dp),

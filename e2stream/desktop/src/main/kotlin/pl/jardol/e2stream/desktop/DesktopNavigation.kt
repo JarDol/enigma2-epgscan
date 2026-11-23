@@ -58,6 +58,8 @@ internal enum class DesktopMenuItem(val label: String, val configurable: Boolean
 
 internal data class MenuKeyResult(val handled: Boolean, val activated: DesktopMenuItem? = null)
 
+internal fun menuDialogHeightDp(itemCount: Int): Int = (150 + itemCount.coerceAtLeast(0) * 54).coerceIn(200, 720)
+
 internal class DesktopNavigation {
     var showMenu by mutableStateOf(false)
     var menuSelected by mutableIntStateOf(0)

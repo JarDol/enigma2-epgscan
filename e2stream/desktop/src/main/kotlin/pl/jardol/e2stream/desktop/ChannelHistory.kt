@@ -9,6 +9,13 @@ internal data class HistoryEntry(val ref: String, val name: String, val bouquet:
 internal fun historyProgramme(event: EpgEvent?): String? =
     event?.takeIf { it.title.isNotBlank() }?.let { "${EpgTime.range(it.begin, it.end)}  ·  ${it.title}" }
 
+internal fun channelPlaybackBadge(buffered: Boolean, pip: Boolean, recording: Boolean = false): String =
+    when {
+        pip -> if (recording) "  ● PiP" else "  PiP"
+        buffered -> if (recording) "  ● B" else "  B"
+        else -> ""
+    }
+
 internal fun updateHistoryProgrammes(pick: QuickPick?, tag: String, programmes: List<String?>): QuickPick? =
     if (pick?.tag == tag) pick.copy(details = programmes) else pick
 

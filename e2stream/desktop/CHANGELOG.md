@@ -3,6 +3,14 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.7.4
+
+- Lista kanałów i historia pokazują kanały z buforem (B) i w PiP; ekran nie wygasza się podczas odtwarzania.
+- Menu dopasowuje wysokość do liczby opcji, przewija się i utrzymuje zaznaczoną pozycję w widoku.
+- Listy kanałów i historia są przezroczyste jak pasek kanału.
+- EPG kanału i Multi EPG pokazują godziny rozpoczęcia i zakończenia bieżącej audycji osobno od opisu.
+- Znany problem: głośność pilota Xiaomi może dodatkowo zmieniać głośność Windows.
+
 ## 0.7.3
 
 - Poprawiono przywoływanie okna z tła: klawiatura nie aktywuje E2Stream, a piloty IR oraz przypisane urządzenia HID nadal mogą to robić. Piloty wysyłające zwykłe klawisze klawiatury działają tylko przy aktywnym oknie.

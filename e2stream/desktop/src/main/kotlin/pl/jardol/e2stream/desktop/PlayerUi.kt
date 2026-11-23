@@ -479,7 +479,7 @@ internal fun ChannelListDialog(
         LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
         MaterialTheme(colorScheme = colors) {
             Column(
-                modifier = Modifier.fillMaxSize().background(colors.surface).focusRequester(focusRequester)
+                modifier = Modifier.fillMaxSize().background(colors.surface.copy(alpha = 0.92f)).focusRequester(focusRequester)
                     .focusable().padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -574,11 +574,11 @@ internal fun ChannelListDialog(
                             Text(channel.number.toString(), modifier = Modifier.width(55.dp * fontScale), color = secondaryText, fontSize = 20.sp * fontScale)
                             Column(Modifier.weight(1f)) {
                                 val key = serviceKey(channel.ref)
-                                val badge = when {
-                                    key in pipChannels -> if (key in recordingChannels) "  ● PiP" else "  PiP"
-                                    key in buffered -> if (key in recordingChannels) "  ● B" else "  B"
-                                    else -> ""
-                                }
+                                val badge = channelPlaybackBadge(
+                                    buffered = key in buffered,
+                                    pip = key in pipChannels,
+                                    recording = key in recordingChannels,
+                                )
                                 Text(channel.name + badge, color = primaryText, fontSize = 22.sp * fontScale, fontWeight = FontWeight.Bold, maxLines = 1)
                                 Text(event?.title ?: "Brak danych EPG", color = secondaryText, fontSize = 16.sp * fontScale, maxLines = 1)
                             }
@@ -691,6 +691,8 @@ internal data class QuickPick(
     val iconStyle: PiconStyle = PiconStyle.OFF,
     val iconScale: Float = 0.8f,
     val onLongSelect: ((Int) -> Unit)? = null,
+    /** Przezroczyste tło jak na pasku kanału — dla list nakładanych na obraz. */
+    val translucentBackground: Boolean = false,
     val onSelect: (Int) -> Unit,
 )
 
@@ -704,7 +706,11 @@ internal fun VolumeOsd(
 ) {
     InWindowDialog(width = 300.dp, height = 84.dp, onDismiss = {}, alignment = Alignment.TopEnd, scrim = false, margin = 24.dp) {
         MaterialTheme(colorScheme = colors) {
-            androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
+            androidx.compose.material3.Surface(
+                Modifier.fillMaxSize(),
+                color = colors.surface,
+                contentColor = colors.onSurface,
+            ) {
                 Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         if (muted) "Wyciszono ($volume%)" else "Głośność $volume%",
@@ -741,7 +747,11 @@ internal fun QuickPickDialog(
         onDismiss = onClose,
     ) {
         MaterialTheme(colorScheme = colors) {
-            androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
+            androidx.compose.material3.Surface(
+                Modifier.fillMaxSize(),
+                color = colors.surface.copy(alpha = if (pick.translucentBackground) 0.92f else 1f),
+                contentColor = colors.onSurface,
+            ) {
                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(pick.title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)

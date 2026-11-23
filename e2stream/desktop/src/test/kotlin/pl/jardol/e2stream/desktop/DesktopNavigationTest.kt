@@ -72,6 +72,13 @@ class DesktopNavigationTest {
     }
 
     @Test
+    fun menuDialogHeightGrowsWithItemsAndCapsBeforeTheWindowScrolls() {
+        assertTrue(menuDialogHeightDp(1) < menuDialogHeightDp(5))
+        assertEquals(720, menuDialogHeightDp(DesktopMenuItem.entries.size))
+        assertEquals(200, menuDialogHeightDp(-1))
+    }
+
+    @Test
     fun backClosesMenuWithoutActivatingAnything() {
         val navigation = DesktopNavigation()
         navigation.openMenu()

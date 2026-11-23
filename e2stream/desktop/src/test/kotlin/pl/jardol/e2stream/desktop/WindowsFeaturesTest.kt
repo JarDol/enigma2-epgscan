@@ -62,6 +62,7 @@ class WindowsFeaturesTest {
             selected = 1,
             subtitles = listOf("oglądany · Bukiet", "Bukiet"),
             tag = "history-new",
+            translucentBackground = true,
             iconChannels = listOf(Channel(0, "TVP 1", "1:0:1:A:"), Channel(0, "TVP 2", "1:0:1:B:")),
             iconStyle = PiconStyle.PICONS,
         ) {}
@@ -73,6 +74,7 @@ class WindowsFeaturesTest {
         assertEquals(pick.subtitles, updated.subtitles)
         assertEquals(pick.iconChannels, updated.iconChannels)
         assertEquals(pick.iconStyle, updated.iconStyle)
+        assertEquals(pick.translucentBackground, updated.translucentBackground)
         assertEquals(listOf("Audycja", null), updated.details)
         assertSame(pick.onSelect, updated.onSelect)
     }
@@ -134,5 +136,13 @@ class WindowsFeaturesTest {
     fun bufferBannerShowsSpanAndDelay() {
         assertEquals("B 12:34", bufferBannerText(754_000, 500))
         assertEquals("B 12:34 · −1:05", bufferBannerText(754_000, 65_000))
+    }
+
+    @Test
+    fun channelPlaybackBadgesPrioritizePictureInPictureAndMarkRecording() {
+        assertEquals("  B", channelPlaybackBadge(buffered = true, pip = false))
+        assertEquals("  PiP", channelPlaybackBadge(buffered = true, pip = true))
+        assertEquals("  ● PiP", channelPlaybackBadge(buffered = true, pip = true, recording = true))
+        assertEquals("", channelPlaybackBadge(buffered = false, pip = false))
     }
 }
