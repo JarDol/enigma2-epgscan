@@ -5359,28 +5359,33 @@ private fun MenuDialog(
         MaterialTheme(colorScheme = colors) {
             Surface(Modifier.fillMaxSize(), color = colors.surface, contentColor = colors.onSurface) {
                 Column(
-                    Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(24.dp),
+                    Modifier.fillMaxSize().padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(tr("Menu"), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)
                         BackButton(onClick = onClose)
                     }
-                    items.forEachIndexed { index, item ->
-                        val isSelected = index == selected
-                        val bringIntoView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
-                        LaunchedEffect(isSelected) {
-                            if (isSelected) bringIntoView.bringIntoView()
+                    Column(
+                        Modifier.fillMaxWidth().weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items.forEachIndexed { index, item ->
+                            val isSelected = index == selected
+                            val bringIntoView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                            LaunchedEffect(isSelected) {
+                                if (isSelected) bringIntoView.bringIntoView()
+                            }
+                            Text(
+                                tr(item.label),
+                                modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)
+                                    .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
+                                    .clickable { onSelect(item) }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                color = if (isSelected) colors.onPrimaryContainer else colors.onSurface,
+                                fontSize = 20.sp,
+                            )
                         }
-                        Text(
-                            tr(item.label),
-                            modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)
-                                .background(if (isSelected) colors.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
-                                .clickable { onSelect(item) }
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            color = if (isSelected) colors.onPrimaryContainer else colors.onSurface,
-                            fontSize = 20.sp,
-                        )
                     }
                 }
             }

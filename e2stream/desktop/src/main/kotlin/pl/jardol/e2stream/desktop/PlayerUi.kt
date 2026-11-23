@@ -735,24 +735,20 @@ internal fun QuickPickDialog(
     onSelect: (Int) -> Unit,
 ) {
     val scale = pick.fontScale.coerceIn(0.7f, 1.6f)
-    val bodyHeight = if (pick.body.isNullOrBlank()) 0 else 260
-    val iconHeight = if (pick.iconStyle != PiconStyle.OFF && pick.iconChannels.isNotEmpty()) 48 * pick.iconScale + 20 else 0f
-    val rowsHeight = (pick.options.size * maxOf(54 * scale, iconHeight) +
-        ((pick.subtitles.count { it != null } + pick.details.count { it != null }) * 24 + pick.headers.size * 40) * scale).toInt() +
-        bodyHeight + if (pick.onHorizontal != null) 56 else 0
-    val wide = pick.subtitles.isNotEmpty() || pick.details.isNotEmpty() || pick.headers.isNotEmpty() || bodyHeight > 0
+    val wide = pick.subtitles.isNotEmpty() || pick.details.isNotEmpty() || pick.headers.isNotEmpty() || !pick.body.isNullOrBlank()
     InWindowDialog(
         width = if (wide) (720 * scale).coerceAtLeast(640f).dp else 460.dp,
-        height = (150 + rowsHeight).coerceAtMost(720).dp,
+        height = 720.dp,
         onDismiss = onClose,
+        fitContentHeight = true,
     ) {
         MaterialTheme(colorScheme = colors) {
             androidx.compose.material3.Surface(
-                Modifier.fillMaxSize(),
+                Modifier.fillMaxWidth(),
                 color = colors.surface.copy(alpha = if (pick.translucentBackground) 0.92f else 1f),
                 contentColor = colors.onSurface,
             ) {
-                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(pick.title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = colors.primary)
                         BackButton(onClick = onClose)
@@ -777,7 +773,11 @@ internal fun QuickPickDialog(
                     LaunchedEffect(pick.selected) {
                         if (pick.selected in pick.options.indices) listState.animateScrollToItem((rowOf(pick.selected) - 2).coerceAtLeast(0))
                     }
-                    LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LazyColumn(
+                        Modifier.weight(1f, fill = false),
+                        state = listState,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         pick.options.forEachIndexed { index, option ->
                             pick.headers[index]?.let { header ->
                                 item(key = "h$index") {

@@ -5,8 +5,10 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,6 +31,7 @@ internal fun InWindowDialog(
     alignment: Alignment = Alignment.Center,
     scrim: Boolean = true,
     margin: Dp = 0.dp,
+    fitContentHeight: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val background = if (scrim) {
@@ -37,8 +40,9 @@ internal fun InWindowDialog(
     BoxWithConstraints(Modifier.fillMaxSize().then(background)) {
         val w = minOf(width, maxWidth * 0.96f)
         val h = minOf(height, maxHeight * 0.94f)
+        val size = if (fitContentHeight) Modifier.width(w).heightIn(max = h) else Modifier.size(w, h)
         Box(
-            Modifier.align(alignment).padding(margin).size(w, h).clip(RoundedCornerShape(16.dp))
+            Modifier.align(alignment).padding(margin).then(size).clip(RoundedCornerShape(16.dp))
                 .pointerInput(Unit) { detectTapGestures { } },
         ) { content() }
     }
