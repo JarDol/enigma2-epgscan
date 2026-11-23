@@ -39,8 +39,8 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   bieżącego programu; jeśli go nie znajdzie, po krótkim oczekiwaniu rozpoczyna zapis bez PCR.
   Przewijanie sięga niemal początku niezapełnionego bufora; gdy najstarszy segment może zostać
   usunięty, zachowany jest większy margines bezpieczeństwa.
-* Przy włączonym przyspieszaniu startu ExoPlayer może po pierwszym niedoborze na początku kanału
-  wznowić z zapasem startowym zamiast czekać na pełny zapas; może to spowodować chwilowe przycięcie.
+* Krótki bufor startowy przyspiesza pierwszy obraz. Po każdym niedoborze, również tuż po starcie,
+  ExoPlayer czeka na pełny skonfigurowany zapas, zamiast ponownie korzystać z krótkiego progu startowego.
 * Przy zawieszeniu zapis ostatnich sekund strumienia (`stall-*.ts`, bufor 16 MB) do analizy np. TSDuck; na urządzeniu najwyżej 3 zrzuty, po wysłaniu na dekoder kopia lokalna jest usuwana (na dekoderze sprząta je EPG Scan: Sprzątanie dysku → zrzuty starsze niż N dni).
 * Miejsce zapisu: pamięć urządzenia lub pendrive/karta (katalog `Android/data/pl.jardol.e2stream/files/`).
 * EPG pobierane codziennie wg harmonogramu (i na żądanie) z zapisem na urządzeniu; picony kanałów z dekodera (OpenWebif /picon/ lub FTP). EPG Scan 2.19.3+ udostępnia hash `picons.zip` niezależnie od EPG, więc aktualizacja samych piconów również jest wykrywana. Brakujące picony można zastąpić logo E2Stream; wyłączenie zastępowania zostawia puste miejsce, zachowując układ.
@@ -51,8 +51,19 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 * Długie OK w EPG kanału i Multi-EPG otwiera wybór kanału/bukietu, a wyszukiwanie jest na końcu menu.
 * W opisie EPG „Oglądaj” dla aktualnie oglądanego kanału zamyka opis bez ponownego strojenia. Wybór innego kanału („Przełącz”), także dla bieżącej audycji, wymaga potwierdzenia.
   Akcje są w jednym rzędzie, a przy większej czcionce lub węższym oknie automatycznie zawijają się do kolejnych rzędów.
-  Krótsze podpisy „Dekoder REC”, „Bufor Stop”, „Bufor REC” i „PiP” nie zmieniają działania przycisków.
-* EPG bieżącego kanału ma przyciski Audio, Napisy i PiP. Listy audio i napisów otwarte z EPG, menu PiP, menu buforów i okna ustawiania nagrywania korzystają z czasu bezczynności EPG wydarzenia (0 wyłącza zamykanie). Timeout zamyka tylko menu, bez zatrzymywania PiP, bufora lub nagrywania i bez automatycznego zatwierdzania akcji. Lista napisów ukrywa telegazetę, ale zachowuje napisy teletekstowe i DVB. Nazwy ścieżek zawierają język i opis nadawcy, bez PID i technicznego MIME; identyczne nazwy są numerowane.
+  Akcje nagrywania z bufora to „Start REC” / „Stop REC”, także po otwarciu z Historii lub bez danych EPG.
+  „Start REC” oferuje audycję (gdy jest EPG), bufor do teraz lub zapis do usunięcia bufora.
+  Start wymaga działającego bufora i wolnego miejsca; Stop pozostaje dostępny także przy braku miejsca.
+  Rozpoczęcie i ręczne zatrzymanie wymagają potwierdzenia, po wykonaniu pojawia się tylko komunikat u góry.
+  Zatrzymanie nagrania nie resetuje timeshiftu ani pozycji oglądania. Fragmenty pozostające w buforze
+  są kopiowane do nagrania w tle, co wymaga dodatkowego miejsca na nośniku; zapis bufora działa dalej.
+  „Bufor Stop” jest dostępny wyłącznie w Menu → Buforowane kanały (dla kanałów w tle).
+  Trwające nagrania i nagrania jeszcze zapisywane są ukryte na liście lokalnej; zapisy przerwane awarią
+  nie są bezterminowo ukrywane. Odtwarzacz lokalny używa buforowanego odczytu części bez ponawiania
+  operacji pozycjonowania i sprawdzania długości przy każdym małym odczycie.
+  Analizator resetuje ciągłość po zmianie pozycji w nagraniu, nie traktując przewijania ani pomiaru
+  długości jako utraty pakietów. Log rozdziela czas odczytu źródła i analizy TS.
+* EPG bieżącego kanału ma przyciski Start/Stop REC (gdy działa bufor), Audio, Napisy i PiP. Listy audio i napisów otwarte z EPG, menu PiP, menu buforów i okna ustawiania nagrywania korzystają z czasu bezczynności EPG wydarzenia (0 wyłącza zamykanie). Timeout zamyka tylko menu, bez zatrzymywania PiP, bufora lub nagrywania i bez automatycznego zatwierdzania akcji. Lista napisów ukrywa telegazetę, ale zachowuje napisy teletekstowe i DVB. Nazwy ścieżek zawierają język i opis nadawcy, bez PID i technicznego MIME; identyczne nazwy są numerowane.
   Standardowe opisy ścieżek VLC (napisy DVB/teletekstowe/CC, audiodeskrypcja, dla niesłyszących/SDH, napisy wymuszone, komentarz i oryginalna) są tłumaczone na język aplikacji, także w opisach złożonych. Nierozpoznane opisy nadawcy i nazwy kodeków pozostają bez zmian. Tłumaczenie nie zmienia wyboru ani identyfikatorów ścieżek.
 * Akcje „Przełącz o…”, „Nagraj na dekoderze” i „Usuń przełączenie” wymagają potwierdzenia przed wykonaniem; WSTECZ anuluje. Po wykonaniu pokazywany jest wynik.
   Po udanym działaniu z wyników wyszukiwania lista wyników zamyka się, a komunikat pojawia się na pasku odtwarzacza.

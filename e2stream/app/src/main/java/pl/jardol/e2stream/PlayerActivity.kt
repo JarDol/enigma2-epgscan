@@ -1194,7 +1194,7 @@ class PlayerActivity : Activity() {
         val generation = streamGen
         val local = if (LocalRecordings.isLocal(url)) LocalRecordings.dirOf(url) else null
         val analyzing = DataSource.Factory {
-            AnalyzingDataSource(if (local != null) LocalRecordingDataSource(local) else http.createDataSource()) {
+            AnalyzingDataSource(if (local != null) LocalRecordingDataSource(local) else http.createDataSource(), seekable = recMode) {
                 if (generation == streamGen) analyzer else null
             }
         }
@@ -4119,6 +4119,7 @@ class PlayerActivity : Activity() {
         val buf: TimeshiftBuffer, val journal: ProgramJournal,
     )
     private var localRec: LocalRec? = null
+    private val activeRecordingDirs = LocalRecordings.activeDirs
 
     private fun localBase(): File? = (tsBuf?.root ?: TimeshiftBuffer.dir(this, prefs))?.let { LocalRecordings.base(it) }
 
@@ -4130,10 +4131,7 @@ class PlayerActivity : Activity() {
     private fun showRecordMenu() {
         val cur = localRec
         if (cur != null) {
-            TvDialog.confirm(this, getString(R.string.player_localrec_running_title), cur.meta.optString("title"), listOf(
-                TvDialog.Btn(getString(R.string.player_localrec_stop)) { finishLocalRec("zatrzymane", restartLive = true) },
-                TvDialog.Btn(getString(R.string.message_close)),
-            ), timeoutSec = prefs.actionDialogSec)
+            confirmStopRec(cur) { stopRec(cur) }
             return
         }
         if (recMode) { showMessage(getString(R.string.message_timeshift_is_unavailable_when_playing_a_recording)); return }
@@ -4169,9 +4167,9 @@ class PlayerActivity : Activity() {
                     val span = b.spanMs()
                     val opts = ArrayList<Pair<String, () -> Unit>>()
                     if (now != null) opts += getString(R.string.player_localrec_event, now.title, hm.format(Date(now.begin * 1000)), hm.format(Date(now.end * 1000))) to
-                        { startLocalRec(REC_EVENT, ch, now, used, cap) }
-                    opts += getString(R.string.player_localrec_buffer_now, fmtMs(span)) to { startLocalRec(REC_NOW, ch, now, used, cap) }
-                    opts += getString(R.string.player_localrec_buffer_until_zap) to { startLocalRec(REC_UNTIL_ZAP, ch, now, used, cap) }
+                        { bgRecStart(null, REC_EVENT, ch, now) }
+                    opts += getString(R.string.player_localrec_buffer_now, fmtMs(span)) to { bgRecStart(null, REC_NOW, ch, now) }
+                    opts += getString(R.string.player_localrec_buffer_until_zap) to { bgRecStart(null, REC_UNTIL_ZAP, ch, now) }
                     TvDialog.list(this, getString(R.string.player_localrec_title), opts.map { TvDialog.Item(it.first) }, 0,
                         widthFrac = 0.55f, timeoutSec = prefs.actionDialogSec) { w ->
                         opts[w].second()
@@ -4183,7 +4181,7 @@ class PlayerActivity : Activity() {
 
     private fun startLocalRec(mode: Int, ch: Channel, ev: EpgEvent?, usedBefore: Long, capacity: Long, bg: BgChan? = null) {
         val b = (if (bg != null) bg.buf else tsBuf) ?: return
-        if (mode != REC_NOW && activeRecs() >= recLimit()) {
+        if (maxOf(activeRecs(), activeRecordingDirs.size) >= recLimit()) {
             AppLog.i("nagranie lokalne: limit ${recLimit()} nagrań z buforów osiągnięty")
             showMessage(getString(R.string.player_rec_limit))
             return
@@ -4202,16 +4200,31 @@ class PlayerActivity : Activity() {
         fun wallOf(epochSec: Long) = nowWall - (nowEpoch - epochSec * 1000)
         // „audycja”: od jej początku wg EPG (wcześniejsze audycje z bufora pomijane), pozostałe — cały bufor
         val from = if (mode == REC_EVENT && ev != null) b.offsetAt(wallOf(ev.begin)) else b.oldestOffset
+        if (b.root.usableSpace <= TimeshiftBuffer.RESERVE + b.pinCopyBytes(from)) {
+            showMessage(getString(R.string.player_localrec_failed, getString(R.string.player_rec_no_space)), force = true)
+            return
+        }
         val dir = LocalRecordings.newDir(LocalRecordings.base(b.root), ch.name, nowEpoch)
+        activeRecordingDirs += dir
         val pin = b.startPin(dir, from)
-        if (pin == null) { showMessage(getString(R.string.player_localrec_failed, b.failed ?: "?")); return }
+        if (pin == null) {
+            activeRecordingDirs -= dir
+            showMessage(getString(R.string.player_localrec_failed, b.failed ?: "?"))
+            return
+        }
         val beginEpoch = nowEpoch - (nowWall - pin.fromWall)
         val title = if (mode == REC_EVENT && ev != null) ev.title else "${ch.name} ${hm.format(Date(beginEpoch))}"
         val meta = org.json.JSONObject()
             .put("title", title).put("service", ch.name).put("sref", ch.ref)
             .put("desc", if (mode == REC_EVENT && ev != null) listOf(ev.shortDesc, ev.longDesc).filter { it.isNotBlank() }.joinToString("\n") else "")
             .put("begin", beginEpoch / 1000).put("lengthSec", 0).put("mode", mode).put("done", false)
-        LocalRecordings.writeMeta(dir, meta)
+        if (!LocalRecordings.writeMeta(dir, meta)) {
+            b.cancelPin(pin)
+            activeRecordingDirs -= dir
+            LocalRecordings.delete(dir)
+            showMessage(getString(R.string.player_localrec_failed, getString(R.string.player_rec_metadata_failed)), force = true)
+            return
+        }
         val until = if (mode == REC_EVENT && ev != null) wallOf(ev.end) + 60_000 else Long.MAX_VALUE
         val r = LocalRec(pin, mode, meta, until, ch, usedBefore, capacity, b, jr)
         AppLog.i("nagranie lokalne: start ${listOf("audycja", "bufor do teraz", "do zmiany kanału", "do usunięcia bufora")[mode]} „$title” od ${fmtMs(nowWall - pin.fromWall)} wstecz" +
@@ -4233,10 +4246,7 @@ class PlayerActivity : Activity() {
         playList.getOrNull(playIndex)?.let { if (banner.visibility == View.VISIBLE && !tsCtl) showBanner(it) }
     }
 
-    /**
-     * Koniec nagrania: kawałki z bufora przeniesione do katalogu nagrania, opis uzupełniony, timeshift od nowa.
-     * Odtwarzanie z bufora (przesunięte) wraca na żywo, gdy [restartLive].
-     */
+    /** Kończy tylko zapis nagrania; pozycja odtwarzania i okno timeshiftu pozostają bez zmian. */
     private fun finishLocalRec(reason: String, restartLive: Boolean) {
         val r = localRec ?: return
         localRec = null
@@ -4245,15 +4255,24 @@ class PlayerActivity : Activity() {
     }
 
     /** [main] — nagranie bieżącego kanału (timeshift / powrót na żywo); inaczej z bufora kanału w tle. */
+    @Suppress("UNUSED_PARAMETER")
     private fun finishRec(r: LocalRec, reason: String, restartLive: Boolean, main: Boolean) {
-        val wasShifted = main && tsMode
-        val url = tsLiveUrl ?: currentUrl
-        if (wasShifted) tsLeave()
         val endWall = SystemClock.elapsedRealtime()
-        val pin = r.buf.takeIf { it.pin === r.pin }?.finishPin() ?: r.pin
+        activeRecordingDirs += r.pin.dir
+        val save = try {
+            r.buf.takeIf { it.pin === r.pin }?.preparePinSave()
+        } catch (e: java.io.IOException) {
+            AppLog.i("nagranie lokalne: przygotowanie zapisu nieudane ($e)")
+            if (main) {
+                localRec = r
+                ui.removeCallbacks(localRecTick)
+                ui.postDelayed(localRecTick, 5000)
+            } else bgChans.firstOrNull { it.buf === r.buf }?.lrec = r
+            showMessage(getString(R.string.player_rec_save_failed, e.message ?: e.toString()), force = true)
+            return
+        }
+        val pin = r.pin
         val lengthSec = ((endWall - pin.fromWall) / 1000).coerceAtLeast(0)
-        r.meta.put("lengthSec", lengthSec).put("size", pin.bytes).put("done", true).put("end", reason)
-        // spis audycji z dziennika bufora; „do teraz” / „do zmiany kanału” — także tytuł i opis
         val from = r.meta.optLong("begin")
         val chapters = ProgramJournal.chapters(r.journal.snapshot(), from, from + lengthSec,
             minEdgeSec = if (r.mode == REC_EVENT) 90 else ProgramJournal.MIN_CHAPTER_SEC)
@@ -4267,24 +4286,32 @@ class PlayerActivity : Activity() {
             r.meta.put("desc", desc())                 // tytuł zostaje — nagrywana audycja (np. EPG zmienione w trakcie)
         }
         if (chapters.size > 1) AppLog.i("nagranie lokalne: audycje: " + chapters.joinToString(" | ") { "${ProgramJournal.hms(it.start)} ${it.title}" })
-        LocalRecordings.writeMeta(pin.dir, r.meta)
-        if (pin.parts > 0) scanRecording(pin.dir, r.meta.optString("title"))
         val title = r.meta.optString("title")
-        AppLog.i("nagranie lokalne: koniec ($reason) „$title” ${fmtMs(lengthSec * 1000)}, ${pin.parts} plików, ${TimeshiftBuffer.gb(pin.bytes)}")
-        if (pin.parts == 0) {
-            LocalRecordings.delete(pin.dir)
-            showMessage(getString(R.string.player_localrec_empty))
-        } else showMessage(getString(R.string.player_localrec_saved, title, fmtMs(lengthSec * 1000), reasonText(reason)))
-        if (!main && prefs.bgCount == 0) {
-            bgChans.firstOrNull { it.buf === r.buf && it.pip < 0 && !it.parked && it.lrec == null }
-                ?.let { bgDrop(it, "nagranie zakończone po zamknięciu PiP") }
-        }
+        showMessage(getString(R.string.player_rec_saving, title))
+        Thread({
+            val error = try {
+                save?.save()
+                r.meta.put("lengthSec", lengthSec).put("size", pin.bytes).put("done", true).put("end", reason)
+                if (!LocalRecordings.writeMeta(pin.dir, r.meta)) throw java.io.IOException("nagranie: zapis opisu nieudany")
+                if (pin.parts > 0) scanRecording(pin.dir, title) else LocalRecordings.delete(pin.dir)
+                AppLog.i("nagranie lokalne: koniec ($reason) „$title” ${fmtMs(lengthSec * 1000)}, ${pin.parts} plików, ${TimeshiftBuffer.gb(pin.bytes)}")
+                null
+            } catch (e: java.io.IOException) {
+                AppLog.i("nagranie lokalne: zapis „$title” nieudany ($e)")
+                r.meta.put("done", false).put("saveError", e.message ?: e.toString())
+                LocalRecordings.writeMeta(pin.dir, r.meta)
+                e.message ?: e.toString()
+            }
+            activeRecordingDirs -= pin.dir
+            runOnUiThread {
+                if (error != null) showMessage(getString(R.string.player_rec_save_failed, error), force = true)
+                else if (pin.parts == 0) showMessage(getString(R.string.player_localrec_empty))
+                else showMessage(getString(R.string.player_localrec_saved, title, fmtMs(lengthSec * 1000), reasonText(reason)))
+                refreshPanelRows()
+                reloadRecordings()
+            }
+        }, "nagranie-zapis").start()
         refreshPanelRows()
-        if (restartLive && wasShifted && url != null && !recMode) {
-            failStreak = 0
-            startStream(url)
-            playList.getOrNull(playIndex)?.let { showBanner(it) }
-        }
     }
 
     private fun reasonText(reason: String) = when (reason) {
@@ -4311,7 +4338,7 @@ class PlayerActivity : Activity() {
                     now >= r.untilWall -> "koniec audycji"
                     now - r.pin.fromWall >= prefs.recMaxHours * 3_600_000L -> "limit czasu"
                     r.capacity > 0 && r.usedBefore + b.pinnedBytes() >= r.capacity * prefs.recMaxPct / 100 -> "limit miejsca"
-                    b.shrunk -> "brak miejsca"
+                    b.shrunk || b.root.usableSpace <= TimeshiftBuffer.RESERVE + b.pinCopyBytes() -> "brak miejsca"
                     else -> null
                 } ?: continue
                 c.lrec = null
@@ -4321,50 +4348,73 @@ class PlayerActivity : Activity() {
         }
     }
 
-    /** Długie OK przy kanale z buforem w tle: „Bufor Stop” i „Bufor REC” (albo „Zakończ zapis”). */
-    private fun bgRecButtons(bg: BgChan, c: Channel, ev: EpgEvent?): List<TvDialog.Btn> = listOf(
-        TvDialog.Btn(getString(R.string.player_bg_close)) { bgCloseAsk(bg) },
-        bg.lrec?.let { r ->
+    private fun canStartRec(b: TimeshiftBuffer) = b.failed == null && b.root.usableSpace > TimeshiftBuffer.RESERVE
+
+    private fun confirmStopRec(r: LocalRec, stop: () -> Unit) {
+        TvDialog.confirm(this, getString(R.string.player_localrec_title),
+            getString(R.string.player_rec_confirm_stop, r.ch.name, r.meta.optString("title")),
+            listOf(
+                TvDialog.Btn(getString(R.string.dialog_cancel)),
+                TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
+                    if (r.buf.pin === r.pin) stop() else showMessage(getString(R.string.player_rec_unavailable))
+                },
+            ), timeoutSec = prefs.actionDialogSec)
+    }
+
+    private fun bgRecButtons(bg: BgChan, c: Channel, ev: EpgEvent?): List<TvDialog.Btn> =
+        bg.lrec?.let { r -> listOf(
             TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
-                if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false); refreshPanelRows() }
-            }
-        } ?: TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bufRecMenu(bg, bg.ch ?: c, ev) },
-    )
+                confirmStopRec(r) { stopRec(r) }
+            })
+        } ?: if (canStartRec(bg.buf)) listOf(TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bufRecMenu(bg, bg.ch ?: c, ev) })
+        else emptyList()
 
     /** Oglądany kanał odtwarzany przez bufor (znacznik „B” na liście). */
-    private fun isMainBuf(c: Channel): Boolean = bufLive && tsBuf != null &&
+    private fun isMainBuf(c: Channel): Boolean = bufLive && isMainRecChannel(c)
+
+    private fun isMainRecChannel(c: Channel): Boolean = !recMode && tsBuf != null &&
         playList.getOrNull(playIndex)?.ref?.let { OpenWebif.key(it) == OpenWebif.key(c.ref) } == true
 
     /** Przyciski w opisie audycji oglądanego kanału: zapis bufora albo zatrzymanie trwającego zapisu. */
-    private fun mainRecButtons(c: Channel, ev: EpgEvent?): List<TvDialog.Btn> = listOf(
-        localRec?.let { r ->
+    private fun mainRecButtons(c: Channel, ev: EpgEvent?): List<TvDialog.Btn> =
+        localRec?.let { r -> listOf(
             TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
-                if (localRec === r) { finishLocalRec("zatrzymane", restartLive = true); refreshPanelRows() }
-            }
-        } ?: TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bufRecMenu(null, c, ev) },
-    )
-
-    /** Lista bieżących nagrań (oglądany kanał i bufory w tle): stacja + tytuł; OK zatrzymuje od razu (bez pytania). */
-    private fun showStopRecs(sel: Int = 0) {
-        val recs = ArrayList<Triple<String, String, () -> Unit>>()
-        localRec?.let { r ->
-            recs += Triple(r.meta.optString("service").ifBlank { r.ch.name }, r.meta.optString("title"),
-                { if (localRec === r) finishLocalRec("zatrzymane", restartLive = true) })
-        }
-        for (bg in bgChans.toList()) bg.lrec?.let { r ->
-            recs += Triple(bg.name, r.meta.optString("title"), {
-                if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false); refreshPanelRows() }
+                confirmStopRec(r) { stopRec(r) }
             })
-        }
+        } ?: if (tsBuf?.let(::canStartRec) == true) listOf(TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bufRecMenu(null, c, ev) })
+        else emptyList()
+
+    /** Lista bieżących nagrań; ręczne zatrzymanie zawsze wymaga potwierdzenia. */
+    private fun showStopRecs(sel: Int = 0) {
+        val recs = listOfNotNull(localRec) + bgChans.mapNotNull { it.lrec }
         if (recs.isEmpty()) return
-        val items = recs.map { TvDialog.Item(it.first, it.second) } +
+        val items = recs.map { TvDialog.Item(it.ch.name, it.meta.optString("title")) } +
             (if (recs.size > 1) listOf(TvDialog.Item(getString(R.string.player_rec_stop_all))) else emptyList())
         TvDialog.list(this, getString(R.string.player_rec_stop_title), items, sel.coerceIn(0, items.size - 1),
             widthFrac = 0.55f, timeoutSec = prefs.actionDialogSec) { i ->
-            if (i < recs.size) recs[i].third() else recs.asReversed().forEach { it.third() }
-            // lista zostaje z pozostałymi nagraniami; pusta — zamyka się sama
-            whenNoDialog { if (activeRecs() > 0) showStopRecs(minOf(i, activeRecs() - 1)) }
+            if (i < recs.size) confirmStopRec(recs[i]) { stopRec(recs[i]) }
+            else TvDialog.confirm(this, getString(R.string.player_localrec_title),
+                getString(R.string.player_rec_confirm_stop_all, recs.joinToString("\n") { it.ch.name }),
+                listOf(
+                    TvDialog.Btn(getString(R.string.dialog_cancel)),
+                    TvDialog.Btn(getString(R.string.player_rec_stop_all)) {
+                        recs.filter { it.buf.pin === it.pin }.forEach(::stopRec)
+                    },
+                ), timeoutSec = prefs.actionDialogSec)
         }
+    }
+
+    private fun stopRec(r: LocalRec) {
+        if (localRec === r) finishLocalRec("zatrzymane", restartLive = true)
+        else {
+            val bg = bgChans.firstOrNull { it.lrec === r }
+            if (bg == null) showMessage(getString(R.string.player_rec_unavailable))
+            else {
+                bg.lrec = null
+                finishRec(r, "zatrzymane", restartLive = false, main = false)
+            }
+        }
+        refreshPanelRows()
     }
 
     /** Zakończenie bufora w tle; przy nagraniu audycji — pytanie (bufor chroniony do końca audycji). */
@@ -4498,16 +4548,28 @@ class PlayerActivity : Activity() {
     }
 
     /** Zgoda na pamięć urządzenia, limit miejsca — jak przy nagraniu bieżącego kanału — i start zapisu z bufora w tle. */
-    private fun bgRecStart(bg: BgChan?, mode: Int, ch: Channel, ev: EpgEvent?) {
-        if (bg != null && bg !in bgChans) return
-        if (bg == null && !isMainBuf(ch)) return
+    private fun bgRecStart(bg: BgChan?, mode: Int, ch: Channel, ev: EpgEvent?, confirmed: Boolean = false) {
+        val now = System.currentTimeMillis() / 1000
+        if (mode == REC_EVENT && (ev == null || ev.begin > now || ev.end <= now)) {
+            showMessage(getString(R.string.player_rec_unavailable)); return
+        }
+        if ((bg != null && bg !in bgChans) || (bg == null && !isMainRecChannel(ch))) {
+            showMessage(getString(R.string.player_rec_unavailable)); return
+        }
         val b = bg?.buf ?: tsBuf ?: return
         b.failed?.let { showMessage(getString(R.string.player_ts_error, it)); return }
+        if (!canStartRec(b)) {
+            showMessage(getString(R.string.player_localrec_failed, getString(R.string.player_rec_no_space)), force = true)
+            return
+        }
+        if ((if (bg == null) localRec else bg.lrec) != null) {
+            showMessage(getString(R.string.player_rec_unavailable)); return
+        }
         val base = LocalRecordings.base(b.root)
         val internal = b.root.absolutePath.startsWith(TimeshiftBuffer.internalBase(this).absolutePath)
         if (internal && !prefs.recInternalOk) {
             TvDialog.confirm(this, getString(R.string.player_localrec_title), getString(R.string.player_localrec_internal_consent), listOf(
-                TvDialog.Btn(getString(R.string.player_localrec_allow)) { prefs.recInternalOk = true; bgRecStart(bg, mode, ch, ev) },
+                TvDialog.Btn(getString(R.string.player_localrec_allow)) { prefs.recInternalOk = true; bgRecStart(bg, mode, ch, ev, confirmed) },
                 TvDialog.Btn(getString(R.string.dialog_cancel)),
             ), timeoutSec = prefs.actionDialogSec)
             return
@@ -4516,6 +4578,11 @@ class PlayerActivity : Activity() {
             val used = LocalRecordings.used(base)
             val cap = LocalRecordings.capacity(base)
             runOnUiThread {
+                if ((bg != null && bg !in bgChans) || (bg == null && (!isMainRecChannel(ch) || tsBuf !== b)) ||
+                    (if (bg == null) localRec else bg.lrec) != null) {
+                    showMessage(getString(R.string.player_rec_unavailable))
+                    return@runOnUiThread
+                }
                 if (cap > 0 && used >= cap * prefs.recMaxPct / 100) {
                     TvDialog.confirm(this, getString(R.string.player_localrec_title),
                         getString(R.string.player_localrec_limit_reached, prefs.recMaxPct, TimeshiftBuffer.gb(used), TimeshiftBuffer.gb(cap)),
@@ -4523,9 +4590,27 @@ class PlayerActivity : Activity() {
                             TvDialog.Btn(getString(R.string.message_close))), timeoutSec = prefs.actionDialogSec)
                     return@runOnUiThread
                 }
+                if (!confirmed) {
+                    val option = when (mode) {
+                        REC_EVENT -> getString(R.string.player_bgrec_event, ev?.title.orEmpty())
+                        REC_NOW -> getString(R.string.player_bgrec_now, fmtMs(b.spanMs()))
+                        REC_UNTIL_ZAP -> getString(R.string.player_localrec_buffer_until_zap)
+                        else -> getString(R.string.player_bgrec_until)
+                    }
+                    TvDialog.confirm(this, getString(R.string.player_bgrec_menu),
+                        getString(R.string.player_rec_confirm_start, ch.name, option, fmtMs(b.spanMs())),
+                        listOf(
+                            TvDialog.Btn(getString(R.string.dialog_cancel)),
+                            TvDialog.Btn(getString(R.string.player_bgrec_menu)) {
+                                if ((bg?.buf ?: tsBuf) !== b) showMessage(getString(R.string.player_rec_unavailable))
+                                else bgRecStart(bg, mode, ch, ev, confirmed = true)
+                            },
+                        ), timeoutSec = prefs.actionDialogSec)
+                    return@runOnUiThread
+                }
                 // bufor oglądanego kanału: nagranie bieżącego kanału (kanał musi być tym z listy odtwarzania)
                 if (bg == null) {
-                    if (isMainBuf(ch)) playList.getOrNull(playIndex)?.let { startLocalRec(mode, it, ev, used, cap) }
+                    if (isMainRecChannel(ch)) playList.getOrNull(playIndex)?.let { startLocalRec(mode, it, ev, used, cap) }
                 } else startLocalRec(mode, ch, ev, used, cap, bg)
             }
         }
@@ -4543,7 +4628,7 @@ class PlayerActivity : Activity() {
                 now >= r.untilWall -> finishLocalRec("koniec audycji", restartLive = true)
                 now - r.pin.fromWall >= prefs.recMaxHours * 3_600_000L -> finishLocalRec("limit czasu", restartLive = true)
                 r.capacity > 0 && r.usedBefore + b.pinnedBytes() >= r.capacity * prefs.recMaxPct / 100 -> finishLocalRec("limit miejsca", restartLive = true)
-                b.shrunk -> finishLocalRec("brak miejsca", restartLive = true)
+                b.shrunk || b.root.usableSpace <= TimeshiftBuffer.RESERVE + b.pinCopyBytes() -> finishLocalRec("brak miejsca", restartLive = true)
                 else -> ui.postDelayed(this, 5000)
             }
         }
@@ -4625,7 +4710,7 @@ class PlayerActivity : Activity() {
         if (bq.ref == REC_LOCAL_BOUQUET) {
             val base = localBase() ?: return emptyList()
             val recording = localRec?.pin?.dir?.absolutePath
-            return LocalRecordings.list(base).mapIndexed { i, r ->
+            return LocalRecordings.list(base, activeRecordingDirs.toSet()).mapIndexed { i, r ->
                 val live = recording != null && r.path == LocalRecordings.PREFIX + recording
                 Channel(i + 1, (if (live) "● " else "") + r.title, r.path).also { it.rec = r }
             }
@@ -4735,7 +4820,7 @@ class PlayerActivity : Activity() {
         if (exportCancel != null) {             // trwa inny eksport — pokaż jego postęp
             showExportDialog(getString(R.string.player_localrec_export_busy, exportTitle)); return
         }
-        if (localRec?.pin?.dir == dir) { showMessage(getString(R.string.player_localrec_export_running)); return }
+        if (dir in activeRecordingDirs) { showMessage(getString(R.string.player_localrec_export_running)); return }
         if (convert && recMode && recItem?.path == r.path) { showMessage(getString(R.string.player_localrec_convert_playing)); return }
         val target = if (convert) File(dir, LocalRecordings.exportFile(dir).name) else LocalRecordings.exportFile(dir)
         fun start() {
@@ -4814,7 +4899,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun deleteRecording(r: Recording) {
-        if (LocalRecordings.isLocal(r.path) && localRec?.pin?.dir == LocalRecordings.dirOf(r.path)) {
+        if (LocalRecordings.isLocal(r.path) && LocalRecordings.dirOf(r.path) in activeRecordingDirs) {
             showMessage(getString(R.string.player_localrec_cannot_delete_running)); return
         }
         io.execute {
@@ -4850,6 +4935,10 @@ class PlayerActivity : Activity() {
     }
 
     private fun playRecording(r: Recording, startMs: Long) {
+        if (LocalRecordings.isLocal(r.path) && LocalRecordings.dirOf(r.path) in activeRecordingDirs) {
+            showMessage(getString(R.string.player_rec_unavailable))
+            return
+        }
         if (recMode) saveRecPos()
         else { bgPark(); tsStopAll(keepBg = true) }
         hidePanel()
@@ -5627,9 +5716,7 @@ class PlayerActivity : Activity() {
             }
             Act.RECORD -> when {
                 localRec != null -> localRec?.let { r ->
-                    TvDialog.confirm(this, getString(R.string.player_localrec_title), getString(R.string.player_localrec_stop_menu, r.meta.optString("title")),
-                        listOf(TvDialog.Btn(getString(R.string.player_localrec_stop)) { if (localRec === r) finishLocalRec("zatrzymane", restartLive = true) },
-                            TvDialog.Btn(getString(R.string.dialog_cancel))))
+                    confirmStopRec(r) { stopRec(r) }
                 }
                 recMode || currentUrl == null -> {}
                 prefs.tsMin <= 0 -> tsConfigured()
@@ -6015,8 +6102,10 @@ class PlayerActivity : Activity() {
     // ---------------------------------------------------------------- dźwięk
 
     private fun showCurrentEvent() {
-        epg.showCurrentEvent { _ ->
-            listOf(
+        val current = playList.getOrNull(playIndex) ?: return
+        epg.showCurrentEvent(current) { ev ->
+            val rec = if (!recMode && isMainBuf(current)) mainRecButtons(current, ev) else emptyList()
+            rec + listOf(
                 TvDialog.Btn(getString(R.string.epg_audio)) { showAudioDialog(timeoutSec = prefs.actionDialogSec) },
                 TvDialog.Btn(getString(R.string.epg_subtitles)) { showSubtitleDialog() },
                 pipMenuButton(),

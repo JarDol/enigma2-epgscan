@@ -130,6 +130,188 @@ class PlayerActionMenusTest {
         (0 until lv.adapter.count).map { (lv.adapter.getItem(it) as TvDialog.Item).title }
     }
     private fun pick(index: Int) = list().let { it.performItemClick(it.adapter.getView(index, null, it), index, it.adapter.getItemId(index)) }
+    private fun chips(): List<String> = (0..10).mapNotNull {
+        TvDialog.top()!!.window!!.decorView.findViewWithTag<Button>("chip_$it")?.text?.toString()
+    }
+    private fun pressChip(index: Int) =
+        TvDialog.top()!!.window!!.decorView.findViewWithTag<Button>("chip_$index").performClick()
+
+    private fun bgBuffer(bg: Any) = bgType.getDeclaredField("buf").apply { isAccessible = true }.get(bg) as TimeshiftBuffer
+
+    private fun seed(buffer: TimeshiftBuffer) {
+        buffer.pcrPid = { 256 }
+        val packet = ByteArray(188) { 0xff.toByte() }
+        byteArrayOf(0x47, 0x41, 0, 0x30, 7, 0x10, 0, 0, 0, 0, 0, 0).copyInto(packet)
+        buffer.write(packet, 0, packet.size)
+    }
+
+    @Test fun listAndHistoryDescriptionsNeverOfferBufferStopIncludingWithoutEpg() {
+        background()
+        for (history in listOf(false, true)) {
+            set("panelHist", history)
+            set("panelList", listOf(main, other))
+            val channelList = get<ListView>("list")
+            channelList.onItemLongClickListener!!.onItemLongClick(channelList, null, 1, 1)
+            drain()
+            assertTrue(activity.getString(R.string.player_bgrec_menu) in chips())
+            assertFalse(activity.getString(R.string.player_bg_close) in chips())
+            TvDialog.dismissAll()
+        }
+        call("showCurrentEvent")
+        drain()
+        assertTrue(activity.getString(R.string.player_bgrec_menu) in chips())
+        assertTrue(activity.getString(R.string.epg_audio) in chips())
+        assertTrue(activity.getString(R.string.epg_subtitles) in chips())
+        assertTrue(activity.getString(R.string.epg_pip) in chips())
+    }
+
+    @Test fun startConfirmationTimeoutAndStaleChannelNeverStartRecording() {
+        prefs.recInternalOk = true
+        val bg = background()
+        val buffer = bgBuffer(bg)
+        seed(buffer)
+        call("bufRecMenu", bg, other, null, true, {})
+        pick(0)
+        drain()
+        assertEquals(listOf(activity.getString(R.string.dialog_cancel), activity.getString(R.string.player_bgrec_menu)), chips())
+        assertNull(buffer.pin)
+        timeout()
+        assertNull(buffer.pin)
+        call("bufRecMenu", bg, other, null, true, {})
+        pick(0)
+        drain()
+        backgrounds().remove(bg)
+        pressChip(1)
+        drain()
+        assertNull(buffer.pin)
+        assertEquals(activity.getString(R.string.player_rec_unavailable), get<TextView>("message").text.toString())
+    }
+
+    @Test fun missingDiskSpaceHidesStartButNeverStopAndStopConfirmationStillTimesOut() {
+        val dir = File(RuntimeEnvironment.getApplication().cacheDir, "action-full-${System.nanoTime()}")
+        val full = TimeshiftBuffer(dir, 5, root = object : File(dir.path) {
+            override fun getUsableSpace() = 0L
+        }).also { buffers += it }
+        set("tsBuf", full)
+        @Suppress("UNCHECKED_CAST")
+        val start = call("mainRecButtons", main, null) as List<TvDialog.Btn>
+        assertTrue(start.isEmpty())
+        val pin = full.startPin(File(full.dir, "recording"), 0)!!
+        val recType = PlayerActivity::class.java.declaredClasses.single { it.simpleName == "LocalRec" }
+        val recording = recType.declaredConstructors.single().apply { isAccessible = true }.newInstance(
+            pin, REC_EVENT, JSONObject().put("title", "Program"), Long.MAX_VALUE, main,
+            0L, 0L, full, ProgramJournal(),
+        )
+        set("localRec", recording)
+        @Suppress("UNCHECKED_CAST")
+        val stop = call("mainRecButtons", main, null) as List<TvDialog.Btn>
+        assertEquals(listOf(activity.getString(R.string.player_bgrec_stop)), stop.map { it.label })
+        stop.single().onClick()
+        timeout()
+        assertSame(pin, full.pin)
+        assertSame(recording, get<Any>("localRec"))
+    }
+
+    @Test fun confirmedRecordingStartsThenStopsWithoutResettingBufferOrPlayback() {
+        prefs.recInternalOk = true
+        val bg = background()
+        val buffer = bgBuffer(bg)
+        seed(buffer)
+        val event = EpgEvent(1, System.currentTimeMillis() / 1000 - 60, 3600, "Program", "", "", other.ref, other.name)
+        call("bufRecMenu", bg, other, event, true, {})
+        pick(0)
+        drain()
+        assertNull(buffer.pin)
+        pressChip(1)
+        drain()
+        val pin = buffer.pin!!
+        try {
+            assertTrue(pin.dir in get<Set<File>>("activeRecordingDirs"))
+            assertTrue(LocalRecordings.list(pin.dir.parentFile!!, get<Set<File>>("activeRecordingDirs")).none {
+                it.path == LocalRecordings.PREFIX + pin.dir.absolutePath
+            })
+            @Suppress("UNCHECKED_CAST")
+            val buttons = call("bgRecButtons", bg, other, event) as List<TvDialog.Btn>
+            assertEquals(listOf(activity.getString(R.string.player_bgrec_stop)), buttons.map { it.label })
+            buttons.single().onClick()
+            timeout()
+            assertSame(pin, buffer.pin)
+            buttons.single().onClick()
+            pressChip(1)
+            assertNull(buffer.pin)
+            assertEquals(188L, buffer.total)
+            val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+            while (pin.dir in get<Set<File>>("activeRecordingDirs") && System.nanoTime() < until) Thread.sleep(10)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse(pin.dir in get<Set<File>>("activeRecordingDirs"))
+            assertEquals(true, LocalRecordings.readMeta(pin.dir)!!.getBoolean("done"))
+            assertEquals(188L, buffer.total)
+            assertTrue(get<Boolean>("bufLive"))
+            assertSame(bg, backgrounds().single())
+        } finally { pin.dir.deleteRecursively() }
+    }
+
+    @Test fun manualRecordingWorksWithoutBufferPlaybackAndStopPreservesShiftedState() {
+        prefs.recInternalOk = true
+        prefs.bufPlay = false
+        set("bufLive", false)
+        val buffer = get<TimeshiftBuffer>("tsBuf")
+        seed(buffer)
+        call("bgRecStart", null, REC_UNTIL_ZAP, main, null, false)
+        drain()
+        assertNull(buffer.pin)
+        pressChip(1)
+        drain()
+        val pin = buffer.pin!!
+        try {
+            set("tsMode", true)
+            set("tsShifted", true)
+            set("tsBaseWall", 1234L)
+            call("showRecordMenu")
+            assertSame(pin, buffer.pin)
+            pressChip(1)
+            awaitSave(pin)
+            assertNull(get<Any?>("localRec"))
+            assertTrue(get<Boolean>("tsMode"))
+            assertTrue(get<Boolean>("tsShifted"))
+            assertEquals(1234L, get<Long>("tsBaseWall").toLong())
+            assertEquals(188L, buffer.total)
+            assertTrue(LocalRecordings.readMeta(pin.dir)!!.getBoolean("done"))
+        } finally { pin.dir.deleteRecursively() }
+    }
+
+    @Test fun saveFailureIsReportedWithoutMarkingRecordingCompleteOrClearingBuffer() {
+        prefs.recInternalOk = true
+        val buffer = get<TimeshiftBuffer>("tsBuf")
+        seed(buffer)
+        call("bgRecStart", null, REC_UNTIL_DROP, main, null, false)
+        drain()
+        pressChip(1)
+        drain()
+        val pin = buffer.pin!!
+        try {
+            File(pin.dir, "part-00001.ts.part").mkdir()
+            call("showRecordMenu")
+            pressChip(1)
+            awaitSave(pin)
+            assertFalse(LocalRecordings.readMeta(pin.dir)!!.getBoolean("done"))
+            assertTrue(LocalRecordings.readMeta(pin.dir)!!.has("saveError"))
+            assertEquals(188L, buffer.total)
+            assertNull(buffer.pin)
+            val error = LocalRecordings.readMeta(pin.dir)!!.getString("saveError")
+            val expected = call("prettyMessage", activity.getString(R.string.player_rec_save_failed, error)).toString()
+            assertEquals(expected, get<TextView>("message").text.toString())
+        } finally { pin.dir.deleteRecursively() }
+    }
+
+    private fun awaitSave(pin: TimeshiftBuffer.Pin) {
+        Thread.getAllStackTraces().keys.filter { it.name == "nagranie-zapis" }.forEach {
+            it.join(10_000)
+            assertFalse(it.isAlive)
+        }
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(pin.dir in get<Set<File>>("activeRecordingDirs"))
+    }
 
     private fun timeout(dialog: Dialog = TvDialog.top()!!) {
         dialog.onWindowFocusChanged(true)

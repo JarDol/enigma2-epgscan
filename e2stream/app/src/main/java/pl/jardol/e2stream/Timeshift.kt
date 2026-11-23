@@ -627,13 +627,18 @@ class TimeshiftBuffer(
         var bytes = 0L
             private set
 
-        fun take(f: File, len: Long) {
+        internal fun copied(len: Long) {
             parts++
-            val dst = File(dir, String.format(java.util.Locale.US, "part-%05d.ts", parts))
-            if (!f.renameTo(dst)) {
-                try { f.copyTo(dst, overwrite = true); f.delete() } catch (e: Exception) { AppLog.i("nagranie: przeniesienie ${f.name} nieudane ($e)") }
-            }
             bytes += len
+        }
+
+        fun take(f: File, len: Long) {
+            val dst = File(dir, String.format(java.util.Locale.US, "part-%05d.ts", parts + 1))
+            if (!f.renameTo(dst)) {
+                f.copyTo(dst, overwrite = true)
+                if (!f.delete()) AppLog.i("nagranie: nie można usunąć kopii ${f.name}")
+            }
+            copied(len)
         }
     }
 
@@ -655,6 +660,74 @@ class TimeshiftBuffer(
         try { flushWriteBatch() } catch (e: IOException) { failWrite(e) }
         val p = pin ?: return 0
         p.bytes + segs.filter { it.start + it.len > p.from }.sumOf { it.len }
+    }
+
+    fun cancelPin(p: Pin) = synchronized(lock) {
+        if (pin === p) pin = null
+    }
+
+    fun pinCopyBytes(from: Long = pin?.from ?: total): Long = synchronized(lock) {
+        segs.filter { it.start + it.len > from }.sumOf { it.len }
+    }
+
+    class PinSave internal constructor(
+        val pin: Pin,
+        private val sources: List<Pair<java.io.FileInputStream, Long>>,
+    ) {
+        fun save() {
+            val data = ByteArray(1 shl 20)
+            try {
+                for ((input, length) in sources) {
+                    val target = File(pin.dir, String.format(java.util.Locale.US, "part-%05d.ts", pin.parts + 1))
+                    val tmp = File(pin.dir, target.name + ".part")
+                    try {
+                        FileOutputStream(tmp).use { output ->
+                            var left = length
+                            while (left > 0) {
+                                val n = input.read(data, 0, minOf(left, data.size.toLong()).toInt())
+                                if (n < 0) throw java.io.EOFException("nagranie: niepełny fragment")
+                                output.write(data, 0, n)
+                                left -= n
+                            }
+                            output.fd.sync()
+                        }
+                        if (!tmp.renameTo(target)) throw IOException("nagranie: nie można zapisać ${target.name}")
+                        pin.copied(length)
+                        input.close()
+                    } catch (e: IOException) {
+                        tmp.delete()
+                        throw e
+                    }
+                }
+            } finally {
+                sources.forEach { (input, _) ->
+                    try { input.close() } catch (e: IOException) { AppLog.i("nagranie: zamknięcie fragmentu nieudane ($e)") }
+                }
+            }
+        }
+    }
+
+    /**
+     * Freeze the recording boundary without resetting byte offsets or the live buffer. Open descriptors
+     * keep the immutable segments readable even if normal buffer eviction unlinks them during copying.
+     * The caller runs save() off the playback/UI threads.
+     */
+    fun preparePinSave(): PinSave? = synchronized(lock) {
+        val p = pin ?: return null
+        flushWriteBatch()
+        out?.close()
+        out = null
+        val sources = ArrayList<Pair<java.io.FileInputStream, Long>>()
+        try {
+            for (s in segs) if (s.start + s.len > p.from && s.len > 0) {
+                sources += java.io.FileInputStream(s.file) to s.len
+            }
+        } catch (e: IOException) {
+            sources.forEach { (input, _) -> input.close() }
+            throw e
+        }
+        pin = null
+        PinSave(p, sources)
     }
 
     /**

@@ -12,7 +12,8 @@ import java.io.RandomAccessFile
 
 /**
  * Nagrania lokalne z bufora timeshiftu: katalog „nagrania” obok katalogu bufora (ten sam nośnik — kawałki
- * bufora są przenoszone, nie kopiowane). Każde nagranie to katalog z part-00001.ts… i opisem meta.json.
+ * bufora wypadające z okna są przenoszone, a pozostające w nim — kopiowane przy kończeniu nagrania).
+ * Każde nagranie to katalog z part-00001.ts… i opisem meta.json.
  */
 /** Rodzaj nagrania lokalnego. */
 const val REC_EVENT = 0          // bieżąca audycja (od jej początku w buforze do końca wg EPG)
@@ -21,6 +22,7 @@ const val REC_UNTIL_ZAP = 2      // cały bufor i dalej, do zmiany kanału
 const val REC_UNTIL_DROP = 3     // cały bufor i dalej, do usunięcia bufora (także w tle)
 
 object LocalRecordings {
+    val activeDirs: MutableSet<File> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     const val DIR = "nagrania"
     const val META = "meta.json"
     const val PREFIX = "local:"
@@ -183,16 +185,17 @@ object LocalRecordings {
         return d
     }
 
-    fun writeMeta(dir: File, meta: JSONObject) {
+    fun writeMeta(dir: File, meta: JSONObject): Boolean =
         try {
             dir.mkdirs()
             val tmp = File(dir, "$META.tmp")
             tmp.writeText(meta.toString())
             if (!tmp.renameTo(File(dir, META))) { File(dir, META).writeText(meta.toString()); tmp.delete() }
+            true
         } catch (e: Exception) {
             AppLog.i("nagranie: zapis opisu ${dir.name} nieudany ($e)")
+            false
         }
-    }
 
     fun readMeta(dir: File): JSONObject? = try { JSONObject(File(dir, META).readText()) } catch (_: Exception) { null }
 
@@ -215,9 +218,10 @@ object LocalRecordings {
     }
 
     /** Lista nagrań (od najnowszego) w postaci jak nagrania z dekodera. */
-    fun list(base: File): List<Recording> {
+    fun list(base: File, active: Set<File> = emptySet()): List<Recording> {
         val dirs = base.listFiles { f -> f.isDirectory } ?: return emptyList()
         return dirs.mapNotNull { d ->
+            if (d in active) return@mapNotNull null
             val parts = parts(d)
             if (parts.isEmpty()) return@mapNotNull null
             val m = readMeta(d) ?: JSONObject()
@@ -248,8 +252,10 @@ class LocalRecordingDataSource(private val dir: File) : DataSource {
     private var starts = LongArray(0)
     private var total = 0L
     private var pos = 0L
-    private var raf: RandomAccessFile? = null
+    private var lengths = LongArray(0)
+    private var input: java.io.BufferedInputStream? = null
     private var rafIdx = -1
+    private var remaining = 0L
     private var uri: Uri? = null
     /** Pomijany początek nagrania (dane przed pierwszym PCR — starsze nagrania); -1 = jeszcze nie sprawdzony. */
     private var skip = -1L
@@ -287,46 +293,56 @@ class LocalRecordingDataSource(private val dir: File) : DataSource {
     override fun addTransferListener(transferListener: TransferListener) {}
 
     override fun open(dataSpec: DataSpec): Long {
+        close()
         uri = dataSpec.uri
         files = LocalRecordings.parts(dir)
         if (files.isEmpty()) throw IOException("nagranie: brak plików w ${dir.name}")
         starts = LongArray(files.size)
+        lengths = LongArray(files.size)
         var t = 0L
-        for (i in files.indices) { starts[i] = t; t += files[i].length() }
+        for (i in files.indices) { starts[i] = t; lengths[i] = files[i].length(); t += lengths[i] }
         if (skip < 0) skip = leadingWithoutPcr(files[0])
         total = t - skip
         pos = dataSpec.position
-        if (pos > total) throw IOException("nagranie: pozycja poza plikiem")
+        if (pos < 0 || pos > total) throw IOException("nagranie: pozycja poza plikiem")
         val left = total - pos
-        return if (dataSpec.length != C.LENGTH_UNSET.toLong()) minOf(dataSpec.length, left) else left
+        remaining = if (dataSpec.length != C.LENGTH_UNSET.toLong()) minOf(dataSpec.length, left) else left
+        return remaining
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
-        if (pos >= total) return C.RESULT_END_OF_INPUT
+        if (remaining == 0L) return C.RESULT_END_OF_INPUT
         val apos = pos + skip
-        var idx = starts.indexOfLast { it <= apos }
-        while (idx < files.size - 1 && apos >= starts[idx] + files[idx].length()) idx++
+        val idx = if (rafIdx >= 0 && apos < starts[rafIdx] + lengths[rafIdx]) rafIdx
+            else starts.indexOfLast { it <= apos }
         if (idx != rafIdx) {
-            try { raf?.close() } catch (_: Exception) {}
-            raf = RandomAccessFile(files[idx], "r")
+            input?.close()
+            val file = java.io.FileInputStream(files[idx])
+            try {
+                file.channel.position(apos - starts[idx])
+                input = java.io.BufferedInputStream(file, 256 * 1024)
+            } catch (e: IOException) {
+                file.close()
+                throw e
+            }
             rafIdx = idx
         }
-        val r = raf!!
-        r.seek(apos - starts[idx])
-        val inFile = files[idx].length() - (apos - starts[idx])
-        val n = r.read(buffer, offset, minOf(length.toLong(), inFile).toInt())
-        if (n < 0) return C.RESULT_END_OF_INPUT
+        val inFile = lengths[idx] - (apos - starts[idx])
+        val n = input!!.read(buffer, offset, minOf(length.toLong(), inFile, remaining).toInt())
+        if (n < 0) throw java.io.EOFException("nagranie: niepełny plik ${files[idx].name}")
         pos += n
+        remaining -= n
         return n
     }
 
     override fun getUri(): Uri? = uri
 
     override fun close() {
-        try { raf?.close() } catch (_: Exception) {}
-        raf = null
+        input?.close()
+        input = null
         rafIdx = -1
+        remaining = 0
     }
 }
 

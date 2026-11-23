@@ -33,16 +33,8 @@ internal class StartupLoadControl(private val delegate: LoadControl) : LoadContr
         if (!parameters.rebuffering || expiresAt == 0L || now >= expiresAt) {
             return delegate.shouldStartPlayback(parameters)
         }
-        val startup = LoadControl.Parameters(
-            parameters.playerId, parameters.timeline, parameters.mediaPeriodId,
-            parameters.playbackPositionUs, parameters.bufferedDurationUs, parameters.playbackSpeed,
-            parameters.playWhenReady, false, parameters.targetLiveOffsetUs, parameters.lastRebufferRealtimeMs,
-        )
-        val ready = delegate.shouldStartPlayback(startup)
-        if (ready) {
-            expiresAt = 0
-            AppLog.i("start kanału: pierwszy niedobór — wznowienie z zapasem startowym")
-        }
-        return ready
+        expiresAt = 0
+        AppLog.i("start kanału: niedobór — oczekiwanie na pełny zapas")
+        return delegate.shouldStartPlayback(parameters)
     }
 }

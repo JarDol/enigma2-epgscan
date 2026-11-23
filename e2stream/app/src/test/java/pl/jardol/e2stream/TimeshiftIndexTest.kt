@@ -154,6 +154,51 @@ class TimeshiftIndexTest {
     }
 
     @Test
+    fun savingRecordingPreservesBufferOffsetsKeyframesAndFurtherWrites() {
+        val b = newBuffer()
+        val before = pcr + pat + pmt + key
+        b.write(before, 0, before.size)
+        val dir = File(b.dir, "recording")
+        val pin = b.startPin(dir, 0)!!
+        val oldest = b.oldestWall
+        val frame = b.keyframeAt(Long.MAX_VALUE)
+        val save = b.preparePinSave()!!
+        assertNull(b.pin)
+        assertEquals(before.size.toLong(), b.total)
+        assertEquals(oldest, b.oldestWall)
+        assertEquals(frame, b.keyframeAt(Long.MAX_VALUE))
+        b.write(key, 0, key.size)
+        save.save()
+        assertEquals(before.size.toLong(), pin.bytes)
+        assertEquals((before.size + key.size).toLong(), b.total)
+        val read = ByteArray(before.size + key.size)
+        assertEquals(read.size, b.read(0, read, 0, read.size))
+        assertArrayEquals(before + key, read)
+        assertArrayEquals(before, File(dir, "part-00001.ts").readBytes())
+        b.close()
+        b.dir.deleteRecursively()
+    }
+
+    @Test
+    fun savingSnapshotDoesNotPreventTheNextRecordingOrIncludeItsBytes() {
+        val b = newBuffer()
+        b.write(pcr, 0, pcr.size)
+        val first = b.startPin(File(b.dir, "first"), 0)!!
+        val save = b.preparePinSave()!!
+        val second = b.startPin(File(b.dir, "second"), b.total)!!
+        b.write(key, 0, key.size)
+        val save2 = b.preparePinSave()!!
+        save.save()
+        save2.save()
+        assertEquals(188L, first.bytes)
+        assertEquals(188L, second.bytes)
+        assertArrayEquals(pcr, File(first.dir, "part-00001.ts").readBytes())
+        assertArrayEquals(key, File(second.dir, "part-00001.ts").readBytes())
+        b.close()
+        b.dir.deleteRecursively()
+    }
+
+    @Test
     fun shrinkingBufferMovesExpiredSegmentsIntoActiveRecording() {
         val b = newBuffer()
         val segsField = TimeshiftBuffer::class.java.getDeclaredField("segs").apply { isAccessible = true }

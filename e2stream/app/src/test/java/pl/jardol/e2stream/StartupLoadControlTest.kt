@@ -34,11 +34,11 @@ class StartupLoadControlTest {
         true, rebuffering, C.TIME_UNSET, C.TIME_UNSET,
     )
 
-    @Test fun firstEarlyRebufferUsesStartThresholdOnlyOnce() {
+    @Test fun firstEarlyRebufferWaitsForFullReserve() {
         val control = StartupLoadControl(delegate)
         control.begin(true)
         assertFalse(control.shouldStartPlayback(params(true, 1_000_000)))
-        assertTrue(control.shouldStartPlayback(params(true, 1_500_000)))
+        assertFalse(control.shouldStartPlayback(params(true, 1_500_000)))
         assertFalse(control.shouldStartPlayback(params(true, 1_500_000)))
         assertTrue(control.shouldStartPlayback(params(true, 4_500_000)))
     }
@@ -65,7 +65,7 @@ class StartupLoadControlTest {
         control.onPrepared(PlayerId.UNSET)
         control.begin(true)
         assertFalse(control.shouldStartPlayback(params(true, 1_000_000)))
-        assertTrue(control.shouldStartPlayback(params(true, 1_500_000)))
+        assertFalse(control.shouldStartPlayback(params(true, 1_500_000)))
         assertFalse(control.shouldStartPlayback(params(true, 1_500_000)))
         assertTrue(control.shouldStartPlayback(params(true, 4_500_000)))
         control.onReleased(PlayerId.UNSET)

@@ -234,6 +234,7 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
         pidCc.fill(-1); pidCcErr.fill(0); lastPcrMs.fill(-1)
         pidType.clear(); pmtPid = -1; pmtVersion = -1; pmtCandidates.clear()
         carryLen = 0
+        seekAlignment = false
         ivStart = SystemClock.elapsedRealtime()
         ivBytes = 0; ivCc = 0; ivTei = 0; ivScr = 0; ivSync = 0; ivPcr = 0; ivGap = 0
         ringPos = 0; ringFull = false
@@ -275,6 +276,29 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
     @Synchronized
     fun dropCarry() { carryLen = 0 }
 
+    private var seekAlignment = false
+
+    @Synchronized
+    fun seekRead(expectedSession: Long? = null) {
+        if (expectedSession != null && expectedSession != sessionId) return
+        carryLen = 0
+        seekAlignment = true
+        pidCc.fill(-1)
+        lastPcrMs.fill(-1)
+        lastPcrTicks = -1
+        lastPcrAny = -1
+        lastDts.fill(-1)
+        lastStep.fill(0)
+        offEma.fill(NONE)
+        badRun.fill(0)
+        secLen = 0
+        secPkts.reset()
+        ivVMin = Long.MAX_VALUE; ivVMax = Long.MIN_VALUE
+        ivAMin = Long.MAX_VALUE; ivAMax = Long.MIN_VALUE
+        lastAvDiff = Long.MIN_VALUE
+        avDiffMs = 0; videoLeadMs = 0
+    }
+
     @Synchronized
     fun feed(buf: ByteArray, off: Int, len: Int, expectedSession: Long? = null) {
         if (len <= 0 || (expectedSession != null && expectedSession != sessionId)) return
@@ -301,6 +325,11 @@ class TsAnalyzer(ringBytes: Int, private val onEvent: (String) -> Unit) {
 
         var i = off
         val end = off + len
+        if (seekAlignment) {
+            while (i < end && (buf[i] != SYNC || (i + 188 < end && buf[i + 188] != SYNC))) i++
+            if (i == end) return
+            seekAlignment = false
+        }
         if (carryLen > 0) {
             val n = minOf(188 - carryLen, len)
             System.arraycopy(buf, off, carry, carryLen, n)
