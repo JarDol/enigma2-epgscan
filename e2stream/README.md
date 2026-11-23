@@ -54,7 +54,8 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   Akcje nagrywania z bufora to „Start REC” / „Stop REC”, także po otwarciu z Historii lub bez danych EPG.
   „Start REC” oferuje audycję (gdy jest EPG), bufor do teraz lub zapis do usunięcia bufora.
   Start wymaga działającego bufora i wolnego miejsca; Stop pozostaje dostępny także przy braku miejsca.
-  Rozpoczęcie i ręczne zatrzymanie wymagają potwierdzenia, po wykonaniu pojawia się tylko komunikat u góry.
+  Rozpoczęcie i ręczne zatrzymanie wymagają potwierdzenia: przycisk akcji jest pojedynczy i od razu zaznaczony,
+  OK wykonuje akcję, a WSTECZ anuluje; po wykonaniu pojawia się tylko komunikat u góry.
   Zatrzymanie nagrania nie resetuje timeshiftu ani pozycji oglądania. Fragmenty pozostające w buforze
   są kopiowane do nagrania w tle, co wymaga dodatkowego miejsca na nośniku; zapis bufora działa dalej.
   „Bufor Stop” jest dostępny wyłącznie w Menu → Buforowane kanały (dla kanałów w tle).
@@ -65,7 +66,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   długości jako utraty pakietów. Log rozdziela czas odczytu źródła i analizy TS.
 * EPG bieżącego kanału ma przyciski Start/Stop REC (gdy działa bufor), Audio, Napisy i PiP. Listy audio i napisów otwarte z EPG, menu PiP, menu buforów i okna ustawiania nagrywania korzystają z czasu bezczynności EPG wydarzenia (0 wyłącza zamykanie). Timeout zamyka tylko menu, bez zatrzymywania PiP, bufora lub nagrywania i bez automatycznego zatwierdzania akcji. Lista napisów ukrywa telegazetę, ale zachowuje napisy teletekstowe i DVB. Nazwy ścieżek zawierają język i opis nadawcy, bez PID i technicznego MIME; identyczne nazwy są numerowane.
   Standardowe opisy ścieżek VLC (napisy DVB/teletekstowe/CC, audiodeskrypcja, dla niesłyszących/SDH, napisy wymuszone, komentarz i oryginalna) są tłumaczone na język aplikacji, także w opisach złożonych. Nierozpoznane opisy nadawcy i nazwy kodeków pozostają bez zmian. Tłumaczenie nie zmienia wyboru ani identyfikatorów ścieżek.
-* Akcje „Przełącz o…”, „Nagraj na dekoderze” i „Usuń przełączenie” wymagają potwierdzenia przed wykonaniem; WSTECZ anuluje. Po wykonaniu pokazywany jest wynik.
+* Akcje „Przełącz o…”, „Nagraj na dekoderze” i „Usuń przełączenie” wymagają potwierdzenia przed wykonaniem; przy pojedynczej akcji OK ją wykonuje, a WSTECZ anuluje lub wraca do poprzedniego widoku. Podpowiedź sterowania jest widoczna u góry okna. Po wykonaniu pokazywany jest wynik.
   Po udanym działaniu z wyników wyszukiwania lista wyników zamyka się, a komunikat pojawia się na pasku odtwarzacza.
 * Okna akcji i potwierdzenia domyślnie zamykają się po 30 sekundach; okna informacyjne po 15 sekundach. Czas każdego rodzaju ustawia się osobno w ustawieniach Ogólne (0 = bez zamykania); okna informacyjne można też wyłączyć.
 * Menu podręczne z konfigurowalną widocznością i kolejnością pozycji; Ustawienia są zawsze dostępne.

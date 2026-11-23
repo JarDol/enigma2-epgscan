@@ -500,7 +500,8 @@ class PlayerActivity : Activity() {
         ui.post {
             if (!isFinishing) TvDialog.confirm(this, getString(R.string.message_wake_up_test_received),
                 getString(R.string.player_test_details, id),
-                listOf(TvDialog.Btn(getString(R.string.message_close))))
+                listOf(TvDialog.Btn(getString(R.string.message_close))),
+                hintOverride = getString(R.string.epg_hint_actions))
         }
     }
 
@@ -4147,7 +4148,6 @@ class PlayerActivity : Activity() {
         if (internal && !prefs.recInternalOk) {
             TvDialog.confirm(this, getString(R.string.player_localrec_title), getString(R.string.player_localrec_internal_consent), listOf(
                 TvDialog.Btn(getString(R.string.player_localrec_allow)) { prefs.recInternalOk = true; showRecordMenu() },
-                TvDialog.Btn(getString(R.string.dialog_cancel)),
             ), timeoutSec = prefs.actionDialogSec)
             return
         }
@@ -4353,12 +4353,9 @@ class PlayerActivity : Activity() {
     private fun confirmStopRec(r: LocalRec, stop: () -> Unit) {
         TvDialog.confirm(this, getString(R.string.player_localrec_title),
             getString(R.string.player_rec_confirm_stop, r.ch.name, r.meta.optString("title")),
-            listOf(
-                TvDialog.Btn(getString(R.string.dialog_cancel)),
-                TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
-                    if (r.buf.pin === r.pin) stop() else showMessage(getString(R.string.player_rec_unavailable))
-                },
-            ), timeoutSec = prefs.actionDialogSec)
+            listOf(TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
+                if (r.buf.pin === r.pin) stop() else showMessage(getString(R.string.player_rec_unavailable))
+            }), timeoutSec = prefs.actionDialogSec)
     }
 
     private fun bgRecButtons(bg: BgChan, c: Channel, ev: EpgEvent?): List<TvDialog.Btn> =
@@ -4395,12 +4392,9 @@ class PlayerActivity : Activity() {
             if (i < recs.size) confirmStopRec(recs[i]) { stopRec(recs[i]) }
             else TvDialog.confirm(this, getString(R.string.player_localrec_title),
                 getString(R.string.player_rec_confirm_stop_all, recs.joinToString("\n") { it.ch.name }),
-                listOf(
-                    TvDialog.Btn(getString(R.string.dialog_cancel)),
-                    TvDialog.Btn(getString(R.string.player_rec_stop_all)) {
-                        recs.filter { it.buf.pin === it.pin }.forEach(::stopRec)
-                    },
-                ), timeoutSec = prefs.actionDialogSec)
+                listOf(TvDialog.Btn(getString(R.string.player_rec_stop_all)) {
+                    recs.filter { it.buf.pin === it.pin }.forEach(::stopRec)
+                }), timeoutSec = prefs.actionDialogSec)
         }
     }
 
@@ -4425,8 +4419,7 @@ class PlayerActivity : Activity() {
             TvDialog.confirm(this, bg.name, getString(R.string.player_bg_close_rec, r.meta.optString("title")), listOf(
                 TvDialog.Btn(getString(R.string.player_bg_close)) {
                     if (bg in bgChans) { bgDrop(bg, "zakończony ręcznie (z nagraniem)"); refreshPanelRows(); onClosed() }
-                },
-                TvDialog.Btn(getString(R.string.dialog_cancel))), timeoutSec = prefs.actionDialogSec)
+                }), timeoutSec = prefs.actionDialogSec)
             return
         }
         bgDrop(bg, "zakończony ręcznie"); refreshPanelRows()
@@ -4570,7 +4563,6 @@ class PlayerActivity : Activity() {
         if (internal && !prefs.recInternalOk) {
             TvDialog.confirm(this, getString(R.string.player_localrec_title), getString(R.string.player_localrec_internal_consent), listOf(
                 TvDialog.Btn(getString(R.string.player_localrec_allow)) { prefs.recInternalOk = true; bgRecStart(bg, mode, ch, ev, confirmed) },
-                TvDialog.Btn(getString(R.string.dialog_cancel)),
             ), timeoutSec = prefs.actionDialogSec)
             return
         }
@@ -4599,13 +4591,10 @@ class PlayerActivity : Activity() {
                     }
                     TvDialog.confirm(this, getString(R.string.player_bgrec_menu),
                         getString(R.string.player_rec_confirm_start, ch.name, option, fmtMs(b.spanMs())),
-                        listOf(
-                            TvDialog.Btn(getString(R.string.dialog_cancel)),
-                            TvDialog.Btn(getString(R.string.player_bgrec_menu)) {
-                                if ((bg?.buf ?: tsBuf) !== b) showMessage(getString(R.string.player_rec_unavailable))
-                                else bgRecStart(bg, mode, ch, ev, confirmed = true)
-                            },
-                        ), timeoutSec = prefs.actionDialogSec)
+                        listOf(TvDialog.Btn(getString(R.string.player_bgrec_menu)) {
+                            if ((bg?.buf ?: tsBuf) !== b) showMessage(getString(R.string.player_rec_unavailable))
+                            else bgRecStart(bg, mode, ch, ev, confirmed = true)
+                        }), timeoutSec = prefs.actionDialogSec)
                     return@runOnUiThread
                 }
                 // bufor oglądanego kanału: nagranie bieżącego kanału (kanał musi być tym z listy odtwarzania)
@@ -4829,7 +4818,8 @@ class PlayerActivity : Activity() {
             val free = dir.usableSpace
             if (size + TimeshiftBuffer.RESERVE > free) {
                 TvDialog.confirm(this, getString(R.string.player_localrec_export), getString(R.string.player_localrec_export_no_space,
-                    TimeshiftBuffer.gb(size), TimeshiftBuffer.gb(free)), listOf(TvDialog.Btn("OK")))
+                    TimeshiftBuffer.gb(size), TimeshiftBuffer.gb(free)), listOf(TvDialog.Btn("OK")),
+                    hintOverride = getString(R.string.epg_hint_actions))
                 return
             }
             val cancel = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -4871,7 +4861,6 @@ class PlayerActivity : Activity() {
         if (target.exists()) {
             TvDialog.confirm(this, getString(R.string.player_localrec_export), getString(R.string.player_localrec_export_exists, target.name), listOf(
                 TvDialog.Btn(getString(R.string.player_localrec_export_overwrite)) { start() },
-                TvDialog.Btn(getString(R.string.dialog_cancel)),
             ))
         } else start()
     }

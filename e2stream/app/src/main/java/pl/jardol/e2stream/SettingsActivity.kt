@@ -937,7 +937,7 @@ class SettingsActivity : Activity() {
                 if (!p.tsInternalOk) {
                     TvDialog.confirm(this, getString(R.string.message_buffer_in_device_storage),
                         getString(R.string.ts_flash_warning),
-                        listOf(TvDialog.Btn(getString(R.string.message_allow)) { p.tsInternalOk = true; setTsDir("", o.name) }, TvDialog.Btn(getString(R.string.message_no))))
+                        listOf(TvDialog.Btn(getString(R.string.message_allow)) { p.tsInternalOk = true; setTsDir("", o.name) }))
                 } else setTsDir("", o.name)
             } else setTsDir(o.path, o.name)
         }
@@ -1061,7 +1061,6 @@ class SettingsActivity : Activity() {
                     else TvDialog.confirm(this, getString(R.string.receiver_search_unverified_title),
                         getString(R.string.receiver_search_confirm, receiver.ip, receiver.httpPort), listOf(
                             TvDialog.Btn(getString(R.string.receiver_search_use)) { selectReceiver(receiver) },
-                            TvDialog.Btn(getString(R.string.dialog_cancel)),
                         ))
                 }
             }
@@ -1178,11 +1177,10 @@ class SettingsActivity : Activity() {
                     false -> {
                         AppLog.i("ustawienia: EIT ze strumienia - Enigma2 nie wysyła EIT (config.streaming.stream_eit = wyłączone)")
                         TvDialog.confirm(this, getString(R.string.eit_off_title), getString(R.string.eit_off_message),
-                            listOf(TvDialog.Btn("OK")))
+                            listOf(TvDialog.Btn("OK")), hintOverride = getString(R.string.epg_hint_actions))
                     }
                     null -> TvDialog.confirm(this, getString(R.string.eit_unknown_title), getString(R.string.eit_unknown_message), listOf(
                         TvDialog.Btn(getString(R.string.eit_enable)) { on() },
-                        TvDialog.Btn(getString(R.string.dialog_cancel)),
                     ))
                 }
             }

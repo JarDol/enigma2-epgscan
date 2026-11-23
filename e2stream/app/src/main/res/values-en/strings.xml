@@ -150,6 +150,9 @@
     <string name="player_rec_saving">Saving recording: %1$s</string>
     <string name="player_rec_metadata_failed">Cannot save recording metadata</string>
     <string name="player_rec_save_failed">Could not save recording: %1$s</string>
+    <string name="dialog_hint_confirm_cancel">OK confirm  •  BACK cancel</string>
+    <string name="dialog_hint_choose_cancel">OK select  •  BACK cancel</string>
+    <string name="dialog_hint_choose">OK select</string>
     <string name="player_bgrec_title">Record buffer: %1$s</string>
     <string name="player_bg_menu">Buffered channels</string>
     <string name="player_bg_span">%1$s in buffer</string>

@@ -529,9 +529,16 @@ object TvDialog {
     fun confirm(
         a: Activity, title: String, message: CharSequence, chips: List<Btn>,
         cancelable: Boolean = true, onBack: (() -> Unit)? = null, timeoutSec: Int? = null,
-        onTimeout: (() -> Unit)? = null,
+        onTimeout: (() -> Unit)? = null, hintOverride: String? = null,
     ): Dialog {
-        return panel(a, title, null, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack,
+        val hint = hintOverride ?: when {
+            chips.isEmpty() -> null
+            !cancelable -> a.getString(R.string.dialog_hint_choose)
+            onBack != null -> a.getString(R.string.epg_hint_actions)
+            chips.size == 1 -> a.getString(R.string.dialog_hint_confirm_cancel)
+            else -> a.getString(R.string.dialog_hint_choose_cancel)
+        }
+        return panel(a, title, hint, chips, widthFrac = 0.6f, cancelable = cancelable, onBack = onBack,
             focusChip = true, timeoutSec = timeoutSec ?: Prefs(a).confirmDialogSec, onTimeout = onTimeout) { ctx, _ ->
             scrollText(ctx, message, 18f)
         }

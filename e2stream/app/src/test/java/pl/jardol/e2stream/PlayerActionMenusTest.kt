@@ -173,7 +173,7 @@ class PlayerActionMenusTest {
         call("bufRecMenu", bg, other, null, true, {})
         pick(0)
         drain()
-        assertEquals(listOf(activity.getString(R.string.dialog_cancel), activity.getString(R.string.player_bgrec_menu)), chips())
+        assertEquals(listOf(activity.getString(R.string.player_bgrec_menu)), chips())
         assertNull(buffer.pin)
         timeout()
         assertNull(buffer.pin)
@@ -181,7 +181,7 @@ class PlayerActionMenusTest {
         pick(0)
         drain()
         backgrounds().remove(bg)
-        pressChip(1)
+        pressChip(0)
         drain()
         assertNull(buffer.pin)
         assertEquals(activity.getString(R.string.player_rec_unavailable), get<TextView>("message").text.toString())
@@ -222,7 +222,7 @@ class PlayerActionMenusTest {
         pick(0)
         drain()
         assertNull(buffer.pin)
-        pressChip(1)
+        pressChip(0)
         drain()
         val pin = buffer.pin!!
         try {
@@ -237,7 +237,7 @@ class PlayerActionMenusTest {
             timeout()
             assertSame(pin, buffer.pin)
             buttons.single().onClick()
-            pressChip(1)
+            pressChip(0)
             assertNull(buffer.pin)
             assertEquals(188L, buffer.total)
             val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
@@ -260,7 +260,7 @@ class PlayerActionMenusTest {
         call("bgRecStart", null, REC_UNTIL_ZAP, main, null, false)
         drain()
         assertNull(buffer.pin)
-        pressChip(1)
+        pressChip(0)
         drain()
         val pin = buffer.pin!!
         try {
@@ -269,7 +269,7 @@ class PlayerActionMenusTest {
             set("tsBaseWall", 1234L)
             call("showRecordMenu")
             assertSame(pin, buffer.pin)
-            pressChip(1)
+            pressChip(0)
             awaitSave(pin)
             assertNull(get<Any?>("localRec"))
             assertTrue(get<Boolean>("tsMode"))
@@ -286,13 +286,13 @@ class PlayerActionMenusTest {
         seed(buffer)
         call("bgRecStart", null, REC_UNTIL_DROP, main, null, false)
         drain()
-        pressChip(1)
+        pressChip(0)
         drain()
         val pin = buffer.pin!!
         try {
             File(pin.dir, "part-00001.ts.part").mkdir()
             call("showRecordMenu")
-            pressChip(1)
+            pressChip(0)
             awaitSave(pin)
             assertFalse(LocalRecordings.readMeta(pin.dir)!!.getBoolean("done"))
             assertTrue(LocalRecordings.readMeta(pin.dir)!!.has("saveError"))
@@ -319,6 +319,39 @@ class PlayerActionMenusTest {
         assertFalse(dialog.isShowing)
         elapsed(2)
         assertNull(TvDialog.top())
+    }
+
+    @Test fun oneActionConfirmationStartsFocusedAndBackCancels() {
+        var actions = 0
+        val dialog = TvDialog.confirm(activity, "Start REC", "Record this buffer?",
+            listOf(TvDialog.Btn("Start REC") { actions++ }), timeoutSec = 0)
+        val view = dialog.window!!.decorView
+        val action = view.findViewWithTag<Button>("chip_0")
+        val hint = view.findViewWithTag<TextView>("hint")
+        assertEquals(listOf("Start REC"), chips())
+        assertTrue(action.hasFocus())
+        assertEquals(activity.getString(R.string.dialog_hint_confirm_cancel), hint.text.toString())
+        dialog.onBackPressed()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(dialog.isShowing)
+        assertEquals(0, actions)
+    }
+
+    @Test fun nonCancelableConfirmationDoesNotClaimBackCanCancel() {
+        val dialog = TvDialog.confirm(activity, "Select", "Choose one",
+            listOf(TvDialog.Btn("Settings"), TvDialog.Btn("Close")),
+            cancelable = false, timeoutSec = 0)
+        val hint = dialog.window!!.decorView.findViewWithTag<TextView>("hint")
+        assertEquals(activity.getString(R.string.dialog_hint_choose), hint.text.toString())
+        dialog.dismiss()
+    }
+
+    @Test fun confirmationCanUseAContextualHintForAcknowledgements() {
+        val dialog = TvDialog.confirm(activity, "Notice", "No space available",
+            listOf(TvDialog.Btn("OK")), hintOverride = activity.getString(R.string.epg_hint_actions), timeoutSec = 0)
+        val hint = dialog.window!!.decorView.findViewWithTag<TextView>("hint")
+        assertEquals(activity.getString(R.string.epg_hint_actions), hint.text.toString())
+        dialog.dismiss()
     }
 
     @Suppress("UNCHECKED_CAST")

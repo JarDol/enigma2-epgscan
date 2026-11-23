@@ -151,6 +151,9 @@
     <string name="player_rec_saving">Zapisywanie nagrania: %1$s</string>
     <string name="player_rec_metadata_failed">Nie można zapisać opisu nagrania</string>
     <string name="player_rec_save_failed">Nie udało się zapisać nagrania: %1$s</string>
+    <string name="dialog_hint_confirm_cancel">OK potwierdź  •  WSTECZ anuluj</string>
+    <string name="dialog_hint_choose_cancel">OK wybierz  •  WSTECZ anuluj</string>
+    <string name="dialog_hint_choose">OK wybierz</string>
     <string name="player_bgrec_title">Nagraj bufor: %1$s</string>
     <string name="player_bg_menu">Buforowane kanały</string>
     <string name="player_bg_span">w buforze %1$s</string>

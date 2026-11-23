@@ -391,6 +391,6 @@ object Tools {
         } else ""
         TvDialog.confirm(a, a.getString(R.string.update_title),
             a.getString(R.string.update_confirm, info.version, current, note),
-            listOf(TvDialog.Btn(a.getString(R.string.update_install)) { downloadAndInstall(a, info, msg, manual = true) }, TvDialog.Btn(a.getString(R.string.update_not_now))))
+            listOf(TvDialog.Btn(a.getString(R.string.update_install)) { downloadAndInstall(a, info, msg, manual = true) }))
     }
 }
