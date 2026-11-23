@@ -52,7 +52,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 * W opisie EPG „Oglądaj” dla aktualnie oglądanego kanału zamyka opis bez ponownego strojenia. Wybór innego kanału („Przełącz”), także dla bieżącej audycji, wymaga potwierdzenia.
   Akcje są w jednym rzędzie, a przy większej czcionce lub węższym oknie automatycznie zawijają się do kolejnych rzędów.
   Krótsze podpisy „Dekoder REC”, „Bufor Stop”, „Bufor REC” i „PiP” nie zmieniają działania przycisków.
-* EPG bieżącego kanału ma przyciski Audio, Napisy i PiP. Listy audio i napisów otwarte z EPG zamykają się po ustawionym czasie bezczynności EPG wydarzenia (0 wyłącza zamykanie). Lista napisów ukrywa telegazetę, ale zachowuje napisy teletekstowe i DVB.
+* EPG bieżącego kanału ma przyciski Audio, Napisy i PiP. Listy audio i napisów otwarte z EPG, menu PiP, menu buforów i okna ustawiania nagrywania korzystają z czasu bezczynności EPG wydarzenia (0 wyłącza zamykanie). Timeout zamyka tylko menu, bez zatrzymywania PiP, bufora lub nagrywania i bez automatycznego zatwierdzania akcji. Lista napisów ukrywa telegazetę, ale zachowuje napisy teletekstowe i DVB. Nazwy ścieżek zawierają język i opis nadawcy, bez PID i technicznego MIME; identyczne nazwy są numerowane.
 * Akcje „Przełącz o…”, „Nagraj na dekoderze” i „Usuń przełączenie” wymagają potwierdzenia przed wykonaniem; WSTECZ anuluje. Po wykonaniu pokazywany jest wynik.
   Po udanym działaniu z wyników wyszukiwania lista wyników zamyka się, a komunikat pojawia się na pasku odtwarzacza.
 * Okna akcji i potwierdzenia domyślnie zamykają się po 30 sekundach; okna informacyjne po 15 sekundach. Czas każdego rodzaju ustawia się osobno w ustawieniach Ogólne (0 = bez zamykania); okna informacyjne można też wyłączyć.
@@ -325,9 +325,12 @@ na końcu historii bez zmiany kolejności istniejących pozycji. Osobne okno pod
   timeshift). Przy kolejnym przełączeniu wypada najdawniej opuszczony kanał. Powrót na taki kanał — obraz od razu z jego
   bufora (od klatki kluczowej z zapasem ≥ bufor startowy + 1 s), z możliwością cofnięcia do tego, co leciało w tym
   czasie. Na listach kanałów (także w historii) kanały z buforem — w tle i oglądany, gdy gra przez bufor — mają znacznik
-  **B** (● B — trwa zapis). Długie OK na kanale w tle: bieżąca audycja i drugi rząd przycisków *Zakończ bufor* i
-  *Nagraj bufor…* (*Audycja: tytuł* / *Bufor do teraz* / *Do usunięcia bufora*; w trakcie zapisu *Zakończ zapis z
-  bufora*). To samo w menu → *Buforowane kanały* (pozycja do ustawienia w kolejności i widoczności menu; widoczna, gdy
+  **B** (● B — trwa zapis). Długie OK na kanale w tle: bieżąca audycja i przyciski *Bufor Stop* i
+  *Bufor REC* (*Audycja: tytuł* / *Bufor do teraz* / *Do usunięcia bufora*; w trakcie zapisu *Zakończ zapis z
+  bufora*). Menu → *Buforowane kanały* ma dla kanału w tle tylko *Bufor Stop* i *Bufor REC*;
+  *Bufor REC* otwiera tę samą listę opcji co pod EPG (przy trwającym zapisie pozwala go zakończyć).
+  Bufor oglądanego kanału nadal nie ma opcji zatrzymania, bo służy do odtwarzania.
+  Lista buforowanych kanałów (pozycja do ustawienia w kolejności i widoczności menu; widoczna, gdy
   jest jakiś bufor — także samego oglądanego kanału). Nagrań z buforów naraz najwyżej tyle, ile kanałów w tle
   (bufor oglądanego kanału zawsze zostaje); ponad limit — komunikat. Nagranie audycji chroni swój bufor do jej końca
   (przy przełączaniu wypada inny), zapis „do usunięcia bufora” trwa także w tle i kończy się, gdy bufor wypada.
@@ -338,8 +341,9 @@ na końcu historii bez zmiany kolejności istniejących pozycji. Osobne okno pod
 * PiP (eksperymentalne, domyślnie wyłączone) — do 3 okien z kanałami z bufora w tle: klatka co 1/2/3/5 s z ostatniej
   klatki kluczowej w pamięci bufora (własny demultiplekser — także kanały kodowane po odszyfrowaniu), tylko dekoder
   programowy (jeden na okno, bez sprzętowego; gdy go brak — „brak dekodera”), położenie okien; kanał do okna z listy
-  kanałów (◀ ▶ bukiety, OK dodaje okno). Długie OK na liście kanałów lub w historii pozwala dodać kanał do PiP
-  albo zamknąć jego okno, także bez EPG. Bezpiecznik: po awarii albo zawieszeniu z otwartym PiP przy następnym starcie
+  kanałów (◀ ▶ bukiety, OK dodaje okno). Długie OK na liście kanałów lub w historii udostępnia *PiP Dodaj*
+  dla innego kanału, *PiP Zamknij* dla kanału w okienku oraz *PiP* (menu sterowania) dla oglądanego kanału,
+  także bez EPG. Bezpiecznik: po awarii albo zawieszeniu z otwartym PiP przy następnym starcie
   PiP wyłącza się samo i proponuje wysłanie logu PiP (osobny plik e2stream-pip.log, 3 ostatnie sesje),
 * timeshift (długość bufora, automatyczny start — przy odtwarzaniu przez bufor zawsze od razu, kroki przewijania, WSTECZ na pustym ekranie),
 * nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,

@@ -368,7 +368,7 @@ class EpgUi(
     ) {
         TvDialog.confirm(a, title, message, listOf(
             TvDialog.Btn(confirmLabel, onClick = action),
-        ), onBack = onBack, onTimeout = onBack)
+        ), onBack = onBack, timeoutSec = Prefs(a).actionDialogSec)
     }
 
     fun clearMemory() = synchronized(cache) { cache.clear() }
@@ -404,7 +404,7 @@ class EpgUi(
                     ?: a.getString(R.string.epg_no_epg, ch.name)
                 when {
                     cur != null -> showEvent(cur, ch, extraBtns = buttons)
-                    buttons.isNotEmpty() -> TvDialog.confirm(a, ch.name, noEpg, buttons)
+                    buttons.isNotEmpty() -> TvDialog.confirm(a, ch.name, noEpg, buttons, timeoutSec = Prefs(a).actionDialogSec)
                     else -> host.message(noEpg)
                 }
             }

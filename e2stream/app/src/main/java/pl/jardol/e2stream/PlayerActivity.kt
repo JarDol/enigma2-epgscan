@@ -104,7 +104,8 @@ class PlayerActivity : Activity() {
                 val at = decTimerSel.takeIf { it in labels.indices && !labels[it].header }
                     ?: labels.indices.lastOrNull { it <= decTimerSel && !labels[it].header } ?: first
                 TvDialog.list(this, getString(R.string.message_receiver_timers), labels, at,
-                    hint = getString(R.string.player_details_hint), widthFrac = 0.75f, onCancel = { decTimerSel = 0 }) { selected ->
+                    hint = getString(R.string.player_details_hint), widthFrac = 0.75f,
+                    timeoutSec = prefs.actionDialogSec, onCancel = { decTimerSel = 0 }) { selected ->
                     decTimerSel = selected
                     actions[selected]?.let { showDecoderTimer(it) }
                 }
@@ -123,8 +124,7 @@ class PlayerActivity : Activity() {
         ).filter { it.isNotBlank() }.joinToString("\n")
         TvDialog.confirm(this, timer.title.ifBlank { timer.channel }, description,
             listOf(TvDialog.Btn(getString(R.string.message_delete_from_receiver)) { confirmDeleteDecoderTimer(timer) }),
-            onBack = { showDecoderTimers() }, timeoutSec = prefs.actionDialogSec,
-            onTimeout = { showDecoderTimers() })
+            onBack = { showDecoderTimers() }, timeoutSec = prefs.actionDialogSec)
     }
 
     private fun confirmDeleteDecoderTimer(timer: DecoderTimer) {
@@ -143,7 +143,7 @@ class PlayerActivity : Activity() {
                         }
                     }
                 }),
-            onBack = { showDecoderTimers() }, onTimeout = { showDecoderTimers() })
+            onBack = { showDecoderTimers() }, timeoutSec = prefs.actionDialogSec)
     }
 
     private lateinit var prefs: Prefs
@@ -3367,7 +3367,7 @@ class PlayerActivity : Activity() {
         return Grab(SystemClock.elapsedRealtime() - t0, "$type ${ends.size} jedn. ${au / 1000} kB, $desc, $codecName")
     }
 
-    /** Długie OK → PiP: okna (zamiana z głównym, zamknięcie), dodanie kanału; menu zostaje otwarte do WSTECZ. */
+    /** Długie OK → PiP: zamiana, zmiana kanału i zamknięcie okien; timeout zamyka tylko menu. */
     private fun showPipMenu(sel: Int = 0) {
         if (!pipPossible()) { showMessage(getString(R.string.pip_needs)); return }
         val acts = ArrayList<Pair<String, () -> Unit>>()
@@ -3385,10 +3385,11 @@ class PlayerActivity : Activity() {
         }
         if (open.size < PIP_MAX) acts += pick to { pipReplace = null; pipPickChannel() }
         if (open.isNotEmpty()) acts += getString(R.string.pip_close_all) to { for (c in open) pipClose(c) }
-        TvDialog.list(this, getString(R.string.pip_title), acts.map { TvDialog.Item(it.first) }, sel.coerceIn(0, acts.size - 1), widthFrac = 0.5f) { i ->
+        TvDialog.list(this, getString(R.string.pip_title), acts.map { TvDialog.Item(it.first) }, sel.coerceIn(0, acts.size - 1),
+            widthFrac = 0.5f, timeoutSec = prefs.actionDialogSec) { i ->
             val (label, run) = acts[i]
             run()
-            // po każdej zmianie menu wraca (wybór z listy kanałów — po dodaniu okna); wyjście tylko WSTECZ
+            // po wykonanej akcji odświeżamy menu; samo wygaśnięcie nie wywołuje akcji
             if (label != pick && !label.endsWith(change)) pipMenuAgain(i)
         }
     }
@@ -3502,9 +3503,11 @@ class PlayerActivity : Activity() {
         val isMain = !recMode && playList.getOrNull(playIndex)?.let { OpenWebif.key(it.ref) == OpenWebif.key(ch.ref) } == true
         val action = PipActions.channel(Features.PIP && prefs.pipEnabled, isMain, (bg?.pip ?: -1) >= 0)
         if (action == ChannelPipAction.NONE) return emptyList()
+        if (action == ChannelPipAction.MENU) return listOf(pipMenuButton())
         if (action == ChannelPipAction.CLOSE) return listOf(TvDialog.Btn(getString(R.string.pip_close_channel)) {
             val current = bgOf(ch)
-            if (current != null && current.pip >= 0) pipClose(current)
+            if (!Features.PIP || !prefs.pipEnabled) showMessage(getString(R.string.pip_disabled))
+            else if (current != null && current.pip >= 0) pipClose(current)
             else showMessage(getString(R.string.pip_no_longer_open))
         })
         return listOf(TvDialog.Btn(getString(R.string.pip_add_channel)) {
@@ -3517,6 +3520,11 @@ class PlayerActivity : Activity() {
                 pipAddFromHistory(ch)
             }
         })
+    }
+
+    private fun pipMenuButton() = TvDialog.Btn(getString(R.string.epg_pip)) {
+        if (Features.PIP && prefs.pipEnabled) showPipMenu()
+        else showMessage(getString(R.string.pip_disabled))
     }
 
     private fun pipAddFromHistory(ch: Channel) {
@@ -4125,7 +4133,7 @@ class PlayerActivity : Activity() {
             TvDialog.confirm(this, getString(R.string.player_localrec_running_title), cur.meta.optString("title"), listOf(
                 TvDialog.Btn(getString(R.string.player_localrec_stop)) { finishLocalRec("zatrzymane", restartLive = true) },
                 TvDialog.Btn(getString(R.string.message_close)),
-            ))
+            ), timeoutSec = prefs.actionDialogSec)
             return
         }
         if (recMode) { showMessage(getString(R.string.message_timeshift_is_unavailable_when_playing_a_recording)); return }
@@ -4142,7 +4150,7 @@ class PlayerActivity : Activity() {
             TvDialog.confirm(this, getString(R.string.player_localrec_title), getString(R.string.player_localrec_internal_consent), listOf(
                 TvDialog.Btn(getString(R.string.player_localrec_allow)) { prefs.recInternalOk = true; showRecordMenu() },
                 TvDialog.Btn(getString(R.string.dialog_cancel)),
-            ))
+            ), timeoutSec = prefs.actionDialogSec)
             return
         }
         io.execute {
@@ -4153,7 +4161,7 @@ class PlayerActivity : Activity() {
                     TvDialog.confirm(this, getString(R.string.player_localrec_title),
                         getString(R.string.player_localrec_limit_reached, prefs.recMaxPct, TimeshiftBuffer.gb(used), TimeshiftBuffer.gb(cap)),
                         listOf(TvDialog.Btn(getString(R.string.player_local_recordings)) { showRecordings(REC_LOCAL_BOUQUET) },
-                            TvDialog.Btn(getString(R.string.message_close))))
+                            TvDialog.Btn(getString(R.string.message_close))), timeoutSec = prefs.actionDialogSec)
                     return@runOnUiThread
                 }
                 epg.nowNext(ch) { now, _ ->
@@ -4164,7 +4172,8 @@ class PlayerActivity : Activity() {
                         { startLocalRec(REC_EVENT, ch, now, used, cap) }
                     opts += getString(R.string.player_localrec_buffer_now, fmtMs(span)) to { startLocalRec(REC_NOW, ch, now, used, cap) }
                     opts += getString(R.string.player_localrec_buffer_until_zap) to { startLocalRec(REC_UNTIL_ZAP, ch, now, used, cap) }
-                    TvDialog.list(this, getString(R.string.player_localrec_title), opts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.55f) { w ->
+                    TvDialog.list(this, getString(R.string.player_localrec_title), opts.map { TvDialog.Item(it.first) }, 0,
+                        widthFrac = 0.55f, timeoutSec = prefs.actionDialogSec) { w ->
                         opts[w].second()
                     }
                 }
@@ -4350,7 +4359,8 @@ class PlayerActivity : Activity() {
         if (recs.isEmpty()) return
         val items = recs.map { TvDialog.Item(it.first, it.second) } +
             (if (recs.size > 1) listOf(TvDialog.Item(getString(R.string.player_rec_stop_all))) else emptyList())
-        TvDialog.list(this, getString(R.string.player_rec_stop_title), items, sel.coerceIn(0, items.size - 1), widthFrac = 0.55f) { i ->
+        TvDialog.list(this, getString(R.string.player_rec_stop_title), items, sel.coerceIn(0, items.size - 1),
+            widthFrac = 0.55f, timeoutSec = prefs.actionDialogSec) { i ->
             if (i < recs.size) recs[i].third() else recs.asReversed().forEach { it.third() }
             // lista zostaje z pozostałymi nagraniami; pusta — zamyka się sama
             whenNoDialog { if (activeRecs() > 0) showStopRecs(minOf(i, activeRecs() - 1)) }
@@ -4358,27 +4368,40 @@ class PlayerActivity : Activity() {
     }
 
     /** Zakończenie bufora w tle; przy nagraniu audycji — pytanie (bufor chroniony do końca audycji). */
-    private fun bgCloseAsk(bg: BgChan) {
+    private fun bgCloseAsk(bg: BgChan, onClosed: () -> Unit = {}) {
+        if (bg !in bgChans) return
         val r = bg.lrec
         if (r != null && bgProtected(bg)) {
             TvDialog.confirm(this, bg.name, getString(R.string.player_bg_close_rec, r.meta.optString("title")), listOf(
-                TvDialog.Btn(getString(R.string.player_bg_close)) { bgDrop(bg, "zakończony ręcznie (z nagraniem)"); refreshPanelRows() },
-                TvDialog.Btn(getString(R.string.dialog_cancel))))
+                TvDialog.Btn(getString(R.string.player_bg_close)) {
+                    if (bg in bgChans) { bgDrop(bg, "zakończony ręcznie (z nagraniem)"); refreshPanelRows(); onClosed() }
+                },
+                TvDialog.Btn(getString(R.string.dialog_cancel))), timeoutSec = prefs.actionDialogSec)
             return
         }
         bgDrop(bg, "zakończony ręcznie"); refreshPanelRows()
+        onClosed()
     }
 
     /**
      * Zapis bufora na dysk: „Audycja: tytuł” / „Bufor do teraz” / „Do usunięcia bufora”.
      * [bg] null — bufor oglądanego kanału. [ev] — bieżąca audycja (null — z EPG / dziennika kanału).
      */
-    private fun bufRecMenu(bg: BgChan?, ch: Channel, ev: EpgEvent?, fetched: Boolean = false) {
+    private fun bufRecMenu(bg: BgChan?, ch: Channel, ev: EpgEvent?, fetched: Boolean = false, onBack: () -> Unit = {}) {
         if (bg != null && bg !in bgChans) return
+        if (bg == null && !isMainBuf(ch)) return
+        val recording = if (bg == null) localRec else bg.lrec
+        if (recording != null) {
+            val stop = if (bg == null) mainRecButtons(ch, ev).single() else bgRecButtons(bg, ch, ev).last()
+            TvDialog.list(this, getString(R.string.player_bgrec_title, ch.name),
+                listOf(TvDialog.Item(stop.label)), 0,
+                onCancel = onBack, timeoutSec = prefs.actionDialogSec) { stop.onClick() }
+            return
+        }
         if (ev == null && !fetched) {
             io.execute {
                 val e = currentEventOf(bg, ch)
-                runOnUiThread { bufRecMenu(bg, ch, e, fetched = true) }
+                runOnUiThread { if (!isFinishing) bufRecMenu(bg, ch, e, fetched = true, onBack = onBack) }
             }
             return
         }
@@ -4387,7 +4410,8 @@ class PlayerActivity : Activity() {
         if (ev != null) acts += getString(R.string.player_bgrec_event, ev.title) to REC_EVENT
         acts += getString(R.string.player_bgrec_now, fmtMs(span)) to REC_NOW
         acts += getString(R.string.player_bgrec_until) to REC_UNTIL_DROP
-        TvDialog.list(this, getString(R.string.player_bgrec_title, bg?.name ?: ch.name), acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f) { i ->
+        TvDialog.list(this, getString(R.string.player_bgrec_title, bg?.name ?: ch.name), acts.map { TvDialog.Item(it.first) }, 0,
+            widthFrac = 0.5f, onCancel = onBack, timeoutSec = prefs.actionDialogSec) { i ->
             bgRecStart(bg, acts[i].second, ch, ev)
         }
     }
@@ -4446,7 +4470,7 @@ class PlayerActivity : Activity() {
             if (c == null) TvDialog.Item((if (localRec != null) "● " else "") + "▶  " + main!!.name,
                 getString(R.string.player_bg_span_main, fmtMs(tsBuf?.spanMs() ?: 0)))
             else TvDialog.Item((if (c.lrec != null) "● " else "") + c.name, getString(R.string.player_bg_span, fmtMs(c.buf.spanMs())))
-        }, sel.coerceIn(0, chans.size - 1), widthFrac = 0.45f) { i ->
+        }, sel.coerceIn(0, chans.size - 1), widthFrac = 0.45f, timeoutSec = prefs.actionDialogSec) { i ->
             val bg = chans[i]
             if (bg != null && bg !in bgChans) return@list
             val ch = if (bg == null) main!! else bg.ch ?: Channel(0, bg.name, "")
@@ -4457,37 +4481,26 @@ class PlayerActivity : Activity() {
         }
     }
 
-    private fun bufferedActions(bg: BgChan?, ch: Channel, ev: EpgEvent?, listSel: Int = 0, sel: Int = 0) {
+    private fun bufferedActions(bg: BgChan?, ch: Channel, ev: EpgEvent?, listSel: Int = 0) {
         if (bg != null && bg !in bgChans) { showBufferedMenu(listSel); return }
+        if (bg == null && !isMainBuf(ch)) return
         val acts = ArrayList<Pair<String, () -> Unit>>()
-        if (bg != null) acts += getString(R.string.player_bg_close) to { bgCloseAsk(bg) }
-        val r = if (bg == null) localRec else bg.lrec
-        if (r != null) acts += getString(R.string.player_bgrec_stop) to {
-            if (bg == null) { if (localRec === r) finishLocalRec("zatrzymane", restartLive = true) }
-            else if (bg.lrec === r) { bg.lrec = null; finishRec(r, "zatrzymane", restartLive = false, main = false); refreshPanelRows() }
-        } else {
-            if (ev != null) acts += getString(R.string.player_bgrec_event, ev.title) to { bgRecStart(bg, REC_EVENT, ch, ev) }
-            acts += getString(R.string.player_bgrec_now, fmtMs((bg?.buf ?: tsBuf)?.spanMs() ?: 0)) to { bgRecStart(bg, REC_NOW, ch, ev) }
-            acts += getString(R.string.player_bgrec_until) to { bgRecStart(bg, REC_UNTIL_DROP, ch, ev) }
+        if (bg != null) acts += getString(R.string.player_bg_close) to {
+            bgCloseAsk(bg) { showBufferedMenu(listSel) }
         }
-        // po akcji okno wraca (kanał zamknięty — lista buforowanych); WSTECZ — do listy, drugi WSTECZ zamyka
-        TvDialog.list(this, bg?.name ?: ch.name, acts.map { TvDialog.Item(it.first) }, sel.coerceIn(0, acts.size - 1), widthFrac = 0.5f,
-            onCancel = { whenNoDialog { showBufferedMenu(listSel) } }) { j ->
+        acts += getString(R.string.player_bgrec_menu) to {
+            bufRecMenu(bg, ch, ev, onBack = { bufferedActions(bg, ch, ev, listSel) })
+        }
+        TvDialog.list(this, bg?.name ?: ch.name, acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f,
+            timeoutSec = prefs.actionDialogSec, onCancel = { showBufferedMenu(listSel) }) { j ->
             acts[j].second()
-            whenNoDialog {
-                if (bg != null && bg !in bgChans) {
-                    if (bgChans.isNotEmpty() || (bufLive && tsBuf != null && !recMode)) showBufferedMenu(listSel)
-                } else io.execute {
-                    val e = currentEventOf(bg, ch)
-                    runOnUiThread { bufferedActions(bg, ch, e, listSel, j) }
-                }
-            }
         }
     }
 
     /** Zgoda na pamięć urządzenia, limit miejsca — jak przy nagraniu bieżącego kanału — i start zapisu z bufora w tle. */
     private fun bgRecStart(bg: BgChan?, mode: Int, ch: Channel, ev: EpgEvent?) {
         if (bg != null && bg !in bgChans) return
+        if (bg == null && !isMainBuf(ch)) return
         val b = bg?.buf ?: tsBuf ?: return
         b.failed?.let { showMessage(getString(R.string.player_ts_error, it)); return }
         val base = LocalRecordings.base(b.root)
@@ -4496,7 +4509,7 @@ class PlayerActivity : Activity() {
             TvDialog.confirm(this, getString(R.string.player_localrec_title), getString(R.string.player_localrec_internal_consent), listOf(
                 TvDialog.Btn(getString(R.string.player_localrec_allow)) { prefs.recInternalOk = true; bgRecStart(bg, mode, ch, ev) },
                 TvDialog.Btn(getString(R.string.dialog_cancel)),
-            ))
+            ), timeoutSec = prefs.actionDialogSec)
             return
         }
         io.execute {
@@ -4507,12 +4520,13 @@ class PlayerActivity : Activity() {
                     TvDialog.confirm(this, getString(R.string.player_localrec_title),
                         getString(R.string.player_localrec_limit_reached, prefs.recMaxPct, TimeshiftBuffer.gb(used), TimeshiftBuffer.gb(cap)),
                         listOf(TvDialog.Btn(getString(R.string.player_local_recordings)) { showRecordings(REC_LOCAL_BOUQUET) },
-                            TvDialog.Btn(getString(R.string.message_close))))
+                            TvDialog.Btn(getString(R.string.message_close))), timeoutSec = prefs.actionDialogSec)
                     return@runOnUiThread
                 }
                 // bufor oglądanego kanału: nagranie bieżącego kanału (kanał musi być tym z listy odtwarzania)
-                if (bg == null) playList.getOrNull(playIndex)?.let { startLocalRec(mode, it, ev, used, cap) }
-                else startLocalRec(mode, ch, ev, used, cap, bg)
+                if (bg == null) {
+                    if (isMainBuf(ch)) playList.getOrNull(playIndex)?.let { startLocalRec(mode, it, ev, used, cap) }
+                } else startLocalRec(mode, ch, ev, used, cap, bg)
             }
         }
     }
@@ -6005,10 +6019,7 @@ class PlayerActivity : Activity() {
             listOf(
                 TvDialog.Btn(getString(R.string.epg_audio)) { showAudioDialog(timeoutSec = prefs.actionDialogSec) },
                 TvDialog.Btn(getString(R.string.epg_subtitles)) { showSubtitleDialog() },
-                TvDialog.Btn(getString(R.string.epg_pip)) {
-                    if (Features.PIP && prefs.pipEnabled) showPipMenu()
-                    else showMessage(getString(R.string.pip_disabled))
-                },
+                pipMenuButton(),
             )
         }
     }
@@ -6033,11 +6044,10 @@ class PlayerActivity : Activity() {
                 group.isTrackSupported(it) && !SubtitleTracks.isTeletextPage(group.getTrackFormat(it).label)
             }.map { group to it } }
         if (tracks.isEmpty()) { showMessage(getString(R.string.subtitle_none)); return }
-        val labels = listOf(getString(R.string.subtitle_off)) + tracks.map { (group, index) ->
-            val format = group.getTrackFormat(index)
-            listOfNotNull(format.label, format.language, format.sampleMimeType).distinct().joinToString(" · ")
-                .ifBlank { getString(R.string.subtitle_track, index + 1) }
-        }
+        val labels = listOf(getString(R.string.subtitle_off)) + SubtitleTracks.displayLabels(
+            tracks.map { (group, index) -> group.getTrackFormat(index).let { it.language to it.label } },
+            Locale.forLanguageTag(AppLanguage.selected(this)),
+        ) { getString(R.string.subtitle_track, it) }
         val disabled = p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
         val selected = if (disabled) 0 else tracks.indexOfFirst { (group, index) -> group.isTrackSelected(index) } + 1
         TvDialog.singleLive(this, getString(R.string.epg_subtitles), labels, selected, timeoutSec = prefs.actionDialogSec) { which ->

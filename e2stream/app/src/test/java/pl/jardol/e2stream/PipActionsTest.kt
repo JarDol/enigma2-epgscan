@@ -10,7 +10,7 @@ class PipActionsTest {
     @Test fun actionsFollowMainAndPipState() {
         assertEquals(ChannelPipAction.ADD, PipActions.channel(true, false, false))
         assertEquals(ChannelPipAction.CLOSE, PipActions.channel(true, false, true))
-        assertEquals(ChannelPipAction.NONE, PipActions.channel(true, true, false))
+        assertEquals(ChannelPipAction.MENU, PipActions.channel(true, true, false))
         assertEquals(ChannelPipAction.NONE, PipActions.channel(false, false, false))
     }
 

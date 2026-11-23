@@ -158,6 +158,22 @@ class EpgSearchActionsTest {
         assertTrue(clicked)
     }
 
+    @Test fun receiverRecordingConfirmationUsesEpgTimeoutAndDoesNotRunAction() {
+        Prefs(activity).apply { actionDialogSec = 5; confirmDialogSec = 0 }
+        var returned = false
+        val event = EpgEvent(42, begin, 3600, "Test programu", "", "", ref, "Kanał")
+        val scheduled = ZapTimers.Timer(ref, "Kanał", event.title, begin, begin + 3600, 42)
+        epg.showEvent(event, null, scheduledTimer = scheduled, onReturn = { returned = true })
+        clickButton(activity.getString(R.string.epg_record_receiver))
+        val dialog = TvDialog.top()!!
+        dialog.onWindowFocusChanged(true)
+        shadowOf(Looper.getMainLooper()).idleFor(5, TimeUnit.SECONDS)
+        assertFalse(dialog.isShowing)
+        assertNull(TvDialog.top())
+        assertFalse(returned)
+        assertTrue(messages.isEmpty())
+    }
+
     @Test fun currentEventKeepsRecordingAndExtraActions() {
         epg.eitOnly = true
         val channel = Channel(1, "Kanał", "1:0:1:FFD:456:789:0:0:0:0:")

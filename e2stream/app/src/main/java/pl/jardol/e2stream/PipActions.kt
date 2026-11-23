@@ -1,12 +1,12 @@
 package pl.jardol.e2stream
 
-internal enum class ChannelPipAction { ADD, CLOSE, NONE }
+internal enum class ChannelPipAction { ADD, CLOSE, MENU, NONE }
 
 internal object PipActions {
     fun channel(enabled: Boolean, isMain: Boolean, isPip: Boolean): ChannelPipAction = when {
         !enabled -> ChannelPipAction.NONE
         isPip -> ChannelPipAction.CLOSE
-        isMain -> ChannelPipAction.NONE
+        isMain -> ChannelPipAction.MENU
         else -> ChannelPipAction.ADD
     }
 
