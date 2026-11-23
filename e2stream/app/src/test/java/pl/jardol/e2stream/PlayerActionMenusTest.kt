@@ -324,4 +324,11 @@ class PlayerActionMenusTest {
         timeout()
         assertFalse(C.TRACK_TYPE_TEXT in params.disabledTrackTypes)
     }
+
+    @Test fun audioMenuLabelsUseLocalizedDescriptionsAndKeepCodecDetails() {
+        assertEquals("Polski  •  Audiodeskrypcja  •  AC3 6ch",
+            call("audioLabel", "pl", "ac3", 6, "Audio description for the visually impaired - [Polish]", false))
+        assertEquals("Polski  •  Stacja X  •  MPEG 2ch",
+            call("audioLabel", "pl", "mpga", 2, "Stacja X", false))
+    }
 }

@@ -6030,8 +6030,10 @@ class PlayerActivity : Activity() {
             val tracks = engine?.subtitleTracks().orEmpty().filterNot { it.first >= 0 && SubtitleTracks.isTeletextPage(it.second) }
             if (tracks.isEmpty()) { showMessage(getString(R.string.subtitle_none)); return }
             val selected = tracks.indexOfFirst { it.first == engine?.selectedSubtitleTrackId() }
+            val labels = SubtitleTracks.vlcLabels(tracks, Locale.forLanguageTag(AppLanguage.selected(this)),
+                getString(R.string.subtitle_off), ::trackDescription) { getString(R.string.subtitle_track, it) }
             TvDialog.singleLive(this, getString(R.string.epg_subtitles),
-                tracks.map { if (it.first < 0) getString(R.string.subtitle_off) else it.second },
+                labels,
                 selected, timeoutSec = prefs.actionDialogSec) { which ->
                 if (engine?.selectSubtitleTrack(tracks[which].first) == true) which
                 else { showMessage(getString(R.string.subtitle_select_failed)); -1 }
@@ -6046,7 +6048,7 @@ class PlayerActivity : Activity() {
         if (tracks.isEmpty()) { showMessage(getString(R.string.subtitle_none)); return }
         val labels = listOf(getString(R.string.subtitle_off)) + SubtitleTracks.displayLabels(
             tracks.map { (group, index) -> group.getTrackFormat(index).let { it.language to it.label } },
-            Locale.forLanguageTag(AppLanguage.selected(this)),
+            Locale.forLanguageTag(AppLanguage.selected(this)), ::trackDescription,
         ) { getString(R.string.subtitle_track, it) }
         val disabled = p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
         val selected = if (disabled) 0 else tracks.indexOfFirst { (group, index) -> group.isTrackSelected(index) } + 1
@@ -6079,7 +6081,9 @@ class PlayerActivity : Activity() {
     private fun audioLabel(language: String?, codec: String?, channels: Int, description: String?, describesVideo: Boolean = false): String =
         AudioTrackLabels.displayLabel(language, codec, channels, description,
             Locale.forLanguageTag(AppLanguage.selected(this)), getString(R.string.audio_original),
-            getString(R.string.audio_unknown_track), getString(R.string.audio_description), describesVideo)
+            getString(R.string.audio_unknown_track), getString(R.string.audio_description), describesVideo, ::trackDescription)
+
+    private fun trackDescription(description: String) = TrackDescriptions.localize(description) { getString(it) }
 
     private fun audioLabel(f: Format): String = audioLabel(f.language, f.sampleMimeType, f.channelCount, f.label,
         f.roleFlags and C.ROLE_FLAG_DESCRIBES_VIDEO != 0)

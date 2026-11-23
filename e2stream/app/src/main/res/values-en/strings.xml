@@ -29,6 +29,12 @@
     <string name="audio_original">Original</string>
     <string name="audio_unknown_track">Track</string>
     <string name="audio_description">Audio description</string>
+    <string name="track_subtitles_dvb">DVB subtitles</string>
+    <string name="track_subtitles_teletext">Teletext subtitles</string>
+    <string name="track_subtitles_cc">Closed captions</string>
+    <string name="track_hearing_impaired">Hearing impaired</string>
+    <string name="track_forced_subtitles">Forced subtitles</string>
+    <string name="track_commentary">Commentary</string>
     <string name="epg_subtitles">Subtitles</string>
     <string name="epg_pip">PiP</string>
     <string name="subtitle_off">Off</string>

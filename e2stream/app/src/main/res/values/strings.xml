@@ -30,6 +30,12 @@
     <string name="audio_original">Oryginalna</string>
     <string name="audio_unknown_track">Ścieżka</string>
     <string name="audio_description">Audiodeskrypcja</string>
+    <string name="track_subtitles_dvb">Napisy DVB</string>
+    <string name="track_subtitles_teletext">Napisy teletekstowe</string>
+    <string name="track_subtitles_cc">Napisy CC</string>
+    <string name="track_hearing_impaired">Dla niesłyszących</string>
+    <string name="track_forced_subtitles">Napisy wymuszone</string>
+    <string name="track_commentary">Komentarz</string>
     <string name="epg_subtitles">Napisy</string>
     <string name="epg_pip">PiP</string>
     <string name="subtitle_off">Wyłączone</string>

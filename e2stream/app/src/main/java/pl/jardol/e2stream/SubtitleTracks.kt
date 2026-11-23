@@ -12,19 +12,19 @@ internal object SubtitleTracks {
         description != null && teletextPage.containsMatchIn(description)
 
     fun displayLabels(
-        tracks: List<Pair<String?, String?>>, locale: Locale, unknownLabel: (Int) -> String,
+        tracks: List<Pair<String?, String?>>, locale: Locale,
+        descriptionLabel: (String) -> String = { it }, unknownLabel: (Int) -> String,
     ): List<String> {
         val labels = tracks.mapIndexed { index, (language, description) ->
-            val code = AudioTrackLabels.languageCode(
-                language?.takeUnless { it.isBlank() || it == "und" }
-                    ?: AudioTrackLabels.languageFromDescription(description.orEmpty()),
-            )
+            val code = AudioTrackLabels.displayLanguageCode(
+                language?.takeUnless { it.isBlank() || it == "und" }, description.orEmpty())
             val name = code.takeUnless { it in setOf("?", "und", "zxx", "mul") }
                 ?.let { Locale(it).getDisplayLanguage(locale) }
                 ?.takeIf { it.isNotBlank() }?.replaceFirstChar { it.titlecase(locale) }
             val extra = description.orEmpty().replace(bracketLanguage, "").trim().trimEnd('-', '–', ' ').trim()
                 .takeIf { it.isNotBlank() && !genericName.matches(it) && !technicalName.matches(it) &&
                     AudioTrackLabels.languageCode(it) != code }
+                ?.let(descriptionLabel)
             listOfNotNull(name, extra).joinToString("  •  ").ifBlank { unknownLabel(index + 1) }
         }
         val counts = labels.groupingBy { it }.eachCount()
@@ -36,5 +36,14 @@ internal object SubtitleTracks {
                 "$label ($number)"
             }
         }
+    }
+
+    fun vlcLabels(
+        tracks: List<Pair<Int, String>>, locale: Locale, offLabel: String,
+        descriptionLabel: (String) -> String = { it }, unknownLabel: (Int) -> String,
+    ): List<String> {
+        val labels = displayLabels(tracks.filter { it.first >= 0 }.map { null to it.second },
+            locale, descriptionLabel, unknownLabel).iterator()
+        return tracks.map { if (it.first < 0) offLabel else labels.next() }
     }
 }

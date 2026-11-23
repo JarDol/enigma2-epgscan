@@ -57,13 +57,19 @@ internal object AudioTrackLabels {
     fun languageFromDescription(description: String): String? =
         bracketLanguage.find(description)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
 
+    fun displayLanguageCode(language: String?, description: String): String {
+        val code = languageCode(language)
+        return if (code != "?") code else languageCode(languageFromDescription(description)
+            ?: languageAliases[description.trim().lowercase(Locale.ROOT)])
+    }
+
     fun displayLabel(
         language: String?, codec: String?, channels: Int, description: String?,
         locale: Locale, originalLabel: String, unknownLabel: String, audioDescription: String,
         describesVideo: Boolean = false,
+        descriptionLabel: (String) -> String = { it },
     ): String {
-        val languageCode = languageCode(language)
-        val code = if (languageCode == "?") languageCode(languageFromDescription(description.orEmpty())) else languageCode
+        val code = displayLanguageCode(language, description.orEmpty())
         val languageName = when {
             code == "?" -> null
             code in original -> originalLabel
@@ -72,9 +78,10 @@ internal object AudioTrackLabels {
         }
         val extra = description.orEmpty().replace(bracketLanguage, "").trim().trimEnd('-', '–', ' ').trim()
             .takeIf { it.isNotBlank() && !genericName.matches(it) && languageCode(it) != code }
+            ?.let(descriptionLabel)
         return buildList {
             languageName?.let(::add)
-            if (extra != null) add(extra) else if (describesVideo) add(audioDescription)
+            if (extra != null && extra != languageName) add(extra) else if (describesVideo) add(audioDescription)
             listOfNotNull(codecName(codec), if (channels > 0) "${channels}ch" else null)
                 .takeIf { it.isNotEmpty() }?.joinToString(" ")?.let(::add)
         }.ifEmpty { listOf(unknownLabel) }.joinToString("  •  ")
