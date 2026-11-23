@@ -145,6 +145,36 @@ class EpgSearchActionsTest {
         assertTrue(messages.last().second)
     }
 
+    @Test fun currentEventOffersExtraActionsWithoutEpg() {
+        epg.eitOnly = true
+        var clicked = false
+        val channel = Channel(1, "Kanał", "1:0:1:FFE:456:789:0:0:0:0:")
+        epg.showCurrentEvent(channel) { event ->
+            assertNull(event)
+            listOf(TvDialog.Btn("PiP Dodaj") { clicked = true })
+        }
+        drain()
+        clickButton("PiP Dodaj")
+        assertTrue(clicked)
+    }
+
+    @Test fun currentEventKeepsRecordingAndExtraActions() {
+        epg.eitOnly = true
+        val channel = Channel(1, "Kanał", "1:0:1:FFD:456:789:0:0:0:0:")
+        val start = System.currentTimeMillis() / 1000 - 60
+        EpgStore(activity).write(channel.ref, listOf(EpgEvent(1, start, 3600, "Program", "", "", channel.ref, channel.name)))
+        var clicked = false
+        epg.showCurrentEvent(channel) { event ->
+            assertNotNull(event)
+            listOf(TvDialog.Btn("PiP Dodaj") { clicked = true })
+        }
+        drain()
+        val dialog = TvDialog.top()!!
+        assertNotNull(dialog.window!!.decorView.findViewWithTag<View>("chip_1"))
+        clickButton("PiP Dodaj")
+        assertTrue(clicked)
+    }
+
     @Test fun removingScheduledSwitchFromSearchClosesResults() {
         ZapTimers.add(activity, ZapTimers.Timer(ref, "Kanał", "Test programu", begin, begin + 3600, 42))
         searchAndOpenEvent()

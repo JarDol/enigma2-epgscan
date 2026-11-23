@@ -297,6 +297,27 @@ class VlcEngine(
         false
     }
 
+    fun selectedSubtitleTrackId(): Int? = try {
+        mp?.spuTrack
+    } catch (e: Exception) {
+        AppLog.i("VLC: nie można pobrać wybranej ścieżki napisów: ${e.message}")
+        null
+    }
+
+    fun subtitleTracks(): List<Pair<Int, String>> = try {
+        mp?.spuTracks.orEmpty().map { it.id to (it.name ?: "Ścieżka ${it.id}") }
+    } catch (e: Exception) {
+        AppLog.i("VLC: nie można pobrać ścieżek napisów: ${e.message}")
+        emptyList()
+    }
+
+    fun selectSubtitleTrack(id: Int): Boolean = try {
+        mp?.setSpuTrack(id) == true
+    } catch (e: Exception) {
+        AppLog.i("VLC: nie można wybrać ścieżki napisów $id: ${e.message}")
+        false
+    }
+
     fun info(): String {
         val p = mp ?: return "-"
         return try {

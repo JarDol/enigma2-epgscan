@@ -183,8 +183,8 @@ class PlayerActivity : Activity() {
 
     private var bouquets: List<Bouquet> = emptyList()
     private var playBouquet = 0
-    private var playList: List<Channel> = emptyList()
-    private var playIndex = -1
+    @Volatile private var playList: List<Channel> = emptyList()
+    @Volatile private var playIndex = -1
     private var prevBouquet = -1
     private var prevRef: String? = null
 
@@ -348,10 +348,16 @@ class PlayerActivity : Activity() {
         list.setOnItemLongClickListener { _, _, pos, _ ->
             panelList.getOrNull(pos)?.let { c ->
                 val r = c.rec
-                val bg = if (r == null) bgOf(c) else null
-                if (bg != null) epg.showCurrentEvent(c) { ev -> bgRecButtons(bg, c, ev) }
-                else if (r == null && isMainBuf(c)) epg.showCurrentEvent(c) { ev -> mainRecButtons(c, ev) }
-                else if (r == null) epg.showCurrentEvent(c)
+                if (r == null) {
+                    val bouquetRef = bouquets.getOrNull(panelBouquet)?.ref
+                    val channels = panelList
+                    epg.showCurrentEvent(c) { ev ->
+                        val bg = bgOf(c)
+                        val rec = if (bg != null) bgRecButtons(bg, c, ev)
+                            else if (isMainBuf(c)) mainRecButtons(c, ev) else emptyList()
+                        rec + channelPipButtons(c, bouquetRef, channels)
+                    }
+                }
                 else if (!r.isDir) showRecordingActions(r)
             }
             true
@@ -1798,6 +1804,7 @@ class PlayerActivity : Activity() {
         prefs.lastBouquet = bouquets.getOrNull(bIdx)?.ref ?: ""
         chList[i].let { prefs.historyPush(it.ref, it.name) }
         prefs.lastChannel = ch.ref
+        refreshPanelRows()
 
         failStreak = 0
         playbackRecovery.resetVlcRestarts()
@@ -1912,7 +1919,11 @@ class PlayerActivity : Activity() {
             val t = try { api.serviceNow(ch.ref) } catch (e: Exception) { null }
             if (t != null) runOnUiThread {
                 ch.now = t
-                if (playList.getOrNull(playIndex) === ch && tsChBar && banner.visibility == View.VISIBLE) {
+                val current = playList.getOrNull(playIndex)
+                if (current != null && OpenWebif.key(current.ref) == OpenWebif.key(ch.ref)) {
+                    current.now = t
+                }
+                if (current != null && OpenWebif.key(current.ref) == OpenWebif.key(ch.ref) && tsChBar && banner.visibility == View.VISIBLE) {
                     bannerNow.text = t
                 }
             }
@@ -2159,7 +2170,7 @@ class PlayerActivity : Activity() {
         if (b == null && !panelHist) return
         if (b != null && isRecRef(b.ref)) return
         val target = panelList
-        val history = panelHist
+        val history = panelHist || b?.ref == HIST_BOUQUET
         io.execute {
             val map = if (b == null || epg.eitOnly || b.ref == HIST_BOUQUET) emptyMap() else try { api.epgNow(b) } catch (e: Exception) { emptyMap() }
             // kanały, dla których dekoder nie podał bieżącej audycji (np. EPG tylko z paczki EPG Scan
@@ -2175,13 +2186,18 @@ class PlayerActivity : Activity() {
                 if (history) for (c in target) {
                     local[OpenWebif.key(c.ref)]?.let { historyEpgCache[OpenWebif.key(c.ref)] = it }
                 }
-                target.forEach { c ->
+                fun applyEvents(channels: List<Channel>) = channels.forEach { c ->
                     val k = OpenWebif.key(c.ref)
                     val l = local[k]
                     if (l != null) { c.now = l.title; c.nowBegin = l.begin; c.nowEnd = l.end }
                     else map[k]?.let { c.now = it.first; c.nowBegin = it.second; c.nowEnd = it.third }
                 }
+                applyEvents(target)
                 if (panelList === target) adapter.notifyDataSetChanged()
+                else if (history && (panelHist || bouquets.getOrNull(panelBouquet)?.ref == HIST_BOUQUET)) {
+                    applyEvents(panelList)
+                    adapter.notifyDataSetChanged()
+                }
             }
         }
     }
@@ -2225,7 +2241,7 @@ class PlayerActivity : Activity() {
             val iv = v.findViewById<android.widget.ImageView>(R.id.icon)
             Picons.show(iv, this@PlayerActivity, c.ref, prefs.picons, prefs.missingPiconLogo)
             val name = v.findViewById<TextView>(R.id.name)
-            val playing = if (panelHist) playList.getOrNull(playIndex)?.ref?.let { OpenWebif.key(it) == OpenWebif.key(c.ref) } == true
+            val playing = if (panelHist || bouquets.getOrNull(panelBouquet)?.ref == HIST_BOUQUET) playList.getOrNull(playIndex)?.ref?.let { OpenWebif.key(it) == OpenWebif.key(c.ref) } == true
                 else panelBouquet == playBouquet && position == playIndex
             val selected = position == list.selectedItemPosition && list.hasFocus()
             val label = if (playing) "▶  ${c.name}" else c.name
@@ -2481,7 +2497,7 @@ class PlayerActivity : Activity() {
 
     // ---------------------------------------------------------------- timeshift
 
-    private var tsBuf: TimeshiftBuffer? = null
+    @Volatile private var tsBuf: TimeshiftBuffer? = null
     private var tsRec: TimeshiftRecorder? = null
     private var tsMode = false                 // odtwarzanie z bufora (strumień z dekodera zapisuje osobne połączenie)
     private var tsAudioPid: Int? = null
@@ -2512,7 +2528,7 @@ class PlayerActivity : Activity() {
 
     // --- odtwarzanie przez bufor: jedno połączenie z dekoderem (TimeshiftRecorder) zapisuje do bufora,
     // odtwarzacz (ExoPlayer / VLC przez lokalny serwer) czyta koniec bufora; pauza i cofnięcie bez nowego połączenia
-    private var bufLive = false
+    @Volatile private var bufLive = false
     @Volatile private var bufGen = 0           // zmiana — źródło odtwarzacza z poprzedniego kanału przestaje czytać
 
     /** Bufor gotowy do odtwarzania: włączona opcja, nośnik dostępny, bez błędu zapisu. */
@@ -2565,9 +2581,9 @@ class PlayerActivity : Activity() {
     private class BgChan(
         val url: String, val name: String, val buf: TimeshiftBuffer, val an: TsAnalyzer,
         val rec: TimeshiftRecorder, val journal: ProgramJournal,
-        val ch: Channel?, val bIdx: Int, val list: List<Channel>,
+        val ch: Channel?, var bIdx: Int, var list: List<Channel>,
     ) {
-        var pip = -1                               // numer okna PiP albo -1
+        @Volatile var pip = -1                     // numer okna PiP albo -1
         val addedAt = SystemClock.elapsedRealtime() // kolejność otwarcia (pytanie przy lukach w odbiorze)
         var parked = false                         // bufor ostatniego kanału na czas odtwarzania nagrań
         var leftAt = SystemClock.elapsedRealtime()
@@ -2591,7 +2607,7 @@ class PlayerActivity : Activity() {
         if (m != null && bgBadgeLogged.add(m.name)) AppLog.i("lista: znacznik B dla ${c.name} — bufor w tle ${m.name} (PiP ${m.pip + 1}, zapis ${m.lrec != null}, odłożony ${m.parked})")
         return m
     }
-    private val bgChans = ArrayList<BgChan>()
+    private val bgChans = java.util.concurrent.CopyOnWriteArrayList<BgChan>()
     private val bgBadgeLogged = HashSet<String>()
     private var bgPromoted = false
 
@@ -3375,11 +3391,12 @@ class PlayerActivity : Activity() {
     }
 
     private fun pipOpen(c: BgChan, want: Int = -1) {
-        val free = (if (want in 0 until PIP_MAX && bgChans.none { it.pip == want }) want else null)
-            ?: (0 until PIP_MAX).firstOrNull { i -> bgChans.none { it.pip == i } } ?: run { showMessage(getString(R.string.pip_full)); return }
+        val free = PipActions.freeSlot(bgChans.map { it.pip }.toSet(), PIP_MAX, want)
+            ?: run { showMessage(getString(R.string.pip_full)); return }
         // bufory w tle zostają — kanał z bufora przechodzi do okna
         c.pip = free
         c.buf.maxMin = pipBufLen()
+        c.ch?.let { prefs.historyAppend(it.ref, it.name) }
         pipRefresh()
         refreshPanelRows()
     }
@@ -3389,14 +3406,15 @@ class PlayerActivity : Activity() {
         c.leftAt = SystemClock.elapsedRealtime()
         // kanał wraca do zasad bufora poprzednich kanałów
         // bufor ostatnio oglądanego kanału (odłożony na czas nagrań) zostaje
-        if (prefs.bgCount == 0 && !c.parked) bgDrop(c, "zamknięte okno PiP") else c.buf.maxMin = bgBufLen()
+        if (PipActions.dropBufferOnClose(prefs.bgCount, c.parked, c.lrec != null)) bgDrop(c, "zamknięte okno PiP")
+        else c.buf.maxMin = bgBufLen()
         pipRefresh()
         refreshPanelRows()
     }
 
     private fun pipSwap(c: BgChan) {
         val ch = c.ch ?: return
-        val i = c.list.indexOf(ch)
+        val i = c.list.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(ch.ref) }
         if (i < 0) return
         playIn(c.bIdx, c.list, i)
     }
@@ -3440,7 +3458,14 @@ class PlayerActivity : Activity() {
         if (have != null && have.pip >= 0) { showMessage(getString(R.string.pip_already)); return }
         // „Zmień kanał”: okno zamykane, nowy kanał wchodzi na jego miejsce
         val want = rep?.takeIf { it.pip >= 0 && it in bgChans }?.let { val w = it.pip; pipClose(it); w } ?: -1
-        if (have != null) { pipOpen(have, want); return }
+        if (have != null) {
+            pipOpen(have, want)
+            if (have.pip >= 0 && bouquets.getOrNull(bIdx)?.let { !isVirtual(it.ref) } == true) {
+                have.bIdx = bIdx
+                have.list = l
+            }
+            return
+        }
         if (bgChans.count { it.pip >= 0 } >= PIP_MAX) { showMessage(getString(R.string.pip_full)); return }
         // brak miejsca: wypada najdawniej opuszczony bufor w tle (bez nagrywania); same nagrywane — komunikat
         if (bgChans.size >= BG_SLOTS) {
@@ -3450,6 +3475,55 @@ class PlayerActivity : Activity() {
         }
         val c = bgNew(ch, bIdx, l) ?: run { showMessage(getString(R.string.pip_no_slot)); return }
         pipOpen(c, want)
+    }
+
+    private fun channelPipButtons(ch: Channel, bouquetRef: String?, channels: List<Channel>): List<TvDialog.Btn> {
+        val bg = bgOf(ch)
+        val isMain = !recMode && playList.getOrNull(playIndex)?.let { OpenWebif.key(it.ref) == OpenWebif.key(ch.ref) } == true
+        val action = PipActions.channel(Features.PIP && prefs.pipEnabled, isMain, (bg?.pip ?: -1) >= 0)
+        if (action == ChannelPipAction.NONE) return emptyList()
+        if (action == ChannelPipAction.CLOSE) return listOf(TvDialog.Btn(getString(R.string.pip_close_channel)) {
+            val current = bgOf(ch)
+            if (current != null && current.pip >= 0) pipClose(current)
+            else showMessage(getString(R.string.pip_no_longer_open))
+        })
+        return listOf(TvDialog.Btn(getString(R.string.pip_add_channel)) {
+            pipReplace = null
+            val bIdx = bouquets.indexOfFirst { it.ref == bouquetRef && !isVirtual(it.ref) }
+            if (!Features.PIP || !prefs.pipEnabled) showMessage(getString(R.string.pip_disabled))
+            else if (bIdx >= 0) {
+                pipAdd(ch, bIdx, channels)
+            } else {
+                pipAddFromHistory(ch)
+            }
+        })
+    }
+
+    private fun pipAddFromHistory(ch: Channel) {
+        val existing = bgOf(ch)
+        if (existing != null && bouquets.getOrNull(existing.bIdx)?.let { !isVirtual(it.ref) } == true) {
+            pipAdd(ch, existing.bIdx, existing.list)
+            return
+        }
+        val candidates = bouquets.withIndex().filter { !isVirtual(it.value.ref) }
+        io.execute {
+            var error: Exception? = null
+            for ((_, bouquet) in candidates) {
+                val channels = try { api.channels(bouquet) } catch (e: Exception) { error = e; continue }
+                val found = channels.firstOrNull { OpenWebif.key(it.ref) == OpenWebif.key(ch.ref) } ?: continue
+                runOnUiThread {
+                    val currentIndex = bouquets.indexOfFirst { it.ref == bouquet.ref }
+                    if (!Features.PIP || !prefs.pipEnabled) showMessage(getString(R.string.pip_disabled))
+                    else if (currentIndex < 0) showMessage(getString(R.string.player_channel_not_found))
+                    else { pipReplace = null; pipAdd(found, currentIndex, channels) }
+                }
+                return@execute
+            }
+            runOnUiThread {
+                showMessage(if (error == null) getString(R.string.player_channel_not_found)
+                    else getString(R.string.player_channel_check_failed, error?.message ?: error.toString()))
+            }
+        }
     }
 
     /** Start (albo wznowienie) odtwarzania z bufora; [reuse] — połączenie zapisu z dekoderem już działa. */
@@ -4172,6 +4246,10 @@ class PlayerActivity : Activity() {
             LocalRecordings.delete(pin.dir)
             showMessage(getString(R.string.player_localrec_empty))
         } else showMessage(getString(R.string.player_localrec_saved, title, fmtMs(lengthSec * 1000), reasonText(reason)))
+        if (!main && prefs.bgCount == 0) {
+            bgChans.firstOrNull { it.buf === r.buf && it.pip < 0 && !it.parked && it.lrec == null }
+                ?.let { bgDrop(it, "nagranie zakończone po zamknięciu PiP") }
+        }
         refreshPanelRows()
         if (restartLive && wasShifted && url != null && !recMode) {
             failStreak = 0
@@ -4304,14 +4382,24 @@ class PlayerActivity : Activity() {
     }
 
     private fun refreshPanelRows() {
-        if (panel.visibility != View.VISIBLE) return
-        if (panelHist) {
+        if (bouquets.getOrNull(playBouquet)?.ref == HIST_BOUQUET) {
+            val playingRef = playList.getOrNull(playIndex)?.ref
+            val ordered = historyChannels()
+            val index = ordered.indexOfFirst { playingRef != null && OpenWebif.key(it.ref) == OpenWebif.key(playingRef) }
+            if (index >= 0) { playList = ordered; playIndex = index }
+        }
+        if (!::panel.isInitialized || panel.visibility != View.VISIBLE) return
+        if (panelHist || bouquets.getOrNull(panelBouquet)?.ref == HIST_BOUQUET) {
             val selectedRef = panelList.getOrNull(list.selectedItemPosition)?.ref
+            panelList.forEach { c ->
+                if (c.nowBegin > 0 && c.nowEnd > c.nowBegin) {
+                    historyEpgCache[OpenWebif.key(c.ref)] = EpgEvent(0, c.nowBegin, c.nowEnd - c.nowBegin, c.now, "", "", c.ref, c.name)
+                }
+            }
             panelList = historyChannels()
-            val selected = selectedRef?.let { ref ->
-                panelList.indexOfFirst { OpenWebif.key(it.ref) == OpenWebif.key(ref) }
-            } ?: -1
-            refreshPanel(selected.coerceAtLeast(0))
+            val selected = HistoryOrder.selectedIndex(panelList.map { it.ref }, selectedRef)
+            refreshPanel(selected)
+            panelList.getOrNull(selected)?.let { showInfo(it) }
         } else {
             adapter.notifyDataSetChanged()
         }
@@ -4459,7 +4547,7 @@ class PlayerActivity : Activity() {
     private val REC_REF = REC_BOUQUET
     private var recDir = ""                       // bieżący katalog (puste = domyślny dekodera)
     private val recStack = ArrayList<String>()    // katalogi nadrzędne (powrót „‹ wstecz”)
-    private var recMode = false
+    @Volatile private var recMode = false
     private var recItem: Recording? = null
     /** Audycje odtwarzanego nagrania lokalnego (długie OK — lista skoków). */
     private var recChapters: List<Chapter> = emptyList()
@@ -4479,7 +4567,11 @@ class PlayerActivity : Activity() {
 
     private fun historyChannels(): List<Channel> {
         val now = System.currentTimeMillis() / 1000
-        return prefs.history.mapIndexed { i, (ref, name) ->
+        val background = bgChans.toList()
+        val pip = background.filter { it.pip >= 0 }.mapNotNull { it.ch?.ref }.map(OpenWebif::key).toSet()
+        val buffers = background.mapNotNull { it.ch?.ref }.map(OpenWebif::key).toMutableSet()
+        if (bufLive && tsBuf != null && !recMode) playList.getOrNull(playIndex)?.ref?.let { buffers += OpenWebif.key(it) }
+        return HistoryOrder.sort(prefs.history, buffers, pip).mapIndexed { i, (ref, name) ->
             Channel(i + 1, name, ref).also { c ->
                 val key = OpenWebif.key(ref)
                 val event = historyEpgCache[key]?.takeIf { it.begin <= now && now < it.end }
@@ -5157,7 +5249,8 @@ class PlayerActivity : Activity() {
         bannerNext.text = ""
         bannerProgress.progress = 0
         epg.nowNext(ch) { cur, next ->
-            if (playList.getOrNull(playIndex) !== ch || !tsChBar || banner.visibility != View.VISIBLE) return@nowNext
+            if (playList.getOrNull(playIndex)?.let { OpenWebif.key(it.ref) } != OpenWebif.key(ch.ref) ||
+                !tsChBar || banner.visibility != View.VISIBLE) return@nowNext
             if (cur != null) {
                 bannerNow.text = cur.title
                 bannerStart.text = t(cur.begin)
@@ -5470,7 +5563,7 @@ class PlayerActivity : Activity() {
             Act.CHANNEL_BANNER -> playList.getOrNull(playIndex)?.let { showBanner(it) }
             Act.CHANNEL_LIST -> showPanel()
             Act.HISTORY_LIST -> showHistory()
-            Act.EPG_EVENT -> epg.showCurrentEvent()
+            Act.EPG_EVENT -> showCurrentEvent()
             Act.EPG_CHANNEL -> epg.showChannelEpg()
             Act.MULTI_EPG -> epg.showMultiEpg()
             Act.EPG_SEARCH -> epg.showSearch()
@@ -5790,7 +5883,7 @@ class PlayerActivity : Activity() {
             return
         }
         val actions = mapOf<String, () -> Unit>(
-            "event" to { epg.showCurrentEvent() },
+            "event" to { showCurrentEvent() },
             "channel_epg" to { epg.showChannelEpg() },
             "multi_epg" to { epg.showMultiEpg() },
             "search" to { epg.showSearch() },
@@ -5886,6 +5979,54 @@ class PlayerActivity : Activity() {
     }
 
     // ---------------------------------------------------------------- dźwięk
+
+    private fun showCurrentEvent() {
+        epg.showCurrentEvent { _ ->
+            listOf(
+                TvDialog.Btn(getString(R.string.epg_audio)) { showAudioDialog() },
+                TvDialog.Btn(getString(R.string.epg_subtitles)) { showSubtitleDialog() },
+                TvDialog.Btn(getString(R.string.epg_pip)) {
+                    if (Features.PIP && prefs.pipEnabled) showPipMenu()
+                    else showMessage(getString(R.string.pip_disabled))
+                },
+            )
+        }
+    }
+
+    private fun showSubtitleDialog() {
+        if (prefs.engine == "vlc" && !tsMode && !recMode) {
+            val engine = vlc
+            val tracks = engine?.subtitleTracks().orEmpty()
+            if (tracks.isEmpty()) { showMessage(getString(R.string.subtitle_none)); return }
+            val selected = tracks.indexOfFirst { it.first == engine?.selectedSubtitleTrackId() }
+            TvDialog.singleLive(this, getString(R.string.epg_subtitles), tracks.map { it.second }, selected) { which ->
+                if (engine?.selectSubtitleTrack(tracks[which].first) == true) which
+                else { showMessage(getString(R.string.subtitle_select_failed)); -1 }
+            }
+            return
+        }
+        val p = player ?: run { showMessage(getString(R.string.subtitle_none)); return }
+        val tracks = p.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+            .flatMap { group -> (0 until group.length).filter { group.isTrackSupported(it) }.map { group to it } }
+        if (tracks.isEmpty()) { showMessage(getString(R.string.subtitle_none)); return }
+        val labels = listOf(getString(R.string.subtitle_off)) + tracks.map { (group, index) ->
+            val format = group.getTrackFormat(index)
+            listOfNotNull(format.label, format.language, format.sampleMimeType).distinct().joinToString(" · ")
+                .ifBlank { getString(R.string.subtitle_track, index + 1) }
+        }
+        val disabled = p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+        val selected = if (disabled) 0 else tracks.indexOfFirst { (group, index) -> group.isTrackSelected(index) } + 1
+        TvDialog.singleLive(this, getString(R.string.epg_subtitles), labels, selected) { which ->
+            val params = p.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, which == 0)
+            if (which > 0) {
+                val (group, index) = tracks[which - 1]
+                params.setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
+            }
+            p.trackSelectionParameters = params.build()
+            which
+        }
+    }
 
     private class AudioTrack(val group: Tracks.Group, val index: Int, val format: Format)
 

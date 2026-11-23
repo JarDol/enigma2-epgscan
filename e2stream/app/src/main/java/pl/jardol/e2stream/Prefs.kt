@@ -349,6 +349,12 @@ class Prefs(ctx: Context) {
         history = (listOf(ref to name) + history.filter { OpenWebif.key(it.first) != k }).take(HISTORY_MAX)
     }
 
+    fun historyAppend(ref: String, name: String) {
+        val old = history
+        val updated = HistoryOrder.append(old, ref, name, HISTORY_MAX)
+        if (updated != old) history = updated
+    }
+
     /** PiP (eksperymentalne) — domyślnie wyłączone; bezpiecznik wyłącza po awarii / zawieszeniu w trakcie PiP. */
     var pipEnabled: Boolean
         get() = sp.getBoolean("pipEnabled", false)

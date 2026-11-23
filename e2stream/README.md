@@ -44,6 +44,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 * EPG kanału, multi-EPG bukietu i wyszukiwanie w EPG; z audycji: przełącz na kanał, zaplanuj przełączenie lub nagraj na dekoderze.
 * Długie OK w EPG kanału i Multi-EPG otwiera wybór kanału/bukietu, a wyszukiwanie jest na końcu menu.
 * W opisie EPG „Oglądaj” dla aktualnie oglądanego kanału zamyka opis bez ponownego strojenia. Wybór innego kanału („Przełącz na kanał”), także dla bieżącej audycji, wymaga potwierdzenia.
+* EPG bieżącego kanału ma przyciski Audio, Napisy i PiP. Wybór napisów działa dla dostępnych ścieżek ExoPlayera i VLC; brak ścieżek jest sygnalizowany komunikatem.
 * Akcje „Przełącz o…”, „Nagraj na dekoderze” i „Usuń przełączenie” wymagają potwierdzenia przed wykonaniem; WSTECZ anuluje. Po wykonaniu pokazywany jest wynik.
   Po udanym działaniu z wyników wyszukiwania lista wyników zamyka się, a komunikat pojawia się na pasku odtwarzacza.
 * Okna akcji i potwierdzenia domyślnie zamykają się po 30 sekundach; okna informacyjne po 15 sekundach. Czas każdego rodzaju ustawia się osobno w ustawieniach Ogólne (0 = bez zamykania); okna informacyjne można też wyłączyć.
@@ -296,7 +297,9 @@ hh:mm:ss.
 ExoPlayera (z tunelowaniem i bez) i VLC; w ustawieniach odtwarzania, w menu i pod klawiszem pilota. Nie zmienia bufora
 ani nagrań — działa przy odtwarzaniu.
 
-**Historia** – ostatnio oglądane kanały ze wszystkich bukietów (najnowszy na górze, do 50). Osobne okno pod klawiszem
+**Historia** – ostatnio oglądane kanały ze wszystkich bukietów (do 50). Widok grupuje najpierw zwykłe bufory, potem
+kanały PiP, a na końcu pozostałe; w każdej grupie zachowana jest kolejność oglądania. Nowy kanał PiP jest dopisywany
+na końcu historii bez zmiany kolejności istniejących pozycji. Osobne okno pod klawiszem
 ▼ (▲ — zwykła lista kanałów; przypisanie do zmiany w klawiszach, akcja *Lista kanałów — historia*). Dodatkowo bukiet
 „Historia” na końcu listy bukietów (◀ z pierwszego bukietu), do ukrycia w *Widocznych bukietach*.
 
@@ -322,10 +325,11 @@ ani nagrań — działa przy odtwarzaniu.
   Odtwarzanie nagrania (z dekodera albo lokalnego) nie kasuje buforów: bufor ostatnio oglądanego kanału zapisuje się dalej
   w tle (także przy wyłączonym buforze poprzednich kanałów), zostają też kanały w tle z trwającym zapisem; pozostałe
   bufory są usuwane. Po wyjściu z nagrania powrót na ostatni kanał — od razu z jego bufora,
-* PiP (eksperymentalne, domyślnie wyłączone) — do 2 okien z kanałami z bufora w tle: klatka co 1/2/3/5 s z ostatniej
+* PiP (eksperymentalne, domyślnie wyłączone) — do 3 okien z kanałami z bufora w tle: klatka co 1/2/3/5 s z ostatniej
   klatki kluczowej w pamięci bufora (własny demultiplekser — także kanały kodowane po odszyfrowaniu), tylko dekoder
   programowy (jeden na okno, bez sprzętowego; gdy go brak — „brak dekodera”), położenie okien; kanał do okna z listy
-  kanałów (◀ ▶ bukiety, OK dodaje okno). Bezpiecznik: po awarii albo zawieszeniu z otwartym PiP przy następnym starcie
+  kanałów (◀ ▶ bukiety, OK dodaje okno). Długie OK na liście kanałów lub w historii pozwala dodać kanał do PiP
+  albo zamknąć jego okno, także bez EPG. Bezpiecznik: po awarii albo zawieszeniu z otwartym PiP przy następnym starcie
   PiP wyłącza się samo i proponuje wysłanie logu PiP (osobny plik e2stream-pip.log, 3 ostatnie sesje),
 * timeshift (długość bufora, automatyczny start — przy odtwarzaniu przez bufor zawsze od razu, kroki przewijania, WSTECZ na pustym ekranie),
 * nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,

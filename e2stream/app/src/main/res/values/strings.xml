@@ -26,6 +26,17 @@
     <string name="menu_multi_epg">Multi EPG</string>
     <string name="menu_epg_search">Szukaj w EPG</string>
     <string name="menu_audio_track">Ścieżka dźwięku…</string>
+    <string name="epg_audio">Audio</string>
+    <string name="epg_subtitles">Napisy</string>
+    <string name="epg_pip">PiP</string>
+    <string name="subtitle_off">Wyłączone</string>
+    <string name="subtitle_none">Brak dostępnych ścieżek napisów</string>
+    <string name="subtitle_select_failed">Nie udało się wybrać ścieżki napisów</string>
+    <string name="subtitle_track">Ścieżka %1$d</string>
+    <string name="pip_add_channel">PiP Dodaj</string>
+    <string name="pip_close_channel">PiP Zamknij</string>
+    <string name="pip_no_longer_open">Kanał nie jest już w PiP</string>
+    <string name="pip_disabled">Włącz PiP w ustawieniach</string>
     <string name="menu_scheduled_switches">Przełączenia wg harmonogramu</string>
     <string name="menu_receiver_timers">Harmonogramy dekodera</string>
     <string name="section_storage">Pamięć masowa</string>

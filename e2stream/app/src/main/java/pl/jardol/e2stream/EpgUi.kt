@@ -391,19 +391,21 @@ class EpgUi(
     fun showCurrentEvent(ch: Channel? = host.current(), extra: ((EpgEvent?) -> List<TvDialog.Btn>)? = null) {
         if (ch == null) return
         io.execute {
+            var failure: Exception? = null
             val ev = try { load(ch.ref) } catch (e: Exception) {
-                if (extra != null) emptyList() else {
-                    a.runOnUiThread { host.message(a.getString(R.string.epg_error, e.message)) }
-                    return@execute
-                }
+                failure = e
+                emptyList()
             }
             val n = now()
             val cur = ev.firstOrNull { it.begin <= n && it.end > n } ?: ev.firstOrNull { it.begin > n }
             a.runOnUiThread {
+                val buttons = extra?.invoke(cur?.takeIf { it.begin <= now() && it.end > now() }).orEmpty()
+                val noEpg = failure?.let { a.getString(R.string.epg_error, it.message) }
+                    ?: a.getString(R.string.epg_no_epg, ch.name)
                 when {
-                    cur != null -> showEvent(cur, ch, extraBtns = extra?.invoke(cur.takeIf { it.begin <= now() && it.end > now() }).orEmpty())
-                    extra != null -> TvDialog.confirm(a, ch.name, a.getString(R.string.epg_no_epg, ch.name), extra(null))
-                    else -> host.message(a.getString(R.string.epg_no_epg, ch.name))
+                    cur != null -> showEvent(cur, ch, extraBtns = buttons)
+                    buttons.isNotEmpty() -> TvDialog.confirm(a, ch.name, noEpg, buttons)
+                    else -> host.message(noEpg)
                 }
             }
         }
