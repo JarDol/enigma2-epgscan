@@ -2548,6 +2548,7 @@ fun main() {
                     }
                     status = "EPG: ${channel.name} — audycji: ${list.size}."
                     val dayStarts = list.indices.filter { it == 0 || !EpgTime.sameDay(list[it - 1].begin, list[it].begin) }
+                    val openEpgMenu = { epgMenu(back = { showChannelEpg(channel) }, onChannel = { showChannelEpg(it) }) }
                     quickPick = QuickPick(
                         title = "EPG: ${channel.name}",
                         options = list.map { it.title },
@@ -2563,7 +2564,8 @@ fun main() {
                         timeoutSec = config.epgChannelSec,
                         tag = "epg-channel",
                         fontScale = epgScale,
-                        onMenu = { epgMenu(back = { showChannelEpg(channel) }, onChannel = { showChannelEpg(it) }) },
+                        onMenu = openEpgMenu,
+                        onLongSelect = { openEpgMenu() },
                         onHorizontal = { direction ->
                             quickPick?.let { pick ->
                                 val start = dayStarts.lastOrNull { it <= pick.selected } ?: 0
@@ -2613,6 +2615,25 @@ fun main() {
                     }
                     status = "Multi EPG: ${target.name}."
                     val wanted = selectRef ?: quickPick?.takeIf { it.tag == "multi-epg" }?.let { list.getOrNull(it.selected)?.ref } ?: playingChannel?.ref
+                    val openMultiEpgMenu = {
+                        quickPick = QuickPick(
+                            title = "Multi EPG — opcje",
+                            options = listOf("Wybierz bukiet", "Szukaj w EPG"),
+                            selected = 0,
+                            onBack = { showMultiEpg(target, time) },
+                        ) { choice ->
+                            if (choice == 0) {
+                                quickPick = QuickPick(
+                                    title = "Multi EPG — bukiet",
+                                    options = visible.map { it.name },
+                                    selected = visible.indexOfFirst { it.ref == target.ref }.coerceAtLeast(0),
+                                    onBack = { showMultiEpg(target, time) },
+                                ) { showMultiEpg(visible[it]) }
+                            } else {
+                                openEpgSearchImpl("")
+                            }
+                        }
+                    }
                     quickPick = QuickPick(
                         title = "Multi EPG: ${target.name} — ${EpgTime.day(time)} ${EpgTime.clock(time)}",
                         options = rows.map { (channel, running, _) -> "${channel.number}  ${channel.name}:  ${running?.title ?: "—"}" },
@@ -2622,25 +2643,8 @@ fun main() {
                         timeoutSec = config.epgMultiSec,
                         tag = "multi-epg",
                         fontScale = epgScale,
-                        onMenu = {
-                            quickPick = QuickPick(
-                                title = "Multi EPG — opcje",
-                                options = listOf("Wybierz bukiet", "Szukaj w EPG"),
-                                selected = 0,
-                                onBack = { showMultiEpg(target, time) },
-                            ) { choice ->
-                                if (choice == 0) {
-                                    quickPick = QuickPick(
-                                        title = "Multi EPG — bukiet",
-                                        options = visible.map { it.name },
-                                        selected = visible.indexOfFirst { it.ref == target.ref }.coerceAtLeast(0),
-                                        onBack = { showMultiEpg(target, time) },
-                                    ) { showMultiEpg(visible[it]) }
-                                } else {
-                                    openEpgSearchImpl("")
-                                }
-                            }
-                        },
+                        onMenu = openMultiEpgMenu,
+                        onLongSelect = { openMultiEpgMenu() },
                         onHorizontal = { direction ->
                             val selected = quickPick?.selected ?: 0
                             // Krok co pół godziny, wyrównany do pełnych i połówek godzin; nie wcześniej niż teraz.

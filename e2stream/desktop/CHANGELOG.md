@@ -3,6 +3,11 @@
 Sekcja `## X.Y.Z` jest opisem wydania testowego `e2stream-windows-X.Y.Z-test` na GitHubie.
 Workflow bierze wersję z `packageVersion` w `build.gradle.kts` i publikuje tylko wtedy, gdy ta sekcja istnieje.
 
+## 0.7.6
+
+- Długie OK otwiera menu w EPG kanału i Multi EPG.
+- Znany problem: głośność pilota Xiaomi może dodatkowo zmieniać głośność Windows.
+
 ## 0.7.5
 
 - Okna wyboru dopasowują wysokość do treści do limitu dostępnego miejsca; długie opisy i listy można przewijać wewnątrz okna, bez dużej pustej przestrzeni.
