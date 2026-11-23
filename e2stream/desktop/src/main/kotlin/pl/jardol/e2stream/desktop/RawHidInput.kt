@@ -47,6 +47,7 @@ internal class RawHidInput(
     private val systemKeyMode: () -> String = { "off" },
     /** Przejęty klawisz systemowy z klawiatury pilota (Windows go nie dostał) — do obsługi w programie. */
     private val onSystemKey: (physicalId: String) -> Unit = {},
+    private val isForeground: () -> Boolean = ::isForegroundApplication,
 ) : AutoCloseable {
     private val ready = CountDownLatch(1)
     private val failure = AtomicReference<Throwable?>()
@@ -73,14 +74,14 @@ internal class RawHidInput(
             onPower(physicalId)
         }
         val down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN
-        val intercepted = code >= 0 && !isPower && isForegroundApplication() &&
+        val intercepted = code >= 0 && !isPower && isForeground() &&
             interceptKey(physicalId, down)
         val system = code >= 0 && !isPower && !intercepted && (data.flags and LLKHF_INJECTED) == 0 &&
-            data.vkCode in SYSTEM_KEYS && isForegroundApplication() && isApplicationFocused() &&
+            data.vkCode in SYSTEM_KEYS && isForeground() && isApplicationFocused() &&
             takeSystemKey(data.vkCode, down)
-        if (intercepted || system || isPower && isForegroundApplication() ||
+        if (intercepted || system || isPower && isForeground() ||
             code >= 0 && data.vkCode in setOf(VK_BROWSER_BACK, VK_BROWSER_HOME) &&
-            isForegroundApplication() && isApplicationFocused() && suppressBrowserKeys()
+            isForeground() && isApplicationFocused() && suppressBrowserKeys()
         ) {
             WinDef.LRESULT(1)
         } else {
@@ -345,7 +346,7 @@ internal class RawHidInput(
             if (previous != null && previous != id) onRelease(previous)
             val isPower = isPowerKey(id)
             val newPowerPress = powerPresses.update(deviceHandle, isPower)
-            when (hidInputRoute(isPower, !isPower && isForegroundApplication() && isApplicationFocused())) {
+            when (hidInputRoute(isPower, !isPower && isForeground() && isApplicationFocused())) {
                 HidInputRoute.POWER -> {
                     if (newPowerPress) onPower(id)
                     continue

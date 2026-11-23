@@ -105,6 +105,10 @@ from the Windows volume; volume up/down/mute keys of a keyboard or remote
 control the application while E2Stream is in the foreground (the key is not
 passed to Windows), and the system volume when it is in the background. This
 can be switched off in **Odtwarzanie i obraz → Dźwięk**.
+For mapped HID volume buttons, Windows OEM volume commands are also suppressed
+while the application is foreground. Windows does not identify the originating
+device in these commands, so other OEM volume controls may also be suppressed
+while a corresponding HID volume binding is active.
 
 Settings follow the Android layout: a list of sections (Dekoder Enigma2,
 Odtwarzanie i obraz, Wygląd, EPG i ikony kanałów, Ogólne, Pilot i klawiatura,
@@ -206,7 +210,7 @@ re-registering usages already monitored by the receiver.
 
 The remote page displays the last nonzero HID report and receiver errors to
 help diagnose unsupported devices. While mapping a key or after a HID binding
-is present, Windows browser Home and Back keystrokes are suppressed only while
+is present, Windows browser Home and Back keystrokes and application commands are suppressed only while
 an E2Stream window has focus; other applications retain their normal behavior.
 This suppression applies to those browser keys from any input device while
 E2Stream is active, not just the remote.

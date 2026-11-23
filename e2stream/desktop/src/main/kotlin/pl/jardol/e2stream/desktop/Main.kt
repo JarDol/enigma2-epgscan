@@ -234,6 +234,7 @@ fun main() {
             var volumeOsdGeneration by remember { mutableIntStateOf(0) }
             var volumeOsdVisible by remember { mutableStateOf(false) }
             val volumeKeyIds = remember { AtomicReference<Set<String>>(emptySet()) }
+            val volumeHidCommands = remember { AtomicReference<Set<Int>>(emptySet()) }
             val systemKeysMode = remember { AtomicReference("remote") }
             var activeRecordings by remember { mutableStateOf<Map<String, ActiveRecording>>(emptyMap()) }
             var recordingStarts by remember { mutableIntStateOf(0) }
@@ -262,6 +263,12 @@ fun main() {
                     if (!config.volumeKeysApp) emptySet()
                     else listOf(VirtualRemoteKey.VOLUME_UP, VirtualRemoteKey.VOLUME_DOWN, VirtualRemoteKey.MUTE)
                         .flatMap { universalBindings[it].orEmpty() }.filter { it.startsWith("K:") }.toSet(),
+                )
+                volumeHidCommands.set(
+                    if (!config.volumeKeysApp) emptySet()
+                    else mapOf(VirtualRemoteKey.MUTE to 8, VirtualRemoteKey.VOLUME_DOWN to 9, VirtualRemoteKey.VOLUME_UP to 10)
+                        .filterKeys { key -> universalBindings[key].orEmpty().any { it.startsWith("H:") } }
+                        .values.toSet(),
                 )
             }
 
@@ -4889,6 +4896,42 @@ fun main() {
 
             DisposableEffect(desktopWindow) {
                 val heldHidKeys = mutableSetOf<String>()
+                val appCommandInterceptor = try {
+                    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+                        AppCommandInterceptor(
+                            desktopWindow,
+                            shouldIntercept = { value ->
+                                shouldInterceptAppCommand(
+                                    value, volumeHidCommands.get(), isForegroundApplication(),
+                                    captureActive.get(), suppressBrowserKeys.get(),
+                                )
+                            },
+                            onError = { message ->
+                                EventQueue.invokeLater {
+                                    remoteDiagnostics.log { "error=$message" }
+                                    hidDiagnostic = message
+                                    status = message
+                                }
+                            },
+                            onObserved = { value, intercepted ->
+                                if (remoteDiagnostics.enabled) {
+                                    EventQueue.invokeLater {
+                                        remoteDiagnostics.log {
+                                            "source=appcommand command=${(value ushr 16) and 0x0fff} " +
+                                                "device=${(value ushr 16) and 0xf000} intercepted=$intercepted"
+                                        }
+                                    }
+                                }
+                            },
+                        )
+                    } else null
+                } catch (e: Exception) {
+                    val message = "Przechwytywanie głośności Windows niedostępne: ${e.message ?: e.javaClass.simpleName}"
+                    AppLog.i(message)
+                    hidDiagnostic = message
+                    status = message
+                    null
+                }
                 val rawInput = if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) null else try {
                     RawHidInput(
                         isApplicationFocused = {
@@ -4990,7 +5033,10 @@ fun main() {
                     hidDiagnostic = status
                     null
                 }
-                onDispose { rawInput?.close() }
+                onDispose {
+                    appCommandInterceptor?.close()
+                    rawInput?.close()
+                }
             }
 
             DisposableEffect(config.lircEnabled, config.lircHost, config.lircPort) {

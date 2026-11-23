@@ -8,6 +8,7 @@ import java.lang.management.ManagementFactory
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -130,6 +131,57 @@ class RawHidInputTest {
         }
         assertNotNull(listener.get(), failure.get()?.toString())
         assertEquals(null, failure.get())
+    }
+
+    @Test
+    fun windowsRawInputSuppressesInjectedVolumeAndBrowserKeys() {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        val leaked = AtomicInteger()
+        val interceptedVolume = AtomicInteger()
+        val errors = AtomicReference("")
+        val keys = setOf(0xAF, 0xAC)
+        val guard = KeyboardHook(WinUser.LowLevelKeyboardProc { code, wParam, data ->
+            if (code >= 0 && data.vkCode in keys) {
+                leaked.incrementAndGet()
+                WinDef.LRESULT(1)
+            } else User32.INSTANCE.CallNextHookEx(null, code, wParam, WinDef.LPARAM(com.sun.jna.Pointer.nativeValue(data.pointer)))
+        }) { errors.set(it) }
+        var listener: RawHidInput? = null
+        try {
+            listener = RawHidInput(
+                isApplicationFocused = { true },
+                isForeground = { true },
+                onKey = { _, _ -> },
+                onError = { errors.set(it) },
+                onDiagnostic = {},
+                suppressBrowserKeys = { true },
+                systemKeyMode = { "all" },
+                interceptKey = { id, down ->
+                    if (id == "K:175" && down) interceptedVolume.incrementAndGet()
+                    id == "K:175"
+                },
+            )
+            repeat(20) {
+                for (key in keys) {
+                    for (flags in listOf(0, 2)) {
+                        val input = WinUser.INPUT().apply {
+                            type = WinDef.DWORD(WinUser.INPUT.INPUT_KEYBOARD.toLong())
+                            input.setType(WinUser.KEYBDINPUT::class.java)
+                            input.ki.wVk = WinDef.WORD(key.toLong())
+                            input.ki.dwFlags = WinDef.DWORD(flags.toLong())
+                        }
+                        assertEquals(1, User32.INSTANCE.SendInput(WinDef.DWORD(1), arrayOf(input), input.size()).toInt())
+                    }
+                }
+                Thread.sleep(20)
+            }
+            assertEquals(20, interceptedVolume.get())
+            assertEquals(0, leaked.get(), "A system key reached the guard instead of being suppressed")
+            assertEquals("", errors.get())
+        } finally {
+            listener?.close()
+            guard.close()
+        }
     }
 
     @Test
