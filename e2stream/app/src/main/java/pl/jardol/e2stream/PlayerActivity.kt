@@ -398,6 +398,7 @@ class PlayerActivity : Activity() {
     override fun onStart() {
         super.onStart()
         if (recreateForLanguage()) return
+        if (backgrounded) tsRecoverPending()
         if (!epgReturnFromSettings) epgStartupPending = true
         epgReturnFromSettings = false
         AppState.foreground = true
@@ -771,6 +772,7 @@ class PlayerActivity : Activity() {
         p.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 AppLog.i("BŁĄD ${error.errorCodeName}: ${error.message} / ${error.cause}")
+                if (localRecordingPlaybackError(error.message ?: error.errorCodeName)) return
                 if (isTimeshiftExpiredSegment(error) || (tsMode && tsGoneRecoveryGeneration == tsAudioSourceGen)) {
                     AppLog.i("timeshift: pomijam ogólny restart — odzyskiwanie po utracie segmentu")
                     return
@@ -2681,7 +2683,8 @@ class PlayerActivity : Activity() {
 
     private fun bgDrop(c: BgChan, reason: String) {
         if (!bgChans.remove(c)) return
-        c.lrec?.let { c.lrec = null; finishRec(it, "bufor zamknięty", restartLive = false, main = false) }
+        c.lrec?.let { c.lrec = null; finishRec(it, "bufor zamknięty", restartLive = false, main = false,
+            captureFullBuffer = reason == "koniec odtwarzania na żywo") }
         c.rec.stop()
         if (c.pip >= 0) { c.pip = -1; pipRefresh() }
         c.an.tee = null; c.an.onEit = null
@@ -2699,7 +2702,13 @@ class PlayerActivity : Activity() {
         Thread({
             try {
                 buffer.close()
-                TimeshiftBuffer.cleanupAsync(buffer.dir)
+                val abandoned = buffer.abandonClosedPin()
+                if (abandoned != null) {
+                    activeRecordingDirs -= abandoned.dir
+                    AppLog.i("timeshift: pozostawiam przypięty bufor po błędzie zapisu")
+                    recoverBufferSaves(buffer.dir)
+                }
+                buffer.cleanupClosedAsync()
             } catch (e: Exception) {
                 AppLog.i("timeshift: zamknięcie bufora nieudane (${buffer.dir.name}, $e)")
             }
@@ -3657,9 +3666,13 @@ class PlayerActivity : Activity() {
         tsStorageRetryAttempts = 0
         tsWarned = false
         val b = tsBuf
-        if (b == null || b.root != dir) {
+        if (b == null || b.root != dir || b.pin != null) {
+            if (b?.pin != null) {
+                localRec = null
+                ui.removeCallbacks(localRecTick)
+            }
             b?.let { closeBufferAsync(it) }
-            if (b != null) bgDropAll("zmiana nośnika")
+            if (b != null && b.root != dir) bgDropAll("zmiana nośnika")
             // katalog nie zajęty przez kanały buforowane w tle
             val used = bgChans.map { it.buf.dir }.toSet()
             val slot = TimeshiftBuffer.slotDirs(dir).first { it !in used }
@@ -3681,9 +3694,46 @@ class PlayerActivity : Activity() {
     private fun tsCleanupAtStart() {
         if (tsCleanedAtStart) return
         tsCleanedAtStart = true
-        val roots = listOfNotNull(java.io.File(TimeshiftBuffer.internalBase(this), "timeshift"),
+        for (r in tsStorageRoots()) for (d in TimeshiftBuffer.slotDirs(r)) {
+            recoverBufferSaves(d)
+            TimeshiftBuffer.cleanupAsync(d)
+        }
+        recoverRecordingEdits()
+    }
+
+    private fun tsStorageRoots(): List<File> =
+        listOfNotNull(java.io.File(TimeshiftBuffer.internalBase(this), "timeshift"),
             prefs.tsDir.takeIf { it.isNotBlank() && TimeshiftBuffer.available(it) }?.let { java.io.File(it, "timeshift") })
-        for (r in roots) for (d in TimeshiftBuffer.slotDirs(r)) TimeshiftBuffer.cleanupAsync(d)
+
+    private fun recoverBufferSaves(dir: File) {
+        TimeshiftBuffer.recoverPending(dir, { error ->
+            runOnUiThread { showMessage(getString(R.string.player_rec_save_failed, error), force = true) }
+        }, {
+            runOnUiThread { reloadRecordings() }
+        })
+    }
+
+    private fun tsRecoverPending() {
+        for (r in tsStorageRoots()) for (d in TimeshiftBuffer.slotDirs(r)) recoverBufferSaves(d)
+        recoverRecordingEdits()
+    }
+
+    private fun recoverRecordingEdits() {
+        val roots = tsStorageRoots()
+        io.execute {
+            for (root in roots) {
+                val dirs = LocalRecordings.base(root).listFiles { f -> f.isDirectory } ?: continue
+                for (dir in dirs) {
+                    try {
+                        RecordingExtract.recover(dir)
+                    } catch (e: Exception) {
+                        AppLog.i("nagranie: dokończenie wydzielania nieudane ($e)")
+                        runOnUiThread { showMessage(getString(R.string.player_rec_extract_failed, e.message ?: e.toString()), force = true) }
+                    }
+                }
+            }
+            runOnUiThread { reloadRecordings() }
+        }
     }
 
     /** Wyjście z aplikacji / nagranie: koniec timeshiftu, bufor skasowany (w tle). */
@@ -3691,6 +3741,10 @@ class PlayerActivity : Activity() {
     private fun tsStopAll(keepBg: Boolean = false) {
         ui.removeCallbacks(tsStorageRetry)
         if (localRec != null) finishLocalRec("koniec odtwarzania", restartLive = false)
+        if (localRec != null) {
+            localRec = null
+            ui.removeCallbacks(localRecTick)
+        }
         if (tsMode) tsLeave()
         bufStop("koniec odtwarzania na żywo")
         if (!keepBg) bgDropAll("koniec odtwarzania na żywo")
@@ -4204,7 +4258,7 @@ class PlayerActivity : Activity() {
         fun wallOf(epochSec: Long) = nowWall - (nowEpoch - epochSec * 1000)
         // „audycja”: od jej początku wg EPG (wcześniejsze audycje z bufora pomijane), pozostałe — cały bufor
         val from = if (mode == REC_EVENT && ev != null) b.offsetAt(wallOf(ev.begin)) else b.oldestOffset
-        if (b.root.usableSpace <= TimeshiftBuffer.RESERVE + b.pinCopyBytes(from)) {
+        if (b.root.usableSpace <= TimeshiftBuffer.RESERVE) {
             showMessage(getString(R.string.player_localrec_failed, getString(R.string.player_rec_no_space)), force = true)
             return
         }
@@ -4259,44 +4313,71 @@ class PlayerActivity : Activity() {
     }
 
     /** [main] — nagranie bieżącego kanału (timeshift / powrót na żywo); inaczej z bufora kanału w tle. */
-    @Suppress("UNUSED_PARAMETER")
-    private fun finishRec(r: LocalRec, reason: String, restartLive: Boolean, main: Boolean) {
+    private fun finishRec(r: LocalRec, reason: String, restartLive: Boolean, main: Boolean, captureFullBuffer: Boolean = false) {
         val endWall = SystemClock.elapsedRealtime()
         activeRecordingDirs += r.pin.dir
+        val pin = r.pin
+        var lengthSec = ((endWall - pin.fromWall) / 1000).coerceAtLeast(0)
+        val fullBuffer = r.mode == REC_EVENT && (captureFullBuffer || reason == "koniec odtwarzania")
+        val events = r.journal.snapshot()
+        val restartBufferPlayback = main && tsBuf === r.buf && r.buf.pin === pin && (tsMode || bufLive)
+        if (restartBufferPlayback) {
+            if (tsMode) tsLeave()
+            if (bufLive) bufGen++
+            player?.stop()
+        }
+        fun resumePlayback() {
+            if (!restartLive || !restartBufferPlayback) return
+            val url = currentUrl ?: return
+            if (bufLive && tsRec != null && r.buf.failed == null) startBufLive(url, reuse = true)
+            else startStream(url)
+        }
         val save = try {
-            r.buf.takeIf { it.pin === r.pin }?.preparePinSave()
+            if (r.buf.pin !== pin) throw java.io.IOException("nagranie: bufor nie jest już przypięty")
+            r.buf.preparePinSave(includeEarlier = fullBuffer, detachBuffer = true) { segments ->
+                if (segments.isNotEmpty()) {
+                    val begin = segments.first().startMs / 1000
+                    val end = maxOf(begin, segments.last().endMs / 1000)
+                    lengthSec = end - begin
+                    r.meta.put("begin", begin)
+                    val chapters = ProgramJournal.chapters(events, begin, end,
+                        minEdgeSec = if (r.mode == REC_EVENT && !fullBuffer) 90 else ProgramJournal.MIN_CHAPTER_SEC)
+                    LocalRecordings.putChapters(r.meta, chapters)
+                    if (fullBuffer || r.mode != REC_EVENT && chapters.isNotEmpty()) {
+                        val prefix = "${r.ch.name} ${hm.format(Date(begin * 1000))}–${hm.format(Date(end * 1000))}"
+                        r.meta.put("title", ProgramJournal.title(prefix, chapters))
+                    }
+                    if (fullBuffer || r.mode != REC_EVENT && chapters.isNotEmpty() || chapters.size > 1)
+                        r.meta.put("desc", ProgramJournal.describe(chapters,
+                            getString(R.string.player_localrec_from_middle), getString(R.string.player_localrec_no_end)))
+                }
+                LocalRecordings.putSegments(r.meta, segments)
+                LocalRecordings.putEvents(r.meta, events)
+                r.meta.put("lengthSec", lengthSec).put("done", false).put("end", reason)
+                org.json.JSONObject(r.meta.toString())
+            } ?: throw java.io.IOException("nagranie: brak przypiętego bufora")
         } catch (e: java.io.IOException) {
             AppLog.i("nagranie lokalne: przygotowanie zapisu nieudane ($e)")
-            if (main) {
-                localRec = r
-                ui.removeCallbacks(localRecTick)
-                ui.postDelayed(localRecTick, 5000)
-            } else bgChans.firstOrNull { it.buf === r.buf }?.lrec = r
+            if (r.buf.pin === pin) {
+                if (main) {
+                    localRec = r
+                    ui.removeCallbacks(localRecTick)
+                    ui.postDelayed(localRecTick, 5000)
+                } else bgChans.firstOrNull { it.buf === r.buf }?.lrec = r
+            } else activeRecordingDirs -= pin.dir
+            resumePlayback()
             showMessage(getString(R.string.player_rec_save_failed, e.message ?: e.toString()), force = true)
             return
         }
-        val pin = r.pin
-        val lengthSec = ((endWall - pin.fromWall) / 1000).coerceAtLeast(0)
-        val from = r.meta.optLong("begin")
-        val chapters = ProgramJournal.chapters(r.journal.snapshot(), from, from + lengthSec,
-            minEdgeSec = if (r.mode == REC_EVENT) 90 else ProgramJournal.MIN_CHAPTER_SEC)
-        if (chapters.isNotEmpty()) LocalRecordings.putChapters(r.meta, chapters)
-        val desc = { ProgramJournal.describe(chapters, getString(R.string.player_localrec_from_middle), getString(R.string.player_localrec_no_end)) }
-        if (r.mode != REC_EVENT && chapters.isNotEmpty()) {
-            val prefix = "${r.ch.name} ${hm.format(Date(from * 1000))}–${hm.format(Date((from + lengthSec) * 1000))}"
-            r.meta.put("title", ProgramJournal.title(prefix, chapters))
-            r.meta.put("desc", desc())
-        } else if (r.mode == REC_EVENT && chapters.size > 1) {
-            r.meta.put("desc", desc())                 // tytuł zostaje — nagrywana audycja (np. EPG zmienione w trakcie)
-        }
-        if (chapters.size > 1) AppLog.i("nagranie lokalne: audycje: " + chapters.joinToString(" | ") { "${ProgramJournal.hms(it.start)} ${it.title}" })
+        resumePlayback()
         val title = r.meta.optString("title")
         showMessage(getString(R.string.player_rec_saving, title))
         Thread({
             val error = try {
-                save?.save()
+                save.save()
                 r.meta.put("lengthSec", lengthSec).put("size", pin.bytes).put("done", true).put("end", reason)
                 if (!LocalRecordings.writeMeta(pin.dir, r.meta)) throw java.io.IOException("nagranie: zapis opisu nieudany")
+                save.complete()
                 if (pin.parts > 0) scanRecording(pin.dir, title) else LocalRecordings.delete(pin.dir)
                 AppLog.i("nagranie lokalne: koniec ($reason) „$title” ${fmtMs(lengthSec * 1000)}, ${pin.parts} plików, ${TimeshiftBuffer.gb(pin.bytes)}")
                 null
@@ -4304,6 +4385,7 @@ class PlayerActivity : Activity() {
                 AppLog.i("nagranie lokalne: zapis „$title” nieudany ($e)")
                 r.meta.put("done", false).put("saveError", e.message ?: e.toString())
                 LocalRecordings.writeMeta(pin.dir, r.meta)
+                save.allowRecovery()
                 e.message ?: e.toString()
             }
             activeRecordingDirs -= pin.dir
@@ -4342,7 +4424,7 @@ class PlayerActivity : Activity() {
                     now >= r.untilWall -> "koniec audycji"
                     now - r.pin.fromWall >= prefs.recMaxHours * 3_600_000L -> "limit czasu"
                     r.capacity > 0 && r.usedBefore + b.pinnedBytes() >= r.capacity * prefs.recMaxPct / 100 -> "limit miejsca"
-                    b.shrunk || b.root.usableSpace <= TimeshiftBuffer.RESERVE + b.pinCopyBytes() -> "brak miejsca"
+                    b.shrunk || b.root.usableSpace <= TimeshiftBuffer.RESERVE -> "brak miejsca"
                     else -> null
                 } ?: continue
                 c.lrec = null
@@ -4355,7 +4437,7 @@ class PlayerActivity : Activity() {
     private fun canStartRec(b: TimeshiftBuffer) = b.failed == null && b.root.usableSpace > TimeshiftBuffer.RESERVE
 
     private fun confirmStopRec(r: LocalRec, stop: () -> Unit) {
-        TvDialog.confirm(this, getString(R.string.player_localrec_title),
+        TvDialog.confirm(this, getString(R.string.player_localrec_stop),
             getString(R.string.player_rec_confirm_stop, r.ch.name, r.meta.optString("title")),
             listOf(TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
                 if (r.buf.pin === r.pin) stop() else showMessage(getString(R.string.player_rec_unavailable))
@@ -4394,7 +4476,7 @@ class PlayerActivity : Activity() {
         TvDialog.list(this, getString(R.string.player_rec_stop_title), items, sel.coerceIn(0, items.size - 1),
             widthFrac = 0.55f, timeoutSec = prefs.actionDialogSec) { i ->
             if (i < recs.size) confirmStopRec(recs[i]) { stopRec(recs[i]) }
-            else TvDialog.confirm(this, getString(R.string.player_localrec_title),
+            else TvDialog.confirm(this, getString(R.string.player_localrec_stop),
                 getString(R.string.player_rec_confirm_stop_all, recs.joinToString("\n") { it.ch.name }),
                 listOf(TvDialog.Btn(getString(R.string.player_rec_stop_all)) {
                     recs.filter { it.buf.pin === it.pin }.forEach(::stopRec)
@@ -4639,7 +4721,7 @@ class PlayerActivity : Activity() {
                 now >= r.untilWall -> finishLocalRec("koniec audycji", restartLive = true)
                 now - r.pin.fromWall >= prefs.recMaxHours * 3_600_000L -> finishLocalRec("limit czasu", restartLive = true)
                 r.capacity > 0 && r.usedBefore + b.pinnedBytes() >= r.capacity * prefs.recMaxPct / 100 -> finishLocalRec("limit miejsca", restartLive = true)
-                b.shrunk || b.root.usableSpace <= TimeshiftBuffer.RESERVE + b.pinCopyBytes() -> finishLocalRec("brak miejsca", restartLive = true)
+                b.shrunk || b.root.usableSpace <= TimeshiftBuffer.RESERVE -> finishLocalRec("brak miejsca", restartLive = true)
                 else -> ui.postDelayed(this, 5000)
             }
         }
@@ -4656,13 +4738,18 @@ class PlayerActivity : Activity() {
             try {
                 val parts = LocalRecordings.parts(dir)
                 if (parts.isEmpty()) return@Thread
+                val scannedParts = parts.map { it.name to it.length() }
                 val t0 = SystemClock.elapsedRealtime()
                 val res = RecScan.scan(parts)
-                val meta = LocalRecordings.readMeta(dir) ?: org.json.JSONObject()
-                val d = RecScan.describe(res, meta.optLong("lengthSec"))
-                AppLog.i("nagranie: skan zegara „$title” (${SystemClock.elapsedRealtime() - t0} ms): $d")
-                meta.put("scan", d).put("scanV", SCAN_V)
-                LocalRecordings.writeMeta(dir, meta)
+                synchronized(LocalRecordings.metadataLock) {
+                    if (LocalRecordings.parts(dir).map { it.name to it.length() } != scannedParts) return@synchronized
+                    val meta = LocalRecordings.readMeta(dir) ?: return@synchronized
+                    val d = RecScan.describe(res, meta.optLong("lengthSec"))
+                    AppLog.i("nagranie: skan zegara „$title” (${SystemClock.elapsedRealtime() - t0} ms): $d")
+                    meta.put("scan", d).put("scanV", SCAN_V)
+                    if (!LocalRecordings.writeMeta(dir, meta))
+                        AppLog.i("nagranie: nie można zapisać wyniku skanowania ${dir.name}")
+                }
             } catch (e: Exception) {
                 AppLog.i("nagranie: skan zegara nieudany ($e)")
             }
@@ -4810,13 +4897,59 @@ class PlayerActivity : Activity() {
         val acts = ArrayList<Pair<String, () -> Unit>>()
         acts += getString(R.string.message_play) to { pickRecording(r) }
         if (LocalRecordings.isLocal(r.path)) {
-            if (!LocalRecordings.isSingleFile(LocalRecordings.dirOf(r.path)))
+            val dir = LocalRecordings.dirOf(r.path)
+            if (RecordingExtract.available(dir).isNotEmpty())
+                acts += getString(R.string.player_rec_extract) to { showExtractPrograms(r) }
+            if (!LocalRecordings.isSingleFile(dir))
                 acts += getString(R.string.player_localrec_convert) to { exportLocalRecording(r, convert = true) }
             acts += getString(R.string.player_localrec_export) to { exportLocalRecording(r, convert = false) }
         }
         acts += getString(R.string.message_delete) to { confirmDeleteRecording(r) }
         TvDialog.list(this, r.title, acts.map { TvDialog.Item(it.first) },
             hint = getString(R.string.epg_hint_actions), widthFrac = 0.45f) { selected -> acts[selected].second() }
+    }
+
+    private fun showExtractPrograms(r: Recording) {
+        val dir = LocalRecordings.dirOf(r.path)
+        if (dir in activeRecordingDirs || exportCancel != null || recMode && recItem?.path == r.path) {
+            showMessage(getString(R.string.player_rec_unavailable))
+            return
+        }
+        val events = RecordingExtract.available(dir)
+        if (events.isEmpty()) { showMessage(getString(R.string.player_rec_unavailable)); return }
+        val segments = LocalRecordings.readMeta(dir)?.let { LocalRecordings.segments(it) }.orEmpty()
+        if (segments.isEmpty()) { showMessage(getString(R.string.player_rec_unavailable)); return }
+        val availableStart = segments.first().startMs / 1000
+        val availableEnd = segments.last().endMs / 1000
+        TvDialog.list(this, getString(R.string.player_rec_extract), events.map { event ->
+            val begin = maxOf(event.begin, availableStart)
+            val end = minOf(event.end, availableEnd)
+            val marks = listOfNotNull(
+                getString(R.string.player_localrec_from_middle).takeIf { event.begin < availableStart },
+                getString(R.string.player_localrec_no_end).takeIf { event.end > availableEnd })
+            TvDialog.Item(event.title, "${hm.format(Date(begin * 1000))}–${hm.format(Date(end * 1000))}" +
+                if (marks.isEmpty()) "" else " (${marks.joinToString(", ")})")
+        }, widthFrac = 0.55f) { selected ->
+            val event = events[selected]
+            TvDialog.confirm(this, getString(R.string.player_rec_extract),
+                getString(R.string.player_rec_extract_confirm, event.title),
+                listOf(TvDialog.Btn(getString(R.string.player_rec_extract)) {
+                    if (exportCancel != null || recMode && recItem?.path == r.path || !activeRecordingDirs.add(dir)) {
+                        showMessage(getString(R.string.player_rec_unavailable))
+                    } else io.execute {
+                        val error = try { RecordingExtract.extractClaimed(dir, event); null }
+                        catch (e: Exception) { AppLog.i("nagranie: wydzielenie nieudane ($e)"); e.message ?: e.toString() }
+                        finally { activeRecordingDirs -= dir }
+                        runOnUiThread {
+                            if (error == null) {
+                                recPos.edit().remove(recPosKey(r)).apply()
+                                reloadRecordings()
+                                showMessage(getString(R.string.player_rec_extract_done, event.title))
+                            } else showMessage(getString(R.string.player_rec_extract_failed, error), force = true)
+                        }
+                    }
+                }), timeoutSec = prefs.actionDialogSec)
+        }
     }
 
     // --- eksport nagrania lokalnego do jednego pliku .ts (na żądanie, w tle)
@@ -4962,9 +5095,11 @@ class PlayerActivity : Activity() {
         restartPending = false
         recBqRef = if (LocalRecordings.isLocal(r.path)) REC_LOCAL_BOUQUET else REC_REF
         recSeekWarned = false
+        var incomplete = false
         if (LocalRecordings.isLocal(r.path)) {
             val dir = LocalRecordings.dirOf(r.path)
             val m = LocalRecordings.readMeta(dir)
+            incomplete = m != null && m.has("done") && !m.optBoolean("done")
             val done = m?.optString("scan").orEmpty()
             if (done.isEmpty() || m?.optInt("scanV") != SCAN_V) scanRecording(dir, r.title) else AppLog.i("nagranie: skan zegara (zapisany): $done")
         }
@@ -4975,11 +5110,21 @@ class PlayerActivity : Activity() {
         AppLog.i("nagranie: ${r.title} (${r.service}) $url od ${fmtMs(startMs)}")
         startStream(url, startMs)
         showRecBanner()
+        if (incomplete) showMessage(getString(R.string.player_rec_incomplete), force = true)
         ui.removeCallbacks(recTick)
         ui.postDelayed(recTick, 500)
     }
 
     /** Koniec nagrania albo wyjście: zapamiętanie miejsca. */
+    private fun localRecordingPlaybackError(reason: String): Boolean {
+        if (!recMode || recItem?.path?.let(LocalRecordings::isLocal) != true) return false
+        leaveRec()
+        stopPlayback()
+        showRecordings()
+        showMessage(getString(R.string.player_rec_playback_failed, reason), force = true)
+        return true
+    }
+
     private fun leaveRec() {
         if (!recMode) return
         ui.removeCallbacks(recApply); recPending = -1; pvCancel()

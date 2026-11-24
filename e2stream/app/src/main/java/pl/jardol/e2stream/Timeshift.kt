@@ -185,6 +185,10 @@ class TimeshiftBuffer(
         writeBatch = null
     }
 
+    fun cleanupClosedAsync(): Thread? = synchronized(lock) {
+        cleanupAsync(dir, only = session)
+    }
+
     private val pend = ByteArray(188)
     private var pendLen = 0
 
@@ -349,7 +353,7 @@ class TimeshiftBuffer(
         while (segs.size > maxOf(2, maxMin + 1)) dropOldest(delete)
         while (segs.size > 2 && dir.usableSpace < RESERVE) { dropOldest(delete); shrunk = true }
         if (delete.isNotEmpty()) Thread({
-            delete.forEach { it.delete() }
+            delete.forEach { deleteWhenUnprotected(it) }
         }, "timeshift-usun").start()
     }
 
@@ -603,16 +607,14 @@ class TimeshiftBuffer(
     }
 
     private fun dropOldest(delete: MutableList<File>) {
-        val s = segs.removeAt(0)
+        val s = segs.first()
+        val p = pin
+        val keep = p != null && s.start + s.len > p.from
+        if (keep) p!!.take(s.file, s.len, s.wall, segs.getOrNull(1)?.wall ?: SystemClock.elapsedRealtime())
+        segs.removeAt(0)
         trimmed = true
         trimKeyframes(segs.firstOrNull()?.start ?: (s.start + s.len))
-        val f = s.file
-        val p = pin
-        if (p != null && s.start + s.len > p.from) {           // kawałek nagrania: przeniesiony, nie usunięty
-            p.take(f, s.len)
-            return
-        }
-        delete += f
+        if (!keep) delete += s.file
     }
 
     // ------------------------------------------------------------ nagrania lokalne (przypięte kawałki)
@@ -621,7 +623,9 @@ class TimeshiftBuffer(
      * Nagranie z bufora: kawałki od bajtu [from] nie są kasowane — przy wypadnięciu z okna trafiają
      * (zmiana nazwy, ten sam nośnik) do katalogu nagrania [dir] jako part-00001.ts, part-00002.ts…
      */
-    class Pin(val dir: File, val from: Long, val fromWall: Long) {
+    class Pin(val dir: File, val from: Long, val fromWall: Long, internal val guard: File) {
+        private val epochOffset = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+        internal val segments = ArrayList<RecordingSegment>()
         var parts = 0
             private set
         var bytes = 0L
@@ -632,13 +636,36 @@ class TimeshiftBuffer(
             bytes += len
         }
 
-        fun take(f: File, len: Long) {
+        fun segment(name: String, start: Long, end: Long) =
+            RecordingSegment(name, epochOffset + start, epochOffset + maxOf(end, start + 1))
+
+        fun take(f: File, len: Long, start: Long, end: Long) {
             val dst = File(dir, String.format(java.util.Locale.US, "part-%05d.ts", parts + 1))
-            if (!f.renameTo(dst)) {
-                f.copyTo(dst, overwrite = true)
-                if (!f.delete()) AppLog.i("nagranie: nie można usunąć kopii ${f.name}")
+            if (!f.isFile || f.length() != len) throw IOException("nagranie: niepełny fragment ${f.name}")
+            val info = try { org.json.JSONObject(guard.readText()) }
+                catch (e: org.json.JSONException) { throw IOException("nagranie: nieprawidłowy stan bufora", e) }
+            val taken = info.optJSONArray("taken") ?: throw IOException("nagranie: brak spisu fragmentów")
+            val entry = org.json.JSONObject().put("source", f.name).put("part", dst.name).put("length", len)
+            if (taken.length() == parts) taken.put(entry)
+            else if (taken.length() == parts + 1) taken.put(parts, entry)
+            else throw IOException("nagranie: nieprawidłowy stan fragmentów")
+            LocalRecordings.writeJsonAtomic(guard, info)
+            val moved = synchronized(sourceLock) {
+                if (protectedSources.containsKey(f.absoluteFile) || hasOtherSaveMarker(f, guard)) false else f.renameTo(dst)
+            }
+            if (!moved) {
+                val tmp = File(dir, dst.name + ".part")
+                java.io.FileInputStream(f).use { input ->
+                    FileOutputStream(tmp).use { output ->
+                        if (input.copyTo(output) != len) throw IOException("nagranie: niepełny zapis ${dst.name}")
+                        output.fd.sync()
+                    }
+                }
+                if (!tmp.renameTo(dst)) throw IOException("nagranie: nie można zapisać ${dst.name}")
+                deleteWhenUnprotected(f)
             }
             copied(len)
+            segments += segment(dst.name, start, end)
         }
     }
 
@@ -652,7 +679,21 @@ class TimeshiftBuffer(
         dir.mkdirs()
         writePsiHeader(dir)
         val start = maxOf(from, segs.firstOrNull()?.start ?: total)
-        Pin(dir, start, wallAt(start)).also { pin = it }
+        val guard = File(this.dir, session + "guard.json")
+        try {
+            val tmp = File(this.dir, guard.name + ".tmp")
+            FileOutputStream(tmp).use { output ->
+                output.write(org.json.JSONObject().put("recording", dir.absolutePath)
+                    .put("taken", org.json.JSONArray()).toString().toByteArray(Charsets.UTF_8))
+                output.fd.sync()
+            }
+            if (!tmp.renameTo(guard)) throw IOException("nagranie: nie można zabezpieczyć bufora")
+            synchronized(sourceLock) { activeSaves += guard.absoluteFile }
+        } catch (e: IOException) {
+            failWrite(e)
+            return null
+        }
+        Pin(dir, start, wallAt(start), guard).also { pin = it }
     }
 
     /** Bajty nagrania razem z kawałkami jeszcze w buforze. */
@@ -663,7 +704,18 @@ class TimeshiftBuffer(
     }
 
     fun cancelPin(p: Pin) = synchronized(lock) {
-        if (pin === p) pin = null
+        if (pin === p) {
+            pin = null
+            removeGuard(p.guard)
+        }
+    }
+
+    fun abandonClosedPin(): Pin? = synchronized(lock) {
+        if (!closed) return null
+        val p = pin ?: return null
+        pin = null
+        synchronized(sourceLock) { activeSaves.remove(p.guard.absoluteFile) }
+        p
     }
 
     fun pinCopyBytes(from: Long = pin?.from ?: total): Long = synchronized(lock) {
@@ -672,62 +724,157 @@ class TimeshiftBuffer(
 
     class PinSave internal constructor(
         val pin: Pin,
-        private val sources: List<Pair<java.io.FileInputStream, Long>>,
+        private val sources: List<Pair<File, Long>>,
+        private val files: List<File>,
+        private val marker: File,
+        val segments: List<RecordingSegment>,
+        private val transfer: Boolean,
     ) {
         fun save() {
             val data = ByteArray(1 shl 20)
             try {
-                for ((input, length) in sources) {
+                for ((source, length) in sources) {
                     val target = File(pin.dir, String.format(java.util.Locale.US, "part-%05d.ts", pin.parts + 1))
                     val tmp = File(pin.dir, target.name + ".part")
                     try {
-                        FileOutputStream(tmp).use { output ->
-                            var left = length
-                            while (left > 0) {
-                                val n = input.read(data, 0, minOf(left, data.size.toLong()).toInt())
-                                if (n < 0) throw java.io.EOFException("nagranie: niepełny fragment")
-                                output.write(data, 0, n)
-                                left -= n
-                            }
-                            output.fd.sync()
+                        val moved = synchronized(sourceLock) {
+                            transfer && protectedSources[source.absoluteFile] == 1 &&
+                                !hasOtherSaveMarker(source, marker) && source.length() == length && source.renameTo(target)
                         }
-                        if (!tmp.renameTo(target)) throw IOException("nagranie: nie można zapisać ${target.name}")
+                        if (!moved) {
+                            java.io.FileInputStream(source).use { input ->
+                                FileOutputStream(tmp).use { output ->
+                                    var left = length
+                                    while (left > 0) {
+                                        val n = input.read(data, 0, minOf(left, data.size.toLong()).toInt())
+                                        if (n < 0) throw java.io.EOFException("nagranie: niepełny fragment")
+                                        output.write(data, 0, n)
+                                        left -= n
+                                    }
+                                    output.fd.sync()
+                                }
+                            }
+                            if (!tmp.renameTo(target)) throw IOException("nagranie: nie można zapisać ${target.name}")
+                        }
                         pin.copied(length)
-                        input.close()
                     } catch (e: IOException) {
                         tmp.delete()
                         throw e
                     }
                 }
             } finally {
-                sources.forEach { (input, _) ->
-                    try { input.close() } catch (e: IOException) { AppLog.i("nagranie: zamknięcie fragmentu nieudane ($e)") }
-                }
+                releaseSources(files)
             }
+        }
+
+        fun complete() {
+            synchronized(sourceLock) {
+                if (!marker.delete() && marker.exists()) throw IOException("nagranie: nie można usunąć stanu zapisu")
+                activeSaves.remove(marker.absoluteFile)
+                pendingDeletes.filter { it.parentFile == marker.absoluteFile.parentFile }.forEach { deletePending(it) }
+            }
+        }
+
+        fun allowRecovery() {
+            synchronized(sourceLock) { activeSaves.remove(marker.absoluteFile) }
         }
     }
 
-    /**
-     * Freeze the recording boundary without resetting byte offsets or the live buffer. Open descriptors
-     * keep the immutable segments readable even if normal buffer eviction unlinks them during copying.
-     * The caller runs save() off the playback/UI threads.
-     */
-    fun preparePinSave(): PinSave? = synchronized(lock) {
+    /** Zabezpiecza granicę nagrania; właściwe przenoszenie lub kopiowanie odbywa się w tle. */
+    fun preparePinSave(
+        includeEarlier: Boolean = false,
+        detachBuffer: Boolean = false,
+        prepareMetadata: ((List<RecordingSegment>) -> org.json.JSONObject)? = null,
+    ): PinSave? = synchronized(lock) {
         val p = pin ?: return null
-        flushWriteBatch()
-        out?.close()
-        out = null
-        val sources = ArrayList<Pair<java.io.FileInputStream, Long>>()
+        var writeError: IOException? = try { flushWriteBatch(); null } catch (e: IOException) {
+            failWrite(e)
+            e
+        }
+        if (writeError == null && failed != null) writeError = IOException("timeshift: $failed")
+        val sources = ArrayList<Pair<File, Long>>()
+        val files = ArrayList<File>()
+        val selected = segs.filter { (includeEarlier && p.parts == 0 || it.start + it.len > p.from) && it.len > 0 }
+        val now = SystemClock.elapsedRealtime()
+        val index = p.segments.toList() + selected.mapIndexed { i, s ->
+            val next = segs.indexOf(s) + 1
+            p.segment(String.format(java.util.Locale.US, "part-%05d.ts", p.parts + i + 1),
+                s.wall, segs.getOrNull(next)?.wall ?: now)
+        }
+        val metadata = prepareMetadata?.invoke(index)
+        val marker = File(dir, session + "save-" + java.util.UUID.randomUUID() + ".json")
+        var guardPrepared = false
         try {
-            for (s in segs) if (s.start + s.len > p.from && s.len > 0) {
-                sources += java.io.FileInputStream(s.file) to s.len
+            synchronized(sourceLock) {
+                for (s in selected) {
+                    val file = s.file.absoluteFile
+                    if (!file.isFile || file.length() < s.len) throw IOException("nagranie: brak fragmentu ${file.name}")
+                    sources += file to s.len
+                    protectedSources[file] = (protectedSources[file] ?: 0) + 1
+                    files += file
+                }
+                val info = org.json.JSONObject()
+                    .put("recording", p.dir.absolutePath)
+                    .put("firstPart", p.parts + 1)
+                    .put("move", detachBuffer)
+                    .put("existing", org.json.JSONArray().apply {
+                        for (i in 1..p.parts) {
+                            val name = String.format(java.util.Locale.US, "part-%05d.ts", i)
+                            val part = File(p.dir, name)
+                            if (!part.isFile || part.length() <= 0) throw IOException("nagranie: brak fragmentu $name")
+                            put(org.json.JSONObject().put("name", name).put("length", part.length()))
+                        }
+                    })
+                    .put("sources", org.json.JSONArray().apply {
+                        selected.forEach { put(org.json.JSONObject().put("name", it.file.name).put("length", it.len)) }
+                    })
+                    .put("uncertain", true)
+                if (metadata != null) info.put("meta", metadata)
+                LocalRecordings.writeJsonAtomic(p.guard, info)
+                guardPrepared = true
+                try {
+                    out?.close()
+                } catch (e: IOException) {
+                    failWrite(e)
+                    if (writeError == null) writeError = e
+                } finally {
+                    out = null
+                }
+                writeError?.let { throw it }
+                info.put("uncertain", false)
+                val tmp = File(marker.parentFile, marker.name + ".tmp")
+                FileOutputStream(tmp).use { output ->
+                    output.write(info.toString().toByteArray(Charsets.UTF_8))
+                    output.fd.sync()
+                }
+                if (!tmp.renameTo(marker)) throw IOException("nagranie: nie można zabezpieczyć stanu zapisu")
+                activeSaves += marker.absoluteFile
+                removeGuard(p.guard)
             }
         } catch (e: IOException) {
-            sources.forEach { (input, _) -> input.close() }
+            if (guardPrepared) {
+                pin = null
+                failWrite(e)
+                synchronized(sourceLock) { activeSaves.remove(p.guard.absoluteFile) }
+            }
+            releaseSources(files)
             throw e
         }
         pin = null
-        PinSave(p, sources)
+        if (detachBuffer) {
+            segs.forEach { deleteWhenUnprotected(it.file) }
+            segs.clear()
+            total = 0
+            kfCount = 0; kfHead = 0
+            ringLen = 0
+            pendLen = 0
+            trimmed = false
+            shrunk = false
+            waitPcr = true; noPcrSince = -1; skipped = 0; skippedPids.clear()
+            session = newSession()
+            lock.notifyAll()
+        }
+        PinSave(p, sources, files, marker, index, detachBuffer)
     }
 
     /**
@@ -740,11 +887,14 @@ class TimeshiftBuffer(
         try { out?.close() } catch (_: Exception) {}
         out = null
         pendLen = 0
-        for (s in segs) {
-            if (s.start + s.len > p.from && s.len > 0) p.take(s.file, s.len) else s.file.delete()
+        for ((i, s) in segs.withIndex()) {
+            if (s.start + s.len > p.from && s.len > 0)
+                p.take(s.file, s.len, s.wall, segs.getOrNull(i + 1)?.wall ?: SystemClock.elapsedRealtime())
+            else deleteWhenUnprotected(s.file)
         }
         segs.clear()
         pin = null
+        removeGuard(p.guard)
         total = 0
         kfCount = 0; kfHead = 0
         ringLen = 0
@@ -836,25 +986,246 @@ class TimeshiftBuffer(
     }
 
     companion object {
+        private val sourceLock = Any()
+        private val protectedSources = HashMap<File, Int>()
+        private val pendingDeletes = HashSet<File>()
+        private val activeSaves = HashSet<File>()
+
+        private fun hasSaveMarker(file: File): Boolean {
+            val name = file.name
+            val parent = file.parentFile ?: return true
+            val markers = parent.listFiles { marker ->
+                marker.name.startsWith("ts-") && marker.name.endsWith(".json") &&
+                    ((marker.name.contains("-save-") && name.startsWith(marker.name.substringBefore("save-"))) ||
+                        (marker.name.endsWith("-guard.json") && name.startsWith(marker.name.removeSuffix("guard.json"))))
+            }
+            if (markers == null) {
+                AppLog.i("timeshift: nie można sprawdzić stanu zapisu w ${parent.name}")
+                return true
+            }
+            return markers.isNotEmpty()
+        }
+
+        private fun hasOtherSaveMarker(file: File, current: File): Boolean {
+            val parent = file.parentFile ?: return true
+            val markers = parent.listFiles { marker ->
+                marker.absoluteFile != current.absoluteFile && marker.name.startsWith("ts-") &&
+                    marker.name.endsWith(".json") && marker.name.contains("-save-") &&
+                    file.name.startsWith(marker.name.substringBefore("save-"))
+            }
+
+            return markers == null || markers.isNotEmpty()
+        }
+
+        private fun removeGuard(guard: File) = synchronized(sourceLock) {
+            if (!guard.delete() && guard.exists()) {
+                AppLog.i("nagranie: nie można usunąć zabezpieczenia ${guard.name}")
+            } else {
+                activeSaves.remove(guard.absoluteFile)
+                pendingDeletes.filter { it.parentFile == guard.absoluteFile.parentFile }.forEach { deletePending(it) }
+            }
+        }
+
+        private fun deleteWhenUnprotected(file: File): Boolean = synchronized(sourceLock) {
+            val key = file.absoluteFile
+            if (protectedSources.containsKey(key) || hasSaveMarker(key)) {
+                pendingDeletes += key
+                false
+            } else file.delete()
+        }
+
+        private fun deletePending(file: File) {
+            val key = file.absoluteFile
+            if (pendingDeletes.contains(key) && !protectedSources.containsKey(key) && !hasSaveMarker(key)) {
+                pendingDeletes.remove(key)
+                if (!key.delete() && key.exists()) AppLog.i("timeshift: nie można usunąć ${key.name}")
+            }
+        }
+
+        private fun releaseSources(files: List<File>) = synchronized(sourceLock) {
+            for (file in files) {
+                val key = file.absoluteFile
+                val count = protectedSources[key] ?: continue
+                if (count > 1) protectedSources[key] = count - 1
+                else {
+                    protectedSources.remove(key)
+                    deletePending(key)
+                }
+            }
+        }
+
+        private fun prepareGuardRecovery(marker: File, target: File, prefix: String, info: org.json.JSONObject) {
+            val taken = info.optJSONArray("taken") ?: throw IOException("nagranie: brak spisu fragmentów")
+            val planned = org.json.JSONArray()
+            val seen = HashSet<String>()
+            val pattern = Regex(Regex.escape(prefix) + "(\\d+)\\.ts")
+            for (i in 0 until taken.length()) {
+                val entry = taken.getJSONObject(i)
+                val source = entry.getString("source")
+                val part = String.format(java.util.Locale.US, "part-%05d.ts", i + 1)
+                val length = entry.getLong("length")
+                if (File(source).name != source || !pattern.matches(source) ||
+                    !seen.add(source) || entry.getString("part") != part || length <= 0)
+                    throw IOException("nagranie: nieprawidłowy spis fragmentów")
+                planned.put(org.json.JSONObject().put("name", source).put("length", length))
+            }
+            val existing = target.listFiles { f -> f.name.matches(Regex("part-\\d+\\.ts")) }
+                ?: throw IOException("nagranie: nie można odczytać katalogu")
+            val expectedParts = (1..taken.length()).map {
+                String.format(java.util.Locale.US, "part-%05d.ts", it)
+            }.toSet() + "part-00000.ts"
+            if (existing.any { it.name !in expectedParts })
+                throw IOException("nagranie: nieznany zapisany fragment")
+            val remaining = marker.parentFile?.listFiles { f -> f.isFile && pattern.matches(f.name) && f.name !in seen }
+                ?: throw IOException("nagranie: nie można odczytać bufora")
+            for (source in remaining.sortedBy { pattern.matchEntire(it.name)!!.groupValues[1].toLongOrNull() ?: Long.MAX_VALUE }) {
+                val length = source.length()
+                if (length > 0) planned.put(org.json.JSONObject().put("name", source.name).put("length", length))
+            }
+            if (planned.length() == 0) throw IOException("nagranie: brak danych do odzyskania")
+            val meta = LocalRecordings.readMeta(target) ?: throw IOException("nagranie: brak opisu")
+            meta.put("lengthSec", 0).put("done", false)
+            meta.remove("segments")
+            meta.remove("chapters")
+            meta.remove("events")
+            info.put("firstPart", 1).put("move", false).put("uncertain", true)
+                .put("sources", planned).put("meta", meta)
+            LocalRecordings.writeJsonAtomic(marker, info)
+        }
+
+        /** Wznawia niezakończone kopie przed usunięciem starych buforów. */
+        fun recoverPending(dir: File, onError: (String) -> Unit, onRecovered: () -> Unit = {}): Thread? {
+            val markers = dir.listFiles { f ->
+                f.name.startsWith("ts-") && f.name.endsWith(".json") &&
+                    (f.name.contains("-save-") || f.name.endsWith("-guard.json"))
+            } ?: return null
+            if (markers.isEmpty()) return null
+            return Thread({
+                for (marker in markers.sortedBy { it.name.endsWith("-guard.json") }) {
+                    val guard = marker.name.endsWith("-guard.json")
+                    val prefix = if (guard) marker.name.removeSuffix("guard.json") else marker.name.substringBefore("save-")
+                    if (guard && dir.listFiles { f -> f.name.startsWith(prefix + "save-") && f.name.endsWith(".json") }
+                            ?.isNotEmpty() != false) continue
+                    val claimed = synchronized(sourceLock) { activeSaves.add(marker.absoluteFile) }
+                    if (!claimed) continue
+                    var recording: File? = null
+                    var recovered = false
+                    try {
+                        if (!marker.isFile) continue
+                        val info = org.json.JSONObject(marker.readText())
+                        val root = if (dir.name.matches(Regex("kanal-[234]"))) dir.parentFile else dir
+                        val base = LocalRecordings.base(root).canonicalFile
+                        val target = File(info.getString("recording")).absoluteFile
+                        if (target.parentFile?.canonicalFile != base || !target.isDirectory)
+                            throw IOException("nagranie: nieprawidłowy katalog odzyskiwania")
+                        if (!LocalRecordings.activeDirs.add(target)) {
+                            AppLog.i("nagranie: odłożono wznowienie używanego nagrania ${target.name}")
+                            continue
+                        }
+                        recording = target
+                        if (!info.has("sources")) {
+                            if (!guard) throw IOException("nagranie: brak stanu zapisu")
+                            prepareGuardRecovery(marker, target, prefix, info)
+                        }
+                        val list = info.getJSONArray("sources")
+                        val firstPart = info.getInt("firstPart")
+                        if (firstPart < 1) throw IOException("nagranie: nieprawidłowy numer fragmentu")
+                        val existing = info.optJSONArray("existing")
+                        if (existing != null && existing.length() != firstPart - 1)
+                            throw IOException("nagranie: nieprawidłowa lista wcześniejszych fragmentów")
+                        for (i in 1 until firstPart) {
+                            val name = String.format(java.util.Locale.US, "part-%05d.ts", i)
+                            val part = File(target, name)
+                            val entry = existing?.getJSONObject(i - 1)
+                            if (!part.isFile || part.length() <= 0 ||
+                                entry != null && (entry.getString("name") != name || entry.getLong("length") != part.length()))
+                                throw IOException("nagranie: brak lub niepełny fragment $name")
+                        }
+                        val data = ByteArray(1 shl 20)
+                        for (i in 0 until list.length()) {
+                            val item = list.getJSONObject(i)
+                            val name = item.getString("name")
+                            val length = item.getLong("length")
+                            if (File(name).name != name || !name.startsWith(prefix) || !name.endsWith(".ts") || length <= 0)
+                                throw IOException("nagranie: nieprawidłowy fragment odzyskiwania")
+                            val source = File(dir, name)
+                            val dest = File(target, String.format(java.util.Locale.US, "part-%05d.ts", firstPart + i))
+                            if (dest.exists()) {
+                                if (!dest.isFile || dest.length() != length) throw IOException("nagranie: niepełny zapis ${dest.name}")
+                                continue
+                            }
+                            if (!source.isFile || source.length() < length)
+                                throw IOException("nagranie: brak fragmentu ${source.name}")
+                            val moved = synchronized(sourceLock) {
+                                info.optBoolean("move") && !protectedSources.containsKey(source.absoluteFile) &&
+                                    !hasOtherSaveMarker(source, marker) && source.length() == length && source.renameTo(dest)
+                            }
+                            if (moved) continue
+                            val tmp = File(target, dest.name + ".part")
+                            java.io.FileInputStream(source).use { input ->
+                                FileOutputStream(tmp).use { output ->
+                                    var left = length
+                                    while (left > 0) {
+                                        val n = input.read(data, 0, minOf(left, data.size.toLong()).toInt())
+                                        if (n < 0) throw java.io.EOFException("nagranie: niepełny fragment ${source.name}")
+                                        output.write(data, 0, n)
+                                        left -= n
+                                    }
+                                    output.fd.sync()
+                                }
+                            }
+                            if (!tmp.renameTo(dest)) throw IOException("nagranie: nie można zapisać ${dest.name}")
+                        }
+                        val meta = info.optJSONObject("meta") ?: LocalRecordings.readMeta(target)
+                            ?: throw IOException("nagranie: brak opisu")
+                        val uncertain = info.optBoolean("uncertain")
+                        meta.put("size", LocalRecordings.size(target)).put("done", !uncertain)
+                        if (uncertain) meta.put("saveError", "zapis przerwany błędem; nagranie może być niepełne")
+                        else meta.remove("saveError")
+                        if (!LocalRecordings.writeMeta(target, meta)) throw IOException("nagranie: zapis opisu nieudany")
+                        synchronized(sourceLock) {
+                            if (!marker.delete() && marker.exists()) throw IOException("nagranie: nie można usunąć stanu zapisu")
+                            val oldGuard = File(dir, prefix + "guard.json")
+                            if (!guard && oldGuard.absoluteFile !in activeSaves) removeGuard(oldGuard)
+                            pendingDeletes.filter { it.parentFile == marker.absoluteFile.parentFile }.forEach { deletePending(it) }
+                        }
+                        if (uncertain) onError("odzyskane nagranie może być niepełne po błędzie zapisu")
+                        cleanupAsync(dir, only = prefix)
+                        AppLog.i("nagranie: wznowiono zapis ${target.name}")
+                        recovered = true
+                    } catch (e: Exception) {
+                        val message = e.message ?: e.toString()
+                        AppLog.i("nagranie: wznowienie nieudane ($e)")
+                        onError(message)
+                    } finally {
+                        recording?.let { LocalRecordings.activeDirs -= it }
+                        synchronized(sourceLock) { activeSaves.remove(marker.absoluteFile) }
+                    }
+                    if (recovered) onRecovered()
+                }
+            }, "nagranie-odzyskiwanie").apply { start() }
+        }
+
         /**
          * Kasuje w tle pliki bufora z poprzednich sesji (zmiana kanału, wyjście, przerwanie aplikacji).
          * [keep] — prefiks bieżącej sesji (zostaje).
          */
-        fun cleanupAsync(dir: File?, keep: String? = null) {
-            if (dir == null) return
+        fun cleanupAsync(dir: File?, keep: String? = null, only: String? = null): Thread? {
+            if (dir == null) return null
             // lista plików od razu (w chwili wywołania): pliki nowego bufora, który powstanie za chwilę w tym samym
             // katalogu, nie trafią do kasowania (wcześniej wątek sprzątający potrafił skasować świeży bufor kanału)
             val old = try {
-                dir.listFiles { f -> f.name.startsWith("ts-") && f.name.endsWith(".ts") && (keep == null || !f.name.startsWith(keep)) }
+                dir.listFiles { f -> f.name.startsWith("ts-") && f.name.endsWith(".ts") &&
+                    (keep == null || !f.name.startsWith(keep)) && (only == null || f.name.startsWith(only)) }
             } catch (_: Exception) { null }
-            if (old.isNullOrEmpty()) return
-            Thread({
+            if (old.isNullOrEmpty()) return null
+            return Thread({
                 try {
                     var n = 0
-                    old.forEach { if (it.delete()) n++ }
+                    old.forEach { if (deleteWhenUnprotected(it)) n++ }
                     if (n > 0) AppLog.i("timeshift: usunięto $n starych plików bufora")
                 } catch (_: Exception) {}
-            }, "timeshift-sprzatanie").start()
+            }, "timeshift-sprzatanie").apply { start() }
         }
 
         private val SEQ = java.util.concurrent.atomic.AtomicInteger()

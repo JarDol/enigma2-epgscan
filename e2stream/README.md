@@ -56,8 +56,8 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   Start wymaga działającego bufora i wolnego miejsca; Stop pozostaje dostępny także przy braku miejsca.
   Rozpoczęcie i ręczne zatrzymanie wymagają potwierdzenia: przycisk akcji jest pojedynczy i od razu zaznaczony,
   OK wykonuje akcję, a WSTECZ anuluje; po wykonaniu pojawia się tylko komunikat u góry.
-  Zatrzymanie nagrania nie resetuje timeshiftu ani pozycji oglądania. Fragmenty pozostające w buforze
-  są kopiowane do nagrania w tle, co wymaga dodatkowego miejsca na nośniku; zapis bufora działa dalej.
+  Po zatrzymaniu nagrania rozpoczyna się nowy bufor, a odtwarzanie wraca na żywo. Fragmenty są
+  przenoszone do nagrania; gdy przeniesienie nie jest możliwe, są kopiowane.
   „Bufor Stop” jest dostępny wyłącznie w Menu → Buforowane kanały (dla kanałów w tle).
   Trwające nagrania i nagrania jeszcze zapisywane są ukryte na liście lokalnej; zapisy przerwane awarią
   nie są bezterminowo ukrywane. Odtwarzacz lokalny używa buforowanego odczytu części bez ponawiania
@@ -188,6 +188,15 @@ Opcja „Wstecz na pustym ekranie → na żywo” pozwala wrócić z cofniętego
 Wyjście z aplikacji wymaga dwóch osobnych naciśnięć WSTECZ; przytrzymanie nie zamyka aplikacji.
 Jeśli trwa lokalne nagranie, wymagane jest dodatkowe potwierdzenie, a wyjście kończy nagranie i rozpoczyna jego zapisywanie.
 Klawisz HOME nadal przełącza aplikację w tło i kończy lokalne nagrania bez potwierdzenia.
+Jeśli podczas wyjścia trwa nagrywanie audycji, zachowywany jest cały dostępny bufor bez cięcia;
+audycja może być niepełna. Niedokończony zapis jest wznawiany po powrocie lub restarcie.
+Jeżeli błąd zapisu wystąpi po zabezpieczeniu stanu operacji, aplikacja wznawia zapis po powrocie;
+po błędzie zamykania pliku oznacza odzyskane nagranie jako potencjalnie niepełne. Jeśli nośnik
+uniemożliwił zapis szczegółowego stanu operacji, aplikacja próbuje odzyskać zabezpieczone fragmenty
+bez odtwarzania spisu audycji; po błędzie pozostawia pliki bufora i zgłasza problem.
+W nagraniach lokalnych długie OK → *Wydziel audycję* umożliwia zastąpienie bufora wybraną
+audycją po potwierdzeniu. Cięcie następuje na granicach fragmentów; funkcja wymaga dostępnych
+danych EPG i indeksu fragmentów, więc nie jest dostępna po scaleniu nagrania do jednego pliku.
 Tam też można ustawić osobne czasy zamykania listy kanałów oraz EPG wydarzenia, kanału i Multi EPG.
 Okna te zamykają się po czasie bezczynności (domyślnie 30 s); 0 wyłącza automatyczne zamykanie.
 Korzystanie z pilota lub dotyku zeruje licznik, a otwarcie innego okna wstrzymuje go.

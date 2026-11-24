@@ -101,8 +101,10 @@ class TimeshiftSetupTest {
         val bgClass = PlayerActivity::class.java.declaredClasses.single { it.simpleName == "BgChan" }
         val channel = bgClass.declaredConstructors.single().apply { isAccessible = true }
             .newInstance("http://unused", "Kanał w tle", background, analyzer, recorder, ProgramJournal(), null, 0, emptyList<Channel>())
-        val backgrounds = arrayListOf(channel)
-        PlayerActivity::class.java.getDeclaredField("bgChans").apply { isAccessible = true }.set(activity, backgrounds)
+        @Suppress("UNCHECKED_CAST")
+        val backgrounds = PlayerActivity::class.java.getDeclaredField("bgChans").apply { isAccessible = true }
+            .get(activity) as MutableList<Any>
+        backgrounds.add(channel)
         val schedule = PlayerActivity::class.java.getDeclaredMethod("scheduleStorageGuard").apply { isAccessible = true }
         val foreground = AppState.foreground
         try {

@@ -483,13 +483,13 @@ class PlayerRecoveryTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5))
         call(activity, "tsCtlOpen")
         assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
-        assertTrue(get<TextView>(activity, "bannerNow").text.toString().contains("0:00"))
+        assertTrue(get<TextView>(activity, "bannerNow").text.toString().contains("0:04"))
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(38))
         set(activity, "tsMode", true)
         set(activity, "tsShifted", true)
         set(activity, "tsBaseWall", oldest + 15_000)
         call(activity, "tsUpdateBanner")
-        assertEquals(activity.getString(R.string.player_ts_shifted_buffer, "⏸", "0:28", "0:33"),
+        assertEquals(activity.getString(R.string.player_ts_shifted_buffer, "⏸", "0:28", "0:42"),
             get<TextView>(activity, "bannerNow").text.toString())
 
         val seek = PlayerActivity::class.java.getDeclaredMethod("tsSeek", java.lang.Long.TYPE)
@@ -498,18 +498,18 @@ class PlayerRecoveryTest {
 
         assertEquals(0, get<ProgressBar>(activity, "bannerProgress").progress)
         assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
-        assertEquals(activity.getString(R.string.player_ts_shifted_buffer, "⏸", "0:33", "0:33"),
+        assertEquals(activity.getString(R.string.player_ts_shifted_buffer, "⏸", "0:42", "0:42"),
             get<TextView>(activity, "bannerNow").text.toString())
         call(activity, "tsCtlOpen")
         assertEquals(1000, get<ProgressBar>(activity, "bannerProgress").progress)
         assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
-        assertTrue(get<TextView>(activity, "bannerNow").text.toString().contains("0:33"))
+        assertTrue(get<TextView>(activity, "bannerNow").text.toString().contains("0:42"))
         call(activity, "pvCancel")
         get<Runnable>(activity, "tsApply").run()
-        assertEquals(activity.getString(R.string.player_ts_start, "0:33"), get<TextView>(activity, "message").text.toString())
+        assertEquals(activity.getString(R.string.player_ts_start, "0:42"), get<TextView>(activity, "message").text.toString())
         assertEquals(0, get<ProgressBar>(activity, "bannerProgress").progress)
         assertEquals("", get<TextView>(activity, "bannerStart").text.toString())
-        assertEquals(activity.getString(R.string.player_ts_shifted_buffer, "⏸", "0:33", "0:33"),
+        assertEquals(activity.getString(R.string.player_ts_shifted_buffer, "⏸", "0:43", "0:42"),
             get<TextView>(activity, "bannerNow").text.toString())
         controller.pause().stop().destroy()
     }

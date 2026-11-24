@@ -12,7 +12,7 @@ import java.io.RandomAccessFile
 
 /**
  * Nagrania lokalne z bufora timeshiftu: katalog „nagrania” obok katalogu bufora (ten sam nośnik — kawałki
- * bufora wypadające z okna są przenoszone, a pozostające w nim — kopiowane przy kończeniu nagrania).
+ * bufora wypadające z okna oraz pozostałe przy kończeniu nagrania są przenoszone, a w razie potrzeby kopiowane).
  * Każde nagranie to katalog z part-00001.ts… i opisem meta.json.
  */
 /** Rodzaj nagrania lokalnego. */
@@ -21,8 +21,11 @@ const val REC_NOW = 1            // bufor do teraz
 const val REC_UNTIL_ZAP = 2      // cały bufor i dalej, do zmiany kanału
 const val REC_UNTIL_DROP = 3     // cały bufor i dalej, do usunięcia bufora (także w tle)
 
+data class RecordingSegment(val name: String, val startMs: Long, val endMs: Long)
+
 object LocalRecordings {
     val activeDirs: MutableSet<File> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    val metadataLock = Any()
     const val DIR = "nagrania"
     const val META = "meta.json"
     const val PREFIX = "local:"
@@ -38,8 +41,10 @@ object LocalRecordings {
      * (w trakcie konwersji: pierwszy kawałek z doklejonymi kolejnymi + pozostałe kawałki).
      */
     fun parts(dir: File): List<File> {
-        val pieces = dir.listFiles { f -> f.name.startsWith("part-") && f.name.endsWith(".ts") }?.sortedBy { it.name } ?: emptyList()
-        if (pieces.isNotEmpty()) return pieces
+        val keep = RecordingExtract.pendingParts(dir)
+        val pieces = dir.listFiles { f -> f.name.startsWith("part-") && f.name.endsWith(".ts") &&
+            (keep == null || f.name in keep) }?.sortedBy { it.name } ?: emptyList()
+        if (pieces.isNotEmpty() || keep != null) return pieces
         return dir.listFiles { f -> f.isFile && f.name.endsWith(".ts") }?.sortedBy { it.name } ?: emptyList()
     }
 
@@ -88,7 +93,7 @@ object LocalRecordings {
                 out.fd.sync()
             }
             meta.put("mergeLen", first.length()).put("mergedPart", p.name)
-            writeMeta(dir, meta)
+            if (!writeMeta(dir, meta)) throw IOException("nie można zapisać stanu konwersji")
             p.delete()
             done += len
         }
@@ -100,7 +105,7 @@ object LocalRecordings {
         meta.remove("mergeLen")
         meta.remove("mergedPart")
         meta.put("file", target.name)
-        writeMeta(dir, meta)
+        if (!writeMeta(dir, meta)) throw IOException("nie można zapisać końcowego stanu konwersji")
         onProgress(total, total, 0)
         return true
     }
@@ -185,19 +190,39 @@ object LocalRecordings {
         return d
     }
 
+    internal fun writeJsonAtomic(target: File, value: JSONObject) {
+        val tmp = File(target.parentFile, "${target.name}.tmp")
+        java.io.FileOutputStream(tmp).use { output ->
+            output.write(value.toString().toByteArray(Charsets.UTF_8))
+            output.fd.sync()
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        } else {
+            try {
+                android.system.Os.rename(tmp.absolutePath, target.absolutePath)
+            } catch (e: android.system.ErrnoException) {
+                throw IOException("nie można zastąpić ${target.name}", e)
+            }
+        }
+    }
+
     fun writeMeta(dir: File, meta: JSONObject): Boolean =
         try {
             dir.mkdirs()
-            val tmp = File(dir, "$META.tmp")
-            tmp.writeText(meta.toString())
-            if (!tmp.renameTo(File(dir, META))) { File(dir, META).writeText(meta.toString()); tmp.delete() }
+            writeJsonAtomic(File(dir, META), meta)
             true
         } catch (e: Exception) {
             AppLog.i("nagranie: zapis opisu ${dir.name} nieudany ($e)")
             false
         }
 
-    fun readMeta(dir: File): JSONObject? = try { JSONObject(File(dir, META).readText()) } catch (_: Exception) { null }
+    fun readMeta(dir: File): JSONObject? = try {
+        RecordingExtract.pendingMeta(dir) ?: JSONObject(File(dir, META).readText())
+    } catch (e: Exception) {
+        AppLog.i("nagranie: odczyt opisu ${dir.name} nieudany ($e)")
+        null
+    }
 
     /** Spis audycji nagrania w opisie (meta.json: "chapters"). */
     fun putChapters(meta: JSONObject, ch: List<Chapter>) {
@@ -214,6 +239,41 @@ object LocalRecordings {
         return (0 until a.length()).mapNotNull { i ->
             val o = a.optJSONObject(i) ?: return@mapNotNull null
             Chapter(o.optLong("s"), o.optLong("e"), o.optString("t"), o.optString("d"), o.optBoolean("cs"), o.optBoolean("ce"))
+        }
+    }
+
+    fun putSegments(meta: JSONObject, segments: List<RecordingSegment>) {
+        meta.put("segments", org.json.JSONArray().apply {
+            segments.forEach { put(JSONObject().put("name", it.name).put("start", it.startMs).put("end", it.endMs)) }
+        })
+    }
+
+    fun segments(meta: JSONObject): List<RecordingSegment> {
+        val array = meta.optJSONArray("segments") ?: return emptyList()
+        return (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            val name = item.optString("name")
+            val start = item.optLong("start")
+            val end = item.optLong("end")
+            if (File(name).name != name || !name.startsWith("part-") || !name.endsWith(".ts") || end <= start)
+                null else RecordingSegment(name, start, end)
+        }
+    }
+
+    fun putEvents(meta: JSONObject, events: List<JournalEvent>) {
+        meta.put("events", org.json.JSONArray().apply {
+            events.forEach { put(JSONObject().put("begin", it.begin).put("end", it.end).put("title", it.title).put("desc", it.desc)) }
+        })
+    }
+
+    fun events(meta: JSONObject): List<JournalEvent> {
+        val array = meta.optJSONArray("events") ?: return emptyList()
+        return (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            val begin = item.optLong("begin")
+            val end = item.optLong("end")
+            val title = item.optString("title")
+            if (end <= begin || title.isBlank()) null else JournalEvent(begin, end, title, item.optString("desc"))
         }
     }
 

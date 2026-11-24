@@ -226,7 +226,7 @@ class PlayerActionMenusTest {
         assertSame(recording, get<Any>("localRec"))
     }
 
-    @Test fun confirmedRecordingStartsThenStopsWithoutResettingBufferOrPlayback() {
+    @Test fun confirmedRecordingStartsThenStopsAndStartsNewBuffer() {
         prefs.recInternalOk = true
         val bg = background()
         val buffer = bgBuffer(bg)
@@ -254,19 +254,19 @@ class PlayerActionMenusTest {
             pick(labels().indexOf(activity.getString(R.string.player_bgrec_stop)))
             pressChip(0)
             assertNull(buffer.pin)
-            assertEquals(188L, buffer.total)
+            assertEquals(0L, buffer.total)
             val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
             while (pin.dir in get<Set<File>>("activeRecordingDirs") && System.nanoTime() < until) Thread.sleep(10)
             shadowOf(Looper.getMainLooper()).idle()
             assertFalse(pin.dir in get<Set<File>>("activeRecordingDirs"))
             assertEquals(true, LocalRecordings.readMeta(pin.dir)!!.getBoolean("done"))
-            assertEquals(188L, buffer.total)
+            assertEquals(0L, buffer.total)
             assertTrue(get<Boolean>("bufLive"))
             assertSame(bg, backgrounds().single())
         } finally { pin.dir.deleteRecursively() }
     }
 
-    @Test fun manualRecordingWorksWithoutBufferPlaybackAndStopPreservesShiftedState() {
+    @Test fun manualRecordingWithoutBufferPlaybackReturnsFromShiftedState() {
         prefs.recInternalOk = true
         prefs.bufPlay = false
         set("bufLive", false)
@@ -287,15 +287,14 @@ class PlayerActionMenusTest {
             pressChip(0)
             awaitSave(pin)
             assertNull(get<Any?>("localRec"))
-            assertTrue(get<Boolean>("tsMode"))
-            assertTrue(get<Boolean>("tsShifted"))
-            assertEquals(1234L, get<Long>("tsBaseWall").toLong())
-            assertEquals(188L, buffer.total)
+            assertFalse(get<Boolean>("tsMode"))
+            assertFalse(get<Boolean>("tsShifted"))
+            assertEquals(0L, buffer.total)
             assertTrue(LocalRecordings.readMeta(pin.dir)!!.getBoolean("done"))
         } finally { pin.dir.deleteRecursively() }
     }
 
-    @Test fun saveFailureIsReportedWithoutMarkingRecordingCompleteOrClearingBuffer() {
+    @Test fun saveFailureIsReportedWithoutMarkingRecordingComplete() {
         prefs.recInternalOk = true
         val buffer = get<TimeshiftBuffer>("tsBuf")
         seed(buffer)
@@ -305,18 +304,56 @@ class PlayerActionMenusTest {
         drain()
         val pin = buffer.pin!!
         try {
+            File(pin.dir, "part-00001.ts").mkdir()
             File(pin.dir, "part-00001.ts.part").mkdir()
             call("showRecordMenu")
             pressChip(0)
             awaitSave(pin)
             assertFalse(LocalRecordings.readMeta(pin.dir)!!.getBoolean("done"))
             assertTrue(LocalRecordings.readMeta(pin.dir)!!.has("saveError"))
-            assertEquals(188L, buffer.total)
+            assertEquals(0L, buffer.total)
             assertNull(buffer.pin)
             val error = LocalRecordings.readMeta(pin.dir)!!.getString("saveError")
             val expected = call("prettyMessage", activity.getString(R.string.player_rec_save_failed, error)).toString()
             assertEquals(expected, get<TextView>("message").text.toString())
         } finally { pin.dir.deleteRecursively() }
+    }
+
+    @Test fun eventExitKeepsEarlierBufferWhileNormalEndExcludesIt() {
+        for (exit in listOf(false, true)) {
+            val buffer = buffer()
+            seed(buffer)
+            elapsed(61)
+            seed(buffer)
+            val pin = buffer.startPin(File(buffer.dir, "recording"), 188)!!
+            val recType = PlayerActivity::class.java.declaredClasses.single { it.simpleName == "LocalRec" }
+            val recording = recType.declaredConstructors.single().apply { isAccessible = true }.newInstance(
+                pin, REC_EVENT, JSONObject().put("title", "Program"), Long.MAX_VALUE, main,
+                0L, 0L, buffer, ProgramJournal(),
+            )
+            call("finishRec", recording, if (exit) "koniec odtwarzania" else "koniec audycji", false, false, false)
+            awaitSave(pin)
+            val parts = LocalRecordings.parts(pin.dir).filter { it.name != "part-00000.ts" }
+            assertEquals(if (exit) 2 else 1, parts.size)
+            assertTrue(LocalRecordings.readMeta(pin.dir)!!.getBoolean("done"))
+            pin.dir.deleteRecursively()
+        }
+    }
+
+    @Test fun localPlaybackErrorStopsRecordingAndReportsFailure() {
+        val recording = Recording("local:broken", "Test", "", "Main", main.ref, 0, 60, 188, false)
+        set("recItem", recording)
+        set("recMode", true)
+        set("currentUrl", recording.path)
+        assertEquals(true, call("localRecordingPlaybackError", "I/O error"))
+        assertFalse(get<Boolean>("recMode"))
+        assertNull(get<String?>("currentUrl"))
+        assertEquals(activity.getString(R.string.player_rec_playback_failed, "I/O error"),
+            get<TextView>("message").text.toString())
+        set("recItem", Recording("/remote.ts", "Test", "", "Main", main.ref, 0, 60, 188, false))
+        set("recMode", true)
+        assertEquals(false, call("localRecordingPlaybackError", "I/O error"))
+        set("recMode", false)
     }
 
     private fun awaitSave(pin: TimeshiftBuffer.Pin) {
@@ -602,8 +639,13 @@ class PlayerActionMenusTest {
         val mainRecording = recording(get("tsBuf"), main)
         set("localRec", mainRecording)
         call("showRecordMenu")
+        assertEquals(activity.getString(R.string.player_localrec_stop),
+            TvDialog.top()!!.window!!.decorView.findViewWithTag<TextView>("title").text.toString())
         timeout()
         call("showStopRecs", 0)
+        pick(2)
+        assertEquals(activity.getString(R.string.player_localrec_stop),
+            TvDialog.top()!!.window!!.decorView.findViewWithTag<TextView>("title").text.toString())
         timeout()
         assertSame(mainRecording, get<Any>("localRec"))
         assertSame(bgRecording, recordingField.get(bg))

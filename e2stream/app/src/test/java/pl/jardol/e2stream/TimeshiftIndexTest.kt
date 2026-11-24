@@ -169,6 +169,7 @@ class TimeshiftIndexTest {
         assertEquals(frame, b.keyframeAt(Long.MAX_VALUE))
         b.write(key, 0, key.size)
         save.save()
+        save.complete()
         assertEquals(before.size.toLong(), pin.bytes)
         assertEquals((before.size + key.size).toLong(), b.total)
         val read = ByteArray(before.size + key.size)
@@ -190,12 +191,356 @@ class TimeshiftIndexTest {
         val save2 = b.preparePinSave()!!
         save.save()
         save2.save()
+        save.complete()
+        save2.complete()
         assertEquals(188L, first.bytes)
         assertEquals(188L, second.bytes)
         assertArrayEquals(pcr, File(first.dir, "part-00001.ts").readBytes())
         assertArrayEquals(key, File(second.dir, "part-00001.ts").readBytes())
         b.close()
         b.dir.deleteRecursively()
+    }
+
+    @Test
+    fun endingRecordingTransfersBufferAndStartsANewOne() {
+        val b = newBuffer()
+        b.write(pcr, 0, pcr.size)
+        val old = b.dir.listFiles()!!.single { it.extension == "ts" }
+        val dir = File(b.dir, "recording")
+        b.startPin(dir, 0)!!
+        val save = b.preparePinSave(detachBuffer = true)!!
+        assertEquals(0L, b.total)
+        b.write(pcr, 0, pcr.size)
+        val fresh = b.dir.listFiles()!!.single { it.extension == "ts" && it.name != old.name }
+        save.save()
+        save.complete()
+        assertFalse(old.exists())
+        assertArrayEquals(pcr, File(dir, "part-00001.ts").readBytes())
+        assertArrayEquals(pcr, fresh.readBytes())
+        assertEquals(188L, b.total)
+        b.close()
+        b.dir.deleteRecursively()
+    }
+
+    @Test
+    fun preparationFailureKeepsBufferProtectedUntilRetry() {
+        val b = newBuffer()
+        b.write(pcr, 0, pcr.size)
+        val source = b.dir.listFiles()!!.single { it.extension == "ts" }
+        val pin = b.startPin(File(b.dir, "recording"), 0)!!
+        try {
+            b.preparePinSave(detachBuffer = true) { throw IOException("metadata failure") }
+            fail("expected preparation failure")
+        } catch (_: IOException) {}
+        TimeshiftBuffer.cleanupAsync(b.dir)!!.join(5000)
+        assertTrue(source.exists())
+        assertSame(pin, b.pin)
+        assertTrue(pin.guard.exists())
+        val save = b.preparePinSave(detachBuffer = true)!!
+        save.save()
+        save.complete()
+        assertFalse(pin.guard.exists())
+        assertArrayEquals(pcr, File(pin.dir, "part-00001.ts").readBytes())
+        b.close()
+        b.dir.deleteRecursively()
+    }
+
+    @Test
+    fun fullBufferSaveIncludesSegmentsBeforePinnedEvent() {
+        val b = newBuffer()
+        b.write(pcr, 0, pcr.size)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(61))
+        b.write(key, 0, key.size)
+        val dir = File(b.dir, "recording")
+        b.startPin(dir, 188)!!
+        val save = b.preparePinSave(includeEarlier = true, detachBuffer = true)!!
+        assertEquals(listOf("part-00001.ts", "part-00002.ts"), save.segments.map { it.name })
+        assertTrue(save.segments.first().startMs < save.segments.last().startMs)
+        save.save()
+        save.complete()
+        assertArrayEquals(pcr, File(dir, "part-00001.ts").readBytes())
+        assertArrayEquals(key, File(dir, "part-00002.ts").readBytes())
+        b.close()
+        b.dir.deleteRecursively()
+    }
+
+    @Test
+    fun cleanupDefersDeletingRecordingSourcesUntilSaveCompletes() {
+        val b = newBuffer()
+        b.write(pcr, 0, pcr.size)
+        val source = b.dir.listFiles()!!.single { it.extension == "ts" }
+        val dir = File(b.dir, "recording")
+        b.startPin(dir, 0)!!
+        val save = b.preparePinSave()!!
+        b.close()
+        val obsolete = File(b.dir, "ts-obsolete.ts").apply { writeBytes(pcr) }
+
+        val cleanup = TimeshiftBuffer.cleanupAsync(b.dir)!!
+        cleanup.join(5000)
+        assertFalse("cleanup did not finish", cleanup.isAlive)
+        assertFalse("cleanup did not run", obsolete.exists())
+        assertTrue(source.exists())
+        save.save()
+        save.complete()
+        assertArrayEquals(pcr, File(dir, "part-00001.ts").readBytes())
+        assertFalse(source.exists())
+        b.dir.deleteRecursively()
+    }
+
+    @Test
+    fun closingOldBufferDoesNotDeleteNewSessionFiles() {
+        val old = newBuffer()
+        old.write(pcr, 0, pcr.size)
+        old.close()
+        val oldName = old.dir.listFiles()!!.single { it.extension == "ts" }.name
+        val fresh = TimeshiftBuffer(old.dir, 5).also { it.pcrPid = { 0x100 } }
+        fresh.write(pcr, 0, pcr.size)
+        val current = fresh.dir.listFiles()!!.single { it.extension == "ts" && it.name != oldName }
+        old.cleanupClosedAsync()?.join(5000)
+        assertArrayEquals(pcr, current.readBytes())
+        fresh.close()
+        old.dir.deleteRecursively()
+    }
+
+    @Test
+    fun subsequentRecordingDoesNotMoveAProtectedSnapshotSource() {
+        val b = newBuffer()
+        b.write(pcr, 0, pcr.size)
+        val source = b.dir.listFiles()!!.single { it.extension == "ts" }
+        val firstDir = File(b.dir, "first")
+        b.startPin(firstDir, 0)!!
+        val firstSave = b.preparePinSave()!!
+        val secondDir = File(b.dir, "second")
+        b.startPin(secondDir, 0)!!
+        b.finishPin()
+        assertTrue(source.exists())
+        assertArrayEquals(pcr, File(secondDir, "part-00001.ts").readBytes())
+        firstSave.save()
+        firstSave.complete()
+        assertArrayEquals(pcr, File(firstDir, "part-00001.ts").readBytes())
+        assertFalse(source.exists())
+        b.close()
+        b.dir.deleteRecursively()
+    }
+
+    @Test
+    fun failedSaveDoesNotDeleteSourcesWhileProcessIsRunning() {
+        val b = newBuffer()
+        b.write(pcr, 0, pcr.size)
+        val source = b.dir.listFiles()!!.single { it.extension == "ts" }
+        val dir = File(b.dir, "recording")
+        b.startPin(dir, 0)!!
+        val save = b.preparePinSave()!!
+        b.close()
+        File(dir, "part-00001.ts.part").mkdirs()
+        try {
+            save.save()
+            fail("expected save failure")
+        } catch (_: IOException) {
+            save.allowRecovery()
+        }
+        val obsolete = File(b.dir, "ts-obsolete.ts").apply { writeBytes(pcr) }
+        val cleanup = TimeshiftBuffer.cleanupAsync(b.dir)!!
+        cleanup.join(5000)
+        assertFalse("cleanup did not finish", cleanup.isAlive)
+        assertFalse("cleanup did not run", obsolete.exists())
+        assertArrayEquals(pcr, source.readBytes())
+        b.dir.deleteRecursively()
+    }
+
+    @Test
+    fun interruptedSaveSurvivesCleanupAndResumesFromMarker() {
+        val storage = File(System.getProperty("java.io.tmpdir"), "ts-recovery-${System.nanoTime()}").apply { mkdirs() }
+        val root = File(storage, "timeshift")
+        val b = TimeshiftBuffer(root, 5, root).also { it.pcrPid = { 0x100 } }
+        b.write(pcr, 0, pcr.size)
+        val source = root.listFiles()!!.single { it.extension == "ts" }
+        val recording = File(LocalRecordings.base(root), "recording")
+        b.startPin(recording, 0)!!
+        assertTrue(LocalRecordings.writeMeta(recording, org.json.JSONObject()
+            .put("title", "Test").put("lengthSec", 10).put("done", false)))
+        val save = b.preparePinSave()!!
+        b.close()
+        val blocked = File(recording, "part-00001.ts.part").apply { mkdirs() }
+        try {
+            save.save()
+            fail("expected save failure")
+        } catch (_: IOException) {
+            save.allowRecovery()
+            assertTrue(!blocked.exists() || blocked.delete())
+        }
+        TimeshiftBuffer.cleanupAsync(root)!!.join(5000)
+        assertTrue(source.exists())
+        val errors = mutableListOf<String>()
+        val recovery = TimeshiftBuffer.recoverPending(root, { errors += it })!!
+        recovery.join(5000)
+        assertFalse(recovery.isAlive)
+        assertTrue(errors.toString(), errors.isEmpty())
+        assertArrayEquals(pcr, File(recording, "part-00001.ts").readBytes())
+        assertTrue(LocalRecordings.readMeta(recording)!!.getBoolean("done"))
+        assertFalse(source.exists())
+        assertFalse(root.listFiles()!!.any { it.name.contains("-save-") })
+        storage.deleteRecursively()
+    }
+
+    @Test
+    fun recoveryRejectsMissingPreviouslySavedPart() {
+        val storage = File(System.getProperty("java.io.tmpdir"), "ts-missing-${System.nanoTime()}").apply { mkdirs() }
+        val root = File(storage, "timeshift").apply { mkdirs() }
+        val recording = File(LocalRecordings.base(root), "recording").apply { mkdirs() }
+        assertTrue(LocalRecordings.writeMeta(recording, org.json.JSONObject().put("done", false)))
+        val source = File(root, "ts-test-1.ts").apply { writeBytes(pcr) }
+        val marker = File(root, "ts-test-save-test.json")
+        val existing = org.json.JSONArray().put(org.json.JSONObject().put("name", "part-00001.ts").put("length", 188))
+        val sources = org.json.JSONArray().put(org.json.JSONObject().put("name", source.name).put("length", 188))
+        marker.writeText(org.json.JSONObject().put("recording", recording.absolutePath).put("firstPart", 2)
+            .put("existing", existing).put("sources", sources).toString())
+        val errors = mutableListOf<String>()
+        TimeshiftBuffer.recoverPending(root, { errors += it })!!.join(5000)
+        assertTrue(errors.isNotEmpty())
+        assertFalse(LocalRecordings.readMeta(recording)!!.getBoolean("done"))
+        assertTrue(source.exists())
+        assertTrue(marker.exists())
+        storage.deleteRecursively()
+    }
+
+    @Test
+    fun closeFailureCanRecoverCheckpointWithoutClaimingCompleteRecording() {
+        val storage = File(System.getProperty("java.io.tmpdir"), "ts-close-${System.nanoTime()}").apply { mkdirs() }
+        val root = File(storage, "timeshift")
+        val b = TimeshiftBuffer(root, 5, root).also { it.pcrPid = { 0x100 } }
+        b.write(pcr, 0, pcr.size)
+        val source = root.listFiles()!!.single { it.extension == "ts" }
+        val recording = File(LocalRecordings.base(root), "recording")
+        val pin = b.startPin(recording, 0)!!
+        assertTrue(LocalRecordings.writeMeta(recording, org.json.JSONObject().put("title", "Test").put("done", false)))
+        val outField = TimeshiftBuffer::class.java.getDeclaredField("out").apply { isAccessible = true }
+        (outField.get(b) as FileOutputStream).close()
+        outField.set(b, object : FileOutputStream(source, true) {
+            override fun close() { super.close(); throw IOException("close failed: EIO") }
+        })
+        try {
+            b.preparePinSave(detachBuffer = true) { segments ->
+                org.json.JSONObject().put("title", "Test").put("done", false).also {
+                    LocalRecordings.putSegments(it, segments)
+                }
+            }
+            fail("expected close failure")
+        } catch (_: IOException) {}
+        assertNull(b.pin)
+        assertTrue(pin.guard.exists())
+        TimeshiftBuffer.cleanupAsync(root)!!.join(5000)
+        assertTrue(source.exists())
+        val errors = mutableListOf<String>()
+        TimeshiftBuffer.recoverPending(root, { errors += it })!!.join(5000)
+        assertTrue(errors.any { it.contains("niepełne") })
+        assertArrayEquals(pcr, File(recording, "part-00001.ts").readBytes())
+        assertFalse(LocalRecordings.readMeta(recording)!!.getBoolean("done"))
+        assertFalse(pin.guard.exists())
+        b.close()
+        storage.deleteRecursively()
+    }
+
+    @Test
+    fun unfinishedPreparationRecoversGuardedBufferAsIncomplete() {
+        val storage = File(System.getProperty("java.io.tmpdir"), "ts-guard-${System.nanoTime()}").apply { mkdirs() }
+        val root = File(storage, "timeshift")
+        val b = TimeshiftBuffer(root, 5, root).also { it.pcrPid = { 0x100 } }
+        b.write(pcr, 0, pcr.size)
+        val recording = File(LocalRecordings.base(root), "recording")
+        val pin = b.startPin(recording, 0)!!
+        assertTrue(LocalRecordings.writeMeta(recording, org.json.JSONObject().put("title", "Test").put("done", false)))
+        b.close()
+        assertSame(pin, b.abandonClosedPin())
+        val errors = mutableListOf<String>()
+        TimeshiftBuffer.recoverPending(root, { errors += it })!!.join(5000)
+        assertTrue(errors.any { it.contains("niepełne") })
+        assertArrayEquals(pcr, File(recording, "part-00001.ts").readBytes())
+        assertFalse(LocalRecordings.readMeta(recording)!!.getBoolean("done"))
+        assertFalse(pin.guard.exists())
+        storage.deleteRecursively()
+    }
+
+    @Test
+    fun guardRecoveryDoesNotDuplicateAnAlreadyCopiedSegment() {
+        val storage = File(System.getProperty("java.io.tmpdir"), "ts-guard-copy-${System.nanoTime()}").apply { mkdirs() }
+        val root = File(storage, "timeshift").apply { mkdirs() }
+        val recording = File(LocalRecordings.base(root), "recording").apply { mkdirs() }
+        assertTrue(LocalRecordings.writeMeta(recording, org.json.JSONObject().put("done", false)))
+        File(root, "ts-test-1.ts").writeBytes(pcr)
+        File(root, "ts-test-2.ts").writeBytes(key)
+        File(recording, "part-00001.ts").writeBytes(pcr)
+        val taken = org.json.JSONArray().put(org.json.JSONObject().put("source", "ts-test-1.ts")
+            .put("part", "part-00001.ts").put("length", pcr.size))
+        val guard = File(root, "ts-test-guard.json")
+        guard.writeText(org.json.JSONObject().put("recording", recording.absolutePath).put("taken", taken).toString())
+        val errors = mutableListOf<String>()
+        TimeshiftBuffer.recoverPending(root, { errors += it })!!.join(5000)
+        assertTrue(errors.any { it.contains("niepełne") })
+        assertArrayEquals(pcr, File(recording, "part-00001.ts").readBytes())
+        assertArrayEquals(key, File(recording, "part-00002.ts").readBytes())
+        assertFalse(File(recording, "part-00003.ts").exists())
+        assertFalse(guard.exists())
+        storage.deleteRecursively()
+    }
+
+    @Test
+    fun guardRecoveryKeepsRemainingFilesWhenEarlierSegmentIsMissing() {
+        val storage = File(System.getProperty("java.io.tmpdir"), "ts-guard-missing-${System.nanoTime()}").apply { mkdirs() }
+        val root = File(storage, "timeshift").apply { mkdirs() }
+        val recording = File(LocalRecordings.base(root), "recording").apply { mkdirs() }
+        assertTrue(LocalRecordings.writeMeta(recording, org.json.JSONObject().put("done", false)))
+        val remaining = File(root, "ts-test-2.ts").apply { writeBytes(key) }
+        val taken = org.json.JSONArray().put(org.json.JSONObject().put("source", "ts-test-1.ts")
+            .put("part", "part-00001.ts").put("length", pcr.size))
+        val guard = File(root, "ts-test-guard.json")
+        guard.writeText(org.json.JSONObject().put("recording", recording.absolutePath).put("taken", taken).toString())
+        val errors = mutableListOf<String>()
+        TimeshiftBuffer.recoverPending(root, { errors += it })!!.join(5000)
+        assertTrue(errors.isNotEmpty())
+        assertTrue(remaining.exists())
+        assertTrue(guard.exists())
+        assertFalse(LocalRecordings.readMeta(recording)!!.getBoolean("done"))
+        storage.deleteRecursively()
+    }
+
+    @Test
+    fun guardRecoveryResumesAfterSegmentWasMoved() {
+        val storage = File(System.getProperty("java.io.tmpdir"), "ts-guard-moved-${System.nanoTime()}").apply { mkdirs() }
+        val root = File(storage, "timeshift").apply { mkdirs() }
+        val recording = File(LocalRecordings.base(root), "recording").apply { mkdirs() }
+        assertTrue(LocalRecordings.writeMeta(recording, org.json.JSONObject().put("done", false)))
+        File(recording, "part-00001.ts").writeBytes(pcr)
+        File(root, "ts-test-10.ts").writeBytes(key)
+        File(root, "ts-test-2.ts").writeBytes(pcr)
+        val taken = org.json.JSONArray().put(org.json.JSONObject().put("source", "ts-test-1.ts")
+            .put("part", "part-00001.ts").put("length", pcr.size))
+        File(root, "ts-test-guard.json").writeText(
+            org.json.JSONObject().put("recording", recording.absolutePath).put("taken", taken).toString())
+        val errors = mutableListOf<String>()
+        TimeshiftBuffer.recoverPending(root, { errors += it })!!.join(5000)
+        assertTrue(errors.any { it.contains("niepełne") })
+        assertArrayEquals(pcr, File(recording, "part-00002.ts").readBytes())
+        assertArrayEquals(key, File(recording, "part-00003.ts").readBytes())
+        assertNull(TimeshiftBuffer.recoverPending(root, { errors += it }))
+        storage.deleteRecursively()
+    }
+
+    @Test
+    fun guardRecoveryWithoutMetadataPreservesBuffer() {
+        val storage = File(System.getProperty("java.io.tmpdir"), "ts-guard-meta-${System.nanoTime()}").apply { mkdirs() }
+        val root = File(storage, "timeshift").apply { mkdirs() }
+        val recording = File(LocalRecordings.base(root), "recording").apply { mkdirs() }
+        val source = File(root, "ts-test-1.ts").apply { writeBytes(pcr) }
+        val guard = File(root, "ts-test-guard.json")
+        guard.writeText(org.json.JSONObject().put("recording", recording.absolutePath)
+            .put("taken", org.json.JSONArray()).toString())
+        val errors = mutableListOf<String>()
+        TimeshiftBuffer.recoverPending(root, { errors += it })!!.join(5000)
+        assertTrue(errors.isNotEmpty())
+        assertTrue(source.exists())
+        assertTrue(guard.exists())
+        storage.deleteRecursively()
     }
 
     @Test
