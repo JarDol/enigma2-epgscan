@@ -3385,13 +3385,17 @@ class PlayerActivity : Activity() {
             for (c in bgChans.filter { it.pip < 0 }) acts += getString(R.string.pip_add_buffered, c.name) to { pipOpen(c) }
         }
         if (open.size < PIP_MAX) acts += pick to { pipReplace = null; pipPickChannel() }
-        if (open.isNotEmpty()) acts += getString(R.string.pip_close_all) to { for (c in open) pipClose(c) }
+        val closeAll = getString(R.string.pip_close_all)
+        if (open.isNotEmpty()) acts += closeAll to {
+            for (c in bgChans.filter { it.pip >= 0 }.toList()) pipClose(c)
+            showMessage(getString(R.string.pip_closed_all), force = true)
+        }
         TvDialog.list(this, getString(R.string.pip_title), acts.map { TvDialog.Item(it.first) }, sel.coerceIn(0, acts.size - 1),
             widthFrac = 0.5f, timeoutSec = prefs.actionDialogSec) { i ->
             val (label, run) = acts[i]
             run()
             // po wykonanej akcji odświeżamy menu; samo wygaśnięcie nie wywołuje akcji
-            if (label != pick && !label.endsWith(change)) pipMenuAgain(i)
+            if (label != pick && label != closeAll && !label.endsWith(change)) pipMenuAgain(i)
         }
     }
 
@@ -4531,8 +4535,26 @@ class PlayerActivity : Activity() {
         if (bg != null) acts += getString(R.string.player_bg_close) to {
             bgCloseAsk(bg) { showBufferedMenu(listSel) }
         }
-        acts += getString(R.string.player_bgrec_menu) to {
-            bufRecMenu(bg, ch, ev, onBack = { bufferedActions(bg, ch, ev, listSel) })
+        val recording = if (bg == null) localRec else bg.lrec
+        val buffer = bg?.buf ?: tsBuf
+        if (recording != null) {
+            acts += getString(R.string.player_bgrec_stop) to {
+                val current = if (bg == null) localRec else bg.lrec
+                if ((bg != null && bg !in bgChans) || (bg == null && !isMainBuf(ch)) || current !== recording)
+                    showMessage(getString(R.string.player_rec_unavailable))
+                else confirmStopRec(recording) { stopRec(recording) }
+            }
+        } else if (buffer != null && canStartRec(buffer)) {
+            acts += getString(R.string.player_bgrec_menu) to {
+                if ((bg != null && bg !in bgChans) || (bg == null && (!isMainBuf(ch) || tsBuf !== buffer)) ||
+                    (if (bg == null) localRec else bg.lrec) != null || !canStartRec(buffer)) {
+                    showMessage(getString(R.string.player_rec_unavailable))
+                } else bufRecMenu(bg, ch, ev, onBack = { bufferedActions(bg, ch, ev, listSel) })
+            }
+        }
+        if (acts.isEmpty()) {
+            showMessage(getString(if (buffer?.failed != null) R.string.player_rec_unavailable else R.string.player_rec_no_space))
+            return
         }
         TvDialog.list(this, bg?.name ?: ch.name, acts.map { TvDialog.Item(it.first) }, 0, widthFrac = 0.5f,
             timeoutSec = prefs.actionDialogSec, onCancel = { showBufferedMenu(listSel) }) { j ->
@@ -5513,14 +5535,30 @@ class PlayerActivity : Activity() {
             keyCode == KeyEvent.KEYCODE_ENTER ||
             keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
 
+    private fun exitOnBack() {
+        if (!backExit.press(SystemClock.elapsedRealtime())) {
+            showMessage(getString(R.string.message_press_back_again_to_exit))
+            return
+        }
+        backExit.reset()
+        val recordings = activeRecordings()
+        if (recordings.isEmpty()) {
+            finish()
+        } else {
+            TvDialog.confirm(this, getString(R.string.message_exit),
+                getString(R.string.player_exit_recording_warning, recordings.joinToString("\n") { it.ch.name }),
+                listOf(TvDialog.Btn(getString(R.string.message_exit)) { finish() }),
+                timeoutSec = prefs.actionDialogSec)
+        }
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && event.repeatCount > 0) return true
         if (keyCode != KeyEvent.KEYCODE_BACK) backExit.reset()
         if (safeMode) {
             when {
                 keyCode == KeyEvent.KEYCODE_BACK -> {
-                    if (backExit.press(SystemClock.elapsedRealtime())) finish()
-                    else showMessage(getString(R.string.message_press_back_again_to_exit))
+                    exitOnBack()
                     return true
                 }
                 keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_INFO || isOk(keyCode) -> {
@@ -5592,11 +5630,7 @@ class PlayerActivity : Activity() {
             KeyEvent.KEYCODE_BACK -> {
                 if (stats.visibility == View.VISIBLE) { backExit.reset(); stats.visibility = View.GONE; prefs.showStats = false; return true }
                 if (banner.visibility == View.VISIBLE) { backExit.reset(); banner.visibility = View.GONE; return true }
-                if (backExit.press(SystemClock.elapsedRealtime())) {
-                    finish()
-                } else {
-                    showMessage(getString(R.string.message_press_back_again_to_exit))
-                }
+                exitOnBack()
                 return true
             }
         }

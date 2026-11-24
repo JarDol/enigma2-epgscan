@@ -186,6 +186,8 @@ konwersji), *Eksportuj kopię* i *Usuń* (konwersja i usunięcie najpierw kończ
 *Konwertuj na jeden plik .ts (bez kopii)* dokleja kolejne kawałki do pierwszego i od razu je usuwa (dodatkowe miejsce ≈ jeden kawałek; przerwanie, także zanik zasilania, nie psuje nagrania — konwersję można dokończyć), na końcu plik w katalogu nagrania dostaje czytelną nazwę i nadal jest w *Nagraniach lokalnych*. *Eksportuj kopię do jednego pliku .ts* skleja kawałki w tle (pasek postępu, czas do końca, *Ukryj* — eksport trwa dalej, *Anuluj* — częściowy plik usunięty) do pliku `nagrania/RRRR-MM-DD GG-MM Kanał - Tytuł.ts`; nagranie w kawałkach zostaje bez zmian, plik wlicza się do limitu miejsca.
 Opcja „Wstecz na pustym ekranie → na żywo” pozwala wrócić z cofniętego strumienia do transmisji na żywo.
 Wyjście z aplikacji wymaga dwóch osobnych naciśnięć WSTECZ; przytrzymanie nie zamyka aplikacji.
+Jeśli trwa lokalne nagranie, wymagane jest dodatkowe potwierdzenie, a wyjście kończy nagranie i rozpoczyna jego zapisywanie.
+Klawisz HOME nadal przełącza aplikację w tło i kończy lokalne nagrania bez potwierdzenia.
 Tam też można ustawić osobne czasy zamykania listy kanałów oraz EPG wydarzenia, kanału i Multi EPG.
 Okna te zamykają się po czasie bezczynności (domyślnie 30 s); 0 wyłącza automatyczne zamykanie.
 Korzystanie z pilota lub dotyku zeruje licznik, a otwarcie innego okna wstrzymuje go.
@@ -338,10 +340,10 @@ na końcu historii bez zmiany kolejności istniejących pozycji. Osobne okno pod
   timeshift). Przy kolejnym przełączeniu wypada najdawniej opuszczony kanał. Powrót na taki kanał — obraz od razu z jego
   bufora (od klatki kluczowej z zapasem ≥ bufor startowy + 1 s), z możliwością cofnięcia do tego, co leciało w tym
   czasie. Na listach kanałów (także w historii) kanały z buforem — w tle i oglądany, gdy gra przez bufor — mają znacznik
-  **B** (● B — trwa zapis). Długie OK na kanale w tle: bieżąca audycja i przyciski *Bufor Stop* i
-  *Bufor REC* (*Audycja: tytuł* / *Bufor do teraz* / *Do usunięcia bufora*; w trakcie zapisu *Zakończ zapis z
-  bufora*). Menu → *Buforowane kanały* ma dla kanału w tle tylko *Bufor Stop* i *Bufor REC*;
-  *Bufor REC* otwiera tę samą listę opcji co pod EPG (przy trwającym zapisie pozwala go zakończyć).
+  **B** (● B — trwa zapis). Długie OK na kanale w tle pokazuje bieżącą audycję i *Start REC* albo *Stop REC*.
+  Menu → *Buforowane kanały* pokazuje te same akcje nagrywania oraz *Bufor Stop* dla kanału w tle;
+  *Start REC* otwiera wybór: *Audycja: tytuł* / *Bufor do teraz* / *Do usunięcia bufora*,
+  a *Stop REC* od razu pyta o potwierdzenie zakończenia nagrywania.
   Bufor oglądanego kanału nadal nie ma opcji zatrzymania, bo służy do odtwarzania.
   Lista buforowanych kanałów (pozycja do ustawienia w kolejności i widoczności menu; widoczna, gdy
   jest jakiś bufor — także samego oglądanego kanału). Nagrań z buforów naraz najwyżej tyle, ile kanałów w tle
@@ -356,7 +358,8 @@ na końcu historii bez zmiany kolejności istniejących pozycji. Osobne okno pod
   programowy (jeden na okno, bez sprzętowego; gdy go brak — „brak dekodera”), położenie okien; kanał do okna z listy
   kanałów (◀ ▶ bukiety, OK dodaje okno). Długie OK na liście kanałów lub w historii udostępnia *PiP Dodaj*
   dla innego kanału, *PiP Zamknij* dla kanału w okienku oraz *PiP* (menu sterowania) dla oglądanego kanału,
-  także bez EPG. Bezpiecznik: po awarii albo zawieszeniu z otwartym PiP przy następnym starcie
+  także bez EPG. *Zamknij PiP* zamyka wszystkie okna i pokazuje komunikat bez ponownego otwierania menu.
+  Bezpiecznik: po awarii albo zawieszeniu z otwartym PiP przy następnym starcie
   PiP wyłącza się samo i proponuje wysłanie logu PiP (osobny plik e2stream-pip.log, 3 ostatnie sesje),
 * timeshift (długość bufora, automatyczny start — przy odtwarzaniu przez bufor zawsze od razu, kroki przewijania, WSTECZ na pustym ekranie),
 * nagrania lokalne (limit nagrania, limit zajętości nośnika) — wymagają włączonego timeshiftu,

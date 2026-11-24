@@ -113,6 +113,8 @@
     <string name="pip_swap">Zamień z głównym</string>
     <string name="pip_close">Zamknij okno</string>
     <string name="pip_close_all">Zamknij PiP</string>
+    <string name="pip_closed_all">Zamknięto wszystkie okna PiP</string>
+    <string name="player_exit_recording_warning">Trwa nagrywanie:\n%1$s\n\nWyjście zakończy nagrywanie i rozpocznie zapisywanie. Czy wyjść?</string>
     <string name="pip_full">Najwyżej 3 okna PiP</string>
     <string name="pip_no_window">Brak okna PiP %1$d</string>
     <string name="pip_recording_busy">Trwa nagrywanie — nie można dodać okna PiP (wszystkie bufory w tle nagrywają)</string>

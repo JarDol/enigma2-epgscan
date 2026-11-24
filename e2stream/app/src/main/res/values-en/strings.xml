@@ -112,6 +112,8 @@
     <string name="pip_swap">Swap with main</string>
     <string name="pip_close">Close window</string>
     <string name="pip_close_all">Close PiP</string>
+    <string name="pip_closed_all">All PiP windows closed</string>
+    <string name="player_exit_recording_warning">Recording in progress:\n%1$s\n\nExiting will stop the recording and start saving it. Exit?</string>
     <string name="pip_full">At most 3 PiP windows</string>
     <string name="pip_no_window">No PiP window %1$d</string>
     <string name="pip_recording_busy">Recording in progress — cannot add a PiP window (all background buffers are recording)</string>

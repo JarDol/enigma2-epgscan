@@ -145,6 +145,15 @@ class PlayerActionMenusTest {
         buffer.write(packet, 0, packet.size)
     }
 
+    private fun recording(buffer: TimeshiftBuffer, channel: Channel): Any {
+        val pin = buffer.startPin(File(buffer.dir, "recording"), 0)!!
+        val type = PlayerActivity::class.java.declaredClasses.single { it.simpleName == "LocalRec" }
+        return type.declaredConstructors.single().apply { isAccessible = true }.newInstance(
+            pin, REC_EVENT, JSONObject().put("title", "Program"), Long.MAX_VALUE, channel,
+            0L, 0L, buffer, ProgramJournal(),
+        )
+    }
+
     @Test fun listAndHistoryDescriptionsNeverOfferBufferStopIncludingWithoutEpg() {
         background()
         for (history in listOf(false, true)) {
@@ -196,6 +205,8 @@ class PlayerActionMenusTest {
         @Suppress("UNCHECKED_CAST")
         val start = call("mainRecButtons", main, null) as List<TvDialog.Btn>
         assertTrue(start.isEmpty())
+        call("bufferedActions", null, main, null, 0)
+        assertNull(TvDialog.top())
         val pin = full.startPin(File(full.dir, "recording"), 0)!!
         val recType = PlayerActivity::class.java.declaredClasses.single { it.simpleName == "LocalRec" }
         val recording = recType.declaredConstructors.single().apply { isAccessible = true }.newInstance(
@@ -206,6 +217,9 @@ class PlayerActionMenusTest {
         @Suppress("UNCHECKED_CAST")
         val stop = call("mainRecButtons", main, null) as List<TvDialog.Btn>
         assertEquals(listOf(activity.getString(R.string.player_bgrec_stop)), stop.map { it.label })
+        call("bufferedActions", null, main, null, 0)
+        assertEquals(listOf(activity.getString(R.string.player_bgrec_stop)), labels())
+        TvDialog.top()!!.dismiss()
         stop.single().onClick()
         timeout()
         assertSame(pin, full.pin)
@@ -236,7 +250,8 @@ class PlayerActionMenusTest {
             buttons.single().onClick()
             timeout()
             assertSame(pin, buffer.pin)
-            buttons.single().onClick()
+            call("bufferedActions", bg, other, event, 0)
+            pick(labels().indexOf(activity.getString(R.string.player_bgrec_stop)))
             pressChip(0)
             assertNull(buffer.pin)
             assertEquals(188L, buffer.total)
@@ -423,6 +438,24 @@ class PlayerActionMenusTest {
         assertTrue(get<Boolean>("bufLive"))
     }
 
+    @Test fun closeAllPipClosesWindowsWithoutReopeningMenu() {
+        prefs.bgCount = 3
+        prefs.messageBar = false
+        val first = background(pip = 0)
+        val second = background(Channel(3, "Third", "1:0:1:123:456:789:0:0:0:0:"), pip = 1)
+        call("showPipMenu", 0)
+        pick(labels().indexOf(activity.getString(R.string.pip_close_all)))
+        elapsed(2)
+        assertNull(TvDialog.top())
+        val field = bgType.getDeclaredField("pip").apply { isAccessible = true }
+        assertEquals(-1, field.getInt(first))
+        assertEquals(-1, field.getInt(second))
+        assertEquals(2, backgrounds().size)
+        val message = get<TextView>("message")
+        assertEquals(View.VISIBLE, message.visibility)
+        assertEquals(activity.getString(R.string.pip_closed_all), message.text.toString())
+    }
+
     @Test fun disabledTimeoutKeepsPipAndBufferMenusOpen() {
         prefs.actionDialogSec = 0
         background()
@@ -453,6 +486,70 @@ class PlayerActionMenusTest {
         call("bufRecMenu", bg, other, event, false, {})
         assertEquals(choices, labels())
         TvDialog.top()!!.onBackPressed()
+        assertNull(TvDialog.top())
+    }
+
+    @Test fun bufferedActionsOfferDirectStopForMainAndBackgroundRecording() {
+        val bg = background()
+        val field = bgType.getDeclaredField("lrec").apply { isAccessible = true }
+        val bgRec = recording(bgBuffer(bg), other)
+        field.set(bg, bgRec)
+        val mainRec = recording(get("tsBuf"), main)
+        set("localRec", mainRec)
+        for ((target, channel) in listOf(bg to other, null to main)) {
+            call("bufferedActions", target, channel, null, 0)
+            val items = labels()
+            assertTrue(activity.getString(R.string.player_bgrec_stop) in items)
+            assertFalse(activity.getString(R.string.player_bgrec_menu) in items)
+            pick(items.indexOf(activity.getString(R.string.player_bgrec_stop)))
+            assertEquals(listOf(activity.getString(R.string.player_bgrec_stop)), chips())
+            TvDialog.top()!!.onBackPressed()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertSame(mainRec, get<Any>("localRec"))
+            assertSame(bgRec, field.get(bg))
+        }
+    }
+
+    @Test fun backExitWarnsForMainAndBackgroundRecordingsAndCancelResetsExit() {
+        set("safeMode", false)
+        get<View>("panel").visibility = View.GONE
+        get<View>("banner").visibility = View.GONE
+        get<View>("stats").visibility = View.GONE
+        val bg = background()
+        val field = bgType.getDeclaredField("lrec").apply { isAccessible = true }
+        val bgRec = recording(bgBuffer(bg), other)
+        field.set(bg, bgRec)
+        val mainRec = recording(get("tsBuf"), main)
+        set("localRec", mainRec)
+        fun back() = activity.onKeyDown(KeyEvent.KEYCODE_BACK, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK))
+        back()
+        back()
+        assertFalse(activity.isFinishing)
+        assertEquals(listOf(activity.getString(R.string.message_exit)), chips())
+        val warning = TvDialog.top()!!.window!!.decorView.findViewWithTag<TextView>("dialog-message").text.toString()
+        assertTrue(warning.contains(main.name))
+        assertTrue(warning.contains(other.name))
+        TvDialog.top()!!.onBackPressed()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertSame(mainRec, get<Any>("localRec"))
+        assertSame(bgRec, field.get(bg))
+        back()
+        assertNull(TvDialog.top())
+        assertFalse(activity.isFinishing)
+        back()
+        pressChip(0)
+        assertTrue(activity.isFinishing)
+    }
+
+    @Test fun backExitWithoutRecordingsRetainsDoubleBackBehavior() {
+        set("safeMode", false)
+        get<View>("panel").visibility = View.GONE
+        get<View>("banner").visibility = View.GONE
+        get<View>("stats").visibility = View.GONE
+        activity.onKeyDown(KeyEvent.KEYCODE_BACK, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK))
+        assertFalse(activity.isFinishing)
+        activity.onKeyDown(KeyEvent.KEYCODE_BACK, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK))
+        assertTrue(activity.isFinishing)
         assertNull(TvDialog.top())
     }
 
