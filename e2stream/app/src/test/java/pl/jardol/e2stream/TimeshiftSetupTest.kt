@@ -2,7 +2,10 @@ package pl.jardol.e2stream
 
 import android.app.Application
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.Intent
 import android.os.Looper
+import android.os.Environment
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
@@ -21,6 +24,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowEnvironment
 import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
@@ -194,6 +198,104 @@ class TimeshiftSetupTest {
         proceed.performClick()
         assertEquals(activity.getString(R.string.player_ts_live_empty),
             activity.findViewById<TextView>(R.id.bannerNow).text.toString())
+    }
+
+    @Test
+    fun missingStorageRetriesThreeTimesThenMountStartsNewSeries() {
+        val medium = activity.cacheDir.resolve("retry-medium")
+        medium.writeText("not a directory")
+        prefs.setTimeshiftStorage(medium.absolutePath, "USB")
+        prefs.tsInternalOk = false
+        prefs.tsMin = 15
+        prefs.bufPlay = false
+        prefs.messageBar = false
+        ShadowEnvironment.setExternalStorageState(medium, Environment.MEDIA_MOUNTED)
+        val fields = PlayerActivity::class.java
+        fun field(name: String) = fields.getDeclaredField(name).apply { isAccessible = true }
+        field("currentUrl").set(activity, "http://example.invalid/channel")
+        fields.getDeclaredMethod("tsNewChannel").apply { isAccessible = true }.invoke(activity)
+        val retry = field("tsStorageRetry").get(activity) as Runnable
+        val main = shadowOf(Looper.getMainLooper())
+        try {
+            for (attempt in 1..3) {
+                retry.run()
+                val deadline = System.nanoTime() + 3_000_000_000L
+                while (field("tsStorageRetryAttempts").getInt(activity) < attempt && System.nanoTime() < deadline) {
+                    Thread.sleep(10)
+                    main.idle()
+                }
+                assertEquals(attempt, field("tsStorageRetryAttempts").getInt(activity))
+            }
+            assertFalse(field("tsStorageRetryEnabled").getBoolean(activity))
+            val message = field("message").get(activity) as TextView
+            assertEquals(View.VISIBLE, message.visibility)
+            assertTrue(message.text.toString().contains(activity.getString(R.string.player_ts_usb_unavailable)))
+            assertNull(field("tsBuf").get(activity))
+
+            assertTrue(medium.delete())
+            assertTrue(medium.mkdir())
+            val receiver = field("tsStorageReceiver").get(activity) as BroadcastReceiver
+            receiver.onReceive(activity, Intent(Intent.ACTION_MEDIA_MOUNTED))
+            assertTrue(field("tsStorageRetryEnabled").getBoolean(activity))
+            assertEquals(0, field("tsStorageRetryAttempts").getInt(activity))
+            retry.run()
+            val deadline = System.nanoTime() + 3_000_000_000L
+            while (field("tsBuf").get(activity) == null && System.nanoTime() < deadline) {
+                Thread.sleep(10)
+                main.idle()
+            }
+            assertNotNull(field("tsBuf").get(activity))
+            assertFalse(field("tsStorageRetryEnabled").getBoolean(activity))
+        } finally {
+            fields.getDeclaredMethod("tsStopAll", Boolean::class.javaPrimitiveType)
+                .apply { isAccessible = true }.invoke(activity, false)
+        }
+    }
+
+    @Test
+    fun storageRetryWaitsForRecordingAndRearmsAfterPlaybackStops() {
+        val medium = activity.cacheDir.resolve("retry-unavailable")
+        medium.writeText("not a directory")
+        prefs.setTimeshiftStorage(medium.absolutePath, "USB")
+        prefs.tsInternalOk = false
+        prefs.tsMin = 15
+        val fields = PlayerActivity::class.java
+        fun field(name: String) = fields.getDeclaredField(name).apply { isAccessible = true }
+        val newChannel = fields.getDeclaredMethod("tsNewChannel").apply { isAccessible = true }
+        val stop = fields.getDeclaredMethod("tsStopAll", Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+        field("currentUrl").set(activity, "http://example.invalid/channel")
+        newChannel.invoke(activity)
+        try {
+            field("recMode").setBoolean(activity, true)
+            (field("tsStorageRetry").get(activity) as Runnable).run()
+            assertEquals(0, field("tsStorageRetryAttempts").getInt(activity))
+            assertNull(field("tsBuf").get(activity))
+            field("recMode").setBoolean(activity, false)
+            field("tsStorageRetryEnabled").setBoolean(activity, false)
+            stop.invoke(activity, false)
+            newChannel.invoke(activity)
+            assertTrue(field("tsStorageRetryEnabled").getBoolean(activity))
+            assertEquals(0, field("tsStorageRetryAttempts").getInt(activity))
+        } finally {
+            field("recMode").setBoolean(activity, false)
+            stop.invoke(activity, false)
+        }
+    }
+
+    @Test
+    @Config(sdk = [34, 35])
+    fun storageMountReceiverFollowsActivityLifecycle() {
+        val safe = PlayerActivity::class.java.getDeclaredField("safeMode").apply { isAccessible = true }
+        val registered = PlayerActivity::class.java.getDeclaredField("tsStorageReceiverRegistered").apply { isAccessible = true }
+        safe.setBoolean(activity, true)
+        controller.start().resume()
+        assertTrue(registered.getBoolean(activity))
+        controller.pause().stop()
+        assertFalse(registered.getBoolean(activity))
+        controller.restart().start().resume()
+        assertTrue(registered.getBoolean(activity))
+        controller.pause().stop()
+        assertFalse(registered.getBoolean(activity))
     }
 
     @Test

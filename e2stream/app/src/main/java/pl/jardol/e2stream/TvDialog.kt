@@ -288,7 +288,7 @@ object TvDialog {
 
     // ------------------------------------------------------------ listy
 
-    private class RowAdapter(val ctx: Context, val items: List<Item>, val stacked: Boolean) : BaseAdapter() {
+    private class RowAdapter(val ctx: Context, val items: List<Item>, val stacked: Boolean, val compact: Boolean) : BaseAdapter() {
         override fun getCount() = items.size
         override fun getItem(position: Int): Any = items[position]
         override fun getItemId(position: Int) = position.toLong()
@@ -300,10 +300,14 @@ object TvDialog {
                 setPadding(dp(ctx, 14), dp(ctx, 6), dp(ctx, 16), dp(ctx, 6))
                 addView(TextView(ctx).apply { textSize = 20f; tag = "mark" },
                     LinearLayout.LayoutParams(dp(ctx, 36), ViewGroup.LayoutParams.WRAP_CONTENT))
-                val title = TextView(ctx).apply { textSize = 19f; setTextColor(WHITE); tag = "t" }
+                val title = TextView(ctx).apply {
+                    textSize = 19f; setTextColor(WHITE); tag = "t"
+                    if (compact) { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }
+                }
                 val sub = TextView(ctx).apply {
                     textSize = 14f; setTextColor(GREY); tag = "s"
                     setPadding(if (stacked) 0 else dp(ctx, 12), if (stacked) dp(ctx, 2) else 0, 0, 0)
+                    if (compact) { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }
                 }
                 if (stacked) {
                     addView(LinearLayout(ctx).apply {
@@ -334,9 +338,9 @@ object TvDialog {
         }
     }
 
-    private fun listView(ctx: Context, items: List<Item>, selected: Int, stacked: Boolean = false): ListView {
+    private fun listView(ctx: Context, items: List<Item>, selected: Int, stacked: Boolean = false, compact: Boolean = false): ListView {
         val lv = ListView(ctx)
-        lv.adapter = RowAdapter(ctx, items, stacked)
+        lv.adapter = RowAdapter(ctx, items, stacked, compact)
         lv.selector = ctx.getDrawable(R.drawable.list_selector)
         lv.divider = null
         lv.isVerticalScrollBarEnabled = true
@@ -379,9 +383,9 @@ object TvDialog {
         hint: String = a.getString(R.string.dialog_select_hint), widthFrac: Float = 0.55f,
         onCancel: () -> Unit = {}, wrap: Boolean = false,
         onLongPick: ((Int) -> Boolean)? = null, stacked: Boolean = false, keepOpen: Boolean = false,
-        timeoutSec: Int = 0, onPick: (Int) -> Unit,
+        timeoutSec: Int = 0, compact: Boolean = false, onPick: (Int) -> Unit,
     ): Dialog = panel(a, title, hint, widthFrac = widthFrac, onBack = onCancel, timeoutSec = timeoutSec) { ctx, dlg ->
-        listView(ctx, items, selected, stacked).apply {
+        listView(ctx, items, selected, stacked, compact).apply {
             if (wrap) enableCarousel(this) { items.indexOfFirst { !it.header } to items.indexOfLast { !it.header } }
             setOnItemClickListener { _, _, w, _ ->
                 if (!items[w].header) { if (!keepOpen) dlg.dismiss(); onPick(w) }

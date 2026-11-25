@@ -60,6 +60,7 @@ class TimeshiftBuffer(
     /** katalog „timeshift” nośnika (bufory w tle: podkatalogi) */
     val root: File = dir,
     @Volatile var writeBatchBytes: Int = 0,
+    cleanOld: Boolean = true,
 ) {
 
     private class Seg(val file: File, val start: Long, val wall: Long) {
@@ -89,7 +90,7 @@ class TimeshiftBuffer(
     /** Prefiks plików bieżącej sesji — sprzątanie w tle nie dotyka plików, które właśnie powstają. */
     @Volatile private var session = newSession()
 
-    init { dir.mkdirs(); cleanupAsync(dir, session) }
+    init { dir.mkdirs(); if (cleanOld) cleanupAsync(dir, session) }
 
     // licznik — dwa bufory założone w tej samej milisekundzie nie dostaną tego samego prefiksu plików
     private fun newSession() = "ts-" + java.lang.Long.toString(System.currentTimeMillis(), 36) + "x" + SEQ.incrementAndGet() + "-"

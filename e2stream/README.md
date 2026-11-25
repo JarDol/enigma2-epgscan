@@ -43,6 +43,10 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   ExoPlayer czeka na pełny skonfigurowany zapas, zamiast ponownie korzystać z krótkiego progu startowego.
 * Przy zawieszeniu zapis ostatnich sekund strumienia (`stall-*.ts`, bufor 16 MB) do analizy np. TSDuck; na urządzeniu najwyżej 3 zrzuty, po wysłaniu na dekoder kopia lokalna jest usuwana (na dekoderze sprząta je EPG Scan: Sprzątanie dysku → zrzuty starsze niż N dni).
 * Miejsce zapisu: pamięć urządzenia lub pendrive/karta (katalog `Android/data/pl.jardol.e2stream/files/`).
+  Gdy wybrany nośnik jest niedostępny i brak zgody na pamięć urządzenia, aplikacja podczas oglądania
+  sprawdza go w tle 3 razy co 2 s, po czym pokazuje ostrzeżenie. Po ponownym zamontowaniu nośnika
+  podejmuje nową serię prób; aktywnych nagrań ani buforów innych kanałów przy tym nie przerywa.
+  Po powrocie do aplikacji sprawdzanie rozpoczyna się ponownie.
 * EPG pobierane codziennie wg harmonogramu (i na żądanie) z zapisem na urządzeniu; picony kanałów z dekodera (OpenWebif /picon/ lub FTP). EPG Scan 2.19.3+ udostępnia hash `picons.zip` niezależnie od EPG, więc aktualizacja samych piconów również jest wykrywana. Brakujące picony można zastąpić logo E2Stream; wyłączenie zastępowania zostawia puste miejsce, zachowując układ.
 * Logi i zrzuty idą za dyskiem timeshiftu: po wybraniu dysku na timeshift miejsce logów przechodzi na ten dysk (chyba że wybrano je ręcznie); gdy dysk jest odłączony, logi trafiają do pamięci urządzenia, a po ponownym podłączeniu wracają na dysk.
 * Ustawienia → Logi i zrzuty → *Pamięć zajmowana przez aplikację*: podział (ustawienia, EPG, picony, pamięć podręczna, logi, timeshift, nagrania) i *Wyczyść pamięć podręczną* (ustawień nie rusza). Przy starcie aplikacja usuwa pobrane pliki aktualizacji (APK ~100 MB każdy) i stare pliki pamięci podręcznej, a zajętość zapisuje w logu.
@@ -59,6 +63,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   Po zatrzymaniu nagrania rozpoczyna się nowy bufor, a odtwarzanie wraca na żywo. Fragmenty są
   przenoszone do nagrania; gdy przeniesienie nie jest możliwe, są kopiowane.
   „Bufor Stop” jest dostępny wyłącznie w Menu → Buforowane kanały (dla kanałów w tle).
+  Lista audycji w odtwarzanym nagraniu pokazuje czas i tytuł nad skróconym opisem, ograniczając wysokość wierszy.
   Trwające nagrania i nagrania jeszcze zapisywane są ukryte na liście lokalnej; zapisy przerwane awarią
   nie są bezterminowo ukrywane. Odtwarzacz lokalny używa buforowanego odczytu części bez ponawiania
   operacji pozycjonowania i sprawdzania długości przy każdym małym odczycie.

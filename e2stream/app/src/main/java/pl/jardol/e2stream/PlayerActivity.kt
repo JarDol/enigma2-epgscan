@@ -3,7 +3,10 @@ package pl.jardol.e2stream
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -61,7 +64,7 @@ class PlayerActivity : Activity() {
         const val EXTRA_SCHEDULE_REF = "schedule_channel_ref"
         const val ACTION_SCHEDULE_ZAP = "pl.jardol.e2stream.SCHEDULE_ZAP"
         private const val TS_STORAGE_RETRY_MS = 2000L
-        private const val TS_STORAGE_RETRY_MAX = 30
+        private const val TS_STORAGE_RETRY_MAX = 3
     }
 
     private var decTimerSel = 0
@@ -398,6 +401,10 @@ class PlayerActivity : Activity() {
     override fun onStart() {
         super.onStart()
         if (recreateForLanguage()) return
+        registerReceiver(tsStorageReceiver, IntentFilter(Intent.ACTION_MEDIA_MOUNTED).apply {
+            addDataScheme("file")
+        })
+        tsStorageReceiverRegistered = true
         if (backgrounded) tsRecoverPending()
         if (!epgReturnFromSettings) epgStartupPending = true
         epgReturnFromSettings = false
@@ -676,6 +683,10 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        if (tsStorageReceiverRegistered) {
+            unregisterReceiver(tsStorageReceiver)
+            tsStorageReceiverRegistered = false
+        }
         backupCheckGeneration++
         backupCheckRunning = false
         backupDialogOpen = false
@@ -2655,23 +2666,70 @@ class PlayerActivity : Activity() {
 
     private var tsStorageRetryEnabled = true
     private var tsStorageRetryAttempts = 0
+    private var tsStorageRetryGeneration = 0
+    private var tsStorageReceiverRegistered = false
+    private val tsStorageReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != Intent.ACTION_MEDIA_MOUNTED || !tsWarned || tsBuf != null) return
+            AppLog.i("timeshift: wykryto montowanie nośnika — ponawiam sprawdzanie bufora")
+            tsStorageRetryGeneration++
+            tsStorageRetryEnabled = true
+            tsStorageRetryAttempts = 0
+            ui.removeCallbacks(tsStorageRetry)
+            ui.postDelayed(tsStorageRetry, TS_STORAGE_RETRY_MS)
+        }
+    }
     private val tsStorageRetry = object : Runnable {
         override fun run() {
-            if (!tsStorageRetryEnabled || isFinishing || currentUrl == null || recMode || bgChans.isNotEmpty() || tsBuf != null) return
-            if (TimeshiftBuffer.dir(this@PlayerActivity, prefs) != null) {
-                AppLog.i("timeshift: nośnik USB zamontowany — wznawiam konfigurację bufora")
-                tsNewChannel()
-                if (prefs.bufPlay) currentUrl?.let { startStream(it) }
+            if (!tsStorageRetryEnabled || isFinishing || isDestroyed || tsBuf != null) return
+            if (currentUrl == null || recMode || activeRecs() > 0 || bgChans.isNotEmpty()) {
+                ui.postDelayed(this, TS_STORAGE_RETRY_MS)
                 return
             }
-            tsStorageRetryAttempts++
-            if (tsStorageRetryAttempts >= TS_STORAGE_RETRY_MAX) {
-                tsStorageRetryEnabled = false
-                AppLog.i("timeshift: nośnik USB nadal niedostępny po ${TS_STORAGE_RETRY_MAX * TS_STORAGE_RETRY_MS / 1000} s")
-                showMessage(getString(R.string.player_ts_disabled, getString(R.string.player_ts_usb_unavailable)))
-            } else {
-                ui.postDelayed(this, TS_STORAGE_RETRY_MS)
-            }
+            val generation = tsStorageRetryGeneration
+            val path = prefs.tsDir
+            val min = if (prefs.tsMin > 0) prefs.tsMin else if (prefs.bufPlay) TimeshiftBuffer.BUF_PLAY_MIN else 0
+            val batchBytes = prefs.tsWriteBatchBytes
+            Thread({
+                val dir = if (path.isNotBlank() && TimeshiftBuffer.available(path)) File(path, "timeshift") else null
+                val prepared = if (dir != null && min > 0) try {
+                    if (!(dir.isDirectory || dir.mkdirs()) || !dir.canWrite())
+                        throw java.io.IOException("katalog bufora niedostępny: $dir")
+                    TimeshiftBuffer(dir, min, dir, batchBytes, cleanOld = false).also { it.useAnalyzer { analyzer } }
+                } catch (e: Exception) {
+                    AppLog.i("timeshift: przygotowanie bufora po podłączeniu nośnika nieudane ($e)")
+                    null
+                } else null
+                val freeBytes = if (prepared != null) dir?.usableSpace ?: 0L else 0L
+                ui.post {
+                    if (generation != tsStorageRetryGeneration || !tsStorageRetryEnabled || isFinishing || isDestroyed ||
+                        tsBuf != null || path != prefs.tsDir ||
+                        min != (if (prefs.tsMin > 0) prefs.tsMin else if (prefs.bufPlay) TimeshiftBuffer.BUF_PLAY_MIN else 0) ||
+                        batchBytes != prefs.tsWriteBatchBytes) {
+                        prepared?.let { closeBufferAsync(it) }
+                        if (generation == tsStorageRetryGeneration && tsStorageRetryEnabled && !isFinishing && !isDestroyed &&
+                            tsBuf == null) ui.postDelayed(this, TS_STORAGE_RETRY_MS)
+                        return@post
+                    }
+                    if (currentUrl == null || recMode || activeRecs() > 0 || bgChans.isNotEmpty()) {
+                        prepared?.let { closeBufferAsync(it) }
+                        ui.postDelayed(this, TS_STORAGE_RETRY_MS)
+                    } else if (dir != null && prepared != null) {
+                        AppLog.i("timeshift: nośnik USB dostępny — wznawiam konfigurację bufora")
+                        tsNewChannelWithDir({ dir }, prepared, freeBytes)
+                        if (prefs.bufPlay && tsBuf != null) currentUrl?.let { startStream(it) }
+                    } else {
+                        tsStorageRetryAttempts++
+                        if (tsStorageRetryAttempts >= TS_STORAGE_RETRY_MAX) {
+                            tsStorageRetryEnabled = false
+                            AppLog.i("timeshift: nośnik USB nadal niedostępny po $TS_STORAGE_RETRY_MAX próbach")
+                            showMessage(getString(R.string.player_ts_disabled, getString(R.string.player_ts_usb_unavailable)), force = true)
+                        } else {
+                            ui.postDelayed(this, TS_STORAGE_RETRY_MS)
+                        }
+                    }
+                }
+            }, "timeshift-nośnik").start()
         }
     }
 
@@ -3617,7 +3675,9 @@ class PlayerActivity : Activity() {
     }
 
     /** Nowy kanał (albo zmiana ustawień): bufor od zera, odtwarzanie na żywo. */
-    private fun tsNewChannel() {
+    private fun tsNewChannel() = tsNewChannelWithDir({ TimeshiftBuffer.dir(this, prefs) })
+
+    private fun tsNewChannelWithDir(storageDir: () -> File?, prepared: TimeshiftBuffer? = null, freeBytes: Long = 0L) {
         if (bgPromoted) {
             // powrót na kanał buforowany w tle: bufor, zapis i dziennik przejęte — bez resetu
             bgPromoted = false
@@ -3637,15 +3697,21 @@ class PlayerActivity : Activity() {
         val min = if (prefs.tsMin > 0) prefs.tsMin else if (prefs.bufPlay) TimeshiftBuffer.BUF_PLAY_MIN else 0
         if (min <= 0) {
             ui.removeCallbacks(tsStorageRetry)
+            tsStorageRetryGeneration++
             tsStorageRetryEnabled = false
+            tsWarned = false
             tsBuf?.let { closeBufferAsync(it) }; tsBuf = null
             return
         }
-        val dir = TimeshiftBuffer.dir(this, prefs)
+        val dir = storageDir()
         if (dir == null) {
             // wybrany dysk USB niedostępny, a pamięci urządzenia nie wolno użyć — timeshift wyłączony do czasu podłączenia
             if (tsBuf != null) {
                 tsBuf?.let { closeBufferAsync(it) }; tsBuf = null
+            }
+            if (!tsWarned && prefs.tsDir.isNotBlank()) {
+                tsStorageRetryEnabled = true
+                tsStorageRetryAttempts = 0
             }
             val retryMount = tsStorageRetryEnabled && prefs.tsDir.isNotBlank()
             if (!tsWarned) {
@@ -3655,13 +3721,15 @@ class PlayerActivity : Activity() {
             }
             if (retryMount) {
                 ui.removeCallbacks(tsStorageRetry)
+                tsStorageRetryGeneration++
                 ui.postDelayed(tsStorageRetry, TS_STORAGE_RETRY_MS)
-            } else {
+            } else if (prefs.tsDir.isBlank()) {
                 showMessage(getString(R.string.player_ts_disabled, getString(if (prefs.tsDir.isBlank()) R.string.player_ts_disk_not_selected else R.string.player_ts_usb_unavailable)))
             }
             return
         }
         ui.removeCallbacks(tsStorageRetry)
+        tsStorageRetryGeneration++
         tsStorageRetryEnabled = false
         tsStorageRetryAttempts = 0
         tsWarned = false
@@ -3676,8 +3744,8 @@ class PlayerActivity : Activity() {
             // katalog nie zajęty przez kanały buforowane w tle
             val used = bgChans.map { it.buf.dir }.toSet()
             val slot = TimeshiftBuffer.slotDirs(dir).first { it !in used }
-            tsBuf = TimeshiftBuffer(slot, min, dir, prefs.tsWriteBatchBytes).also { it.useAnalyzer { analyzer } }
-            AppLog.i("timeshift: $min min w ${slot.absolutePath} (wolne ${TimeshiftBuffer.gb(dir.usableSpace)})")
+            tsBuf = prepared ?: TimeshiftBuffer(slot, min, dir, prefs.tsWriteBatchBytes).also { it.useAnalyzer { analyzer } }
+            AppLog.i("timeshift: $min min w ${slot.absolutePath} (wolne ${TimeshiftBuffer.gb(if (prepared != null) freeBytes else dir.usableSpace)})")
         } else {
             b.maxMin = min
             b.writeBatchBytes = prefs.tsWriteBatchBytes
@@ -3740,6 +3808,10 @@ class PlayerActivity : Activity() {
     /** [keepBg] — kanały w tle zostają (odtwarzanie nagrania: zapis w tle i bufor ostatniego kanału). */
     private fun tsStopAll(keepBg: Boolean = false) {
         ui.removeCallbacks(tsStorageRetry)
+        tsStorageRetryGeneration++
+        tsStorageRetryEnabled = true
+        tsStorageRetryAttempts = 0
+        tsWarned = false
         if (localRec != null) finishLocalRec("koniec odtwarzania", restartLive = false)
         if (localRec != null) {
             localRec = null
@@ -5286,7 +5358,7 @@ class PlayerActivity : Activity() {
             val sub = c.desc.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: ""
             TvDialog.Item("${ProgramJournal.hms(c.start)}   ${c.title}", sub, mark = if (i == cur) 3 else 0)
         }
-        TvDialog.list(this, getString(R.string.player_rec_chapters_title), items, cur, widthFrac = 0.6f) { i ->
+        TvDialog.list(this, getString(R.string.player_rec_chapters_title), items, cur, widthFrac = 0.6f, stacked = true, compact = true) { i ->
             val pl = player ?: return@list
             val dur = pl.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
             pl.seekTo((recChapters[i].start * 1000).coerceIn(0, maxOf(0, dur - 1000)))

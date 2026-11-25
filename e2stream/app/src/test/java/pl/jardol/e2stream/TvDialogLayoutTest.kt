@@ -215,6 +215,42 @@ class TvDialogLayoutTest {
         }
     }
 
+    @Test
+    fun chapterRowsLimitLongTitlesAndDescriptionsAndKeepSelection() {
+        val controller = Robolectric.buildActivity(Activity::class.java).setup()
+        val activity = controller.get()
+        val items = listOf(
+            TvDialog.Item("00:00   " + "Długi tytuł audycji ".repeat(20), "Opis audycji ".repeat(100), mark = 3),
+            TvDialog.Item("12:34   Kolejna audycja", "Drugi opis"),
+        )
+        var chosen = -1
+        val dialog = TvDialog.list(activity, "Audycje", items, 0, stacked = true, compact = true) { chosen = it }
+        try {
+            val list = findList(dialog.window!!.decorView)!!
+            for (width in listOf(520, 300)) {
+                val row = list.adapter.getView(0, null, list)
+                row.measure(
+                    View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.AT_MOST),
+                )
+                row.layout(0, 0, row.measuredWidth, row.measuredHeight)
+                val title = row.findViewWithTag<TextView>("t")
+                val subtitle = row.findViewWithTag<TextView>("s")
+                assertTrue(title.measuredWidth >= width - 100)
+                assertTrue(title.lineCount <= 2)
+                assertTrue(subtitle.lineCount <= 2)
+                assertTrue(title.bottom <= subtitle.top)
+                assertTrue("Chapter row too tall at width $width: ${row.measuredHeight}", row.measuredHeight <= 140)
+            }
+            list.performItemClick(list.adapter.getView(1, null, list), 1, list.adapter.getItemId(1))
+            assertEquals(1, chosen)
+            assertFalse(dialog.isShowing)
+        } finally {
+            dialog.dismiss()
+            controller.destroy()
+        }
+    }
+
     private fun findList(view: View): ListView? {
         if (view is ListView) return view
         if (view is ViewGroup) {

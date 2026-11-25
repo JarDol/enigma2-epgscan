@@ -204,12 +204,16 @@ class PlayerRecoveryTest {
         get<Runnable>(activity, "connectionGuardTick").run()
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(4999))
         assertEquals(0, starts)
+        awaitProbe(activity)
 
         ServerSocket(port).use { server ->
             val responder = respond(server)
             prefs.engine = "exo"
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
-            awaitProbe(activity)
+            for (i in 0 until 4) {
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+                awaitProbe(activity)
+                if (!get<Boolean>(activity, "decoderUnavailable")) break
+            }
             responder.join(5000)
             assertFalse(responder.isAlive)
         }
