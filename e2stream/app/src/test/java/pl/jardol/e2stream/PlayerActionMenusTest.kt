@@ -18,6 +18,8 @@ import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import java.io.File
 import java.lang.reflect.Proxy
+import java.net.ServerSocket
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
 import org.junit.After
@@ -174,6 +176,110 @@ class PlayerActionMenusTest {
         assertTrue(activity.getString(R.string.epg_pip) in chips())
     }
 
+    @Test fun backgroundBufferMenuOffersStopBufferAndPreservesRecordingActions() {
+        val bg = background()
+        call("bufRecMenu", bg, other, null, true, {})
+        assertEquals(listOf(
+            activity.getString(R.string.player_bgrec_now, "0:00"),
+            activity.getString(R.string.player_bgrec_until),
+            activity.getString(R.string.player_bg_close),
+        ), labels())
+        pick(2)
+        assertTrue(backgrounds().isEmpty())
+    }
+
+    @Test fun unbufferedChannelOffersNewBufferActionsEvenWithoutEpg() {
+        prefs.bgCount = 1
+        val channelList = get<ListView>("list")
+        for (history in listOf(false, true)) {
+            set("panelHist", history)
+            set("panelList", listOf(main, other))
+            channelList.onItemLongClickListener!!.onItemLongClick(channelList, null, 1, 1)
+            drain()
+            val index = chips().indexOf(activity.getString(R.string.player_bgrec_menu))
+            assertTrue(index >= 0)
+            pressChip(index)
+            assertEquals(listOf(activity.getString(R.string.player_bg_start),
+                activity.getString(R.string.player_bgrec_until)), labels())
+            pick(1)
+            assertTrue(backgrounds().isEmpty())
+            timeout()
+        }
+    }
+
+    @Test fun unbufferedMenuOffersCurrentEventAndRejectsStaleStateAndFullLimit() {
+        prefs.bgCount = 1
+        val now = System.currentTimeMillis() / 1000
+        val event = EpgEvent(1, now - 60, 3600, "Program", "", "", other.ref, other.name)
+        call("unbufferedRecMenu", other, event, "bouquet", listOf(main, other))
+        assertEquals(listOf(activity.getString(R.string.player_bg_start),
+            activity.getString(R.string.player_bgrec_event, "Program"),
+            activity.getString(R.string.player_bgrec_until)), labels())
+        pick(1)
+        val bg = background()
+        pressChip(0)
+        assertEquals(1, backgrounds().size)
+        assertNull(bgBuffer(bg).pin)
+        assertEquals(activity.getString(R.string.player_rec_unavailable), get<TextView>("message").text.toString())
+        call("startUnbuffered", Channel(3, "Third", "1:0:1:111:456:789:0:0:0:0:"), null,
+            "bouquet", listOf(main, other), null)
+        assertEquals(1, backgrounds().size)
+        assertEquals(activity.getString(R.string.player_bg_start_full), get<TextView>("message").text.toString())
+    }
+
+    @Test fun unbufferedActionsStartBufferAndRecordingFromNow() {
+        prefs.bgCount = 1
+        prefs.recInternalOk = true
+        prefs.host = "127.0.0.1"
+        val now = System.currentTimeMillis() / 1000
+        val event = EpgEvent(1, now - 60, 3600, "Program", "", "", other.ref, other.name)
+        for (choice in 0..2) checkUnbufferedStart(choice, event)
+    }
+
+    private fun checkUnbufferedStart(choice: Int, event: EpgEvent) {
+        val release = CountDownLatch(1)
+        ServerSocket(0).use { server ->
+            prefs.streamPort = server.localPort
+            val responder = Thread {
+                server.accept().use { socket ->
+                    val reader = socket.getInputStream().bufferedReader()
+                    while (reader.readLine()?.isNotEmpty() == true) { }
+                    socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\n\r\n".toByteArray())
+                    socket.getOutputStream().flush()
+                    release.await(10, TimeUnit.SECONDS)
+                }
+            }.apply { start() }
+            try {
+                call("unbufferedRecMenu", other, event, "bouquet", listOf(main, other))
+                pick(choice)
+                assertTrue(backgrounds().isEmpty())
+                pressChip(0)
+                drain()
+                val bg = backgrounds().single()
+                val buffer = bgBuffer(bg)
+                buffers += buffer
+                recorders += bgType.getDeclaredField("rec").apply { isAccessible = true }.get(bg) as TimeshiftRecorder
+                val pin = buffer.pin
+                val recording = bgType.getDeclaredField("lrec").apply { isAccessible = true }.get(bg)
+                if (choice == 0) {
+                    assertNull(pin)
+                    assertNull(recording)
+                } else {
+                    assertNotNull(pin)
+                    assertNotNull(recording)
+                    assertEquals(0L, pin!!.from)
+                    buffer.cancelPin(pin)
+                    get<MutableSet<File>>("activeRecordingDirs").remove(pin.dir)
+                    pin.dir.deleteRecursively()
+                }
+            } finally {
+                release.countDown()
+                responder.join(5000)
+                backgrounds().clear()
+            }
+        }
+    }
+
     @Test fun startConfirmationTimeoutAndStaleChannelNeverStartRecording() {
         prefs.recInternalOk = true
         val bg = background()
@@ -246,8 +352,8 @@ class PlayerActionMenusTest {
             })
             @Suppress("UNCHECKED_CAST")
             val buttons = call("bgRecButtons", bg, other, event) as List<TvDialog.Btn>
-            assertEquals(listOf(activity.getString(R.string.player_bgrec_stop)), buttons.map { it.label })
-            buttons.single().onClick()
+            assertEquals(listOf(activity.getString(R.string.player_bgrec_stop), activity.getString(R.string.player_bgrec_menu)), buttons.map { it.label })
+            buttons.first().onClick()
             timeout()
             assertSame(pin, buffer.pin)
             call("bufferedActions", bg, other, event, 0)
@@ -516,8 +622,9 @@ class PlayerActionMenusTest {
         assertEquals(listOf(activity.getString(R.string.player_bg_close), activity.getString(R.string.player_bgrec_menu)), labels())
         pick(1)
         val choices = labels()
-        assertEquals(3, choices.size)
+        assertEquals(4, choices.size)
         assertEquals(activity.getString(R.string.player_bgrec_event, event.title), choices.first())
+        assertEquals(activity.getString(R.string.player_bg_close), choices.last())
         timeout()
         assertSame(bg, backgrounds().single())
         call("bufRecMenu", bg, other, event, false, {})
@@ -595,8 +702,9 @@ class PlayerActionMenusTest {
         call("bufferedActions", bg, other, null, 1)
         pick(1)
         drain()
-        assertEquals(2, labels().size)
-        assertEquals(activity.getString(R.string.player_bgrec_until), labels().last())
+        assertEquals(3, labels().size)
+        assertEquals(activity.getString(R.string.player_bgrec_until), labels()[1])
+        assertEquals(activity.getString(R.string.player_bg_close), labels().last())
         TvDialog.top()!!.onBackPressed()
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(2, labels().size)
@@ -633,7 +741,7 @@ class PlayerActionMenusTest {
         assertSame(bgRecording, recordingField.get(bg))
         assertNotNull(bgBuffer.pin)
         call("bufRecMenu", bg, other, null, false, {})
-        assertEquals(listOf(activity.getString(R.string.player_bgrec_stop)), labels())
+        assertEquals(listOf(activity.getString(R.string.player_bgrec_stop), activity.getString(R.string.player_bg_close)), labels())
         timeout()
         assertSame(bgRecording, recordingField.get(bg))
         val mainRecording = recording(get("tsBuf"), main)

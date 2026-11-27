@@ -142,8 +142,15 @@
     <string name="player_bgrec_stop">Stop REC</string>
     <string name="player_localrec_reason_buffer_closed">channel buffer closed</string>
     <string name="action_history_list">Channel list — history</string>
-    <string name="player_bg_close">Buffer Stop</string>
-    <string name="player_bgrec_menu">Start REC</string>
+    <string name="player_bg_close">Stop buffer</string>
+    <string name="player_bgrec_menu">Buffer REC</string>
+    <string name="player_bg_start">Start buffer</string>
+    <string name="player_bg_start_confirm">Channel: %1$s\n%2$s\nThe buffer and recording will start from now.</string>
+    <string name="player_bg_start_only_confirm">Channel: %1$s\n%2$s\nThe buffer will start from now.</string>
+    <string name="player_bg_start_needs">Enable buffered playback and background channel buffers, and check storage.</string>
+    <string name="player_bg_start_full">No free slot for another channel buffer.</string>
+    <string name="player_bg_start_failed">Could not start the channel buffer.</string>
+    <string name="player_bg_started">Buffer started: %1$s</string>
     <string name="player_rec_confirm_start">Start saving the buffer for %1$s?\n%2$s\nAvailable buffer: %3$s</string>
     <string name="player_rec_confirm_stop">Stop recording %1$s?\n%2$s\nThe recording will be saved and the buffer will start over.</string>
     <string name="player_rec_confirm_stop_all">Stop all buffer recordings?\n%1$s\nThe recordings will be saved and their buffers will start over.</string>

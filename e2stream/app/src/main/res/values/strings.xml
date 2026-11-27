@@ -143,8 +143,15 @@
     <string name="player_bgrec_stop">Stop REC</string>
     <string name="player_localrec_reason_buffer_closed">zamknięto bufor kanału</string>
     <string name="action_history_list">Lista kanałów — historia</string>
-    <string name="player_bg_close">Bufor Stop</string>
-    <string name="player_bgrec_menu">Start REC</string>
+    <string name="player_bg_close">Zatrzymaj bufor</string>
+    <string name="player_bgrec_menu">Bufor REC</string>
+    <string name="player_bg_start">Uruchom bufor</string>
+    <string name="player_bg_start_confirm">Kanał: %1$s\n%2$s\nBufor i nagranie zaczną się od teraz.</string>
+    <string name="player_bg_start_only_confirm">Kanał: %1$s\n%2$s\nBufor zacznie się od teraz.</string>
+    <string name="player_bg_start_needs">Włącz odtwarzanie przez bufor i buforowanie kanałów w tle oraz sprawdź nośnik.</string>
+    <string name="player_bg_start_full">Brak wolnego miejsca na kolejny bufor kanału.</string>
+    <string name="player_bg_start_failed">Nie udało się uruchomić bufora kanału.</string>
+    <string name="player_bg_started">Uruchomiono bufor: %1$s</string>
     <string name="player_rec_confirm_start">Rozpocząć zapis z bufora kanału %1$s?\n%2$s\nDostępny bufor: %3$s</string>
     <string name="player_rec_confirm_stop">Zakończyć nagrywanie kanału %1$s?\n%2$s\nNagranie zostanie zapisane, a bufor rozpocznie się od nowa.</string>
     <string name="player_rec_confirm_stop_all">Zakończyć wszystkie nagrania z buforów?\n%1$s\nNagrania zostaną zapisane, a ich bufory rozpoczną się od nowa.</string>

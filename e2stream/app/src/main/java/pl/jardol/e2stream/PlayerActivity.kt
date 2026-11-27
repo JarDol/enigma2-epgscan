@@ -356,8 +356,14 @@ class PlayerActivity : Activity() {
                     val channels = panelList
                     epg.showCurrentEvent(c) { ev ->
                         val bg = bgOf(c)
+                        val isMain = !recMode && playList.getOrNull(playIndex)?.let {
+                            OpenWebif.key(it.ref) == OpenWebif.key(c.ref)
+                        } == true
                         val rec = if (bg != null) bgRecButtons(bg, c, ev)
-                            else if (isMainBuf(c)) mainRecButtons(c, ev) else emptyList()
+                            else if (isMain) { if (isMainBuf(c)) mainRecButtons(c, ev) else emptyList() }
+                            else listOf(TvDialog.Btn(getString(R.string.player_bgrec_menu)) {
+                                unbufferedRecMenu(c, ev, bouquetRef, channels)
+                            })
                         rec + channelPipButtons(c, bouquetRef, channels)
                     }
                 }
@@ -4520,9 +4526,7 @@ class PlayerActivity : Activity() {
         bg.lrec?.let { r -> listOf(
             TvDialog.Btn(getString(R.string.player_bgrec_stop)) {
                 confirmStopRec(r) { stopRec(r) }
-            })
-        } ?: if (canStartRec(bg.buf)) listOf(TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bufRecMenu(bg, bg.ch ?: c, ev) })
-        else emptyList()
+            }) }.orEmpty() + listOf(TvDialog.Btn(getString(R.string.player_bgrec_menu)) { bufRecMenu(bg, bg.ch ?: c, ev) })
 
     /** Oglądany kanał odtwarzany przez bufor (znacznik „B” na liście). */
     private fun isMainBuf(c: Channel): Boolean = bufLive && isMainRecChannel(c)
@@ -4589,14 +4593,17 @@ class PlayerActivity : Activity() {
      * [bg] null — bufor oglądanego kanału. [ev] — bieżąca audycja (null — z EPG / dziennika kanału).
      */
     private fun bufRecMenu(bg: BgChan?, ch: Channel, ev: EpgEvent?, fetched: Boolean = false, onBack: () -> Unit = {}) {
-        if (bg != null && bg !in bgChans) return
-        if (bg == null && !isMainBuf(ch)) return
+        if ((bg != null && bg !in bgChans) || (bg == null && !isMainBuf(ch))) {
+            showMessage(getString(R.string.player_rec_unavailable)); return
+        }
         val recording = if (bg == null) localRec else bg.lrec
         if (recording != null) {
-            val stop = if (bg == null) mainRecButtons(ch, ev).single() else bgRecButtons(bg, ch, ev).last()
+            val stop = if (bg == null) mainRecButtons(ch, ev).single() else bgRecButtons(bg, ch, ev).first()
+            val acts = mutableListOf(stop)
+            if (bg != null) acts += TvDialog.Btn(getString(R.string.player_bg_close)) { bgCloseAsk(bg) }
             TvDialog.list(this, getString(R.string.player_bgrec_title, ch.name),
-                listOf(TvDialog.Item(stop.label)), 0,
-                onCancel = onBack, timeoutSec = prefs.actionDialogSec) { stop.onClick() }
+                acts.map { TvDialog.Item(it.label) }, 0,
+                onCancel = onBack, timeoutSec = prefs.actionDialogSec) { acts[it].onClick() }
             return
         }
         if (ev == null && !fetched) {
@@ -4607,14 +4614,59 @@ class PlayerActivity : Activity() {
             return
         }
         val span = (bg?.buf ?: tsBuf)?.spanMs() ?: 0
-        val acts = ArrayList<Pair<String, Int>>()
-        if (ev != null) acts += getString(R.string.player_bgrec_event, ev.title) to REC_EVENT
-        acts += getString(R.string.player_bgrec_now, fmtMs(span)) to REC_NOW
-        acts += getString(R.string.player_bgrec_until) to REC_UNTIL_DROP
+        val acts = ArrayList<Pair<String, () -> Unit>>()
+        val buffer = bg?.buf ?: tsBuf
+        if (buffer != null && canStartRec(buffer)) {
+            if (ev != null) acts += getString(R.string.player_bgrec_event, ev.title) to { bgRecStart(bg, REC_EVENT, ch, ev) }
+            acts += getString(R.string.player_bgrec_now, fmtMs(span)) to { bgRecStart(bg, REC_NOW, ch, ev) }
+            acts += getString(R.string.player_bgrec_until) to { bgRecStart(bg, REC_UNTIL_DROP, ch, ev) }
+        }
+        if (bg != null) acts += getString(R.string.player_bg_close) to { bgCloseAsk(bg) }
+        if (acts.isEmpty()) { showMessage(getString(R.string.player_rec_unavailable)); return }
         TvDialog.list(this, getString(R.string.player_bgrec_title, bg?.name ?: ch.name), acts.map { TvDialog.Item(it.first) }, 0,
             widthFrac = 0.5f, onCancel = onBack, timeoutSec = prefs.actionDialogSec) { i ->
-            bgRecStart(bg, acts[i].second, ch, ev)
+            acts[i].second()
         }
+    }
+
+    private fun unbufferedRecMenu(ch: Channel, ev: EpgEvent?, bouquetRef: String?, channels: List<Channel>) {
+        val acts = ArrayList<Pair<String, Int?>>()
+        acts += getString(R.string.player_bg_start) to null
+        if (ev != null) acts += getString(R.string.player_bgrec_event, ev.title) to REC_EVENT
+        acts += getString(R.string.player_bgrec_until) to REC_UNTIL_DROP
+        TvDialog.list(this, getString(R.string.player_bgrec_title, ch.name), acts.map { TvDialog.Item(it.first) }, 0,
+            widthFrac = 0.5f, timeoutSec = prefs.actionDialogSec) { i ->
+            val mode = acts[i].second
+            TvDialog.confirm(this, getString(R.string.player_bgrec_menu),
+                getString(if (mode == null) R.string.player_bg_start_only_confirm else R.string.player_bg_start_confirm,
+                    ch.name, acts[i].first),
+                listOf(TvDialog.Btn(getString(R.string.player_bgrec_menu)) {
+                    startUnbuffered(ch, ev, bouquetRef, channels, mode)
+                }), timeoutSec = prefs.actionDialogSec)
+        }
+    }
+
+    private fun startUnbuffered(ch: Channel, ev: EpgEvent?, bouquetRef: String?, channels: List<Channel>, mode: Int?) {
+        val now = System.currentTimeMillis() / 1000
+        if (mode == REC_EVENT && (ev == null || ev.begin > now || ev.end <= now)) {
+            showMessage(getString(R.string.player_rec_unavailable)); return
+        }
+        if ((!recMode && playList.getOrNull(playIndex)?.let { OpenWebif.key(it.ref) == OpenWebif.key(ch.ref) } == true) ||
+            bgOf(ch) != null) {
+            showMessage(getString(R.string.player_rec_unavailable)); return
+        }
+        if (!bgEnabled()) { showMessage(getString(R.string.player_bg_start_needs)); return }
+        if (bgChans.size >= BG_SLOTS || bgChans.count { it.pip < 0 } >= prefs.bgCount) {
+            showMessage(getString(R.string.player_bg_start_full)); return
+        }
+        if (mode != null && maxOf(activeRecs(), activeRecordingDirs.size) >= recLimit()) {
+            showMessage(getString(R.string.player_rec_limit)); return
+        }
+        val index = bouquets.indexOfFirst { it.ref == bouquetRef }.takeIf { it >= 0 } ?: playBouquet
+        val bg = bgNew(ch, index, channels) ?: run { showMessage(getString(R.string.player_bg_start_failed)); return }
+        bg.buf.maxMin = bgBufLen()
+        if (mode != null) bgRecStart(bg, mode, ch, ev, confirmed = true)
+        else showMessage(getString(R.string.player_bg_started, ch.name))
     }
 
     /** Bieżąca audycja: zapisane EPG, a gdy go brak — dziennik z EIT strumienia (kanału w tle albo oglądanego). */

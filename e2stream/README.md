@@ -55,14 +55,17 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
 * Długie OK w EPG kanału i Multi-EPG otwiera wybór kanału/bukietu, a wyszukiwanie jest na końcu menu.
 * W opisie EPG „Oglądaj” dla aktualnie oglądanego kanału zamyka opis bez ponownego strojenia. Wybór innego kanału („Przełącz”), także dla bieżącej audycji, wymaga potwierdzenia.
   Akcje są w jednym rzędzie, a przy większej czcionce lub węższym oknie automatycznie zawijają się do kolejnych rzędów.
-  Akcje nagrywania z bufora to „Start REC” / „Stop REC”, także po otwarciu z Historii lub bez danych EPG.
-  „Start REC” oferuje audycję (gdy jest EPG), bufor do teraz lub zapis do usunięcia bufora.
+  Akcje nagrywania z bufora to „Bufor REC” / „Stop REC”, także po otwarciu z Historii lub bez danych EPG.
+  „Bufor REC” dla istniejącego bufora oferuje audycję (gdy jest EPG), bufor do teraz lub zapis do usunięcia bufora.
+  Dla kanału w tle menu zawiera również „Zatrzymaj bufor”. Dla innego kanału bez bufora oferuje uruchomienie
+  samego bufora, nagrywanie bieżącej audycji lub do usunięcia bufora; zapis rozpoczyna się od teraz.
+  Potrzebne jest odtwarzanie przez bufor, włączone bufory kanałów w tle i wolny slot.
   Start wymaga działającego bufora i wolnego miejsca; Stop pozostaje dostępny także przy braku miejsca.
   Rozpoczęcie i ręczne zatrzymanie wymagają potwierdzenia: przycisk akcji jest pojedynczy i od razu zaznaczony,
   OK wykonuje akcję, a WSTECZ anuluje; po wykonaniu pojawia się tylko komunikat u góry.
   Po zatrzymaniu nagrania rozpoczyna się nowy bufor, a odtwarzanie wraca na żywo. Fragmenty są
   przenoszone do nagrania; gdy przeniesienie nie jest możliwe, są kopiowane.
-  „Bufor Stop” jest dostępny wyłącznie w Menu → Buforowane kanały (dla kanałów w tle).
+  Zatrzymanie bufora kanału w tle jest też dostępne w Menu → Buforowane kanały.
   Lista audycji w odtwarzanym nagraniu pokazuje czas i tytuł nad skróconym opisem, ograniczając wysokość wierszy.
   Trwające nagrania i nagrania jeszcze zapisywane są ukryte na liście lokalnej; zapisy przerwane awarią
   nie są bezterminowo ukrywane. Odtwarzacz lokalny używa buforowanego odczytu części bez ponawiania
