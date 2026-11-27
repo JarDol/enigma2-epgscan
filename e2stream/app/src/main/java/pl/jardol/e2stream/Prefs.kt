@@ -328,6 +328,18 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("bgFullMsg", true)
         set(v) = putB("bgFullMsg", v)
 
+    var bgReplaceMsg: Boolean
+        get() = sp.getBoolean("bgReplaceMsg", true)
+        set(v) = putB("bgReplaceMsg", v)
+
+    var bgProtectAll: Boolean
+        get() = sp.getBoolean("bgProtectAll", false)
+        set(v) = putB("bgProtectAll", v)
+
+    var bgProtectEvent: Boolean
+        get() = sp.getBoolean("bgProtectEvent", true)
+        set(v) = putB("bgProtectEvent", v)
+
     /** Krótki stan buforów po każdym przełączeniu kanału („Bufory: 2/3, nagrywa 1”). */
     var bgStatusMsg: Boolean
         get() = sp.getBoolean("bgStatusMsg", false)

@@ -54,6 +54,33 @@ class SettingsStorageTest {
     private fun labels(): List<String> = rows().mapNotNull { it.findViewById<TextView>(R.id.label)?.text?.toString() }
     private fun has(id: Int) = activity.getString(id) in labels()
 
+    private fun toggle(id: Int) {
+        val position = rows().indexOfFirst {
+            it.findViewById<TextView>(R.id.label)?.text?.toString() == activity.getString(id)
+        }
+        assertTrue(position >= 0)
+        list.performItemClick(list.adapter.getView(position, null, list), position, position.toLong())
+    }
+
+    @Test fun recordingProtectionOptionsHaveCorrectDefaultsAndVisibility() {
+        prefs.tsInternalOk = true
+        prefs.bufPlay = true
+        prefs.bgCount = 1
+        openStorage()
+        assertTrue(prefs.bgReplaceMsg)
+        assertFalse(prefs.bgProtectAll)
+        assertTrue(prefs.bgProtectEvent)
+        assertTrue(has(R.string.setting_bg_replace_msg))
+        assertTrue(has(R.string.setting_bg_protect_event))
+        toggle(R.string.setting_bg_protect_all)
+        assertTrue(prefs.bgProtectAll)
+        assertFalse(has(R.string.setting_bg_protect_event))
+        toggle(R.string.setting_bg_protect_all)
+        assertFalse(prefs.bgProtectAll)
+        assertTrue(has(R.string.setting_bg_protect_event))
+        assertTrue(prefs.bgProtectEvent)
+    }
+
     private fun chooseMedium(index: (ListView) -> Int) {
         val position = rows().indexOfFirst {
             it.findViewById<TextView>(R.id.label)?.text?.toString() == activity.getString(R.string.storage_medium)

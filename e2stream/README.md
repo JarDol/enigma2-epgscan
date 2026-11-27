@@ -59,7 +59,11 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   „Bufor REC” dla istniejącego bufora oferuje audycję (gdy jest EPG), bufor do teraz lub zapis do usunięcia bufora.
   Dla kanału w tle menu zawiera również „Zatrzymaj bufor”. Dla innego kanału bez bufora oferuje uruchomienie
   samego bufora, nagrywanie bieżącej audycji lub do usunięcia bufora; zapis rozpoczyna się od teraz.
-  Potrzebne jest odtwarzanie przez bufor, włączone bufory kanałów w tle i wolny slot.
+  Potrzebne jest odtwarzanie przez bufor i włączone bufory kanałów w tle. Gdy sloty są zajęte,
+  zastępowany jest najdawniej opuszczony niechroniony bufor poza PiP. Ustawienia pamięci masowej pozwalają
+  wyłączyć komunikat o zastąpieniu oraz wybrać ochronę nagrywanych buforów: domyślnie chronione są audycje,
+  opcjonalnie wszystkie nagrania; ochronę audycji można też wyłączyć. Nagranie „do zmiany kanału” kończy się
+  przy przełączeniu jak dotychczas. Zastąpienie nagrywanego, niechronionego bufora kończy i zapisuje nagranie.
   Start wymaga działającego bufora i wolnego miejsca; Stop pozostaje dostępny także przy braku miejsca.
   Rozpoczęcie i ręczne zatrzymanie wymagają potwierdzenia: przycisk akcji jest pojedynczy i od razu zaznaczony,
   OK wykonuje akcję, a WSTECZ anuluje; po wykonaniu pojawia się tylko komunikat u góry.

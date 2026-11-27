@@ -692,8 +692,15 @@ class SettingsActivity : Activity() {
         // czas bufora — tylko gdy bufor poprzednich kanałów włączony
         gated(getString(R.string.setting_bg_buffer_time), { bgName(p.bgBufMin) }) { chooseBgBuffer() },
         Item.Toggle(getString(R.string.setting_bg_full_msg), { p.bgFullMsg }, { p.bgFullMsg = it }),
+        Item.Toggle(getString(R.string.setting_bg_replace_msg), { p.bgReplaceMsg }, { p.bgReplaceMsg = it }),
         Item.Toggle(getString(R.string.setting_bg_status_msg), { p.bgStatusMsg }, { p.bgStatusMsg = it }),
-    )) + (if (!Features.PIP || (selected && !p.bufPlay)) emptyList<Item>() else listOf(
+        Item.Toggle(getString(R.string.setting_bg_protect_all), { p.bgProtectAll }, {
+            p.bgProtectAll = it; items = buildItems(); refresh()
+        }),
+    ) + (if (p.bgProtectAll) emptyList() else listOf(
+        Item.Toggle(getString(R.string.setting_bg_protect_event), { p.bgProtectEvent }, { p.bgProtectEvent = it }),
+    ))
+    ) + (if (!Features.PIP || (selected && !p.bufPlay)) emptyList<Item>() else listOf(
         gated(getString(R.string.setting_pip_enabled), { getString(if (p.pipEnabled) R.string.settings_enabled else R.string.settings_disabled) }) {
             p.pipEnabled = !p.pipEnabled; markChanged("PiP = ${p.pipEnabled}"); items = buildItems(); refresh()
         },

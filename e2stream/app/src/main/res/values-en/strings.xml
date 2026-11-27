@@ -149,6 +149,7 @@
     <string name="player_bg_start_only_confirm">Channel: %1$s\n%2$s\nThe buffer will start from now.</string>
     <string name="player_bg_start_needs">Enable buffered playback and background channel buffers, and check storage.</string>
     <string name="player_bg_start_full">No free slot for another channel buffer.</string>
+    <string name="player_bg_slots_busy">No free channel buffer slot — slots are used by PiP.</string>
     <string name="player_bg_start_failed">Could not start the channel buffer.</string>
     <string name="player_bg_started">Buffer started: %1$s</string>
     <string name="player_rec_confirm_start">Start saving the buffer for %1$s?\n%2$s\nAvailable buffer: %3$s</string>
@@ -194,12 +195,18 @@
     <string name="action_buffer_play_on">Playback through buffer: on</string>
     <string name="action_buffer_play_off">Playback through buffer: off</string>
     <string name="action_sending_log">Sending log to receiver…</string>
-    <string name="player_bg_full">Previous channels buffers taken by recordings — this channel not buffered</string>
+    <string name="player_bg_full">All buffers are occupied by recordings. Buffer stopped for channel %1$s.</string>
+    <string name="player_bg_full_other">No buffer slot for channel %1$s — the other buffers are protected or used by PiP.</string>
+    <string name="player_bg_replaced">Replaced buffer for channel %1$s.</string>
+    <string name="player_bg_start_action">Buffer START</string>
     <string name="player_bg_status">Buffers: %1$d/%2$d, recording %3$d</string>
     <string name="player_rec_limit">Previous channels buffer limit reached — cannot record another</string>
     <string name="player_bg_close_rec">Recording programme “%1$s”. Close the buffer and the recording (the recording will be saved)?</string>
     <string name="player_bg_span_main">watching · %1$s in buffer</string>
     <string name="setting_bg_full_msg">Message about busy buffers when switching</string>
+    <string name="setting_bg_replace_msg">Message when a buffer is replaced</string>
+    <string name="setting_bg_protect_all">Protect all recording buffers</string>
+    <string name="setting_bg_protect_event">Protect programme recording buffers</string>
     <string name="setting_bg_status_msg">Show buffer status when switching</string>
     <string name="setting_av_shift">Audio offset</string>
     <string name="av_shift_zero">0 ms (no offset)</string>

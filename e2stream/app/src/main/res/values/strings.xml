@@ -150,6 +150,7 @@
     <string name="player_bg_start_only_confirm">Kanał: %1$s\n%2$s\nBufor zacznie się od teraz.</string>
     <string name="player_bg_start_needs">Włącz odtwarzanie przez bufor i buforowanie kanałów w tle oraz sprawdź nośnik.</string>
     <string name="player_bg_start_full">Brak wolnego miejsca na kolejny bufor kanału.</string>
+    <string name="player_bg_slots_busy">Brak miejsca na kolejny bufor kanału — sloty są używane przez PiP.</string>
     <string name="player_bg_start_failed">Nie udało się uruchomić bufora kanału.</string>
     <string name="player_bg_started">Uruchomiono bufor: %1$s</string>
     <string name="player_rec_confirm_start">Rozpocząć zapis z bufora kanału %1$s?\n%2$s\nDostępny bufor: %3$s</string>
@@ -195,12 +196,18 @@
     <string name="action_buffer_play_on">Odtwarzanie przez bufor: włączone</string>
     <string name="action_buffer_play_off">Odtwarzanie przez bufor: wyłączone</string>
     <string name="action_sending_log">Wysyłam log na dekoder…</string>
-    <string name="player_bg_full">Bufory poprzednich kanałów zajęte przez nagrania — ten kanał bez bufora</string>
+    <string name="player_bg_full">Wszystkie bufory zajęte przez nagrywanie. Zatrzymano bufor dla kanału %1$s.</string>
+    <string name="player_bg_full_other">Brak miejsca na bufor kanału %1$s — pozostałe bufory są chronione lub używane przez PiP.</string>
+    <string name="player_bg_replaced">Zastąpiono bufor kanału %1$s.</string>
+    <string name="player_bg_start_action">Bufor START</string>
     <string name="player_bg_status">Bufory: %1$d/%2$d, nagrywa %3$d</string>
     <string name="player_rec_limit">Osiągnięto limit buforów poprzednich kanałów — nie można nagrać kolejnego</string>
     <string name="player_bg_close_rec">Trwa nagrywanie audycji „%1$s”. Zakończyć bufor i nagranie (nagranie zostanie zapisane)?</string>
     <string name="player_bg_span_main">oglądany · w buforze %1$s</string>
     <string name="setting_bg_full_msg">Komunikat o zajętych buforach przy przełączaniu</string>
+    <string name="setting_bg_replace_msg">Komunikat o zastąpieniu bufora</string>
+    <string name="setting_bg_protect_all">Chroń wszystkie nagrywane bufory</string>
+    <string name="setting_bg_protect_event">Chroń nagrywane bufory dla audycji</string>
     <string name="setting_bg_status_msg">Pokazuj stan buforów przy przełączaniu</string>
     <string name="setting_av_shift">Przesunięcie dźwięku</string>
     <string name="av_shift_zero">0 ms (bez przesunięcia)</string>

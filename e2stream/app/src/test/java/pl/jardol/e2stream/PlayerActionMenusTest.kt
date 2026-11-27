@@ -147,11 +147,11 @@ class PlayerActionMenusTest {
         buffer.write(packet, 0, packet.size)
     }
 
-    private fun recording(buffer: TimeshiftBuffer, channel: Channel): Any {
+    private fun recording(buffer: TimeshiftBuffer, channel: Channel, mode: Int = REC_EVENT): Any {
         val pin = buffer.startPin(File(buffer.dir, "recording"), 0)!!
         val type = PlayerActivity::class.java.declaredClasses.single { it.simpleName == "LocalRec" }
         return type.declaredConstructors.single().apply { isAccessible = true }.newInstance(
-            pin, REC_EVENT, JSONObject().put("title", "Program"), Long.MAX_VALUE, channel,
+            pin, mode, JSONObject().put("title", "Program"), Long.MAX_VALUE, channel,
             0L, 0L, buffer, ProgramJournal(),
         )
     }
@@ -205,6 +205,10 @@ class PlayerActionMenusTest {
             assertTrue(backgrounds().isEmpty())
             timeout()
         }
+        call("unbufferedRecMenu", other, null, "bouquet", listOf(main, other))
+        pick(0)
+        assertEquals(listOf(activity.getString(R.string.player_bg_start_action)), chips())
+        timeout()
     }
 
     @Test fun unbufferedMenuOffersCurrentEventAndRejectsStaleStateAndFullLimit() {
@@ -217,14 +221,106 @@ class PlayerActionMenusTest {
             activity.getString(R.string.player_bgrec_until)), labels())
         pick(1)
         val bg = background()
+        bgType.getDeclaredField("lrec").apply { isAccessible = true }.set(bg, recording(bgBuffer(bg), other))
         pressChip(0)
         assertEquals(1, backgrounds().size)
-        assertNull(bgBuffer(bg).pin)
+        assertNotNull(bgBuffer(bg).pin)
         assertEquals(activity.getString(R.string.player_rec_unavailable), get<TextView>("message").text.toString())
         call("startUnbuffered", Channel(3, "Third", "1:0:1:111:456:789:0:0:0:0:"), null,
             "bouquet", listOf(main, other), null)
         assertEquals(1, backgrounds().size)
         assertEquals(activity.getString(R.string.player_bg_start_full), get<TextView>("message").text.toString())
+    }
+
+    @Test fun recordingProtectionFollowsBothSettings() {
+        val bg = background()
+        val field = bgType.getDeclaredField("lrec").apply { isAccessible = true }
+        assertFalse(prefs.bgProtectAll)
+        assertTrue(prefs.bgProtectEvent)
+        field.set(bg, recording(bgBuffer(bg), other))
+        assertEquals(true, call("bgProtected", bg))
+        prefs.bgProtectEvent = false
+        assertEquals(false, call("bgProtected", bg))
+        prefs.bgProtectAll = true
+        assertEquals(true, call("bgProtected", bg))
+        bgBuffer(bg).cancelPin(bgBuffer(bg).pin!!)
+        field.set(bg, recording(bgBuffer(bg), other, REC_UNTIL_DROP))
+        prefs.bgProtectAll = false
+        prefs.bgProtectEvent = true
+        assertEquals(false, call("bgProtected", bg))
+        prefs.bgProtectAll = true
+        assertEquals(true, call("bgProtected", bg))
+    }
+
+    @Test fun switchReportsTheActualPreviousChannelWhenRecordingsOccupySlots() {
+        prefs.bgCount = 1
+        val bg = background()
+        bgType.getDeclaredField("lrec").apply { isAccessible = true }.set(bg, recording(bgBuffer(bg), other))
+        val analyzer = TsAnalyzer(1880) {}
+        val recorder = TimeshiftRecorder("http://example.test/live", null, { analyzer }, onFailure = {}).also { recorders += it }
+        set("analyzer", analyzer)
+        set("tsRecAn", analyzer)
+        set("tsRec", recorder)
+        set("tsLiveUrl", "http://example.test/current")
+        val result = call("bgSwitch", "http://example.test/next", "Next") as Pair<*, *>
+        assertEquals(true, result.first)
+        assertEquals(activity.getString(R.string.player_bg_full, main.name), result.second)
+        assertSame(bg, backgrounds().single())
+        prefs.bgFullMsg = false
+        val silent = call("bgSwitch", "http://example.test/next", "Next") as Pair<*, *>
+        assertNull(silent.second)
+    }
+
+    @Test fun switchReplacesOldestUnprotectedBufferAndReportsItsName() {
+        prefs.bgCount = 2
+        val oldest = background()
+        val newer = background(Channel(3, "Newer", "1:0:1:111:456:789:0:0:0:0:"))
+        bgType.getDeclaredField("leftAt").apply { isAccessible = true }.setLong(oldest, 1)
+        bgType.getDeclaredField("leftAt").apply { isAccessible = true }.setLong(newer, 2)
+        val analyzer = TsAnalyzer(1880) {}
+        val recorder = TimeshiftRecorder("http://example.test/live", null, { analyzer }, onFailure = {}).also { recorders += it }
+        set("analyzer", analyzer)
+        set("tsRecAn", analyzer)
+        set("tsRec", recorder)
+        set("tsLiveUrl", "http://example.test/current")
+        val result = call("bgSwitch", "http://example.test/next", "Next") as Pair<*, *>
+        assertEquals(true, result.first)
+        assertEquals(activity.getString(R.string.player_bg_replaced, other.name), result.second)
+        assertFalse(oldest in backgrounds())
+        assertTrue(newer in backgrounds())
+    }
+
+    @Test fun protectedCurrentRecordingPreventsSwitchIfNoBackgroundSlotCanBeFreed() {
+        prefs.bgCount = 1
+        prefs.bgProtectAll = true
+        val bg = background()
+        bgType.getDeclaredField("lrec").apply { isAccessible = true }.set(bg, recording(bgBuffer(bg), other))
+        val mainBuffer = get<TimeshiftBuffer>("tsBuf")
+        val mainRecording = recording(mainBuffer, main, REC_UNTIL_DROP)
+        set("localRec", mainRecording)
+        val analyzer = TsAnalyzer(1880) {}
+        val recorder = TimeshiftRecorder("http://example.test/live", null, { analyzer }, onFailure = {}).also { recorders += it }
+        set("analyzer", analyzer)
+        set("tsRecAn", analyzer)
+        set("tsRec", recorder)
+        set("tsLiveUrl", "http://example.test/current")
+        val result = call("bgSwitch", "http://example.test/next", "Next") as Pair<*, *>
+        assertEquals(false, result.first)
+        assertSame(mainRecording, get<Any>("localRec"))
+        assertSame(bg, backgrounds().single())
+    }
+
+    @Test fun failedRecordingSaveDoesNotEvictBuffer() {
+        val bg = background()
+        val buffer = bgBuffer(bg)
+        val rec = recording(buffer, other, REC_UNTIL_DROP)
+        bgType.getDeclaredField("lrec").apply { isAccessible = true }.set(bg, rec)
+        assertTrue(buffer.dir.deleteRecursively())
+        assertEquals(false, call("bgDrop", bg, "replacement"))
+        assertSame(bg, backgrounds().single())
+        assertSame(rec, bgType.getDeclaredField("lrec").apply { isAccessible = true }.get(bg))
+        assertNotNull(buffer.pin)
+        get<MutableSet<File>>("activeRecordingDirs").remove(buffer.pin!!.dir)
     }
 
     @Test fun unbufferedActionsStartBufferAndRecordingFromNow() {
@@ -236,7 +332,30 @@ class PlayerActionMenusTest {
         for (choice in 0..2) checkUnbufferedStart(choice, event)
     }
 
-    private fun checkUnbufferedStart(choice: Int, event: EpgEvent) {
+    @Test fun manualStartReplacesOldestUnprotectedBuffer() {
+        prefs.bgCount = 1
+        prefs.recInternalOk = true
+        prefs.host = "127.0.0.1"
+        val now = System.currentTimeMillis() / 1000
+        val event = EpgEvent(1, now - 60, 3600, "Program", "", "", other.ref, other.name)
+        val oldChannel = Channel(3, "Old", "1:0:1:111:456:789:0:0:0:0:")
+        background(oldChannel)
+        checkUnbufferedStart(0, event, oldChannel.name)
+    }
+
+    @Test fun recordingConsentCancellationDoesNotReplaceExistingBuffer() {
+        prefs.bgCount = 1
+        prefs.recInternalOk = false
+        val oldChannel = Channel(3, "Old", "1:0:1:111:456:789:0:0:0:0:")
+        val old = background(oldChannel)
+        call("startUnbuffered", other, null, "bouquet", listOf(main, other), REC_UNTIL_DROP)
+        assertSame(old, backgrounds().single())
+        assertEquals(listOf(activity.getString(R.string.player_localrec_allow)), chips())
+        timeout()
+        assertSame(old, backgrounds().single())
+    }
+
+    private fun checkUnbufferedStart(choice: Int, event: EpgEvent, replaced: String? = null) {
         val release = CountDownLatch(1)
         ServerSocket(0).use { server ->
             prefs.streamPort = server.localPort
@@ -252,10 +371,13 @@ class PlayerActionMenusTest {
             try {
                 call("unbufferedRecMenu", other, event, "bouquet", listOf(main, other))
                 pick(choice)
-                assertTrue(backgrounds().isEmpty())
+                assertEquals(if (replaced == null) 0 else 1, backgrounds().size)
                 pressChip(0)
                 drain()
+                drain()
                 val bg = backgrounds().single()
+                if (replaced != null) assertEquals(activity.getString(R.string.player_bg_replaced, replaced),
+                    get<TextView>("message").text.toString())
                 val buffer = bgBuffer(bg)
                 buffers += buffer
                 recorders += bgType.getDeclaredField("rec").apply { isAccessible = true }.get(bg) as TimeshiftRecorder

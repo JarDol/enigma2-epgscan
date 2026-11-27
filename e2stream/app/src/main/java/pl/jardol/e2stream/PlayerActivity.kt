@@ -1272,8 +1272,10 @@ class PlayerActivity : Activity() {
         if (!bgAllowed()) bgDropAll("opcja wyłączona")
         else if (recMode) { }                 // odtwarzanie nagrania — kanały w tle (zapis, ostatni kanał) zostają
         else if (prefs.bgCount == 0) for (c in bgChans.filter { it.pip < 0 && it.lrec == null }) bgDrop(c, "opcja wyłączona")
-        else while (bgChans.count { it.pip < 0 } > prefs.bgCount)
-            bgChans.filter { it.pip < 0 && !bgProtected(it) }.minByOrNull { it.leftAt }?.let { bgDrop(it, "limit ${prefs.bgCount} kanałów w tle") } ?: break
+        else while (bgChans.count { it.pip < 0 } > prefs.bgCount) {
+            val victim = bgChans.filter { it.pip < 0 && !bgProtected(it) }.minByOrNull { it.leftAt } ?: break
+            if (!bgDrop(victim, "limit ${prefs.bgCount} kanałów w tle")) break
+        }
         pipRefresh()
         if (prefs.engine == "vlc" && !recMode) {
             startVlc(url)
@@ -1828,9 +1830,11 @@ class PlayerActivity : Activity() {
         panelOnRec = false
         tsCtl = false; tsChBar = false
         val i = ((index % chList.size) + chList.size) % chList.size
-        chList[i].let { bgSwitch(api.streamUrl(it), it.name) }
+        val (switched, bufferNotice) = chList[i].let { bgSwitch(api.streamUrl(it), it.name) }
+        if (!switched) return
         tsNewChannel()
-        if (prefs.bgStatusMsg && prefs.bufPlay && prefs.bgCount > 0)
+        if (bufferNotice != null) showMessage(bufferNotice)
+        else if (prefs.bgStatusMsg && prefs.bufPlay && prefs.bgCount > 0)
             showMessage(getString(R.string.player_bg_status, bgChans.size, prefs.bgCount, activeRecs()))
         val cur = playList.getOrNull(playIndex)
         if (cur != null && !(bIdx == playBouquet && i == playIndex)) {
@@ -2630,8 +2634,10 @@ class PlayerActivity : Activity() {
         var lrec: LocalRec? = null                 // zapis z tego bufora na dysk (nagranie lokalne)
     }
 
-    /** Bufor z nagraniem audycji — chroniony do jej końca (nie wypada przy przełączaniu). */
-    private fun bgProtected(c: BgChan) = c.lrec?.mode == REC_EVENT
+    private fun recordingProtected(r: LocalRec?) =
+        r != null && (prefs.bgProtectAll || (prefs.bgProtectEvent && r.mode == REC_EVENT))
+
+    private fun bgProtected(c: BgChan) = recordingProtected(c.lrec)
 
     /** Trwające nagrania z buforów (bieżący kanał + kanały w tle). */
     private fun activeRecs() = (if (localRec != null) 1 else 0) + bgChans.count { it.lrec != null }
@@ -2745,10 +2751,14 @@ class PlayerActivity : Activity() {
         }
     }
 
-    private fun bgDrop(c: BgChan, reason: String) {
-        if (!bgChans.remove(c)) return
-        c.lrec?.let { c.lrec = null; finishRec(it, "bufor zamknięty", restartLive = false, main = false,
-            captureFullBuffer = reason == "koniec odtwarzania na żywo") }
+    private fun bgDrop(c: BgChan, reason: String): Boolean {
+        if (c !in bgChans) return false
+        c.lrec?.let {
+            if (!finishRec(it, "bufor zamknięty", restartLive = false, main = false,
+                    captureFullBuffer = reason == "koniec odtwarzania na żywo")) return false
+            c.lrec = null
+        }
+        if (!bgChans.remove(c)) return false
         c.rec.stop()
         if (c.pip >= 0) { c.pip = -1; pipRefresh() }
         c.an.tee = null; c.an.onEit = null
@@ -2758,6 +2768,7 @@ class PlayerActivity : Activity() {
         AppLog.i("bufor w tle: ${c.name} zamknięty ($reason)")
         pipRefresh()
         refreshPanelRows()
+        return true
     }
 
     private fun bgDropAll(reason: String) { for (c in bgChans.toList()) bgDrop(c, reason) }
@@ -2998,11 +3009,11 @@ class PlayerActivity : Activity() {
         ))
     }
 
-    private fun bgSwitch(url: String, name: String) {
-        if (recMode || url == tsLiveUrl && bufLive) return
+    private fun bgSwitch(url: String, name: String): Pair<Boolean, String?> {
+        if (recMode || url == tsLiveUrl && bufLive) return true to null
         // powrót na żywo: koniec ochrony bufora odłożonego na czas nagrań
         for (c in bgChans) c.parked = false
-        if (!bgAllowed()) { bgDropAll("opcja wyłączona"); return }
+        if (!bgAllowed()) { bgDropAll("opcja wyłączona"); return true to null }
         if (prefs.bgCount == 0) for (c in bgChans.filter { it.pip < 0 && it.lrec == null && it.url != url }) bgDrop(c, "opcja wyłączona")
         val target = bgChans.firstOrNull { it.url == url }
         val pipSlot = target?.pip ?: -1
@@ -3010,15 +3021,31 @@ class PlayerActivity : Activity() {
         val curRec = tsRec
         val curAn = tsRecAn
         val canDemote = bufLive && curBuf != null && curRec != null && curAn != null && curAn === analyzer && curBuf.failed == null
+        if (localRec?.mode != REC_UNTIL_ZAP && recordingProtected(localRec) &&
+            (!canDemote || (pipSlot < 0 && prefs.bgCount == 0))) {
+            showMessage(getString(R.string.player_bg_start_full))
+            return false to null
+        }
+        var notice: String? = null
         if (canDemote && (pipSlot >= 0 || prefs.bgCount > 0)) {
             // miejsce: najdawniej opuszczony poprzedni kanał wypada (okna PiP i nagrania audycji zostają)
             while (bgChans.count { it !== target } >= BG_MAX) {
                 val v = bgChans.filter { it !== target && it.pip < 0 && !bgProtected(it) }.minByOrNull { it.leftAt } ?: break
-                bgDrop(v, "limit $BG_MAX kanałów w tle")
+                if (!bgDrop(v, "limit $BG_MAX kanałów w tle")) return false to null
+                if (prefs.bgReplaceMsg) notice = getString(R.string.player_bg_replaced, v.name)
             }
             if (bgChans.count { it !== target } >= BG_MAX) {
+                if (localRec?.mode != REC_UNTIL_ZAP && recordingProtected(localRec)) {
+                    showMessage(getString(R.string.player_bg_start_full))
+                    return false to null
+                }
                 AppLog.i("bufor w tle: ${playList.getOrNull(playIndex)?.name} bez bufora — miejsca zajęte przez nagrania audycji")
-                if (prefs.bgFullMsg) showMessage(getString(R.string.player_bg_full))
+                if (prefs.bgFullMsg) {
+                    val remaining = bgChans.filter { it !== target }
+                    val stringId = if (remaining.isNotEmpty() && remaining.all { it.lrec != null })
+                        R.string.player_bg_full else R.string.player_bg_full_other
+                    notice = getString(stringId, playList.getOrNull(playIndex)?.name ?: "?")
+                }
             }
             if (bgChans.count { it !== target } < BG_MAX) {
                 // nagranie audycji / „do usunięcia bufora” trwa dalej w tle; „do zmiany kanału” — kończy się
@@ -3080,6 +3107,7 @@ class PlayerActivity : Activity() {
         }
         pipRefresh()
         refreshPanelRows()
+        return true to notice
     }
 
     /** Nowy kanał buforowany w tle (dla okna PiP): własne połączenie, analizator i bufor w wolnym podkatalogu. */
@@ -3570,7 +3598,7 @@ class PlayerActivity : Activity() {
         if (bgChans.size >= BG_SLOTS) {
             val v = bgChans.filter { it.pip < 0 && it.lrec == null }.minByOrNull { it.leftAt }
                 ?: run { showMessage(getString(R.string.pip_recording_busy)); return }
-            bgDrop(v, "miejsce dla okna PiP")
+            if (!bgDrop(v, "miejsce dla okna PiP")) return
         }
         val c = bgNew(ch, bIdx, l) ?: run { showMessage(getString(R.string.pip_no_slot)); return }
         pipOpen(c, want)
@@ -4391,7 +4419,7 @@ class PlayerActivity : Activity() {
     }
 
     /** [main] — nagranie bieżącego kanału (timeshift / powrót na żywo); inaczej z bufora kanału w tle. */
-    private fun finishRec(r: LocalRec, reason: String, restartLive: Boolean, main: Boolean, captureFullBuffer: Boolean = false) {
+    private fun finishRec(r: LocalRec, reason: String, restartLive: Boolean, main: Boolean, captureFullBuffer: Boolean = false): Boolean {
         val endWall = SystemClock.elapsedRealtime()
         activeRecordingDirs += r.pin.dir
         val pin = r.pin
@@ -4445,7 +4473,7 @@ class PlayerActivity : Activity() {
             } else activeRecordingDirs -= pin.dir
             resumePlayback()
             showMessage(getString(R.string.player_rec_save_failed, e.message ?: e.toString()), force = true)
-            return
+            return false
         }
         resumePlayback()
         val title = r.meta.optString("title")
@@ -4476,6 +4504,7 @@ class PlayerActivity : Activity() {
             }
         }, "nagranie-zapis").start()
         refreshPanelRows()
+        return true
     }
 
     private fun reasonText(reason: String) = when (reason) {
@@ -4577,15 +4606,14 @@ class PlayerActivity : Activity() {
     private fun bgCloseAsk(bg: BgChan, onClosed: () -> Unit = {}) {
         if (bg !in bgChans) return
         val r = bg.lrec
-        if (r != null && bgProtected(bg)) {
+        if (r != null && r.mode == REC_EVENT) {
             TvDialog.confirm(this, bg.name, getString(R.string.player_bg_close_rec, r.meta.optString("title")), listOf(
                 TvDialog.Btn(getString(R.string.player_bg_close)) {
-                    if (bg in bgChans) { bgDrop(bg, "zakończony ręcznie (z nagraniem)"); refreshPanelRows(); onClosed() }
+                    if (bg in bgChans && bgDrop(bg, "zakończony ręcznie (z nagraniem)")) { refreshPanelRows(); onClosed() }
                 }), timeoutSec = prefs.actionDialogSec)
             return
         }
-        bgDrop(bg, "zakończony ręcznie"); refreshPanelRows()
-        onClosed()
+        if (bgDrop(bg, "zakończony ręcznie")) { refreshPanelRows(); onClosed() }
     }
 
     /**
@@ -4637,16 +4665,21 @@ class PlayerActivity : Activity() {
         TvDialog.list(this, getString(R.string.player_bgrec_title, ch.name), acts.map { TvDialog.Item(it.first) }, 0,
             widthFrac = 0.5f, timeoutSec = prefs.actionDialogSec) { i ->
             val mode = acts[i].second
-            TvDialog.confirm(this, getString(R.string.player_bgrec_menu),
+            val title = getString(if (mode == null) R.string.player_bg_start_action else R.string.player_bgrec_menu)
+            TvDialog.confirm(this, title,
                 getString(if (mode == null) R.string.player_bg_start_only_confirm else R.string.player_bg_start_confirm,
                     ch.name, acts[i].first),
-                listOf(TvDialog.Btn(getString(R.string.player_bgrec_menu)) {
+                listOf(TvDialog.Btn(title) {
                     startUnbuffered(ch, ev, bouquetRef, channels, mode)
                 }), timeoutSec = prefs.actionDialogSec)
         }
     }
 
     private fun startUnbuffered(ch: Channel, ev: EpgEvent?, bouquetRef: String?, channels: List<Channel>, mode: Int?) {
+        startUnbufferedChecked(ch, ev, bouquetRef, channels, mode, null)
+    }
+
+    private fun startUnbufferedChecked(ch: Channel, ev: EpgEvent?, bouquetRef: String?, channels: List<Channel>, mode: Int?, checkedRoot: File?) {
         val now = System.currentTimeMillis() / 1000
         if (mode == REC_EVENT && (ev == null || ev.begin > now || ev.end <= now)) {
             showMessage(getString(R.string.player_rec_unavailable)); return
@@ -4656,17 +4689,53 @@ class PlayerActivity : Activity() {
             showMessage(getString(R.string.player_rec_unavailable)); return
         }
         if (!bgEnabled()) { showMessage(getString(R.string.player_bg_start_needs)); return }
-        if (bgChans.size >= BG_SLOTS || bgChans.count { it.pip < 0 } >= prefs.bgCount) {
-            showMessage(getString(R.string.player_bg_start_full)); return
-        }
         if (mode != null && maxOf(activeRecs(), activeRecordingDirs.size) >= recLimit()) {
             showMessage(getString(R.string.player_rec_limit)); return
+        }
+        val root = TimeshiftBuffer.dir(this, prefs) ?: run { showMessage(getString(R.string.player_bg_start_needs)); return }
+        if (mode != null && root.absolutePath.startsWith(TimeshiftBuffer.internalBase(this).absolutePath) && !prefs.recInternalOk) {
+            TvDialog.confirm(this, getString(R.string.player_localrec_title), getString(R.string.player_localrec_internal_consent),
+                listOf(TvDialog.Btn(getString(R.string.player_localrec_allow)) {
+                    prefs.recInternalOk = true
+                    startUnbufferedChecked(ch, ev, bouquetRef, channels, mode, null)
+                }), timeoutSec = prefs.actionDialogSec)
+            return
+        }
+        if (mode != null && checkedRoot != root) {
+            io.execute {
+                val base = LocalRecordings.base(root)
+                val used = LocalRecordings.used(base)
+                val cap = LocalRecordings.capacity(base)
+                runOnUiThread {
+                    if (cap > 0 && used >= cap * prefs.recMaxPct / 100) {
+                        TvDialog.confirm(this, getString(R.string.player_localrec_title),
+                            getString(R.string.player_localrec_limit_reached, prefs.recMaxPct, TimeshiftBuffer.gb(used), TimeshiftBuffer.gb(cap)),
+                            listOf(TvDialog.Btn(getString(R.string.player_local_recordings)) { showRecordings(REC_LOCAL_BOUQUET) },
+                                TvDialog.Btn(getString(R.string.message_close))), timeoutSec = prefs.actionDialogSec)
+                    } else startUnbufferedChecked(ch, ev, bouquetRef, channels, mode, root)
+                }
+            }
+            return
+        }
+        var replaced: String? = null
+        if (bgChans.size >= BG_SLOTS || bgChans.count { it.pip < 0 } >= prefs.bgCount) {
+            val victim = bgChans.filter { it.pip < 0 && !bgProtected(it) }.minByOrNull { it.leftAt }
+            if (victim == null) {
+                val ordinary = bgChans.filter { it.pip < 0 }
+                val blocking = if (ordinary.size >= prefs.bgCount) ordinary else bgChans
+                showMessage(getString(if (blocking.isNotEmpty() && blocking.all { bgProtected(it) })
+                    R.string.player_bg_start_full else R.string.player_bg_slots_busy))
+                return
+            }
+            if (!bgDrop(victim, "miejsce dla nowego bufora")) return
+            replaced = victim.name
         }
         val index = bouquets.indexOfFirst { it.ref == bouquetRef }.takeIf { it >= 0 } ?: playBouquet
         val bg = bgNew(ch, index, channels) ?: run { showMessage(getString(R.string.player_bg_start_failed)); return }
         bg.buf.maxMin = bgBufLen()
         if (mode != null) bgRecStart(bg, mode, ch, ev, confirmed = true)
-        else showMessage(getString(R.string.player_bg_started, ch.name))
+        else if (replaced == null || !prefs.bgReplaceMsg) showMessage(getString(R.string.player_bg_started, ch.name))
+        if (replaced != null && prefs.bgReplaceMsg) showMessage(getString(R.string.player_bg_replaced, replaced))
     }
 
     /** Bieżąca audycja: zapisane EPG, a gdy go brak — dziennik z EIT strumienia (kanału w tle albo oglądanego). */
