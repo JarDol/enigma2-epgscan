@@ -60,6 +60,8 @@ class SettingsActivity : Activity() {
     private var sleepTestMode = SleepTestMode.ADMIN
     private var philipsSleepTest: PhilipsSleepTest? = null
     private var philipsBusy = false
+    private var philipsPairingServer: PhilipsPairingServer? = null
+    private var philipsPairingDialog: Dialog? = null
     private var sleepPermissionPending = false
     private val adapter = Adapter()
     private lateinit var items: List<Item>
@@ -616,6 +618,7 @@ class SettingsActivity : Activity() {
     }
 
     override fun onDestroy() {
+        stopPhilipsPairing()
         discoveryThread?.interrupt()
         super.onDestroy()
     }
@@ -740,7 +743,7 @@ class SettingsActivity : Activity() {
     private fun showPhilipsSleepTest() {
         if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty()) { toast(getString(R.string.sleep_test_recording)); return }
         if (philipsBusy) { toast(getString(R.string.sleep_philips_busy)); return }
-        val actions = mutableListOf(TvDialog.Btn(getString(R.string.sleep_philips_pair)) { enterPhilipsAddress() })
+        val actions = mutableListOf(TvDialog.Btn(getString(R.string.sleep_philips_pair)) { startPhilipsPairing() })
         if (philipsSleepTest != null) actions += TvDialog.Btn(getString(R.string.sleep_test_start)) {
             if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty()) toast(getString(R.string.sleep_test_recording))
             else startSleepCountdown(SleepTestMode.PHILIPS)
@@ -748,46 +751,60 @@ class SettingsActivity : Activity() {
         TvDialog.confirm(this, getString(R.string.sleep_philips_title), getString(R.string.sleep_philips_explain), actions)
     }
 
-    private fun enterPhilipsAddress() {
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setSingleLine(true)
-            textSize = 22f
-            try { setText(PhilipsSleepTest.deviceAddress()) } catch (e: java.net.SocketException) {
-                AppLog.i("Philips sleep test: cannot determine local address: ${e.javaClass.simpleName}")
-            }
+    private fun startPhilipsPairing() {
+        stopPhilipsPairing()
+        philipsSleepTest = null
+        val address = try { PhilipsSleepTest.deviceAddress() } catch (e: java.net.SocketException) {
+            AppLog.i("Philips pairing: cannot determine local address: ${e.javaClass.simpleName}")
+            ""
         }
-        TvDialog.input(this, getString(R.string.sleep_philips_address), getString(R.string.sleep_philips_address_hint), input,
-            getString(R.string.sleep_philips_pair)) {
-            val host = input.text.toString().trim()
-            if (!PhilipsSleepTest.isLocalAddress(host)) {
-                toast(getString(R.string.sleep_philips_invalid_address))
-            } else {
-                philipsSleepTest = null
-                val client = PhilipsSleepTest(host)
-                runPhilipsOperation({ client.requestPin() }) { enterPhilipsPin(client) }
-            }
+        if (address.isEmpty()) { toast(getString(R.string.sleep_philips_no_network)); return }
+        val client = PhilipsSleepTest("127.0.0.1")
+        val texts = PhilipsPairingServer.Texts(
+            getString(R.string.sleep_philips_title), getString(R.string.sleep_philips_show_pin),
+            getString(R.string.sleep_philips_pin_hint), getString(R.string.sleep_philips_submit),
+            getString(R.string.sleep_philips_retry), getString(R.string.sleep_philips_failed),
+            getString(R.string.sleep_philips_paired))
+        lateinit var server: PhilipsPairingServer
+        try {
+            server = PhilipsPairingServer(address, client, texts, onPaired = {
+                ui.post {
+                    if (philipsPairingServer === server && !isFinishing && !isDestroyed) {
+                        philipsPairingServer = null
+                        philipsPairingDialog?.dismiss()
+                        philipsPairingDialog = null
+                        philipsSleepTest = client
+                        refresh()
+                        toast(getString(R.string.sleep_philips_paired))
+                        showPhilipsSleepTest()
+                    }
+                }
+            }, onFinished = { success ->
+                if (!success) ui.post {
+                    if (philipsPairingServer === server && !isFinishing && !isDestroyed) {
+                        stopPhilipsPairing()
+                        toast(getString(R.string.sleep_philips_expired))
+                    }
+                }
+            })
+        } catch (e: java.io.IOException) {
+            AppLog.i("Philips pairing server failed: ${e.javaClass.simpleName}")
+            toast(getString(R.string.sleep_philips_no_network))
+            return
         }
+        philipsPairingServer = server
+        philipsPairingDialog = TvDialog.confirm(this, getString(R.string.sleep_philips_title),
+            getString(R.string.sleep_philips_browser_instructions, server.url),
+            listOf(TvDialog.Btn(getString(R.string.dialog_cancel)) { stopPhilipsPairing() }),
+            onBack = { stopPhilipsPairing() }, timeoutSec = 0)
+        server.start()
     }
 
-    private fun enterPhilipsPin(client: PhilipsSleepTest) {
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            setSingleLine(true)
-            textSize = 22f
-        }
-        TvDialog.input(this, getString(R.string.sleep_philips_pin), getString(R.string.sleep_philips_pin_hint), input) {
-            val pin = input.text.toString().trim()
-            if (!pin.matches(Regex("[0-9]{4,8}"))) {
-                toast(getString(R.string.sleep_philips_invalid_pin))
-                enterPhilipsPin(client)
-            } else runPhilipsOperation({ client.confirmPin(pin) }) {
-                philipsSleepTest = client
-                refresh()
-                toast(getString(R.string.sleep_philips_paired))
-                showPhilipsSleepTest()
-            }
-        }
+    private fun stopPhilipsPairing() {
+        philipsPairingServer?.stop()
+        philipsPairingServer = null
+        philipsPairingDialog?.dismiss()
+        philipsPairingDialog = null
     }
 
     private fun runPhilipsOperation(operation: () -> Unit, onSuccess: () -> Unit) {
