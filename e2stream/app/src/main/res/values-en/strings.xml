@@ -200,6 +200,13 @@
     <string name="player_bg_replaced">Replaced buffer for channel %1$s.</string>
     <string name="player_bg_start_action">Buffer START</string>
     <string name="sleep_test_title">Device sleep test (beta)</string>
+    <string name="sleep_accessibility_title">Accessibility sleep test (beta)</string>
+    <string name="sleep_accessibility_service_label">E2Stream — sleep test</string>
+    <string name="sleep_accessibility_service_description">Tests screen locking on request. The service does not read screen content or record events.</string>
+    <string name="sleep_accessibility_settings">Accessibility settings</string>
+    <string name="sleep_accessibility_not_connected">Enable the E2Stream service in accessibility settings</string>
+    <string name="sleep_accessibility_explain">Enable “E2Stream — sleep test” in accessibility settings, then return here and start the test. After 10 seconds the app will ask the system to lock the screen. This does not guarantee TV standby. Android will show an accessibility permission warning; the service does not read screen content or record events. You can disable it in the same settings after the test.</string>
+    <string name="sleep_accessibility_failed">The system rejected the screen lock attempt.</string>
     <string name="sleep_device_title">Sleep device after inactivity</string>
     <string name="sleep_timer_device_message">The app will close and try to sleep the device in %1$d s.\nBACK cancels the shutdown.</string>
     <string name="timed_shutdown_title">Close and sleep in…</string>

@@ -201,6 +201,13 @@
     <string name="player_bg_replaced">Zastąpiono bufor kanału %1$s.</string>
     <string name="player_bg_start_action">Bufor START</string>
     <string name="sleep_test_title">Test uśpienia urządzenia (beta)</string>
+    <string name="sleep_accessibility_title">Test uśpienia przez dostępność (beta)</string>
+    <string name="sleep_accessibility_service_label">E2Stream — test uśpienia</string>
+    <string name="sleep_accessibility_service_description">Test blokady ekranu na żądanie użytkownika. Usługa nie odczytuje zawartości ekranów ani nie zapisuje zdarzeń.</string>
+    <string name="sleep_accessibility_settings">Ustawienia dostępności</string>
+    <string name="sleep_accessibility_not_connected">Włącz usługę E2Stream w ustawieniach dostępności</string>
+    <string name="sleep_accessibility_explain">W ustawieniach dostępności włącz usługę „E2Stream — test uśpienia”, a następnie wróć tutaj i uruchom test. Po 10 sekundach aplikacja poprosi system o blokadę ekranu. Nie gwarantuje to czuwania telewizora. Android wyświetli ostrzeżenie o uprawnieniach dostępności; usługa nie odczytuje zawartości ekranów ani nie zapisuje zdarzeń. Po teście możesz ją wyłączyć w tych samych ustawieniach.</string>
+    <string name="sleep_accessibility_failed">System odrzucił próbę zablokowania ekranu.</string>
     <string name="sleep_device_title">Uśpij urządzenie po bezczynności</string>
     <string name="sleep_timer_device_message">Aplikacja zamknie się i spróbuje uśpić urządzenie za %1$d s.\nKlawisz WSTECZ anuluje wyłączenie.</string>
     <string name="timed_shutdown_title">Zamknij i wyłącz za…</string>

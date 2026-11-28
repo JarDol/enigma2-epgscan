@@ -88,6 +88,7 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   Po 10-sekundowym odliczaniu próbuje zablokować i wygasić ekran; WSTECZ anuluje. Test jest niedostępny
   podczas nagrywania, nie zmienia timera nieaktywności i nie gwarantuje pełnego czuwania ani HDMI-CEC.
   W tym samym menu można cofnąć zgodę administratora, co należy zrobić przed odinstalowaniem aplikacji.
+* Tylko beta: „Test uśpienia przez dostępność” wymaga ręcznego włączenia usługi „E2Stream — test uśpienia” w ustawieniach dostępności Androida. Usługa nie odczytuje zawartości ekranów ani nie zapisuje zdarzeń. Po odliczaniu prosi system o blokadę ekranu; nie gwarantuje to czuwania. Można ją wyłączyć w ustawieniach dostępności. Test nie zmienia działania timerów.
 * Domyślne mapowanie OK i strzałek można zmieniać osobno z paskiem kanału i bez niego.
 * Przegląd timerów nagrań dekodera z usuwaniem oraz usuwanie plików nagrań z menu długiego OK.
 * Historia przełączeń z konfigurowalnym czasem przechowywania; długie OK na zrealizowanej pozycji otwiera szczegóły z potwierdzanym usuwaniem. Jeśli nagranie z historii zostało już skasowane, szczegóły pozwalają usunąć nieaktualny wpis.

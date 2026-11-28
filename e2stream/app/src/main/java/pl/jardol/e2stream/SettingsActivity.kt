@@ -55,6 +55,7 @@ class SettingsActivity : Activity() {
     private var overlayPermissionAsked = false
     private var sleepTestDialog: Dialog? = null
     private var sleepTestDeadline = 0L
+    private var sleepTestUsesAccessibility = false
     private var sleepPermissionPending = false
     private val adapter = Adapter()
     private lateinit var items: List<Item>
@@ -244,7 +245,9 @@ class SettingsActivity : Activity() {
         }) { showSleepDeviceSettings() },
         *(if (BuildConfig.BETA) arrayOf<Item>(Item.Action(getString(R.string.sleep_test_title), {
             getString(if (sleepAdminActive()) R.string.sleep_test_status_ready else R.string.sleep_test_status_permission)
-        }) { showSleepTest() }) else emptyArray()),
+        }) { showSleepTest() }, Item.Action(getString(R.string.sleep_accessibility_title), {
+            getString(if (SleepAccessibilityTestService.isConnected()) R.string.sleep_test_status_ready else R.string.sleep_accessibility_not_connected)
+        }) { showSleepAccessibilityTest() }) else emptyArray()),
         Item.Toggle(getString(R.string.setting_resume_last_channel_on_startup), { p.resumeLast }, { p.resumeLast = it }),
         Item.Action(getString(R.string.setting_switch_to_channel_on_startup), {
             if (p.resumeLast) getString(R.string.settings_start_disabled) else p.startChannelName.ifBlank { getString(R.string.settings_first_channel) }
@@ -711,6 +714,23 @@ class SettingsActivity : Activity() {
         TvDialog.confirm(this, getString(R.string.sleep_test_title), getString(R.string.sleep_test_ready), actions)
     }
 
+    private fun showSleepAccessibilityTest() {
+        if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty()) { toast(getString(R.string.sleep_test_recording)); return }
+        val actions = mutableListOf(TvDialog.Btn(getString(R.string.sleep_accessibility_settings)) {
+            try {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            } catch (e: ActivityNotFoundException) {
+                toast(getString(R.string.sleep_test_permission_failed, e.message ?: e.toString()))
+            } catch (e: SecurityException) {
+                toast(getString(R.string.sleep_test_permission_failed, e.message ?: e.toString()))
+            }
+        })
+        if (SleepAccessibilityTestService.isConnected()) {
+            actions += TvDialog.Btn(getString(R.string.sleep_test_start)) { startSleepAccessibilityTest() }
+        }
+        TvDialog.confirm(this, getString(R.string.sleep_accessibility_title), getString(R.string.sleep_accessibility_explain), actions)
+    }
+
     private val sleepTestTick = object : Runnable {
         override fun run() {
             val dlg = sleepTestDialog?.takeIf { it.isShowing } ?: return
@@ -723,7 +743,22 @@ class SettingsActivity : Activity() {
             sleepTestDialog = null
             dlg.dismiss()
             when {
-                AppState.recording -> toast(getString(R.string.sleep_test_recording))
+                AppState.recording || LocalRecordings.activeDirs.isNotEmpty() -> toast(getString(R.string.sleep_test_recording))
+                sleepTestUsesAccessibility -> {
+                    try {
+                        when (SleepAccessibilityTestService.lockScreen()) {
+                            null -> toast(getString(R.string.sleep_accessibility_not_connected))
+                            true -> AppLog.i("test uśpienia: system przyjął akcję dostępności LOCK_SCREEN")
+                            false -> {
+                                AppLog.i("test uśpienia: system odrzucił akcję dostępności LOCK_SCREEN")
+                                toast(getString(R.string.sleep_accessibility_failed))
+                            }
+                        }
+                    } catch (e: SecurityException) {
+                        AppLog.i("test uśpienia przez dostępność: błąd $e")
+                        toast(getString(R.string.sleep_test_error, e.message ?: e.toString()))
+                    }
+                }
                 !sleepAdminActive() -> toast(getString(R.string.sleep_test_permission_missing))
                 else -> try {
                     AppLog.i("test uśpienia: wywołuję DevicePolicyManager.lockNow()")
@@ -737,11 +772,22 @@ class SettingsActivity : Activity() {
     }
 
     private fun startSleepTest() {
-        if (AppState.recording) { toast(getString(R.string.sleep_test_recording)); return }
+        if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty()) { toast(getString(R.string.sleep_test_recording)); return }
         if (!sleepAdminActive()) { toast(getString(R.string.sleep_test_permission_missing)); return }
+        startSleepCountdown(false)
+    }
+
+    private fun startSleepAccessibilityTest() {
+        if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty()) { toast(getString(R.string.sleep_test_recording)); return }
+        if (!SleepAccessibilityTestService.isConnected()) { toast(getString(R.string.sleep_accessibility_not_connected)); return }
+        startSleepCountdown(true)
+    }
+
+    private fun startSleepCountdown(accessibility: Boolean) {
         cancelSleepTest()
+        sleepTestUsesAccessibility = accessibility
         sleepTestDeadline = SystemClock.elapsedRealtime() + 10_000
-        sleepTestDialog = TvDialog.confirm(this, getString(R.string.sleep_test_title),
+        sleepTestDialog = TvDialog.confirm(this, getString(if (accessibility) R.string.sleep_accessibility_title else R.string.sleep_test_title),
             getString(R.string.sleep_test_countdown, 10),
             listOf(TvDialog.Btn(getString(R.string.dialog_cancel)) { cancelSleepTest() }),
             onBack = { cancelSleepTest() }, timeoutSec = 0)
