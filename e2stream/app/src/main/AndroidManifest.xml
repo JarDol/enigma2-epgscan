@@ -56,6 +56,16 @@
             android:exported="false" />
 
         <receiver
+            android:name=".SleepTestAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/sleep_test_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".ZapBootReceiver"
             android:enabled="true"
             android:exported="true">

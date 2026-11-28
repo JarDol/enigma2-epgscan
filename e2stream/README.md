@@ -82,6 +82,10 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   Po udanym działaniu z wyników wyszukiwania lista wyników zamyka się, a komunikat pojawia się na pasku odtwarzacza.
 * Okna akcji i potwierdzenia domyślnie zamykają się po 30 sekundach; okna informacyjne po 15 sekundach. Czas każdego rodzaju ustawia się osobno w ustawieniach Ogólne (0 = bez zamykania); okna informacyjne można też wyłączyć.
 * Menu podręczne z konfigurowalną widocznością i kolejnością pozycji; Ustawienia są zawsze dostępne.
+* Tylko beta: Ustawienia → Ogólne → „Test uśpienia urządzenia” wymaga zgody administratora urządzenia.
+  Po 10-sekundowym odliczaniu próbuje zablokować i wygasić ekran; WSTECZ anuluje. Test jest niedostępny
+  podczas nagrywania, nie zmienia timera nieaktywności i nie gwarantuje pełnego czuwania ani HDMI-CEC.
+  W tym samym menu można cofnąć zgodę administratora, co należy zrobić przed odinstalowaniem aplikacji.
 * Domyślne mapowanie OK i strzałek można zmieniać osobno z paskiem kanału i bez niego.
 * Przegląd timerów nagrań dekodera z usuwaniem oraz usuwanie plików nagrań z menu długiego OK.
 * Historia przełączeń z konfigurowalnym czasem przechowywania; długie OK na zrealizowanej pozycji otwiera szczegóły z potwierdzanym usuwaniem. Jeśli nagranie z historii zostało już skasowane, szczegóły pozwalają usunąć nieaktualny wpis.

@@ -2,7 +2,11 @@ package pl.jardol.e2stream
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
+import android.app.admin.DevicePolicyManager
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -10,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.InputType
 import android.view.KeyEvent
@@ -48,6 +53,8 @@ class SettingsActivity : Activity() {
     private var wakePermissionFlow: String? = null
     private var fullScreenPermissionAsked = false
     private var overlayPermissionAsked = false
+    private var sleepTestDialog: Dialog? = null
+    private var sleepTestDeadline = 0L
     private val adapter = Adapter()
     private lateinit var items: List<Item>
     private lateinit var store: EpgStore
@@ -231,6 +238,9 @@ class SettingsActivity : Activity() {
                 p.sleepHours = o[w]; markChanged("wyłączenie po bezczynności = ${o[w]} h"); items = buildItems(); refresh()
             }
         },
+        *(if (BuildConfig.BETA || sleepAdminActive()) arrayOf<Item>(Item.Action(getString(R.string.sleep_test_title), {
+            getString(if (sleepAdminActive()) R.string.sleep_test_status_ready else R.string.sleep_test_status_permission)
+        }) { showSleepTest() }) else emptyArray()),
         Item.Toggle(getString(R.string.setting_resume_last_channel_on_startup), { p.resumeLast }, { p.resumeLast = it }),
         Item.Action(getString(R.string.setting_switch_to_channel_on_startup), {
             if (p.resumeLast) getString(R.string.settings_start_disabled) else p.startChannelName.ifBlank { getString(R.string.settings_first_channel) }
@@ -474,6 +484,7 @@ class SettingsActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (BuildConfig.BETA && ::items.isInitialized) refresh()
         ui.removeCallbacks(relock)
         ui.postDelayed(relock, 2000)
         when (wakePermissionFlow) {
@@ -573,6 +584,7 @@ class SettingsActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        cancelSleepTest()
         ui.removeCallbacks(relock)
         if (changed) { p.bump(); changed = false }
         SyncManager.syncAsync() // zmiany od razu na dekoder
@@ -602,6 +614,84 @@ class SettingsActivity : Activity() {
     })
 
     private fun refresh() = adapter.notifyDataSetChanged()
+
+    private fun sleepAdmin() = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+    private fun sleepAdminComponent() = ComponentName(this, SleepTestAdminReceiver::class.java)
+    private fun sleepAdminActive() = sleepAdmin().isAdminActive(sleepAdminComponent())
+
+    private fun showSleepTest() {
+        if (AppState.recording) { toast(getString(R.string.sleep_test_recording)); return }
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN)) {
+            toast(getString(R.string.sleep_test_unsupported)); return
+        }
+        if (!sleepAdminActive()) {
+            TvDialog.confirm(this, getString(R.string.sleep_test_title), getString(R.string.sleep_test_explain),
+                listOf(TvDialog.Btn(getString(R.string.sleep_test_permission)) {
+                    try {
+                        startActivity(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                            .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, sleepAdminComponent())
+                            .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, getString(R.string.sleep_test_permission_reason)))
+                    } catch (e: ActivityNotFoundException) {
+                        toast(getString(R.string.sleep_test_permission_failed, e.message ?: e.toString()))
+                    } catch (e: SecurityException) {
+                        toast(getString(R.string.sleep_test_permission_failed, e.message ?: e.toString()))
+                    }
+                }))
+            return
+        }
+        val actions = mutableListOf<TvDialog.Btn>()
+        if (BuildConfig.BETA) actions += TvDialog.Btn(getString(R.string.sleep_test_start)) { startSleepTest() }
+        actions += TvDialog.Btn(getString(R.string.sleep_test_revoke)) {
+                    sleepAdmin().removeActiveAdmin(sleepAdminComponent())
+                    items = buildItems()
+                    refresh()
+                    toast(getString(R.string.sleep_test_revoked))
+                }
+        TvDialog.confirm(this, getString(R.string.sleep_test_title), getString(R.string.sleep_test_ready), actions)
+    }
+
+    private val sleepTestTick = object : Runnable {
+        override fun run() {
+            val dlg = sleepTestDialog?.takeIf { it.isShowing } ?: return
+            val left = sleepTestDeadline - SystemClock.elapsedRealtime()
+            if (left > 0) {
+                TvDialog.setMessage(dlg, getString(R.string.sleep_test_countdown, ((left + 999) / 1000).toInt()))
+                ui.postDelayed(this, minOf(left, 1000))
+                return
+            }
+            sleepTestDialog = null
+            dlg.dismiss()
+            when {
+                AppState.recording -> toast(getString(R.string.sleep_test_recording))
+                !sleepAdminActive() -> toast(getString(R.string.sleep_test_permission_missing))
+                else -> try {
+                    AppLog.i("test uśpienia: wywołuję DevicePolicyManager.lockNow()")
+                    sleepAdmin().lockNow()
+                } catch (e: SecurityException) {
+                    AppLog.i("test uśpienia: błąd $e")
+                    toast(getString(R.string.sleep_test_error, e.message ?: e.toString()))
+                }
+            }
+        }
+    }
+
+    private fun startSleepTest() {
+        if (AppState.recording) { toast(getString(R.string.sleep_test_recording)); return }
+        if (!sleepAdminActive()) { toast(getString(R.string.sleep_test_permission_missing)); return }
+        cancelSleepTest()
+        sleepTestDeadline = SystemClock.elapsedRealtime() + 10_000
+        sleepTestDialog = TvDialog.confirm(this, getString(R.string.sleep_test_title),
+            getString(R.string.sleep_test_countdown, 10),
+            listOf(TvDialog.Btn(getString(R.string.dialog_cancel)) { cancelSleepTest() }),
+            onBack = { cancelSleepTest() }, timeoutSec = 0)
+        ui.post(sleepTestTick)
+    }
+
+    private fun cancelSleepTest() {
+        ui.removeCallbacks(sleepTestTick)
+        sleepTestDialog?.dismiss()
+        sleepTestDialog = null
+    }
 
     private fun updateModeLabel(mode: String) = getString(when (mode) {
         "notify" -> R.string.update_mode_notify
