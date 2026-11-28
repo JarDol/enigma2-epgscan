@@ -11,8 +11,8 @@ android {
         applicationId = "pl.jardol.e2stream"
         minSdk = 23
         targetSdk = 35
-        versionCode = 291
-        versionName = "0.18.107-beta.4"
+        versionCode = 292
+        versionName = "0.18.107-beta.5"
         buildConfigField("boolean", "WAKE_DIAGNOSTICS", versionName!!.contains("-beta.").toString())
         // opcje testowe (np. Test EIT) tylko w betach
         buildConfigField("boolean", "BETA", versionName!!.contains("-beta.").toString())
@@ -54,6 +54,8 @@ android {
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // Robolectric's Conscrypt shadow accesses InetAddress during TLS handshakes on Java 17.
+        unitTests.all { it.jvmArgs("--add-opens=java.base/java.net=ALL-UNNAMED") }
     }
     lint {
         abortOnError = false

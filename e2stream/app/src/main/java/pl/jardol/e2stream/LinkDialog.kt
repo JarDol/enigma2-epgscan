@@ -5,9 +5,11 @@ import android.app.Dialog
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -26,21 +28,45 @@ internal object LinkDialog {
     fun show(activity: Activity, title: String, message: String, url: String, onCancel: () -> Unit): Dialog =
         TvDialog.panel(activity, title, null,
             chips = listOf(TvDialog.Btn(activity.getString(R.string.dialog_cancel)) { onCancel() }),
-            onBack = onCancel, focusChip = true) { context, _ ->
+            widthFrac = 0.8f, onBack = onCancel, focusChip = true) { context, _ ->
             val density = context.resources.displayMetrics.density
-            val size = (200 * density).toInt().coerceAtMost((activity.resources.displayMetrics.heightPixels * 0.35f).toInt())
-            LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                addView(TextView(context).apply {
+            val maxSize = (200 * density).toInt().coerceAtMost((activity.resources.displayMetrics.heightPixels * 0.35f).toInt())
+            val image = ImageView(context).apply {
+                tag = "link_qr"
+                contentDescription = url
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+            object : LinearLayout(context) {
+                private var lastSize = 0
+                override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                    val availableWidth = View.MeasureSpec.getSize(widthMeasureSpec)
+                    val heightMode = View.MeasureSpec.getMode(heightMeasureSpec)
+                    val availableHeight = if (heightMode == View.MeasureSpec.UNSPECIFIED) maxSize
+                        else View.MeasureSpec.getSize(heightMeasureSpec)
+                    val size = minOf(maxSize, availableHeight, (availableWidth * 0.38f).toInt()).coerceAtLeast(0)
+                    if (size != lastSize && size > 0) {
+                        image.setImageBitmap(bitmap(url, size))
+                        lastSize = size
+                    }
+                    image.layoutParams = (image.layoutParams as LayoutParams).apply { width = size; height = size }
+                    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+                }
+            }.apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val text = TextView(context).apply {
                     text = message
                     textSize = 17f
                     setTextColor(Color.WHITE)
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-                addView(ImageView(context).apply {
-                    setImageBitmap(bitmap(url, size))
-                    contentDescription = url
-                }, LinearLayout.LayoutParams(size, size).apply { topMargin = (12 * density).toInt() })
+                }
+                addView(ScrollView(context).apply {
+                    tag = "link_message"
+                    isFocusable = true
+                    addView(text)
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+                addView(image, LinearLayout.LayoutParams(maxSize, maxSize).apply {
+                    marginStart = (12 * density).toInt()
+                })
             }
         }
 }

@@ -25,7 +25,7 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509TrustManager
 
 class AndroidTvRemoteProtocolTest {
-    private fun servers(): Pair<SSLServerSocket, SSLServerSocket> {
+    internal fun servers(): Pair<SSLServerSocket, SSLServerSocket> {
         val provider = BouncyCastleProvider()
         val key = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
         val name = X500Name("CN=Fake Android TV")
@@ -51,7 +51,7 @@ class AndroidTvRemoteProtocolTest {
         return create() to create()
     }
 
-    private fun pin(client: X509Certificate, server: X509Certificate): String {
+    internal fun pin(client: X509Certificate, server: X509Certificate): String {
         val c = client.publicKey as RSAPublicKey
         val s = server.publicKey as RSAPublicKey
         val digest = MessageDigest.getInstance("SHA-256")
@@ -66,6 +66,28 @@ class AndroidTvRemoteProtocolTest {
     @Test fun pairsAndSendsPowerWhenDeviceReportsOn() = runSession(on = true, blocked = false)
     @Test fun doesNotSendPowerWhenDeviceReportsOff() = runSession(on = false, blocked = false)
     @Test fun recordingGuardPreventsPower() = runSession(on = true, blocked = true)
+
+    @Test fun cancellationClosesSocketDuringTlsHandshake() {
+        val server = java.net.ServerSocket(0)
+        val accepted = ArrayBlockingQueue<java.net.Socket>(1)
+        val executor = Executors.newFixedThreadPool(2)
+        val client = AndroidTvRemoteTest("127.0.0.1", server.localPort)
+        try {
+            executor.submit { accepted.put(server.accept()) }
+            val request = executor.submit { client.requestPin() }
+            val socket = accepted.poll(5, TimeUnit.SECONDS) ?: error("No pairing connection")
+            client.cancel()
+            try {
+                request.get(5, TimeUnit.SECONDS)
+                fail("Cancelled pairing must not complete")
+            } catch (_: java.util.concurrent.ExecutionException) { }
+            socket.close()
+        } finally {
+            client.cancel()
+            server.close()
+            executor.shutdownNow()
+        }
+    }
 
     private fun runSession(on: Boolean, blocked: Boolean) {
         val (pairServer, remoteServer) = servers()

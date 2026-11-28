@@ -53,11 +53,13 @@ internal class AndroidTvRemoteTest(
         val signer = JcaContentSignerBuilder("SHA256withRSA").setProvider(provider).build(keyPair.private)
         JcaX509CertificateConverter().setProvider(provider).getCertificate(builder.build(signer))
     }
+    private val pairingLock = Any()
     @Volatile private var pairingSocket: SSLSocket? = null
+    private var pairingCancelled = false
     @Volatile private var peerCertificate: X509Certificate? = null
     @Volatile private var paired = false
 
-    private fun connect(port: Int, expected: X509Certificate?): SSLSocket {
+    private fun connect(port: Int, expected: X509Certificate?, pairing: Boolean = false): SSLSocket {
         val keys = object : X509KeyManager {
             override fun getClientAliases(keyType: String?, issuers: Array<Principal>?): Array<String>? =
                 if (keyType == "RSA") arrayOf("e2stream") else null
@@ -82,11 +84,18 @@ internal class AndroidTvRemoteTest(
         val ctx = SSLContext.getInstance("TLS").apply { init(arrayOf(keys), arrayOf(trust), SecureRandom()) }
         val socket = ctx.socketFactory.createSocket() as SSLSocket
         try {
+            if (pairing) synchronized(pairingLock) {
+                if (pairingCancelled) throw IOException("Pairing cancelled")
+                pairingSocket = socket
+            }
             socket.connect(InetSocketAddress(host, port), 5000)
             socket.soTimeout = 10000
             socket.startHandshake()
             return socket
         } catch (e: Exception) {
+            if (pairing) synchronized(pairingLock) {
+                if (pairingSocket === socket) pairingSocket = null
+            }
             socket.close()
             throw e
         }
@@ -95,8 +104,7 @@ internal class AndroidTvRemoteTest(
     override fun requestPin() {
         close()
         paired = false
-        val socket = connect(pairPort, null)
-        pairingSocket = socket
+        val socket = connect(pairPort, null, pairing = true)
         try {
             peerCertificate = socket.session.peerCertificates.first() as X509Certificate
             val input = socket.inputStream
@@ -169,8 +177,21 @@ internal class AndroidTvRemoteTest(
     }
 
     override fun close() {
-        val socket = pairingSocket
-        pairingSocket = null
+        val socket = synchronized(pairingLock) {
+            val current = pairingSocket
+            pairingSocket = null
+            current
+        }
+        socket?.close()
+    }
+
+    override fun cancel() {
+        val socket = synchronized(pairingLock) {
+            pairingCancelled = true
+            val current = pairingSocket
+            pairingSocket = null
+            current
+        }
         socket?.close()
     }
 

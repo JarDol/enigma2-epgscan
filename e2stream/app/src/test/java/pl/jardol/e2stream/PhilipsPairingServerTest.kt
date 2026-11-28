@@ -11,6 +11,7 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executors
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
@@ -89,5 +90,49 @@ class PhilipsPairingServerTest {
         assertTrue(finished.await(5, TimeUnit.SECONDS))
         assertFalse(paired)
         assertEquals(0, tv.requests)
+    }
+
+    @Test fun cancelDoesNotBlockCallerAndClosesActiveTargetOffThread() {
+        val requested = CountDownLatch(1)
+        val cancelled = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        val callingThread = Thread.currentThread()
+        var closeThread: Thread? = null
+        var paired = false
+        val target = object : PhilipsPairingServer.PairingTarget {
+            override val pinPattern = Regex("[0-9]{4}")
+            override fun requestPin() {
+                requested.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            }
+            override fun confirmPin(pin: String) = Unit
+            override fun cancel() {
+                closeThread = Thread.currentThread()
+                cancelled.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            }
+        }
+        val server = PhilipsPairingServer("127.0.0.1", target, texts,
+            onPaired = { paired = true }, onFinished = { finished.countDown() })
+        val executor = Executors.newSingleThreadExecutor()
+        server.start()
+        try {
+            val request = executor.submit {
+                try { request(server.url + "/start", "") } catch (_: java.io.IOException) { }
+            }
+            assertTrue(requested.await(5, TimeUnit.SECONDS))
+            server.stop()
+            assertTrue(cancelled.await(5, TimeUnit.SECONDS))
+            assertNotEquals(callingThread, closeThread)
+            release.countDown()
+            request.get(5, TimeUnit.SECONDS)
+            assertTrue(finished.await(5, TimeUnit.SECONDS))
+            assertFalse(paired)
+        } finally {
+            release.countDown()
+            server.stop()
+            executor.shutdownNow()
+        }
     }
 }

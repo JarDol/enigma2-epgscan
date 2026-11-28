@@ -13,6 +13,8 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class PhilipsPairingServer(
@@ -28,6 +30,7 @@ internal class PhilipsPairingServer(
         fun requestPin()
         fun confirmPin(pin: String)
         fun close() {}
+        fun cancel() = close()
     }
 
     constructor(address: String, tv: PhilipsSleepTest, texts: Texts, onPaired: () -> Unit,
@@ -47,11 +50,15 @@ internal class PhilipsPairingServer(
     private val token = ByteArray(9).also { SecureRandom().nextBytes(it) }
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     private val stopped = AtomicBoolean(false)
+    private val stopSignal = CountDownLatch(1)
     @Volatile private var activeClient: Socket? = null
     private var pinRequested = false
     val url = "http://$address:${socket.localPort}/$token"
 
     fun start() {
+        Thread({
+            if (!stopSignal.await(180, TimeUnit.SECONDS)) stop()
+        }, "pairing-expiry").apply { isDaemon = true; start() }
         Thread {
             val expires = System.nanoTime() + 180_000_000_000L
             var completed = false
@@ -74,6 +81,7 @@ internal class PhilipsPairingServer(
             } catch (e: IOException) {
                 if (!stopped.get()) AppLog.i("Philips pairing server failed: ${e.javaClass.simpleName}")
             } finally {
+                completed = completed && !stopped.get()
                 stop()
                 if (completed) onPaired()
                 onFinished(completed)
@@ -83,15 +91,18 @@ internal class PhilipsPairingServer(
 
     fun stop() {
         if (stopped.compareAndSet(false, true)) {
-            try { activeClient?.close() } catch (e: IOException) {
-                AppLog.i("Philips pairing page close failed: ${e.javaClass.simpleName}")
-            }
-            try { socket.close() } catch (e: IOException) {
-                AppLog.i("Philips pairing server close failed: ${e.javaClass.simpleName}")
-            }
-            try { tv.close() } catch (e: IOException) {
-                AppLog.i("Pairing target close failed: ${e.javaClass.simpleName}")
-            }
+            stopSignal.countDown()
+            Thread({
+                try { activeClient?.close() } catch (e: IOException) {
+                    AppLog.i("Philips pairing page close failed: ${e.javaClass.simpleName}")
+                }
+                try { socket.close() } catch (e: IOException) {
+                    AppLog.i("Philips pairing server close failed: ${e.javaClass.simpleName}")
+                }
+                try { tv.cancel() } catch (e: IOException) {
+                    AppLog.i("Pairing target close failed: ${e.javaClass.simpleName}")
+                }
+            }, "pairing-stop").start()
         }
     }
 
@@ -134,6 +145,7 @@ internal class PhilipsPairingServer(
         if (request[0] == "GET" && path == "/$token") {
             reply(client, 200, startPage()); return false
         }
+        if (stopped.get()) return false
         if (request[0] != "POST" || contentType != "application/x-www-form-urlencoded") {
             reply(client, 405, "Method not allowed"); return false
         }

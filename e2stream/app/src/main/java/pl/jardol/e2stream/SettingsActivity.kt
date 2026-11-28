@@ -63,7 +63,7 @@ class SettingsActivity : Activity() {
     private var philipsPairingServer: PhilipsPairingServer? = null
     private var philipsPairingDialog: Dialog? = null
     private var androidRemoteTest: AndroidTvRemoteTest? = null
-    private var androidRemoteServer: PhilipsPairingServer? = null
+    private var androidRemoteSession: AndroidRemotePairingSession? = null
     private var androidRemoteDialog: Dialog? = null
     private var androidRemoteGeneration = 0
     private var shareSession: LocalShareSession? = null
@@ -504,7 +504,13 @@ class SettingsActivity : Activity() {
             check(index >= 0) { "Brak ustawienia timeshiftu" }
             listView.setSelection(index)
         }
+        (lastNonConfigurationInstance as? AndroidRemotePairingSession)?.let {
+            androidRemoteSession = it
+            showAndroidRemotePairing(it)
+        }
     }
+
+    override fun onRetainNonConfigurationInstance(): Any? = androidRemoteSession
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("sleepPermissionPending", sleepPermissionPending)
@@ -627,7 +633,13 @@ class SettingsActivity : Activity() {
 
     override fun onDestroy() {
         stopPhilipsPairing()
-        stopAndroidRemotePairing()
+        if (isChangingConfigurations && androidRemoteSession != null) {
+            androidRemoteSession?.detach()
+            androidRemoteDialog?.dismiss()
+            androidRemoteDialog = null
+        } else {
+            stopAndroidRemotePairing()
+        }
         shareSession?.stop()
         discoveryThread?.interrupt()
         super.onDestroy()
@@ -879,46 +891,49 @@ class SettingsActivity : Activity() {
                     getString(R.string.sleep_remote_pin_hint), getString(R.string.sleep_philips_submit),
                     getString(R.string.sleep_philips_retry), getString(R.string.sleep_remote_failed),
                     getString(R.string.sleep_philips_paired))
-                lateinit var server: PhilipsPairingServer
+                val session: AndroidRemotePairingSession
                 try {
-                    server = PhilipsPairingServer(address, client, texts, onPaired = {
-                        ui.post {
-                            if (androidRemoteServer === server && !isFinishing && !isDestroyed) {
-                                androidRemoteServer = null
-                                androidRemoteDialog?.dismiss()
-                                androidRemoteDialog = null
-                                androidRemoteTest = client
-                                refresh()
-                                toast(getString(R.string.sleep_philips_paired))
-                                showAndroidRemoteTest()
-                            }
-                        }
-                    }, onFinished = { success ->
-                        if (!success) ui.post {
-                            if (androidRemoteServer === server && !isFinishing && !isDestroyed) {
-                                stopAndroidRemotePairing()
-                                toast(getString(R.string.sleep_philips_expired))
-                            }
-                        }
-                    })
+                    session = AndroidRemotePairingSession(address, client, texts)
                 } catch (e: java.io.IOException) {
                     client.close()
                     AppLog.i("Android TV Remote pairing server failed: ${e.javaClass.simpleName}")
                     toast(getString(R.string.sleep_remote_failed))
                     return@post
                 }
-                androidRemoteServer = server
-                androidRemoteDialog = LinkDialog.show(this, getString(R.string.sleep_remote_title),
-                    getString(R.string.sleep_philips_browser_instructions, server.url), server.url) { stopAndroidRemotePairing() }
-                server.start()
+                androidRemoteSession = session
+                showAndroidRemotePairing(session)
+                session.start()
             }
         }.start()
     }
 
+    private fun showAndroidRemotePairing(session: AndroidRemotePairingSession) {
+        androidRemoteDialog = LinkDialog.show(this, getString(R.string.sleep_remote_title),
+            getString(R.string.sleep_philips_browser_instructions, session.url), session.url) {
+            stopAndroidRemotePairing()
+        }
+        session.attach { success ->
+            if (androidRemoteSession === session && !isFinishing && !isDestroyed) {
+                androidRemoteSession = null
+                session.detach()
+                androidRemoteDialog?.dismiss()
+                androidRemoteDialog = null
+                if (success) {
+                    androidRemoteTest = session.client
+                    refresh()
+                    toast(getString(R.string.sleep_philips_paired))
+                    showAndroidRemoteTest()
+                } else {
+                    toast(getString(R.string.sleep_philips_expired))
+                }
+            }
+        }
+    }
+
     private fun stopAndroidRemotePairing() {
         androidRemoteGeneration++
-        androidRemoteServer?.stop()
-        androidRemoteServer = null
+        androidRemoteSession?.stop()
+        androidRemoteSession = null
         androidRemoteDialog?.dismiss()
         androidRemoteDialog = null
     }
