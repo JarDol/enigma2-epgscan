@@ -6,6 +6,9 @@
 | libVLC (org.videolan.android:libvlc-all) 3.6.5 | odtwarzacz (silnik „VLC”), w tym wbudowane FFmpeg | LGPL-2.1-or-later | https://code.videolan.org/videolan/vlc-android, https://code.videolan.org/videolan/vlc |
 | JLayer 1.0.1.4 (com.googlecode.soundlibs) | programowy dekoder dźwięku MPEG Layer I/II (MP2) | LGPL-2.1 | https://github.com/pdudits/soundlibs |
 | AndroidX Core | biblioteka pomocnicza Androida | Apache-2.0 | https://android.googlesource.com/platform/frameworks/support |
+| ZXing Core 3.5.3 | generowanie kodów QR | Apache-2.0 | https://github.com/zxing/zxing |
+| Protocol Buffers Java Lite 3.25.5 | protokół Android TV Remote | BSD-3-Clause | https://github.com/protocolbuffers/protobuf |
+| Spongy Castle 1.58.0.0 | certyfikat klienta Android TV Remote | MIT | https://github.com/rtyley/spongycastle |
 
 ## Zgodność
 

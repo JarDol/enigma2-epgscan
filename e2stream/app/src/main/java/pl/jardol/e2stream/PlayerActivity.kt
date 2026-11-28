@@ -699,6 +699,8 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        recordingShareSession?.stop()
+        recordingShareSession = null
         if (tsStorageReceiverRegistered) {
             unregisterReceiver(tsStorageReceiver)
             tsStorageReceiverRegistered = false
@@ -5217,15 +5219,49 @@ class PlayerActivity : Activity() {
         acts += getString(R.string.message_play) to { pickRecording(r) }
         if (LocalRecordings.isLocal(r.path)) {
             val dir = LocalRecordings.dirOf(r.path)
+            if (BuildConfig.BETA)
+                acts += getString(R.string.share_recording_action) to { shareLocalRecording(r) }
             if (RecordingExtract.available(dir).isNotEmpty())
                 acts += getString(R.string.player_rec_extract) to { showExtractPrograms(r) }
             if (!LocalRecordings.isSingleFile(dir))
                 acts += getString(R.string.player_localrec_convert) to { exportLocalRecording(r, convert = true) }
             acts += getString(R.string.player_localrec_export) to { exportLocalRecording(r, convert = false) }
         }
+
         acts += getString(R.string.message_delete) to { confirmDeleteRecording(r) }
         TvDialog.list(this, r.title, acts.map { TvDialog.Item(it.first) },
             hint = getString(R.string.epg_hint_actions), widthFrac = 0.45f) { selected -> acts[selected].second() }
+    }
+
+    private var recordingShareSession: LocalShareSession? = null
+
+    private fun shareLocalRecording(r: Recording) {
+        val dir = LocalRecordings.dirOf(r.path)
+        if (exportCancel != null || !activeRecordingDirs.add(dir)) {
+            showMessage(getString(R.string.player_rec_unavailable))
+            return
+        }
+        val parts = LocalRecordings.parts(dir)
+        if (parts.isEmpty() || parts.any { !it.isFile }) {
+            activeRecordingDirs.remove(dir)
+            showMessage(getString(R.string.player_rec_unavailable))
+            return
+        }
+        val entry = try { LocalShareServer.recording(LocalRecordings.exportFile(dir).name, parts) }
+        catch (e: IllegalArgumentException) {
+            activeRecordingDirs.remove(dir)
+            AppLog.i("local share: recording unavailable (${e.message})")
+            showMessage(getString(R.string.player_rec_unavailable))
+            return
+        }
+        recordingShareSession?.stop()
+        recordingShareSession = LocalShareSession.start(this, listOf(entry), R.string.share_recording_warning) {
+            activeRecordingDirs.remove(dir)
+        }
+        if (recordingShareSession == null) {
+            activeRecordingDirs.remove(dir)
+            showMessage(getString(R.string.share_failed))
+        }
     }
 
     private fun showExtractPrograms(r: Recording) {

@@ -93,10 +93,10 @@ object AppLog {
     }
 
     /** Zawartość logu (poprzedni + bieżący plik). */
-    fun snapshot(): ByteArray {
+    fun snapshot(markClean: Boolean = true): ByteArray {
         val f = file ?: return ByteArray(0)
         synchronized(lock) {
-            dirty = false
+            if (markClean) dirty = false
             val old = File(f.parentFile, "e2stream.1.log")
             val a = if (old.exists()) old.readBytes() else ByteArray(0)
             val b = if (f.exists()) f.readBytes() else ByteArray(0)

@@ -11,8 +11,8 @@ android {
         applicationId = "pl.jardol.e2stream"
         minSdk = 23
         targetSdk = 35
-        versionCode = 290
-        versionName = "0.18.107-beta.3"
+        versionCode = 291
+        versionName = "0.18.107-beta.4"
         buildConfigField("boolean", "WAKE_DIAGNOSTICS", versionName!!.contains("-beta.").toString())
         // opcje testowe (np. Test EIT) tylko w betach
         buildConfigField("boolean", "BETA", versionName!!.contains("-beta.").toString())
@@ -65,6 +65,9 @@ android {
 dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.protobuf:protobuf-javalite:3.25.5")
+    implementation("com.madgag.spongycastle:bcpkix-jdk15on:1.58.0.0")
     val media3 = "1.11.1"
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-ui:$media3")

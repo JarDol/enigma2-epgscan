@@ -17,11 +17,27 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 internal class PhilipsPairingServer(
     address: String,
-    private val tv: PhilipsSleepTest,
+    private val tv: PairingTarget,
     private val texts: Texts,
     private val onPaired: () -> Unit,
     private val onFinished: (Boolean) -> Unit
 ) {
+    interface PairingTarget {
+        val pinPattern: Regex
+        val inputMode: String get() = "text"
+        fun requestPin()
+        fun confirmPin(pin: String)
+        fun close() {}
+    }
+
+    constructor(address: String, tv: PhilipsSleepTest, texts: Texts, onPaired: () -> Unit,
+        onFinished: (Boolean) -> Unit) : this(address, object : PairingTarget {
+        override val pinPattern = Regex("[0-9]{4,8}")
+        override val inputMode = "numeric"
+        override fun requestPin() = tv.requestPin()
+        override fun confirmPin(pin: String) = tv.confirmPin(pin)
+    }, texts, onPaired, onFinished)
+
     data class Texts(
         val title: String, val start: String, val pinHint: String, val submit: String,
         val retry: String, val error: String, val paired: String
@@ -72,6 +88,9 @@ internal class PhilipsPairingServer(
             }
             try { socket.close() } catch (e: IOException) {
                 AppLog.i("Philips pairing server close failed: ${e.javaClass.simpleName}")
+            }
+            try { tv.close() } catch (e: IOException) {
+                AppLog.i("Pairing target close failed: ${e.javaClass.simpleName}")
             }
         }
     }
@@ -143,7 +162,7 @@ internal class PhilipsPairingServer(
                 if (parts.size == 2) URLDecoder.decode(parts[0], "UTF-8") to URLDecoder.decode(parts[1], "UTF-8") else null
             }.toMap()
             val pin = fields["pin"] ?: ""
-            if (!pin.matches(Regex("[0-9]{4,8}"))) {
+            if (!pin.matches(tv.pinPattern)) {
                 reply(client, 200, pinPage(texts.error)); return false
             }
             try {
@@ -167,7 +186,7 @@ internal class PhilipsPairingServer(
 
     private fun pinPage(error: String) = page(
         "<p>${escape(texts.pinHint)}</p><p>${escape(error)}</p><form method=\"post\" action=\"/$token/pin\">" +
-            "<input name=\"pin\" type=\"password\" inputmode=\"numeric\" pattern=\"[0-9]{4,8}\" autocomplete=\"off\" required>" +
+            "<input name=\"pin\" type=\"password\" inputmode=\"${tv.inputMode}\" autocomplete=\"off\" required>" +
             "<button>${escape(texts.submit)}</button></form>")
 
     private fun page(content: String) = "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +

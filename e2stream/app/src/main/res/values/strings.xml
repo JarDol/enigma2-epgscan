@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sleep_remote_title">Test uśpienia Android TV Remote</string>
+    <string name="sleep_remote_explain">Test korzysta z usługi Android TV Remote. Sparuj aplikację, a następnie uruchom test. Po zamknięciu ustawień wymagane będzie ponowne parowanie.</string>
+    <string name="sleep_remote_failed">Nie udało się połączyć z Android TV Remote lub wykonać polecenia.</string>
+    <string name="sleep_remote_pin_hint">Wpisz sześć znaków kodu z ekranu urządzenia.</string>
+    <string name="share_settings_action">Pobierz logi i kopię ustawień przez telefon</string>
+    <string name="share_recording_action">Pobierz nagranie na telefon</string>
+    <string name="share_title">Pobieranie w sieci lokalnej</string>
+    <string name="share_warning">Otwórz adres lub zeskanuj kod telefonem w tej samej sieci:\n%1$s\n\nDostęp jest tymczasowy. Połączenie HTTP nie jest szyfrowane — używaj tylko zaufanej sieci. Kopia ustawień może zawierać hasła i PIN; logi mogą zawierać dane prywatne.</string>
+    <string name="share_recording_warning">Otwórz adres lub zeskanuj kod telefonem w tej samej sieci:\n%1$s\n\nDostęp jest tymczasowy. Połączenie HTTP nie jest szyfrowane — używaj tylko zaufanej sieci. Pozostaw to okno otwarte podczas pobierania.</string>
+    <string name="share_failed">Nie udało się uruchomić udostępniania w sieci lokalnej.</string>
+    <string name="share_expired">Udostępnianie zostało zakończone.</string>
     <string name="app_name">E2Stream</string>
     <string name="channel_list_help">◀ ▶ bukiet   •   OK oglądaj   •   długie OK opis audycji</string>
     <string name="settings_help">▲▼ wybór  •  OK zmień  •  WSTECZ wyjście (zmiany zapisują się od razu)</string>

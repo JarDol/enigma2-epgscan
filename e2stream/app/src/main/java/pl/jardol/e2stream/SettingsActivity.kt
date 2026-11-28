@@ -55,13 +55,18 @@ class SettingsActivity : Activity() {
     private var overlayPermissionAsked = false
     private var sleepTestDialog: Dialog? = null
     private var sleepTestDeadline = 0L
-    private enum class SleepTestMode { ADMIN, ACCESSIBILITY, PHILIPS }
+    private enum class SleepTestMode { ADMIN, ACCESSIBILITY, PHILIPS, ANDROID_REMOTE }
     private class PhilipsRecordingException : Exception()
     private var sleepTestMode = SleepTestMode.ADMIN
     private var philipsSleepTest: PhilipsSleepTest? = null
     private var philipsBusy = false
     private var philipsPairingServer: PhilipsPairingServer? = null
     private var philipsPairingDialog: Dialog? = null
+    private var androidRemoteTest: AndroidTvRemoteTest? = null
+    private var androidRemoteServer: PhilipsPairingServer? = null
+    private var androidRemoteDialog: Dialog? = null
+    private var androidRemoteGeneration = 0
+    private var shareSession: LocalShareSession? = null
     private var sleepPermissionPending = false
     private val adapter = Adapter()
     private lateinit var items: List<Item>
@@ -255,7 +260,9 @@ class SettingsActivity : Activity() {
             getString(if (SleepAccessibilityTestService.isConnected()) R.string.sleep_test_status_ready else R.string.sleep_accessibility_not_connected)
         }) { showSleepAccessibilityTest() }, Item.Action(getString(R.string.sleep_philips_title), {
             getString(if (philipsSleepTest != null) R.string.sleep_test_status_ready else R.string.sleep_philips_unpaired)
-        }) { showPhilipsSleepTest() }) else emptyArray()),
+        }) { showPhilipsSleepTest() }, Item.Action(getString(R.string.sleep_remote_title), {
+            getString(if (androidRemoteTest != null) R.string.sleep_test_status_ready else R.string.sleep_philips_unpaired)
+        }) { showAndroidRemoteTest() }) else emptyArray()),
         Item.Toggle(getString(R.string.setting_resume_last_channel_on_startup), { p.resumeLast }, { p.resumeLast = it }),
         Item.Action(getString(R.string.setting_switch_to_channel_on_startup), {
             if (p.resumeLast) getString(R.string.settings_start_disabled) else p.startChannelName.ifBlank { getString(R.string.settings_first_channel) }
@@ -355,6 +362,7 @@ class SettingsActivity : Activity() {
             )
             else -> listOfNotNull(
         Item.Toggle(getString(R.string.setting_on_screen_statistics), { p.showStats }, { p.showStats = it }),
+        if (BuildConfig.BETA) Item.Action(getString(R.string.share_settings_action)) { shareDiagnostics() } else null,
                 if (p.pluginOk) null else Item.Action(getString(R.string.setting_without_epg_scan_sending_to_the_receiver_requires_ftp),
                     { getString(R.string.settings_set_decoder) }) { openSection("Dekoder Enigma2") },
         Item.Action(getString(R.string.setting_send_log_to_receiver), { "${p.ftpDir}/${Tools.logName(p)}" }) { Tools.uploadLog(this, p, true) { toast(it) } },
@@ -619,11 +627,34 @@ class SettingsActivity : Activity() {
 
     override fun onDestroy() {
         stopPhilipsPairing()
+        stopAndroidRemotePairing()
+        shareSession?.stop()
         discoveryThread?.interrupt()
         super.onDestroy()
     }
 
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_LONG).show()
+
+    private fun shareDiagnostics() {
+        shareSession?.stop()
+        val backup = org.json.JSONObject()
+        for ((key, value) in SettingsBackup.values(p)) {
+            backup.put(key, if (value is Set<*>) org.json.JSONArray(value) else value)
+        }
+        val data = org.json.JSONObject().put("device", org.json.JSONObject().put("backup", backup))
+            .toString(2).toByteArray(Charsets.UTF_8)
+        val log = try { AppLog.snapshot(markClean = false) } catch (e: java.io.IOException) {
+            AppLog.i("local share: cannot read log (${e.javaClass.simpleName})")
+            toast(getString(R.string.share_failed))
+            return
+        }
+        val entries = listOf(
+            LocalShareServer.Entry("e2stream.log", log.size.toLong()) { log.inputStream() },
+            LocalShareServer.Entry("e2stream-settings.json", data.size.toLong()) { data.inputStream() },
+        )
+        shareSession = LocalShareSession.start(this, entries, R.string.share_warning)
+        if (shareSession == null) toast(getString(R.string.share_failed))
+    }
 
     private fun wakeMonitorLabel(seconds: Int) = when (seconds) {
         0 -> getString(R.string.settings_wake_monitor_off)
@@ -793,10 +824,9 @@ class SettingsActivity : Activity() {
             return
         }
         philipsPairingServer = server
-        philipsPairingDialog = TvDialog.confirm(this, getString(R.string.sleep_philips_title),
+        philipsPairingDialog = LinkDialog.show(this, getString(R.string.sleep_philips_title),
             getString(R.string.sleep_philips_browser_instructions, server.url),
-            listOf(TvDialog.Btn(getString(R.string.dialog_cancel)) { stopPhilipsPairing() }),
-            onBack = { stopPhilipsPairing() }, timeoutSec = 0)
+            server.url) { stopPhilipsPairing() }
         server.start()
     }
 
@@ -807,7 +837,93 @@ class SettingsActivity : Activity() {
         philipsPairingDialog = null
     }
 
-    private fun runPhilipsOperation(operation: () -> Unit, onSuccess: () -> Unit) {
+    private fun showAndroidRemoteTest() {
+        if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty()) { toast(getString(R.string.sleep_test_recording)); return }
+        if (philipsBusy) { toast(getString(R.string.sleep_philips_busy)); return }
+        val actions = mutableListOf(TvDialog.Btn(getString(R.string.sleep_philips_pair)) { startAndroidRemotePairing() })
+        if (androidRemoteTest != null) actions += TvDialog.Btn(getString(R.string.sleep_test_start)) {
+            startSleepCountdown(SleepTestMode.ANDROID_REMOTE)
+        }
+        TvDialog.confirm(this, getString(R.string.sleep_remote_title), getString(R.string.sleep_remote_explain), actions)
+    }
+
+    private fun startAndroidRemotePairing() {
+        stopAndroidRemotePairing()
+        androidRemoteTest = null
+        val address = try { PhilipsSleepTest.deviceAddress() } catch (e: java.net.SocketException) {
+            AppLog.i("Android TV Remote: cannot determine local address: ${e.javaClass.simpleName}")
+            ""
+        }
+        if (address.isEmpty()) { toast(getString(R.string.sleep_philips_no_network)); return }
+        val generation = androidRemoteGeneration
+        philipsBusy = true
+        Thread {
+            val client = try { AndroidTvRemoteTest() } catch (e: Exception) {
+                AppLog.i("Android TV Remote certificate error: ${e.javaClass.simpleName}")
+                ui.post {
+                    if (generation == androidRemoteGeneration && !isFinishing && !isDestroyed) {
+                        philipsBusy = false
+                        toast(getString(R.string.sleep_remote_failed))
+                    }
+                }
+                return@Thread
+            }
+            ui.post {
+                if (generation != androidRemoteGeneration || isFinishing || isDestroyed) {
+                    client.close()
+                    return@post
+                }
+                philipsBusy = false
+                val texts = PhilipsPairingServer.Texts(
+                    getString(R.string.sleep_remote_title), getString(R.string.sleep_philips_show_pin),
+                    getString(R.string.sleep_remote_pin_hint), getString(R.string.sleep_philips_submit),
+                    getString(R.string.sleep_philips_retry), getString(R.string.sleep_remote_failed),
+                    getString(R.string.sleep_philips_paired))
+                lateinit var server: PhilipsPairingServer
+                try {
+                    server = PhilipsPairingServer(address, client, texts, onPaired = {
+                        ui.post {
+                            if (androidRemoteServer === server && !isFinishing && !isDestroyed) {
+                                androidRemoteServer = null
+                                androidRemoteDialog?.dismiss()
+                                androidRemoteDialog = null
+                                androidRemoteTest = client
+                                refresh()
+                                toast(getString(R.string.sleep_philips_paired))
+                                showAndroidRemoteTest()
+                            }
+                        }
+                    }, onFinished = { success ->
+                        if (!success) ui.post {
+                            if (androidRemoteServer === server && !isFinishing && !isDestroyed) {
+                                stopAndroidRemotePairing()
+                                toast(getString(R.string.sleep_philips_expired))
+                            }
+                        }
+                    })
+                } catch (e: java.io.IOException) {
+                    client.close()
+                    AppLog.i("Android TV Remote pairing server failed: ${e.javaClass.simpleName}")
+                    toast(getString(R.string.sleep_remote_failed))
+                    return@post
+                }
+                androidRemoteServer = server
+                androidRemoteDialog = LinkDialog.show(this, getString(R.string.sleep_remote_title),
+                    getString(R.string.sleep_philips_browser_instructions, server.url), server.url) { stopAndroidRemotePairing() }
+                server.start()
+            }
+        }.start()
+    }
+
+    private fun stopAndroidRemotePairing() {
+        androidRemoteGeneration++
+        androidRemoteServer?.stop()
+        androidRemoteServer = null
+        androidRemoteDialog?.dismiss()
+        androidRemoteDialog = null
+    }
+
+    private fun runPhilipsOperation(operation: () -> Unit, errorRes: Int = R.string.sleep_philips_failed, onSuccess: () -> Unit) {
         if (philipsBusy) { toast(getString(R.string.sleep_philips_busy)); return }
         philipsBusy = true
         Thread {
@@ -826,8 +942,8 @@ class SettingsActivity : Activity() {
                 if (!isFinishing && !isDestroyed) {
                     if (failure == null) onSuccess()
                     else {
-                        AppLog.i("Philips sleep test failed: ${failure.javaClass.simpleName}")
-                        toast(getString(if (failure is PhilipsRecordingException) R.string.sleep_test_recording else R.string.sleep_philips_failed))
+                        AppLog.i("Network sleep test failed: ${failure.javaClass.simpleName}")
+                        toast(getString(if (failure is PhilipsRecordingException) R.string.sleep_test_recording else errorRes))
                     }
                 }
             }
@@ -855,6 +971,17 @@ class SettingsActivity : Activity() {
                             throw PhilipsRecordingException()
                         client.standby()
                     }) { AppLog.i("Philips sleep test: standby accepted") }
+                }
+                sleepTestMode == SleepTestMode.ANDROID_REMOTE -> {
+                    val client = androidRemoteTest
+                    if (client == null) toast(getString(R.string.sleep_philips_unpaired))
+                    else runPhilipsOperation({
+                        val sent = client.standby {
+                            if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty())
+                                throw PhilipsRecordingException()
+                        }
+                        AppLog.i(if (sent) "Android TV Remote sleep test: POWER sent" else "Android TV Remote sleep test: device already off")
+                    }, R.string.sleep_remote_failed) {}
                 }
                 sleepTestMode == SleepTestMode.ACCESSIBILITY -> {
                     try {
@@ -903,6 +1030,7 @@ class SettingsActivity : Activity() {
             SleepTestMode.ADMIN -> R.string.sleep_test_title
             SleepTestMode.ACCESSIBILITY -> R.string.sleep_accessibility_title
             SleepTestMode.PHILIPS -> R.string.sleep_philips_title
+            SleepTestMode.ANDROID_REMOTE -> R.string.sleep_remote_title
         }
         sleepTestDialog = TvDialog.confirm(this, getString(title),
             getString(R.string.sleep_test_countdown, 10),

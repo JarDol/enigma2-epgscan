@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sleep_remote_title">Android TV Remote sleep test</string>
+    <string name="sleep_remote_explain">This test uses Android TV Remote Service. Pair the app and then start the test. Pairing is required again after closing settings.</string>
+    <string name="sleep_remote_failed">Could not connect to Android TV Remote or send the command.</string>
+    <string name="sleep_remote_pin_hint">Enter the six-character code shown on the device.</string>
+    <string name="share_settings_action">Download logs and settings to phone</string>
+    <string name="share_recording_action">Download recording to phone</string>
+    <string name="share_title">Local network download</string>
+    <string name="share_warning">Open the address or scan the code using a phone on the same network:\n%1$s\n\nAccess is temporary. HTTP is not encrypted; use only a trusted network. Settings may contain passwords and PINs; logs may contain private information.</string>
+    <string name="share_recording_warning">Open the address or scan the code using a phone on the same network:\n%1$s\n\nAccess is temporary. HTTP is not encrypted; use only a trusted network. Keep this window open while downloading.</string>
+    <string name="share_failed">Could not start local network sharing.</string>
+    <string name="share_expired">Sharing has ended.</string>
     <string name="channel_list_help">◀ ▶ bouquet   •   OK watch   •   long OK programme details</string>
     <string name="settings_help">▲▼ select  •  OK change  •  BACK exit (changes are saved immediately)</string>
     <string name="app_language">Application language</string>
