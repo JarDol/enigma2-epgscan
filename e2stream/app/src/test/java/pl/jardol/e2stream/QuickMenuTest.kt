@@ -12,7 +12,7 @@ class QuickMenuTest {
             listOf(
                 "av_shift", "event", "channel_epg", "multi_epg", "search", "record", "record_stop",
                 "pip", "buffered", "audio", "zap_timers", "decoder_timers", "engine", "tunneling",
-                "stats", "send_log", "sleep",
+                "stats", "send_log", "sleep", "timed_shutdown",
             ),
             order.map { it.id },
         )

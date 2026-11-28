@@ -36,6 +36,8 @@ class SleepTestTest {
 
     @Before fun setUp() {
         AppState.recording = false
+        org.robolectric.RuntimeEnvironment.getApplication()
+            .getSharedPreferences("e2stream", Context.MODE_PRIVATE).edit().clear().commit()
         controller = Robolectric.buildActivity(SettingsActivity::class.java).setup()
         activity = controller.get()
         shadowOf(activity.packageManager).setSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN, true)
@@ -55,14 +57,16 @@ class SleepTestTest {
 
     private fun waitSeconds(seconds: Long) = shadowOf(Looper.getMainLooper()).idleFor(seconds, TimeUnit.SECONDS)
 
-    @Test fun betaMenuRequestsPermissionAndAllowsRevocation() {
+    @Test fun idleSleepMenuRequestsPermissionAndAllowsRevocation() {
         SettingsActivity::class.java.getDeclaredMethod("openSection", String::class.java)
             .apply { isAccessible = true }.invoke(activity, "Ogólne")
         val list = activity.findViewById<ListView>(R.id.settingsList)
         val index = (0 until list.count).first {
             list.adapter.getView(it, null, list).findViewById<TextView>(R.id.label)?.text ==
-                activity.getString(R.string.sleep_test_title)
+                activity.getString(R.string.sleep_device_title)
         }
+        val prefs = Prefs(activity)
+        assertFalse(prefs.sleepDeviceOnIdle)
         policy.removeActiveAdmin(ComponentName(activity, SleepTestAdminReceiver::class.java))
         list.performItemClick(list.adapter.getView(index, null, list), index, index.toLong())
         TvDialog.top()!!.window!!.decorView.findViewWithTag<Button>("chip_0").performClick()
@@ -70,10 +74,26 @@ class SleepTestTest {
         assertEquals(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN, request.action)
         assertEquals(ComponentName(activity, SleepTestAdminReceiver::class.java),
             request.getParcelableExtra<ComponentName>(DevicePolicyManager.EXTRA_DEVICE_ADMIN))
+        assertFalse(prefs.sleepDeviceOnIdle)
         Shadow.extract<ShadowDevicePolicyManager>(policy).setActiveAdmin(ComponentName(activity, SleepTestAdminReceiver::class.java))
-        call("showSleepTest")
+        controller.pause().resume()
+        assertTrue(prefs.sleepDeviceOnIdle)
+        call("showSleepDeviceSettings")
         TvDialog.top()!!.window!!.decorView.findViewWithTag<Button>("chip_1").performClick()
         assertFalse(policy.isAdminActive(ComponentName(activity, SleepTestAdminReceiver::class.java)))
+        assertFalse(prefs.sleepDeviceOnIdle)
+    }
+
+    @Test fun idleSleepRespectsOptInPermissionAndRecording() {
+        assertEquals(SleepDevice.Result.DISABLED, SleepDevice.attempt(activity, false, false))
+        assertEquals(SleepDevice.Result.RECORDING, SleepDevice.attempt(activity, true, true))
+        assertFalse(keyguard.isKeyguardLocked)
+        policy.removeActiveAdmin(ComponentName(activity, SleepTestAdminReceiver::class.java))
+        assertEquals(SleepDevice.Result.PERMISSION_MISSING, SleepDevice.attempt(activity, true, false))
+        assertFalse(keyguard.isKeyguardLocked)
+        Shadow.extract<ShadowDevicePolicyManager>(policy).setActiveAdmin(ComponentName(activity, SleepTestAdminReceiver::class.java))
+        assertEquals(SleepDevice.Result.LOCKED, SleepDevice.attempt(activity, true, false))
+        assertTrue(keyguard.isKeyguardLocked)
     }
 
     @Test fun locksOnlyAfterCountdown() {

@@ -2,7 +2,12 @@ package pl.jardol.e2stream
 
 import android.app.Application
 import android.app.Dialog
+import android.app.KeyguardManager
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
@@ -35,6 +40,8 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadow.api.Shadow
+import org.robolectric.shadows.ShadowDevicePolicyManager
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
@@ -137,6 +144,105 @@ class PlayerActionMenusTest {
     }
     private fun pressChip(index: Int) =
         TvDialog.top()!!.window!!.decorView.findViewWithTag<Button>("chip_$index").performClick()
+
+    @Test fun timedShutdownCanBeSetChangedAndCancelledFromMenu() {
+        val policy = activity.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        Shadow.extract<ShadowDevicePolicyManager>(policy).setActiveAdmin(ComponentName(activity, SleepTestAdminReceiver::class.java))
+        call("chooseTimedShutdown")
+        assertEquals("15 min", labels()[1])
+        assertEquals("180 min", labels()[12])
+        pick(1)
+        val timer = get<TimedShutdown>("timedShutdown")
+        val firstDeadline = timer.deadline
+        assertTrue(firstDeadline > 0)
+        call("sleepInput")
+        assertEquals(firstDeadline, timer.deadline)
+        call("chooseTimedShutdown")
+        pick(12)
+        assertTrue(timer.deadline > firstDeadline)
+        call("chooseTimedShutdown")
+        pick(0)
+        assertEquals(0L, timer.deadline)
+    }
+
+    @Test fun timedShutdownLocksAndClosesEvenWhenIdleSleepIsDisabled() {
+        val policy = activity.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        Shadow.extract<ShadowDevicePolicyManager>(policy).setActiveAdmin(ComponentName(activity, SleepTestAdminReceiver::class.java))
+        assertFalse(prefs.sleepDeviceOnIdle)
+        val timer = get<TimedShutdown>("timedShutdown")
+        timer.deadline = android.os.SystemClock.elapsedRealtime() + 1_000
+        get<Runnable>("timedShutdownTick").run()
+        elapsed(1)
+        assertTrue(activity.isFinishing)
+        assertTrue((activity.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked)
+    }
+
+    @Test fun timedShutdownRequestsPermissionBeforeScheduling() {
+        shadowOf(activity.packageManager).setSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN, true)
+        val policy = activity.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val component = ComponentName(activity, SleepTestAdminReceiver::class.java)
+        policy.removeActiveAdmin(component)
+        call("chooseTimedShutdown")
+        pick(1)
+        pressChip(0)
+        val request = shadowOf(activity).nextStartedActivityForResult
+        assertEquals(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN, request.intent.action)
+        assertEquals(0L, get<TimedShutdown>("timedShutdown").deadline)
+        Shadow.extract<ShadowDevicePolicyManager>(policy).setActiveAdmin(component)
+        call("onActivityResult", request.requestCode, android.app.Activity.RESULT_OK, Intent())
+        assertTrue(get<TimedShutdown>("timedShutdown").deadline > 0L)
+    }
+
+    @Test fun timedShutdownWaitsUntilRecordingFinishesSaving() {
+        val policy = activity.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        Shadow.extract<ShadowDevicePolicyManager>(policy).setActiveAdmin(ComponentName(activity, SleepTestAdminReceiver::class.java))
+        val timer = get<TimedShutdown>("timedShutdown")
+        val saving = File(RuntimeEnvironment.getApplication().cacheDir, "pending-recording")
+        val active = get<MutableSet<File>>("activeRecordingDirs")
+        active.add(saving)
+        try {
+            timer.deadline = android.os.SystemClock.elapsedRealtime() + 1_000
+            get<Runnable>("timedShutdownTick").run()
+            elapsed(1)
+            assertFalse(activity.isFinishing)
+            active.remove(saving)
+            elapsed(1)
+            assertTrue(activity.isFinishing)
+        } finally {
+            active.remove(saving)
+        }
+    }
+
+    @Test fun timedShutdownPreventsEarlierIdleShutdownAndCancellationRestartsIdleTimer() {
+        prefs.sleepHours = 1
+        val timer = get<TimedShutdown>("timedShutdown")
+        timer.schedule(android.os.SystemClock.elapsedRealtime(), 180)
+        set("sleepAt", android.os.SystemClock.elapsedRealtime() - 1)
+        get<Runnable>("sleepTick").run()
+        assertFalse(activity.isFinishing)
+        call("chooseTimedShutdown")
+        pick(0)
+        assertEquals(0L, timer.deadline)
+        assertTrue(get<Long>("sleepAt") > android.os.SystemClock.elapsedRealtime())
+    }
+
+    @Test fun idleShutdownLocksOnlyWhenEnabled() {
+        val policy = activity.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        Shadow.extract<ShadowDevicePolicyManager>(policy).setActiveAdmin(ComponentName(activity, SleepTestAdminReceiver::class.java))
+        prefs.sleepDeviceOnIdle = true
+        call("sleepShutdown", false)
+        assertTrue(activity.isFinishing)
+        assertTrue((activity.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked)
+    }
+
+    @Test fun idleShutdownStillOnlyClosesByDefault() {
+        val policy = activity.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        Shadow.extract<ShadowDevicePolicyManager>(policy).setActiveAdmin(ComponentName(activity, SleepTestAdminReceiver::class.java))
+        assertFalse(prefs.sleepDeviceOnIdle)
+        call("sleepShutdown", false)
+        assertTrue(activity.isFinishing)
+        assertFalse((activity.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked)
+    }
 
     private fun bgBuffer(bg: Any) = bgType.getDeclaredField("buf").apply { isAccessible = true }.get(bg) as TimeshiftBuffer
 

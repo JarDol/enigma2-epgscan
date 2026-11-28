@@ -3,10 +3,14 @@ package pl.jardol.e2stream
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
+import android.app.admin.DevicePolicyManager
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -23,6 +27,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
@@ -65,6 +70,7 @@ class PlayerActivity : Activity() {
         const val ACTION_SCHEDULE_ZAP = "pl.jardol.e2stream.SCHEDULE_ZAP"
         private const val TS_STORAGE_RETRY_MS = 2000L
         private const val TS_STORAGE_RETRY_MAX = 3
+        private const val TIMED_SHUTDOWN_ADMIN_REQUEST = 742
     }
 
     private var decTimerSel = 0
@@ -261,6 +267,8 @@ class PlayerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        timedShutdown.deadline = savedInstanceState?.getLong("timedShutdownDeadline") ?: 0L
+        timedShutdownPendingMinutes = savedInstanceState?.getInt("timedShutdownPendingMinutes") ?: 0
         Tools.beforeManualUpdate = stopForUpdate
         wakeTimerKey = intent.getStringExtra(EXTRA_WAKE_TIMER_KEY)
         wakeTestId = intent.getStringExtra(EXTRA_WAKE_TEST_ID)
@@ -423,6 +431,8 @@ class PlayerActivity : Activity() {
         AppLog.i("auto-zamknięcie: limit bezczynności ${prefs.sleepHours} h")
         ui.removeCallbacks(sleepTick)
         ui.post(sleepTick)
+        ui.removeCallbacks(timedShutdownTick)
+        if (timedShutdown.deadline > 0) ui.post(timedShutdownTick)
         ZapWakeAlarms.sync(this)
         if (safeMode) return
         startUp()
@@ -739,6 +749,26 @@ class PlayerActivity : Activity() {
         ui.removeCallbacksAndMessages(null)
         io.shutdownNow()
         probeIo.shutdownNow()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putLong("timedShutdownDeadline", timedShutdown.deadline)
+        outState.putInt("timedShutdownPendingMinutes", timedShutdownPendingMinutes)
+        super.onSaveInstanceState(outState)
+    }
+
+    @Deprecated("Android activity result API")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != TIMED_SHUTDOWN_ADMIN_REQUEST) return
+        val minutes = timedShutdownPendingMinutes
+        timedShutdownPendingMinutes = 0
+        val admin = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        if (minutes > 0 && admin.isAdminActive(ComponentName(this, SleepTestAdminReceiver::class.java))) {
+            scheduleTimedShutdown(minutes)
+        } else {
+            Toast.makeText(this, getString(R.string.sleep_test_permission_missing), Toast.LENGTH_LONG).show()
+        }
     }
 
     // ---------------------------------------------------------------- odtwarzacz
@@ -2022,6 +2052,9 @@ class PlayerActivity : Activity() {
     }
 
     private var sleepAt = 0L
+    private val timedShutdown = TimedShutdown()
+    private var timedShutdownPendingMinutes = 0
+    private var timedShutdownWaitingLogged = false
     private var sleepDlg: Dialog? = null
     private var lastPilotInputAt = 0L
     private var lastPilotInputWall = 0L
@@ -2090,6 +2123,10 @@ class PlayerActivity : Activity() {
             if (limit <= 0) { sleepDlg?.dismiss(); sleepDlg = null; sleepAt = 0; return }
             if (settingsOpen) return
             val dlg = sleepDlg?.takeIf { it.isShowing }
+            if (timedShutdown.deadline > 0) {
+                if (dlg != null) { dlg.dismiss(); sleepDlg = null }
+                return
+            }
             if (programRecs.isNotEmpty() && sleepAt <= now) {
                 if (dlg != null) { dlg.dismiss(); sleepDlg = null }
                 return
@@ -2097,7 +2134,7 @@ class PlayerActivity : Activity() {
             val left = closeAt - now
             when {
                 left <= 0 -> { dlg?.dismiss(); sleepDlg = null; sleepShutdown() }
-                dlg != null -> TvDialog.setMessage(dlg, getString(R.string.sleep_timer_message, ((left + 999) / 1000).toInt()))
+                dlg != null -> TvDialog.setMessage(dlg, sleepTimerMessage(((left + 999) / 1000).toInt()))
                 left <= 60_000 && !settingsOpen -> showSleepDialog(left)
             }
         }
@@ -2105,7 +2142,7 @@ class PlayerActivity : Activity() {
 
     private fun showSleepDialog(leftMs: Long) {
         sleepDlg = TvDialog.confirm(this, getString(R.string.sleep_timer_title),
-            getString(R.string.sleep_timer_message, ((leftMs + 999) / 1000).toInt()),
+            sleepTimerMessage(((leftMs + 999) / 1000).toInt()),
             listOf(
                 TvDialog.Btn(getString(R.string.sleep_timer_postpone)) {
                     sleepDlg = null
@@ -2117,9 +2154,98 @@ class PlayerActivity : Activity() {
             timeoutSec = 0)
     }
 
-    private fun sleepShutdown() {
-        AppLog.i("wyłączenie po bezczynności (${prefs.sleepHours} h) — zamykam aplikację")
+    private fun sleepTimerMessage(seconds: Int) = getString(
+        if (prefs.sleepDeviceOnIdle) R.string.sleep_timer_device_message else R.string.sleep_timer_message, seconds)
+
+    private fun sleepShutdown(forceDeviceSleep: Boolean = false) {
+        timedShutdown.cancel()
+        ui.removeCallbacks(timedShutdownTick)
+        if (!forceDeviceSleep) AppLog.i("wyłączenie po bezczynności (${prefs.sleepHours} h) — zamykam aplikację")
+        try {
+            when (SleepDevice.attempt(this, forceDeviceSleep || prefs.sleepDeviceOnIdle, activeRecs() > 0 || activeRecordingDirs.isNotEmpty())) {
+                SleepDevice.Result.DISABLED -> Unit
+                SleepDevice.Result.RECORDING -> AppLog.i("uśpienie pominięte: trwa nagrywanie")
+                SleepDevice.Result.PERMISSION_MISSING -> {
+                    AppLog.i("uśpienie pominięte: brak zgody administratora")
+                    Toast.makeText(this, getString(R.string.sleep_test_permission_missing), Toast.LENGTH_LONG).show()
+                }
+                SleepDevice.Result.LOCKED -> AppLog.i("uśpienie po bezczynności: wywołano DevicePolicyManager.lockNow()")
+            }
+        } catch (e: SecurityException) {
+            AppLog.i("uśpienie po bezczynności: błąd $e")
+            Toast.makeText(this, getString(R.string.sleep_test_error, e.message ?: e.toString()), Toast.LENGTH_LONG).show()
+        }
         finishAndRemoveTask()
+    }
+
+    private val timedShutdownTick = object : Runnable {
+        override fun run() {
+            if (timedShutdown.deadline == 0L || isFinishing || isDestroyed) return
+            val now = SystemClock.elapsedRealtime()
+            val recording = activeRecs() > 0 || activeRecordingDirs.isNotEmpty()
+            if (timedShutdown.due(now, recording)) {
+                AppLog.i("timer: zamykam aplikację i próbuję uśpić urządzenie")
+                sleepShutdown(forceDeviceSleep = true)
+                return
+            }
+            if (now >= timedShutdown.deadline && recording && !timedShutdownWaitingLogged) {
+                timedShutdownWaitingLogged = true
+                AppLog.i("timer: uśpienie odłożone do końca nagrywania")
+                Toast.makeText(this@PlayerActivity, getString(R.string.timed_shutdown_recording), Toast.LENGTH_LONG).show()
+            }
+            ui.postDelayed(this, 1000)
+        }
+    }
+
+    private fun scheduleTimedShutdown(minutes: Int) {
+        timedShutdown.schedule(SystemClock.elapsedRealtime(), minutes)
+        timedShutdownWaitingLogged = false
+        ui.removeCallbacks(timedShutdownTick)
+        ui.post(timedShutdownTick)
+        showMessage(getString(R.string.timed_shutdown_scheduled, minutes), force = true)
+    }
+
+    private fun chooseTimedShutdown() {
+        val labels = listOf(getString(R.string.timed_shutdown_cancel)) +
+            TimedShutdown.intervals.map { getString(R.string.timed_shutdown_minutes, it) }
+        val remaining = if (timedShutdown.deadline > 0) {
+            val left = (timedShutdown.deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0)
+            getString(R.string.timed_shutdown_remaining, ((left + 59_999) / 60_000).toInt())
+        } else getString(R.string.timed_shutdown_title)
+        TvDialog.single(this, remaining, labels, 0) { selected ->
+            if (selected == 0) {
+                timedShutdown.cancel()
+                ui.removeCallbacks(timedShutdownTick)
+                sleepAt = SystemClock.elapsedRealtime() + sleepLimitMs()
+                showMessage(getString(R.string.timed_shutdown_cancelled), force = true)
+            } else {
+                val minutes = TimedShutdown.intervals[selected - 1]
+                val admin = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                when {
+                    admin.isAdminActive(ComponentName(this, SleepTestAdminReceiver::class.java)) -> scheduleTimedShutdown(minutes)
+                    activeRecs() > 0 || activeRecordingDirs.isNotEmpty() -> Toast.makeText(this, getString(R.string.sleep_test_recording), Toast.LENGTH_LONG).show()
+                    !packageManager.hasSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN) ->
+                        Toast.makeText(this, getString(R.string.sleep_test_unsupported), Toast.LENGTH_LONG).show()
+                    else -> TvDialog.confirm(this, getString(R.string.sleep_device_title),
+                        getString(R.string.sleep_device_explain), listOf(TvDialog.Btn(getString(R.string.sleep_test_permission)) {
+                            try {
+                                timedShutdownPendingMinutes = minutes
+                                @Suppress("DEPRECATION")
+                                startActivityForResult(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                                    .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(this, SleepTestAdminReceiver::class.java))
+                                    .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, getString(R.string.sleep_device_permission_reason)),
+                                    TIMED_SHUTDOWN_ADMIN_REQUEST)
+                            } catch (e: ActivityNotFoundException) {
+                                timedShutdownPendingMinutes = 0
+                                Toast.makeText(this, getString(R.string.sleep_test_permission_failed, e.message ?: e.toString()), Toast.LENGTH_LONG).show()
+                            } catch (e: SecurityException) {
+                                timedShutdownPendingMinutes = 0
+                                Toast.makeText(this, getString(R.string.sleep_test_permission_failed, e.message ?: e.toString()), Toast.LENGTH_LONG).show()
+                            }
+                        }))
+                }
+            }
+        }
     }
 
     private fun chooseSleep() {
@@ -6378,6 +6504,7 @@ class PlayerActivity : Activity() {
             "tunneling" to { doAct(Act.TUNNELING, 0) },
             "send_log" to { showMessage(getString(R.string.action_sending_log)); Tools.uploadLog(this, prefs, true) { showMessage(it) } },
             "sleep" to { chooseSleep() },
+            "timed_shutdown" to { chooseTimedShutdown() },
         )
         val canRecord = !recMode && prefs.tsMin > 0 && currentUrl != null && localRec == null
         val items = QuickMenu.ordered(prefs).mapNotNull { e ->

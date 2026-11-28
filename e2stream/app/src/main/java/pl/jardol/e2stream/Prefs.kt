@@ -678,6 +678,10 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("sleepHours", 0).takeIf { it == 0 || it in SLEEP_HOURS } ?: 0
         set(v) = putI("sleepHours", v)
 
+    var sleepDeviceOnIdle: Boolean
+        get() = sp.getBoolean("sleepDeviceOnIdle", false)
+        set(v) = putB("sleepDeviceOnIdle", v)
+
     var updateChannel: String
         get() = s("updateChannel", "stable")
         set(v) = putS("updateChannel", if (v == "beta") "beta" else "stable")

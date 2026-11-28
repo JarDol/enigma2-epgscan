@@ -55,6 +55,7 @@ class SettingsActivity : Activity() {
     private var overlayPermissionAsked = false
     private var sleepTestDialog: Dialog? = null
     private var sleepTestDeadline = 0L
+    private var sleepPermissionPending = false
     private val adapter = Adapter()
     private lateinit var items: List<Item>
     private lateinit var store: EpgStore
@@ -238,7 +239,10 @@ class SettingsActivity : Activity() {
                 p.sleepHours = o[w]; markChanged("wyłączenie po bezczynności = ${o[w]} h"); items = buildItems(); refresh()
             }
         },
-        *(if (BuildConfig.BETA || sleepAdminActive()) arrayOf<Item>(Item.Action(getString(R.string.sleep_test_title), {
+        Item.Action(getString(R.string.sleep_device_title), {
+            getString(if (!p.sleepDeviceOnIdle) R.string.sleep_device_off else if (sleepAdminActive()) R.string.sleep_device_on else R.string.sleep_test_status_permission)
+        }) { showSleepDeviceSettings() },
+        *(if (BuildConfig.BETA) arrayOf<Item>(Item.Action(getString(R.string.sleep_test_title), {
             getString(if (sleepAdminActive()) R.string.sleep_test_status_ready else R.string.sleep_test_status_permission)
         }) { showSleepTest() }) else emptyArray()),
         Item.Toggle(getString(R.string.setting_resume_last_channel_on_startup), { p.resumeLast }, { p.resumeLast = it }),
@@ -462,6 +466,7 @@ class SettingsActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        sleepPermissionPending = savedInstanceState?.getBoolean("sleepPermissionPending") ?: false
         setContentView(R.layout.activity_settings)
         p = Prefs(this)
         p.migrate()
@@ -482,9 +487,20 @@ class SettingsActivity : Activity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("sleepPermissionPending", sleepPermissionPending)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onResume() {
         super.onResume()
-        if (BuildConfig.BETA && ::items.isInitialized) refresh()
+        if (sleepPermissionPending) {
+            sleepPermissionPending = false
+            p.sleepDeviceOnIdle = sleepAdminActive()
+            if (p.sleepDeviceOnIdle) markChanged("uśpienie po bezczynności = włączone")
+            else toast(getString(R.string.sleep_test_permission_missing))
+        }
+        if (::items.isInitialized) refresh()
         ui.removeCallbacks(relock)
         ui.postDelayed(relock, 2000)
         when (wakePermissionFlow) {
@@ -619,6 +635,49 @@ class SettingsActivity : Activity() {
     private fun sleepAdminComponent() = ComponentName(this, SleepTestAdminReceiver::class.java)
     private fun sleepAdminActive() = sleepAdmin().isAdminActive(sleepAdminComponent())
 
+    private fun showSleepDeviceSettings() {
+        val actions = mutableListOf<TvDialog.Btn>()
+        if (p.sleepDeviceOnIdle) {
+            actions += TvDialog.Btn(getString(R.string.sleep_device_disable)) {
+                p.sleepDeviceOnIdle = false
+                markChanged("uśpienie po bezczynności = wyłączone")
+                refresh()
+            }
+        }
+        if (!p.sleepDeviceOnIdle || !sleepAdminActive()) {
+            actions += TvDialog.Btn(getString(R.string.sleep_device_enable)) {
+                if (!packageManager.hasSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN)) {
+                    toast(getString(R.string.sleep_test_unsupported))
+                } else if (sleepAdminActive()) {
+                    p.sleepDeviceOnIdle = true
+                    markChanged("uśpienie po bezczynności = włączone")
+                    refresh()
+                } else {
+                    try {
+                        sleepPermissionPending = true
+                        startActivity(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                            .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, sleepAdminComponent())
+                            .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, getString(R.string.sleep_device_permission_reason)))
+                    } catch (e: ActivityNotFoundException) {
+                        sleepPermissionPending = false
+                        toast(getString(R.string.sleep_test_permission_failed, e.message ?: e.toString()))
+                    } catch (e: SecurityException) {
+                        sleepPermissionPending = false
+                        toast(getString(R.string.sleep_test_permission_failed, e.message ?: e.toString()))
+                    }
+                }
+            }
+        }
+        if (sleepAdminActive()) actions += TvDialog.Btn(getString(R.string.sleep_test_revoke)) {
+            sleepAdmin().removeActiveAdmin(sleepAdminComponent())
+            p.sleepDeviceOnIdle = false
+            markChanged("uśpienie po bezczynności = wyłączone")
+            refresh()
+            toast(getString(R.string.sleep_test_revoked))
+        }
+        TvDialog.confirm(this, getString(R.string.sleep_device_title), getString(R.string.sleep_device_explain), actions)
+    }
+
     private fun showSleepTest() {
         if (AppState.recording) { toast(getString(R.string.sleep_test_recording)); return }
         if (!packageManager.hasSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN)) {
@@ -643,6 +702,8 @@ class SettingsActivity : Activity() {
         if (BuildConfig.BETA) actions += TvDialog.Btn(getString(R.string.sleep_test_start)) { startSleepTest() }
         actions += TvDialog.Btn(getString(R.string.sleep_test_revoke)) {
                     sleepAdmin().removeActiveAdmin(sleepAdminComponent())
+                    p.sleepDeviceOnIdle = false
+                    markChanged("uśpienie po bezczynności = wyłączone")
                     items = buildItems()
                     refresh()
                     toast(getString(R.string.sleep_test_revoked))

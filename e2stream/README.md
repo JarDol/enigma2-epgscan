@@ -82,6 +82,8 @@ Odtwarzacz strumieni z dekodera Enigma2 (OpenPLi / OpenWebif) dla Android TV. Wy
   Po udanym działaniu z wyników wyszukiwania lista wyników zamyka się, a komunikat pojawia się na pasku odtwarzacza.
 * Okna akcji i potwierdzenia domyślnie zamykają się po 30 sekundach; okna informacyjne po 15 sekundach. Czas każdego rodzaju ustawia się osobno w ustawieniach Ogólne (0 = bez zamykania); okna informacyjne można też wyłączyć.
 * Menu podręczne z konfigurowalną widocznością i kolejnością pozycji; Ustawienia są zawsze dostępne.
+* Ustawienia → Ogólne → „Uśpij urządzenie po bezczynności” (domyślnie wyłączone) pozwala po zakończeniu timera spróbować uśpić urządzenie. Wymaga zgody administratora urządzenia, którą można cofnąć w tym samym menu przed odinstalowaniem. Może być wymagany PIN; działanie zależy od urządzenia i nie gwarantuje wyłączenia telewizora. Jeśli trwa nagrywanie, próba uśpienia jest pomijana.
+* Menu główne → „Zamknij i wyłącz za…” uruchamia jednorazowe odliczanie 15–180 minut, niezależne od używania pilota; w tym samym menu można je anulować. Na czas odliczania timer bezczynności jest wstrzymany. Po czasie aplikacja zamyka się i próbuje uśpić urządzenie, a podczas nagrywania czeka do jego zakończenia. Timer działa w procesie aplikacji i nie przetrwa wymuszonego zakończenia procesu.
 * Tylko beta: Ustawienia → Ogólne → „Test uśpienia urządzenia” wymaga zgody administratora urządzenia.
   Po 10-sekundowym odliczaniu próbuje zablokować i wygasić ekran; WSTECZ anuluje. Test jest niedostępny
   podczas nagrywania, nie zmienia timera nieaktywności i nie gwarantuje pełnego czuwania ani HDMI-CEC.
