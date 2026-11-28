@@ -55,7 +55,11 @@ class SettingsActivity : Activity() {
     private var overlayPermissionAsked = false
     private var sleepTestDialog: Dialog? = null
     private var sleepTestDeadline = 0L
-    private var sleepTestUsesAccessibility = false
+    private enum class SleepTestMode { ADMIN, ACCESSIBILITY, PHILIPS }
+    private class PhilipsRecordingException : Exception()
+    private var sleepTestMode = SleepTestMode.ADMIN
+    private var philipsSleepTest: PhilipsSleepTest? = null
+    private var philipsBusy = false
     private var sleepPermissionPending = false
     private val adapter = Adapter()
     private lateinit var items: List<Item>
@@ -247,7 +251,9 @@ class SettingsActivity : Activity() {
             getString(if (sleepAdminActive()) R.string.sleep_test_status_ready else R.string.sleep_test_status_permission)
         }) { showSleepTest() }, Item.Action(getString(R.string.sleep_accessibility_title), {
             getString(if (SleepAccessibilityTestService.isConnected()) R.string.sleep_test_status_ready else R.string.sleep_accessibility_not_connected)
-        }) { showSleepAccessibilityTest() }) else emptyArray()),
+        }) { showSleepAccessibilityTest() }, Item.Action(getString(R.string.sleep_philips_title), {
+            getString(if (philipsSleepTest != null) R.string.sleep_test_status_ready else R.string.sleep_philips_unpaired)
+        }) { showPhilipsSleepTest() }) else emptyArray()),
         Item.Toggle(getString(R.string.setting_resume_last_channel_on_startup), { p.resumeLast }, { p.resumeLast = it }),
         Item.Action(getString(R.string.setting_switch_to_channel_on_startup), {
             if (p.resumeLast) getString(R.string.settings_start_disabled) else p.startChannelName.ifBlank { getString(R.string.settings_first_channel) }
@@ -731,6 +737,86 @@ class SettingsActivity : Activity() {
         TvDialog.confirm(this, getString(R.string.sleep_accessibility_title), getString(R.string.sleep_accessibility_explain), actions)
     }
 
+    private fun showPhilipsSleepTest() {
+        if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty()) { toast(getString(R.string.sleep_test_recording)); return }
+        if (philipsBusy) { toast(getString(R.string.sleep_philips_busy)); return }
+        val actions = mutableListOf(TvDialog.Btn(getString(R.string.sleep_philips_pair)) { enterPhilipsAddress() })
+        if (philipsSleepTest != null) actions += TvDialog.Btn(getString(R.string.sleep_test_start)) {
+            if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty()) toast(getString(R.string.sleep_test_recording))
+            else startSleepCountdown(SleepTestMode.PHILIPS)
+        }
+        TvDialog.confirm(this, getString(R.string.sleep_philips_title), getString(R.string.sleep_philips_explain), actions)
+    }
+
+    private fun enterPhilipsAddress() {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setSingleLine(true)
+            textSize = 22f
+            try { setText(PhilipsSleepTest.deviceAddress()) } catch (e: java.net.SocketException) {
+                AppLog.i("Philips sleep test: cannot determine local address: ${e.javaClass.simpleName}")
+            }
+        }
+        TvDialog.input(this, getString(R.string.sleep_philips_address), getString(R.string.sleep_philips_address_hint), input,
+            getString(R.string.sleep_philips_pair)) {
+            val host = input.text.toString().trim()
+            if (!PhilipsSleepTest.isLocalAddress(host)) {
+                toast(getString(R.string.sleep_philips_invalid_address))
+            } else {
+                philipsSleepTest = null
+                val client = PhilipsSleepTest(host)
+                runPhilipsOperation({ client.requestPin() }) { enterPhilipsPin(client) }
+            }
+        }
+    }
+
+    private fun enterPhilipsPin(client: PhilipsSleepTest) {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            setSingleLine(true)
+            textSize = 22f
+        }
+        TvDialog.input(this, getString(R.string.sleep_philips_pin), getString(R.string.sleep_philips_pin_hint), input) {
+            val pin = input.text.toString().trim()
+            if (!pin.matches(Regex("[0-9]{4,8}"))) {
+                toast(getString(R.string.sleep_philips_invalid_pin))
+                enterPhilipsPin(client)
+            } else runPhilipsOperation({ client.confirmPin(pin) }) {
+                philipsSleepTest = client
+                refresh()
+                toast(getString(R.string.sleep_philips_paired))
+                showPhilipsSleepTest()
+            }
+        }
+    }
+
+    private fun runPhilipsOperation(operation: () -> Unit, onSuccess: () -> Unit) {
+        if (philipsBusy) { toast(getString(R.string.sleep_philips_busy)); return }
+        philipsBusy = true
+        Thread {
+            var failure: Exception? = null
+            try {
+                operation()
+            } catch (e: java.io.IOException) { failure = e
+            } catch (e: java.security.GeneralSecurityException) { failure = e
+            } catch (e: org.json.JSONException) { failure = e
+            } catch (e: IllegalArgumentException) { failure = e
+            } catch (e: IllegalStateException) { failure = e
+            } catch (e: PhilipsRecordingException) { failure = e
+            } catch (e: SecurityException) { failure = e }
+            ui.post {
+                philipsBusy = false
+                if (!isFinishing && !isDestroyed) {
+                    if (failure == null) onSuccess()
+                    else {
+                        AppLog.i("Philips sleep test failed: ${failure.javaClass.simpleName}")
+                        toast(getString(if (failure is PhilipsRecordingException) R.string.sleep_test_recording else R.string.sleep_philips_failed))
+                    }
+                }
+            }
+        }.start()
+    }
+
     private val sleepTestTick = object : Runnable {
         override fun run() {
             val dlg = sleepTestDialog?.takeIf { it.isShowing } ?: return
@@ -744,7 +830,16 @@ class SettingsActivity : Activity() {
             dlg.dismiss()
             when {
                 AppState.recording || LocalRecordings.activeDirs.isNotEmpty() -> toast(getString(R.string.sleep_test_recording))
-                sleepTestUsesAccessibility -> {
+                sleepTestMode == SleepTestMode.PHILIPS -> {
+                    val client = philipsSleepTest
+                    if (client == null) toast(getString(R.string.sleep_philips_unpaired))
+                    else runPhilipsOperation({
+                        if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty())
+                            throw PhilipsRecordingException()
+                        client.standby()
+                    }) { AppLog.i("Philips sleep test: standby accepted") }
+                }
+                sleepTestMode == SleepTestMode.ACCESSIBILITY -> {
                     try {
                         when (SleepAccessibilityTestService.lockScreen()) {
                             null -> toast(getString(R.string.sleep_accessibility_not_connected))
@@ -774,20 +869,25 @@ class SettingsActivity : Activity() {
     private fun startSleepTest() {
         if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty()) { toast(getString(R.string.sleep_test_recording)); return }
         if (!sleepAdminActive()) { toast(getString(R.string.sleep_test_permission_missing)); return }
-        startSleepCountdown(false)
+        startSleepCountdown(SleepTestMode.ADMIN)
     }
 
     private fun startSleepAccessibilityTest() {
         if (AppState.recording || LocalRecordings.activeDirs.isNotEmpty()) { toast(getString(R.string.sleep_test_recording)); return }
         if (!SleepAccessibilityTestService.isConnected()) { toast(getString(R.string.sleep_accessibility_not_connected)); return }
-        startSleepCountdown(true)
+        startSleepCountdown(SleepTestMode.ACCESSIBILITY)
     }
 
-    private fun startSleepCountdown(accessibility: Boolean) {
+    private fun startSleepCountdown(mode: SleepTestMode) {
         cancelSleepTest()
-        sleepTestUsesAccessibility = accessibility
+        sleepTestMode = mode
         sleepTestDeadline = SystemClock.elapsedRealtime() + 10_000
-        sleepTestDialog = TvDialog.confirm(this, getString(if (accessibility) R.string.sleep_accessibility_title else R.string.sleep_test_title),
+        val title = when (mode) {
+            SleepTestMode.ADMIN -> R.string.sleep_test_title
+            SleepTestMode.ACCESSIBILITY -> R.string.sleep_accessibility_title
+            SleepTestMode.PHILIPS -> R.string.sleep_philips_title
+        }
+        sleepTestDialog = TvDialog.confirm(this, getString(title),
             getString(R.string.sleep_test_countdown, 10),
             listOf(TvDialog.Btn(getString(R.string.dialog_cancel)) { cancelSleepTest() }),
             onBack = { cancelSleepTest() }, timeoutSec = 0)
